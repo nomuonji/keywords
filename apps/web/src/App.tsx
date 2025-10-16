@@ -1,111 +1,528 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+  updateDoc,
+  where
+} from 'firebase/firestore';
 import { AppShell } from './components/layout/AppShell';
 import { ProjectSelector } from './components/projects/ProjectSelector';
 import { ProjectSettingsPanel } from './components/projects/ProjectSettingsPanel';
+import { ProjectFormModal, type ProjectFormData } from './components/projects/ProjectFormModal';
 import { ThemeTable } from './components/themes/ThemeTable';
 import { ThemeSettingsPanel } from './components/themes/ThemeSettingsPanel';
+import { ThemeFormModal, type ThemeFormData } from './components/themes/ThemeFormModal';
+import { NodeList } from './components/themes/NodeList';
 import { GroupPanel } from './components/groups/GroupPanel';
 import { JobHistoryDialog } from './components/jobs/JobHistoryDialog';
 import { NodeCreateModal } from './components/common/NodeCreateModal';
 import { Toast } from './components/common/Toast';
-import {
-  jobHistory,
-  groups as mockGroups,
-  projects as mockProjects,
-  themes as mockThemes
-} from './mockData';
-import type { GroupSummary, ProjectSettings, ProjectSummary, ThemeSummary } from './types';
+import { firestore } from './lib/firebase';
+import { postJson } from './lib/api';
+import { DEFAULT_PROJECT_SETTINGS } from './constants/settings';
+import type {
+  GroupSummary,
+  JobHistoryItem,
+  ProjectSettings,
+  ProjectSummary,
+  ThemeSummary,
+  NodeDocWithId
+} from './types';
 
 export default function App() {
-  const [projectList, setProjectList] = useState<ProjectSummary[]>(mockProjects);
-  const [themeMap, setThemeMap] = useState<Record<string, ThemeSummary[]>>(
-    cloneThemes(mockThemes)
-  );
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
-    mockProjects[0]?.id
-  );
-  const [selectedThemeId, setSelectedThemeId] = useState<string | undefined>(undefined);
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [themes, setThemes] = useState<ThemeSummary[]>([]);
+  const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [jobs, setJobs] = useState<JobHistoryItem[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>();
+  const [selectedThemeId, setSelectedThemeId] = useState<string>();
   const [showNodeModal, setShowNodeModal] = useState(false);
   const [showJobHistory, setShowJobHistory] = useState(false);
   const [toast, setToast] =
     useState<{ message: string; type?: 'info' | 'success' | 'error' }>();
+  const [projectModal, setProjectModal] = useState<{
+    mode: 'create' | 'edit';
+    project?: ProjectSummary;
+  } | null>(null);
+  const [themeModal, setThemeModal] = useState<{
+    mode: 'create' | 'edit';
+    theme?: ThemeSummary;
+  } | null>(null);
+  const [runningProjects, setRunningProjects] = useState<Set<string>>(new Set());
+  const [runningThemes, setRunningThemes] = useState<Set<string>>(new Set());
+  const [nodes, setNodes] = useState<NodeDocWithId[]>([]);
 
-  const selectedProject = projectList.find((project) => project.id === selectedProjectId);
-  const themes = selectedProjectId ? themeMap[selectedProjectId] ?? [] : [];
-  const selectedTheme = themes.find((theme) => theme.id === selectedThemeId);
+  useEffect(() => {
+    const projectsRef = collection(firestore, 'projects');
+    const unsubscribe = onSnapshot(
+      projectsRef,
+      (snapshot) => {
+        const data: ProjectSummary[] = snapshot.docs.map((docSnap) => {
+          const docData = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: docData.name ?? docSnap.id,
+            domain: docData.domain,
+            halt: docData.halt ?? false,
+            settings: docData.settings ?? DEFAULT_PROJECT_SETTINGS,
+            lastJob: undefined
+          };
+        });
+        setProjects(data);
+        if (!selectedProjectId && data.length) {
+          setSelectedProjectId(data[0].id);
+        }
+      },
+      (error) => {
+        console.error('Failed to load projects', error);
+        setToast({ message: 'Failed to load projects', type: 'error' });
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedProjectId]);
 
   useEffect(() => {
     if (!selectedProjectId) {
+      setThemes([]);
+      return;
+    }
+    const themesRef = collection(firestore, `projects/${selectedProjectId}/themes`);
+    const unsubscribe = onSnapshot(
+      themesRef,
+      (snapshot) => {
+        const data: ThemeSummary[] = snapshot.docs.map((docSnap) => {
+          const docData = docSnap.data();
+          return {
+            id: docSnap.id,
+            name: docData.name ?? docSnap.id,
+            autoUpdate: docData.autoUpdate ?? false,
+            pendingNodes: docData.pendingNodes ?? 0,
+            lastUpdatedAt: docData.updatedAt ?? '',
+            settings: docData.settings
+          };
+        });
+        setThemes(data);
+      },
+      (error) => {
+        console.error('Failed to load themes', error);
+        setToast({ message: 'Failed to load themes', type: 'error' });
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (!themes.length) {
       setSelectedThemeId(undefined);
       return;
     }
-    const projectThemes = themeMap[selectedProjectId] ?? [];
-    if (projectThemes.length && (!selectedThemeId || !projectThemes.some(
-      (theme) => theme.id === selectedThemeId
-    ))) {
-      setSelectedThemeId(projectThemes[0].id);
+    if (!selectedThemeId || !themes.some((theme) => theme.id === selectedThemeId)) {
+      setSelectedThemeId(themes[0].id);
     }
-  }, [selectedProjectId, selectedThemeId, themeMap]);
+  }, [themes, selectedThemeId]);
 
-  const groupList: GroupSummary[] = useMemo(() => {
-    if (!selectedThemeId) return [];
-    return mockGroups[selectedThemeId] ?? [];
-  }, [selectedThemeId]);
+  useEffect(() => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setNodes([]);
+      return;
+    }
+    const nodesRef = collection(
+      firestore,
+      `projects/${selectedProjectId}/themes/${selectedThemeId}/nodes`
+    );
+    const unsubscribe = onSnapshot(
+      nodesRef,
+      (snapshot) => {
+        const data: NodeDocWithId[] = snapshot.docs
+          .map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<NodeDocWithId, 'id'>)
+          }))
+          .sort((a, b) => {
+            const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return bTime - aTime;
+          });
+        setNodes(data);
+        setThemes((prev) =>
+          prev.map((theme) =>
+            theme.id === selectedThemeId
+              ? { ...theme, nodes: data, pendingNodes: data.length }
+              : theme
+          )
+        );
+      },
+      (error) => {
+        console.error('Failed to load nodes', error);
+        setToast({ message: 'Failed to load nodes', type: 'error' });
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedProjectId, selectedThemeId]);
 
-  const handleRunProject = (projectId: string) => {
-    setToast({ message: `プロジェクト「${projectId}」でパイプラインを起動します`, type: 'info' });
+  useEffect(() => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setGroups([]);
+      return;
+    }
+    const groupsRef = collection(
+      firestore,
+      `projects/${selectedProjectId}/themes/${selectedThemeId}/groups`
+    );
+    const unsubscribe = onSnapshot(
+      groupsRef,
+      async (snapshot) => {
+        const groupData: GroupSummary[] = await Promise.all(
+          snapshot.docs.map(async (docSnap) => {
+            const data = docSnap.data();
+            const keywordsSnap = await getDocs(
+              query(
+                collection(
+                  firestore,
+                  `projects/${selectedProjectId}/themes/${selectedThemeId}/keywords`
+                ),
+                where('groupId', '==', docSnap.id)
+              )
+            );
+            const keywords = keywordsSnap.docs.map((kw) => ({
+              id: kw.id,
+              text: kw.data().text,
+              metrics: kw.data().metrics ?? {}
+            }));
+            const linksSnap = await getDocs(
+              query(
+                collection(
+                  firestore,
+                  `projects/${selectedProjectId}/themes/${selectedThemeId}/links`
+                ),
+                where('fromGroupId', '==', docSnap.id)
+              )
+            );
+            const links = linksSnap.docs.map((link) => ({
+              targetId: link.data().toGroupId,
+              reason: link.data().reason,
+              weight: link.data().weight ?? 0
+            }));
+            return {
+              id: docSnap.id,
+              title: data.title ?? docSnap.id,
+              intent: data.intent ?? 'info',
+              summary: data.summary,
+              priorityScore: data.priorityScore ?? 0,
+              clusterStats: data.clusterStats ?? { size: keywords.length },
+              keywords,
+              links
+            };
+          })
+        );
+        groupData.sort((a, b) => b.priorityScore - a.priorityScore);
+        setGroups(groupData);
+      },
+      (error) => {
+        console.error('Failed to load groups', error);
+        setToast({ message: 'Failed to load groups', type: 'error' });
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedProjectId, selectedThemeId]);
+
+  useEffect(() => {
+    if (!selectedProjectId) {
+      setJobs([]);
+      return;
+    }
+    const jobsRef = collection(firestore, `projects/${selectedProjectId}/jobs`);
+    const jobsQuery = query(jobsRef, orderBy('finishedAt', 'desc'), limit(20));
+    const unsubscribe = onSnapshot(
+      jobsQuery,
+      (snapshot) => {
+        const data: JobHistoryItem[] = snapshot.docs.map((docSnap) => {
+          const docData = docSnap.data();
+          return {
+            id: docSnap.id,
+            type: docData.type ?? 'manual',
+            status: docData.status ?? 'running',
+            startedAt: docData.startedAt ?? '',
+            finishedAt: docData.finishedAt ?? '',
+            summary: docData.summary ?? {
+              nodesProcessed: 0,
+              newKeywords: 0,
+              groupsCreated: 0,
+              groupsUpdated: 0,
+              outlinesCreated: 0,
+              linksUpdated: 0,
+              errors: []
+            }
+          };
+        });
+        setJobs(data);
+      },
+      (error) => {
+        console.error('Failed to load jobs', error);
+        setToast({ message: 'Failed to load job history', type: 'error' });
+      }
+    );
+    return () => unsubscribe();
+  }, [selectedProjectId]);
+
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === selectedProjectId),
+    [projects, selectedProjectId]
+  );
+
+  const displayProjects = useMemo(() => {
+    if (!jobs.length || !selectedProjectId) {
+      return projects;
+    }
+    const lastJob = jobs[0];
+    return projects.map((project) =>
+      project.id === selectedProjectId
+        ? {
+            ...project,
+            lastJob: {
+              status: lastJob.status,
+              finishedAt: lastJob.finishedAt,
+              nodesProcessed: lastJob.summary.nodesProcessed,
+              outlinesCreated: lastJob.summary.outlinesCreated
+            }
+          }
+        : project
+    );
+  }, [projects, jobs, selectedProjectId]);
+
+  const selectedTheme = useMemo(
+    () => themes.find((theme) => theme.id === selectedThemeId),
+    [themes, selectedThemeId]
+  );
+
+  const handleRunProject = async (projectId: string) => {
+    if (runningProjects.has(projectId)) {
+      return;
+    }
+    setRunningProjects((prev) => {
+      const next = new Set(prev);
+      next.add(projectId);
+      return next;
+    });
+    try {
+      await postJson<{ status: string }>(`/projects/${projectId}/run`, { manual: true });
+      setToast({ message: `Triggered pipeline for project ${projectId}`, type: 'info' });
+    } catch (error) {
+      console.error('Failed to trigger project pipeline', error);
+      setToast({ message: 'Failed to trigger project pipeline', type: 'error' });
+    } finally {
+      setRunningProjects((prev) => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+    }
   };
 
-  const handleRunTheme = (themeId: string) => {
-    setToast({ message: `テーマ「${themeId}」の更新ジョブを送信しました`, type: 'success' });
+  const handleRunTheme = async (themeId: string) => {
+    if (!selectedProjectId) {
+      setToast({ message: 'Select a project first', type: 'info' });
+      return;
+    }
+    if (runningThemes.has(themeId)) {
+      return;
+    }
+    setRunningThemes((prev) => {
+      const next = new Set(prev);
+      next.add(themeId);
+      return next;
+    });
+    try {
+      await postJson<{ status: string }>(`/projects/${selectedProjectId}/run`, {
+        manual: true,
+        themeIds: [themeId]
+      });
+      setToast({ message: `Queued theme update for ${themeId}`, type: 'success' });
+    } catch (error) {
+      console.error('Failed to trigger theme pipeline', error);
+      setToast({ message: 'Failed to trigger theme pipeline', type: 'error' });
+    } finally {
+      setRunningThemes((prev) => {
+        const next = new Set(prev);
+        next.delete(themeId);
+        return next;
+      });
+    }
   };
 
   const handleAddNode = (payload: { title: string; intent: string; depth: number }) => {
-    setShowNodeModal(false);
-    setToast({
-      message: `ノード「${payload.title}」を登録しました（意図: ${payload.intent}）`,
-      type: 'success'
-    });
-  };
-
-  const handleSaveProjectSettings = (settings: ProjectSettings) => {
-    if (!selectedProjectId) return;
-    setProjectList((prev) =>
-      prev.map((project) =>
-        project.id === selectedProjectId ? { ...project, settings } : project
-      )
-    );
-    setToast({ message: 'プロジェクト設定を更新しました', type: 'success' });
-  };
-
-  const handleSaveThemeSettings = (settings: Partial<ProjectSettings>) => {
     if (!selectedProjectId || !selectedThemeId) return;
-    setThemeMap((prev) => {
-      const projectThemes = prev[selectedProjectId] ?? [];
-      const updatedThemes = projectThemes.map((theme) =>
-        theme.id === selectedThemeId ? { ...theme, settings } : theme
+    addDoc(
+      collection(firestore, `projects/${selectedProjectId}/themes/${selectedThemeId}/nodes`),
+      {
+        title: payload.title,
+        intent: payload.intent,
+        depth: Number.isNaN(payload.depth) ? 0 : payload.depth,
+        status: 'ready',
+        updatedAt: new Date().toISOString()
+      }
+    )
+      .then(() => {
+        setShowNodeModal(false);
+        setToast({
+          message: `Created node "${payload.title}" (intent: ${payload.intent})`,
+          type: 'success'
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to create node', error);
+        setToast({ message: 'Failed to create node', type: 'error' });
+      });
+  };
+
+  const handleDeleteNode = async (nodeId: string) => {
+    if (!selectedProjectId || !selectedThemeId) return;
+    try {
+      await deleteDoc(
+        doc(firestore, `projects/${selectedProjectId}/themes/${selectedThemeId}/nodes/${nodeId}`)
       );
-      return { ...prev, [selectedProjectId]: updatedThemes };
-    });
-    setToast({ message: 'テーマ設定を更新しました', type: 'success' });
+      setToast({ message: `Deleted node ${nodeId}`, type: 'success' });
+    } catch (error) {
+      console.error('Failed to delete node', error);
+      setToast({ message: 'Failed to delete node', type: 'error' });
+    }
+  };
+
+  const handleSaveProjectSettings = async (settings: ProjectSettings) => {
+    if (!selectedProjectId) return;
+    try {
+      await updateDoc(doc(firestore, `projects/${selectedProjectId}`), { settings });
+      setToast({ message: 'Updated project settings', type: 'success' });
+    } catch (error) {
+      console.error('Failed to update project settings', error);
+      setToast({ message: 'Failed to update project settings', type: 'error' });
+    }
+  };
+
+  const handleSaveThemeSettings = async (settings: Partial<ProjectSettings>) => {
+    if (!selectedProjectId || !selectedThemeId) return;
+    try {
+      const themeRef = doc(
+        firestore,
+        `projects/${selectedProjectId}/themes/${selectedThemeId}`
+      );
+      const isEmpty = Object.keys(settings).length === 0;
+      if (isEmpty) {
+        await updateDoc(themeRef, { settings: deleteField() });
+      } else {
+        await updateDoc(themeRef, { settings });
+      }
+      setToast({ message: 'Updated theme settings', type: 'success' });
+    } catch (error) {
+      console.error('Failed to update theme settings', error);
+      setToast({ message: 'Failed to update theme settings', type: 'error' });
+    }
+  };
+
+  const handleSubmitProjectForm = async (
+    data: ProjectFormData & { settings?: ProjectSettings }
+  ) => {
+    const now = new Date().toISOString();
+    if (projectModal?.mode === 'create') {
+      if (projects.some((project) => project.id === data.id)) {
+        throw new Error('Project ID already exists');
+      }
+      const payload: Record<string, unknown> = {
+        name: data.name,
+        halt: data.halt ?? false,
+        settings: data.settings ?? DEFAULT_PROJECT_SETTINGS,
+        createdAt: now,
+        updatedAt: now
+      };
+      if (data.domain) {
+        payload.domain = data.domain;
+      }
+      await setDoc(doc(firestore, `projects/${data.id}`), payload);
+      setToast({ message: `Created project ${data.name}`, type: 'success' });
+      setSelectedProjectId(data.id);
+    } else if (projectModal?.mode === 'edit' && projectModal.project) {
+      const updatePayload: Record<string, unknown> = {
+        name: data.name,
+        halt: data.halt ?? false,
+        updatedAt: now
+      };
+      if (data.domain) {
+        updatePayload.domain = data.domain;
+      } else {
+        updatePayload.domain = deleteField();
+      }
+      await updateDoc(doc(firestore, `projects/${data.id}`), updatePayload);
+      setToast({ message: `Updated project ${data.name}`, type: 'success' });
+    }
+  };
+
+  const handleSubmitThemeForm = async (data: ThemeFormData) => {
+    if (!selectedProjectId) {
+      throw new Error('Project not selected');
+    }
+    const now = new Date().toISOString();
+    if (themeModal?.mode === 'create') {
+      if (themes.some((theme) => theme.id === data.id)) {
+        throw new Error('Theme ID already exists');
+      }
+      await setDoc(
+        doc(firestore, `projects/${selectedProjectId}/themes/${data.id}`),
+        {
+          name: data.name,
+          autoUpdate: data.autoUpdate,
+          pendingNodes: 0,
+          updatedAt: now
+        },
+        { merge: true }
+      );
+      setToast({ message: `Created theme ${data.name}`, type: 'success' });
+      setSelectedThemeId(data.id);
+    } else if (themeModal?.mode === 'edit' && themeModal.theme) {
+      await updateDoc(doc(firestore, `projects/${selectedProjectId}/themes/${data.id}`), {
+        name: data.name,
+        autoUpdate: data.autoUpdate,
+        updatedAt: now
+      });
+      setToast({ message: `Updated theme ${data.name}`, type: 'success' });
+    }
+  };
+
+  const openCreateTheme = () => {
+    if (!selectedProjectId) {
+      setToast({ message: 'Select a project before adding a theme', type: 'info' });
+      return;
+    }
+    setThemeModal({ mode: 'create' });
   };
 
   return (
     <AppShell title="Keywords 管理UI（デモ）">
       <div className="flex flex-col gap-6">
         <ProjectSelector
-          projects={projectList}
+          projects={displayProjects}
           selectedProjectId={selectedProjectId}
+          runningProjectIds={runningProjects}
           onSelect={(projectId) => {
             setSelectedProjectId(projectId);
             setSelectedThemeId(undefined);
           }}
           onRunProject={handleRunProject}
+          onCreateProject={() => setProjectModal({ mode: 'create' })}
+          onEditProject={(project) => setProjectModal({ mode: 'edit', project })}
         />
 
         {selectedProject ? (
           <ProjectSettingsPanel
-            settings={selectedProject.settings}
+            settings={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             onSave={handleSaveProjectSettings}
           />
         ) : null}
@@ -118,36 +535,76 @@ export default function App() {
                 自動更新対象のテーマについて、アイデア取得状況と管理アクションを確認できます。
               </p>
             </div>
-            <button
-              type="button"
-              className="rounded-md border border-primary px-3 py-2 text-sm text-primary shadow-sm transition hover:bg-primary/10"
-              onClick={() => setShowJobHistory(true)}
-            >
-              ジョブ履歴を見る
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+                onClick={openCreateTheme}
+              >
+                テーマ追加
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-primary px-3 py-2 text-sm text-primary shadow-sm transition hover:bg-primary/10"
+                onClick={() => setShowJobHistory(true)}
+              >
+                ジョブ履歴を見る
+              </button>
+            </div>
           </header>
 
           <ThemeTable
             themes={themes}
             selectedThemeId={selectedThemeId}
             onSelect={(themeId) => setSelectedThemeId(themeId)}
-            onExpandCategory={() => setShowNodeModal(true)}
+            onExpandCategory={(themeId) => {
+              setSelectedThemeId(themeId);
+              setShowNodeModal(true);
+            }}
             onRunTheme={handleRunTheme}
+            onEditTheme={(theme) => {
+              setSelectedThemeId(theme.id);
+              setThemeModal({ mode: 'edit', theme });
+            }}
+            runningThemeIds={runningThemes}
+            activeNodesCount={selectedThemeId ? nodes.length : undefined}
           />
         </section>
 
         {selectedProject ? (
           <ThemeSettingsPanel
-            projectDefaults={selectedProject.settings}
+            projectDefaults={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             themeSettings={selectedTheme?.settings}
             onSave={handleSaveThemeSettings}
             themeName={selectedTheme?.name}
           />
         ) : null}
 
-        <GroupPanel groups={groupList} />
+        {selectedThemeId ? (
+          <NodeList
+            nodes={nodes}
+            onAddNode={() => setShowNodeModal(true)}
+            onDeleteNode={handleDeleteNode}
+          />
+        ) : null}
+
+        <GroupPanel groups={groups} />
       </div>
 
+      <ProjectFormModal
+        open={projectModal !== null}
+        mode={projectModal?.mode ?? 'create'}
+        initialProject={projectModal?.project}
+        onClose={() => setProjectModal(null)}
+        onSubmit={handleSubmitProjectForm}
+      />
+      <ThemeFormModal
+        open={themeModal !== null}
+        mode={themeModal?.mode ?? 'create'}
+        initialTheme={themeModal?.theme}
+        onClose={() => setThemeModal(null)}
+        onSubmit={handleSubmitThemeForm}
+      />
       <NodeCreateModal
         open={showNodeModal}
         onClose={() => setShowNodeModal(false)}
@@ -155,7 +612,7 @@ export default function App() {
       />
       <JobHistoryDialog
         open={showJobHistory}
-        jobs={jobHistory}
+        jobs={jobs}
         onClose={() => setShowJobHistory(false)}
       />
 
@@ -164,10 +621,4 @@ export default function App() {
       </div>
     </AppShell>
   );
-}
-
-function cloneThemes(
-  source: Record<string, ThemeSummary[]>
-): Record<string, ThemeSummary[]> {
-  return JSON.parse(JSON.stringify(source));
 }

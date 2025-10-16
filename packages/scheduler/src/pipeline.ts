@@ -1,5 +1,5 @@
 import { computePriorityScore, inferLinkReason, limitLinks, normalizeKeyword, nowIso } from '@keywords/core';
-import type { GroupDoc, Intent, KeywordDoc, ProjectSettings } from '@keywords/core';
+import type { GroupDoc, Intent, KeywordDoc, ProjectSettings, LinkDoc } from '@keywords/core';
 import type { GroupDocWithId, KeywordDocWithId, PipelineContext, ThemeDocWithId } from './types';
 import {
   fetchKeywordHashes,
@@ -333,16 +333,6 @@ function selectRepresentative(keywords: KeywordDocWithId[]): KeywordDocWithId {
 }
 
 function coalesceIntent(keywords: KeywordDocWithId[]): Intent {
-  const intents = keywords
-    .map((kw) => kw.intent)
-    .filter(Boolean) as Intent[];
-  if (intents.length) {
-    const counts = intents.reduce<Record<Intent, number>>((acc, intent) => {
-      acc[intent] = (acc[intent] ?? 0) + 1;
-      return acc;
-    }, {} as Record<Intent, number>);
-    return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0] as Intent;
-  }
   return 'info';
 }
 

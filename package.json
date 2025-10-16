@@ -1,20 +1,26 @@
 {
-  "name": "keywords-monorepo",
-  "version": "1.0.0",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "scheduler:run": "npm run build --workspace @keywords/scheduler --if-present && node packages/scheduler/dist/cli.js"
-  },
-  "devDependencies": {
-    "typescript": "^5.4.0",
-    "ts-node": "^10.9.2",
-    "@types/node": "^20.11.30"
-  }
+    "name":  "keywords-monorepo",
+    "version":  "1.0.0",
+    "private":  true,
+    "workspaces":  [
+                       "apps/*",
+                       "packages/*"
+                   ],
+    "scripts":  {
+                    "build":  "npm run build --workspaces --if-present",
+                    "lint":  "npm run lint --workspaces --if-present",
+                    "test":  "npm run test --workspaces --if-present",
+                    "scheduler:run":  "npm run build --workspace @keywords/scheduler --if-present \u0026\u0026 node packages/scheduler/dist/cli.js",
+                    "test:ads":  "npm run build --workspace @keywords/ads --if-present \u0026\u0026 node -r dotenv/config scripts/test-google-ads.js"
+                },
+    "devDependencies":  {
+                            "@types/node":  "^20.11.30",
+                            "dotenv":  "^16.4.5",
+                            "ts-node":  "^10.9.2",
+                            "typescript":  "^5.4.0",
+                            "tsconfig-paths":  "^4.2.0"
+                        },
+    "dependencies":  {
+                         "google-ads-api":  "^21.0.1"
+                     }
 }

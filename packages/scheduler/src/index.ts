@@ -74,7 +74,17 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
           }),
         classifyIntent: (text) => geminiClient.classifyIntent(text)
       },
-      logger
+      logger: {
+        info: (msg: unknown, meta?: unknown) => {
+          logger.info(meta as Record<string, unknown> | undefined, msg as string);
+        },
+        error: (msg: unknown, meta?: unknown) => {
+          logger.error(meta as Record<string, unknown> | undefined, msg as string);
+        },
+        warn: (msg: unknown, meta?: unknown) => {
+          logger.warn(meta as Record<string, unknown> | undefined, msg as string);
+        }
+      }
     },
     counters,
     jobRef

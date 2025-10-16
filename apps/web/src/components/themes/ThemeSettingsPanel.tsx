@@ -22,8 +22,6 @@ export function ThemeSettingsPanel({
     setDraft(themeSettings ?? {});
   }, [themeSettings]);
 
-  const merged = mergeSettings(projectDefaults, draft);
-
   const handlePartialChange =
     (path: string[]) =>
     (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,77 +50,77 @@ export function ThemeSettingsPanel({
         </button>
       </header>
       {open ? (
-        <div className="grid gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
-          <fieldset className="space-y-3">
-            <legend className="text-sm font-semibold text-slate-700">パイプライン</legend>
-            <NumberInputWithFallback
-              label="staleDays"
-              value={draft.pipeline?.staleDays}
-            fallback={projectDefaults.pipeline.staleDays}
-            min={1}
-            onChange={handlePartialChange(['pipeline', 'staleDays'])}
-          />
-          <NumberInputWithFallback
-            label="nodesPerRun"
-            value={draft.pipeline?.limits?.nodesPerRun}
-            fallback={projectDefaults.pipeline.limits.nodesPerRun}
-            min={1}
-            onChange={handlePartialChange(['pipeline', 'limits', 'nodesPerRun'])}
-          />
-          <NumberInputWithFallback
-            label="ideasPerNode"
-            value={draft.pipeline?.limits?.ideasPerNode}
-            fallback={projectDefaults.pipeline.limits.ideasPerNode}
-            min={10}
-            step={10}
-            onChange={handlePartialChange(['pipeline', 'limits', 'ideasPerNode'])}
-          />
-        </fieldset>
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold text-slate-700">しきい値・リンク</legend>
-          <NumberInputWithFallback
-            label="minVolume"
-            value={draft.thresholds?.minVolume}
-            fallback={projectDefaults.thresholds.minVolume}
-            min={0}
-            onChange={handlePartialChange(['thresholds', 'minVolume'])}
-          />
-          <NumberInputWithFallback
-            label="maxCompetition"
-            value={draft.thresholds?.maxCompetition}
-            fallback={projectDefaults.thresholds.maxCompetition}
-            min={0}
-            max={1}
-            step={0.05}
-            onChange={handlePartialChange(['thresholds', 'maxCompetition'])}
-          />
-          <NumberInputWithFallback
-            label="links.maxPerGroup"
-            value={draft.links?.maxPerGroup}
-            fallback={projectDefaults.links.maxPerGroup}
-            min={1}
-            onChange={handlePartialChange(['links', 'maxPerGroup'])}
-          />
-        </fieldset>
-        </div>
-      ) : null}
-      {open ? (
-        <footer className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-          <button
-            type="button"
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
-            onClick={() => setDraft({})}
-          >
-            上書きをリセット
-          </button>
-          <button
-            type="button"
-            className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary/90"
-            onClick={() => onSave(draft)}
-          >
-            保存
-          </button>
-        </footer>
+        <>
+          <div className="grid gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold text-slate-700">パイプライン</legend>
+              <NumberInputWithFallback
+                label="staleDays"
+                value={draft.pipeline?.staleDays}
+                fallback={projectDefaults.pipeline.staleDays}
+                min={1}
+                onChange={handlePartialChange(['pipeline', 'staleDays'])}
+              />
+              <NumberInputWithFallback
+                label="nodesPerRun"
+                value={draft.pipeline?.limits?.nodesPerRun}
+                fallback={projectDefaults.pipeline.limits.nodesPerRun}
+                min={1}
+                onChange={handlePartialChange(['pipeline', 'limits', 'nodesPerRun'])}
+              />
+              <NumberInputWithFallback
+                label="ideasPerNode"
+                value={draft.pipeline?.limits?.ideasPerNode}
+                fallback={projectDefaults.pipeline.limits.ideasPerNode}
+                min={10}
+                step={10}
+                onChange={handlePartialChange(['pipeline', 'limits', 'ideasPerNode'])}
+              />
+            </fieldset>
+            <fieldset className="space-y-3">
+              <legend className="text-sm font-semibold text-slate-700">しきい値・リンク</legend>
+              <NumberInputWithFallback
+                label="minVolume"
+                value={draft.thresholds?.minVolume}
+                fallback={projectDefaults.thresholds.minVolume}
+                min={0}
+                onChange={handlePartialChange(['thresholds', 'minVolume'])}
+              />
+              <NumberInputWithFallback
+                label="maxCompetition"
+                value={draft.thresholds?.maxCompetition}
+                fallback={projectDefaults.thresholds.maxCompetition}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={handlePartialChange(['thresholds', 'maxCompetition'])}
+              />
+              <NumberInputWithFallback
+                label="links.maxPerGroup"
+                value={draft.links?.maxPerGroup}
+                fallback={projectDefaults.links.maxPerGroup}
+                min={1}
+                onChange={handlePartialChange(['links', 'maxPerGroup'])}
+              />
+            </fieldset>
+          </div>
+          <footer className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+            <button
+              type="button"
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
+              onClick={() => setDraft({})}
+            >
+              上書きをリセット
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary/90"
+              onClick={() => onSave(draft)}
+            >
+              保存
+            </button>
+          </footer>
+        </>
       ) : null}
     </section>
   );
@@ -181,31 +179,4 @@ function updatePartial(
   }
   current[path[path.length - 1]] = Number.isNaN(value) ? undefined : value;
   return updated;
-}
-
-function mergeSettings(base: ProjectSettings, overrides: Partial<ProjectSettings>): ProjectSettings {
-  return {
-    pipeline: {
-      staleDays: overrides.pipeline?.staleDays ?? base.pipeline.staleDays,
-      limits: {
-        nodesPerRun: overrides.pipeline?.limits?.nodesPerRun ?? base.pipeline.limits.nodesPerRun,
-        ideasPerNode: overrides.pipeline?.limits?.ideasPerNode ?? base.pipeline.limits.ideasPerNode,
-        groupsOutlinePerRun:
-          overrides.pipeline?.limits?.groupsOutlinePerRun ?? base.pipeline.limits.groupsOutlinePerRun
-      }
-    },
-    thresholds: {
-      minVolume: overrides.thresholds?.minVolume ?? base.thresholds.minVolume,
-      maxCompetition: overrides.thresholds?.maxCompetition ?? base.thresholds.maxCompetition
-    },
-    weights: {
-      volume: overrides.weights?.volume ?? base.weights.volume,
-      competition: overrides.weights?.competition ?? base.weights.competition,
-      intent: overrides.weights?.intent ?? base.weights.intent,
-      novelty: overrides.weights?.novelty ?? base.weights.novelty
-    },
-    links: {
-      maxPerGroup: overrides.links?.maxPerGroup ?? base.links.maxPerGroup
-    }
-  };
 }

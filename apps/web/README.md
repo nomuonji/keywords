@@ -1,85 +1,39 @@
-# 管理UIドキュメント（日本語版）
+﻿# Admin UI Overview
 
-このディレクトリでは、キーワード自動化システム向けの管理UI（React + Vite構成）の要件と画面仕様をまとめています。プロジェクト／テーマ設定の微調整やクラスタ間リンクの確認を、ひと目で把握できるワークスペースを目指します。
+The admin UI (React + Vite) lets you manage projects, themes, nodes, and clusters stored in Firestore. It also communicates with the Express API (`apps/api`, default port **3001**) to trigger the pipeline or create nodes.
 
-## 1. 目的と前提
+## Features
+- Create / edit projects and themes
+- Trigger the keyword pipeline for a project or a single theme
+- View and add seed nodes (displayed in the “Node List” panel)
+- Inspect generated clusters, outlines, and internal link recommendations
+- Review recent job runs in the job-history dialog
 
-- プロジェクト（ブログサイト）単位でテーマ配下の状況を俯瞰し、キーワードクラスタの優先度・アウトライン・内部リンクを整理する。
-- Firestore のドキュメント構成（プロジェクト→テーマ→ノード／キーワード／クラスタ）を前提とし、API (`apps/api`) と連携して手動トリガを実行できる。
-- 現在の実装はモックデータを使用したデモ。将来的に Firestore／API を接続することでリアルタイム更新を行う想定。
+## Screen Structure
+1. **Project Switcher** – select or create projects, run the full pipeline, edit project metadata
+2. **Project Settings** – adjust pipeline thresholds and weights (collapsible)
+3. **Theme Table** – per-theme actions (expand for nodes, trigger updates, edit)
+4. **Theme Settings** – optional overrides against project defaults
+5. **Node List** – shows Firestore `nodes` for the selected theme and allows new entries
+6. **Cluster Panel** – displays clusters sorted by priorityScore with outline and link details
 
-## 2. 画面構成
+## Environment (`apps/web/.env`)
+```env
+VITE_FIREBASE_API_KEY="..."
+VITE_FIREBASE_AUTH_DOMAIN="..."
+VITE_FIREBASE_PROJECT_ID="..."
+VITE_FIREBASE_STORAGE_BUCKET="..."
+VITE_FIREBASE_MESSAGING_SENDER_ID="..."
+VITE_FIREBASE_APP_ID="..."
+VITE_API_BASE_URL="http://localhost:3001"
+```
+Ensure the API server (apps/api) is running before executing “更新” from the UI.
 
-### 2.1 プロジェクト切り替え
-- ヘッダー右側にコンパクトなボタン群を配置し、名称＋停止状態を即座に確認。
-- 選択プロジェクトの最終ジョブ結果・処理件数・「今すぐ実行（手動トリガ）」ボタンをステータスバーで表示。
-- プロジェクト設定カードは折りたたみ式パネルで、必要なときだけ展開。パイプライン上限やスコア計算パラメータをフォームで編集し、保存ボタンでローカル表示を更新。
-
-### 2.2 テーマダッシュボード
-- テーマはコンパクトなリストカードで表示し、最終更新日時・自動更新ON/OFF・未処理ノード件数をバッジ化。
-- 行右端に「拡張（ノード追加モーダル起動）」「更新（テーマ指定ジョブ実行）」ボタンを配置。
-- テーマ設定パネルも折りたたみ式で、プロジェクト共通設定を参照しながら必要な項目のみ上書き可能。既定値との差分が分かるUIで、空欄の場合は共通設定が適用される。
-
-### 2.3 クラスタ管理
-- 画面下部はクラスタリスト＋詳細ペインの2カラムレイアウト。左リストは priorityScore 順で並び、アウトライン有無／リンク数がバッジ表示。
-- 右ペインは常時表示され、選択中クラスタのアウトライン、代表キーワード、内部リンク推奨をカード形式で確認可能。
-- 内部リンク推奨は「階層（ビッグキーワード→ロングテール）」「ハブ＆スポーク」「兄弟」をツリー型リストで表示。選択クラスタをルートとした階層構造が視覚的に追える。
-
-### 2.4 モーダル・補助画面
-- **カテゴリ拡張モーダル**：新規ノードタイトル／想定意図／階層深度を入力し、API `/projects/:projectId/themes/:themeId/nodes` を呼び出す想定。
-- **ジョブ履歴ダイアログ**：`jobs` コレクションの実行ステータスとサマリを時系列で確認。成功・失敗を色付きバッジで表示。
-
-## 3. データ設計（UI視点）
-
-| コレクション | 主キー | 主なフィールド | UIでの利用箇所 |
-| --- | --- | --- | --- |
-| `projects` | `projectId` | `name`, `domain`, `settings`, `halt`, `lastJob` | プロジェクト切り替え・設定パネル |
-| `themes` | `themeId` | `name`, `autoUpdate`, `settings`, `lastUpdatedAt`, `pendingNodes` | テーマダッシュボード、テーマ設定 |
-| `nodes` | `nodeId` | `title`, `status`, `lastIdeasAt`, `intent` | テーマの未処理ノード件数（将来的に表示） |
-| `keywords` | `keywordId` | `text`, `metrics`, `groupId`, `status` | クラスタ詳細のキーワード一覧 |
-| `groups` | `groupId` | `title`, `keywords[]`, `intent`, `summary`, `priorityScore`, `clusterStats` | クラスタリストと詳細ペイン |
-| `links` | `linkId` (`from__to`) | `fromGroupId`, `toGroupId`, `reason`, `weight` | 内部リンク推奨カード |
-| `jobs` | `jobId` | `type`, `status`, `summary`, `startedAt`, `finishedAt` | ジョブ履歴ダイアログ |
-
-補足:
-- テーマ設定はプロジェクト設定の上書きが可能。UIでは共通設定値をプレースホルダ表示し、未入力時に既定値を使用。
-- `priorityScore` は 0〜10 前後を想定。クラスタリスト・詳細ペインではバッジ色で優先度を訴求。
-
-## 4. API インタラクション（想定）
-
-| エンドポイント | メソッド | パラメータ | 説明 |
-| --- | --- | --- | --- |
-| `/projects/:projectId/run` | POST | Body: `{ themeIds?: string[], manual?: boolean }` | パイプライン即時実行。テーマID未指定なら自動対象全テーマ。 |
-| `/projects/:projectId/themes/:themeId/nodes` | POST | Body: `{ title: string, intent: 'info'|'trans'|'local'|'mixed', depth?: number }` | ノード追加。成功時は `nodeId` を返却し、UIに反映。 |
-
-本リポジトリの `apps/api` で最小限のエンドポイントを用意しており、将来的に Firestore への読み書き・認証連携を追加する前提です。
-
-## 5. ステート管理と構成
-
-- React 18 + Vite を使用。状態管理は `useState` / `useMemo` ベースで構成。
-- プロジェクト・テーマ・クラスタは現在モックデータで初期化し、設定更新操作はローカルステートに反映（API接続時に差し替え予定）。
-- コンポーネント分割:
-  - `components/layout` … AppShell（ヘッダー／レイアウト）
-  - `components/projects` … プロジェクト切り替え・設定パネル
-  - `components/themes` … テーマリスト、設定パネル
-  - `components/groups` … クラスタリスト＋詳細ペイン
-  - `components/jobs` … ジョブ履歴モーダル
-  - `components/common` … ノード追加モーダル、トーストなど
-
-## 6. モック起動
-
+## Local Development
 ```bash
 npm install
-npm run dev --workspace @keywords/web
+npm run dev --workspace apps/api      # Express API (port 3001)
+npm run dev --workspace @keywords/web # Vite dev server (default 5173)
 ```
 
-http://localhost:3000 で起動し、設定編集・クラスタ閲覧などのUI挙動を確認できます。現在はローカルモックのみ動作するため、API接続や Firestore 連携を行う際は対応するデータフェッチ層を差し替えてください。
-
-## 7. 今後の改善候補
-
-- Firestore／API と連携するためのデータフェッチ（React Query など）の導入。
-- 認証（Firebase Auth など）および権限に応じたUI制御。
-- クラスタ間リンクのグラフ可視化（D3.js などの活用）やドラッグ＆ドロップによるリンク調整機能。
-- 多言語対応（英語UIなど）とアクセシビリティ改善。
-
-本ドキュメントはUI実装を進めるための仕様書です。追加要望があれば適宜更新してください。
+With both servers running, open http://localhost:5173 to manage real Firestore data.

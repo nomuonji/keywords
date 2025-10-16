@@ -29,7 +29,7 @@ export interface PipelineDependencies {
   firestore: FirebaseFirestore.Firestore;
   ads: {
     generateIdeas: (params: {
-      node: NodeDocWithId;
+      node: NodeDoc;
       settings: ProjectSettings;
     }) => Promise<Array<{ keyword: string; metrics: KeywordDoc['metrics'] }>>;
   };
@@ -45,9 +45,9 @@ export interface PipelineDependencies {
     classifyIntent: (text: string) => Promise<Intent>;
   };
   logger: {
-    info: (msg: unknown, meta?: unknown) => void;
-    error: (msg: unknown, meta?: unknown) => void;
-    warn: (msg: unknown, meta?: unknown) => void;
+    info: (...args: unknown[]) => void;
+    error: (...args: unknown[]) => void;
+    warn: (...args: unknown[]) => void;
   };
 }
 

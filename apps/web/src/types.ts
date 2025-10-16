@@ -1,4 +1,4 @@
-export type Intent = 'info' | 'trans' | 'local' | 'mixed';
+export type Intent = "info" | "trans" | "local" | "mixed";
 
 export interface ProjectSummary {
   id: string;
@@ -6,7 +6,7 @@ export interface ProjectSummary {
   domain?: string;
   halt?: boolean;
   lastJob?: {
-    status: 'succeeded' | 'failed' | 'running' | 'skipped';
+    status: "succeeded" | "failed" | "running" | "skipped";
     finishedAt: string;
     nodesProcessed: number;
     outlinesCreated: number;
@@ -21,6 +21,7 @@ export interface ThemeSummary {
   pendingNodes: number;
   lastUpdatedAt: string;
   settings?: Partial<ProjectSettings>;
+  nodes?: NodeDocWithId[];
 }
 
 export interface KeywordMetrics {
@@ -41,13 +42,13 @@ export interface GroupSummary {
     faq?: Array<{ q: string; a: string }>;
   };
   keywords: Array<{ id: string; text: string; metrics: KeywordMetrics }>;
-  links: Array<{ targetId: string; reason: 'hierarchy' | 'sibling' | 'hub'; weight: number }>;
+  links: Array<{ targetId: string; reason: "hierarchy" | "sibling" | "hub"; weight: number }>;
 }
 
 export interface JobHistoryItem {
   id: string;
-  type: 'daily' | 'manual';
-  status: 'running' | 'succeeded' | 'failed' | 'skipped';
+  type: "daily" | "manual";
+  status: "running" | "succeeded" | "failed" | "skipped";
   startedAt: string;
   finishedAt: string;
   summary: {
@@ -82,4 +83,15 @@ export interface ProjectSettings {
   links: {
     maxPerGroup: number;
   };
+}
+
+export interface NodeDocWithId {
+  id: string;
+  title: string;
+  themeId: string;
+  depth: number;
+  intent: Intent;
+  lastIdeasAt?: string;
+  status: "ready" | "ideas-pending" | "ideas-done";
+  updatedAt: string;
 }

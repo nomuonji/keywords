@@ -1,4 +1,12 @@
-import type { KeywordMetrics } from '@keywords/core';
+export interface KeywordMetrics {
+  avgMonthly?: number;
+  competition?: number;
+  competitionIndex?: number;
+  competitionLevel?: string;
+  lowTopOfPageBidMicros?: number;
+  highTopOfPageBidMicros?: number;
+  cpcMicros?: number;
+}
 
 export interface AdsAuthConfig {
   developerToken: string;

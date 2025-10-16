@@ -1,8 +1,10 @@
 import express from 'express';
 import admin from 'firebase-admin';
+import cors from 'cors';
 import { runScheduler } from '@keywords/scheduler';
 
 const app = express();
+app.use(cors({ origin: 'http://localhost:3000' }));
 app.use(express.json());
 
 function initFirestore(): FirebaseFirestore.Firestore {
@@ -69,7 +71,20 @@ app.post('/projects/:projectId/themes/:themeId/nodes', async (req, res) => {
   }
 });
 
-const port = process.env.PORT ?? 3000;
+app.delete('/projects/:projectId/themes/:themeId/nodes/:nodeId', async (req, res) => {
+  const { projectId, themeId, nodeId } = req.params;
+  try {
+    const firestore = initFirestore();
+    await firestore
+      .doc(`projects/${projectId}/themes/${themeId}/nodes/${nodeId}`)
+      .delete();
+    res.status(204).send();
+  } catch (error) {
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+const port = process.env.PORT ?? 3001;
 
 app.listen(port, () => {
   // eslint-disable-next-line no-console

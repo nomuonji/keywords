@@ -3,12 +3,17 @@
     "target": "ES2022",
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "baseUrl": ".",
     "rootDir": ".",
     "paths": {
       "@keywords/core/*": ["packages/core/src/*"],
+      "@keywords/core": ["packages/core/src/index"],
       "@keywords/ads/*": ["packages/ads/src/*"],
+      "@keywords/ads": ["packages/ads/src/index"],
       "@keywords/gemini/*": ["packages/gemini/src/*"],
-      "@keywords/scheduler/*": ["packages/scheduler/src/*"]
+      "@keywords/gemini": ["packages/gemini/src/index"],
+      "@keywords/scheduler/*": ["packages/scheduler/src/*"],
+      "@keywords/scheduler": ["packages/scheduler/src/index"]
     },
     "types": ["node"],
     "resolveJsonModule": true,

@@ -106,7 +106,11 @@ export function GroupPanel({ groups }: GroupPanelProps) {
                   label={group.outline ? 'アウトライン生成済' : 'アウトライン未生成'}
                   tone={group.outline ? 'success' : 'muted'}
                 />
-                <StatusBadge icon={MdOutlineLink} label={`リンク ${group.links.length}`} tone={group.links.length ? 'info' : 'muted'} />
+                <StatusBadge
+                  icon={MdOutlineLink}
+                  label={`リンク ${group.links.length}`}
+                  tone={group.links.length ? 'info' : 'muted'}
+                />
                 <StatusBadge icon={MdOutlineListAlt} label={`KW ${group.keywords.length}`} tone="info" />
               </div>
             </button>
@@ -128,7 +132,15 @@ export function GroupPanel({ groups }: GroupPanelProps) {
   );
 }
 
-function StatusBadge({ icon: Icon, label, tone }: { icon: IconType; label: string; tone: 'success' | 'info' | 'muted' }) {
+function StatusBadge({
+  icon: Icon,
+  label,
+  tone
+}: {
+  icon: IconType;
+  label: string;
+  tone: 'success' | 'info' | 'muted';
+}) {
   const palette = {
     success: 'bg-success/10 text-success',
     info: 'bg-primary/10 text-primary',
@@ -143,10 +155,15 @@ function StatusBadge({ icon: Icon, label, tone }: { icon: IconType; label: strin
 }
 
 function GroupDetail({ group }: { group: GroupSummary }) {
-  const linkGroups = [
+  const linkGroups: Array<{
+    reason: GroupSummary['links'][number]['reason'];
+    label: string;
+    description: string;
+    tone: string;
+  }> = [
     {
       reason: 'hierarchy',
-      label: '階層（ビッグキーワード → ロングテール）',
+      label: '階層（ビッグ→ロングテール）',
       description: '上位概念から細かな検索ニーズへの導線',
       tone: 'bg-amber-100 text-amber-700'
     },
@@ -248,7 +265,7 @@ function LinkHierarchy({
   return (
     <div className="rounded-lg border border-slate-200">
       <div className="border-b border-slate-200 px-3 py-2 text-xs text-slate-500">
-        現在のクラスタを起点にしたリンク構造
+        選択したクラスタを起点にしたリンク構造
       </div>
       <div className="p-3">
         <ul className="space-y-3 text-sm text-slate-700">
@@ -345,27 +362,14 @@ function OutlineView({
 function translateIntent(intent: GroupSummary['intent']) {
   switch (intent) {
     case 'info':
-      return '情報';
+      return 'Informational';
     case 'trans':
-      return '取引';
+      return 'Transactional';
     case 'local':
-      return 'ローカル';
+      return 'Local';
     case 'mixed':
-      return '複合';
+      return 'Mixed';
     default:
       return intent;
-  }
-}
-
-function translateReason(reason: GroupSummary['links'][number]['reason']) {
-  switch (reason) {
-    case 'hierarchy':
-      return '階層';
-    case 'sibling':
-      return '兄弟';
-    case 'hub':
-      return 'ハブ';
-    default:
-      return reason;
   }
 }
