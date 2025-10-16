@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "rootDir": ".",
+    "paths": {
+      "@keywords/core/*": ["packages/core/src/*"],
+      "@keywords/ads/*": ["packages/ads/src/*"],
+      "@keywords/gemini/*": ["packages/gemini/src/*"],
+      "@keywords/scheduler/*": ["packages/scheduler/src/*"]
+    },
+    "types": ["node"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "exclude": ["dist", "node_modules"]
+}

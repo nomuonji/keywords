@@ -1,0 +1,25 @@
+{
+  "name": "@keywords/scheduler",
+  "version": "1.0.0",
+  "private": true,
+  "bin": {
+    "keywords-scheduler": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"lint not configured\"",
+    "test": "echo \"tests not implemented\"",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@keywords/ads": "file:../ads",
+    "@keywords/core": "file:../core",
+    "@keywords/gemini": "file:../gemini",
+    "@google-cloud/firestore": "^7.9.0",
+    "firebase-admin": "^12.1.0",
+    "yargs": "^17.7.2",
+    "pino": "^8.17.0"
+  }
+}

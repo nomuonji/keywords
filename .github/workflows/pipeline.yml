@@ -1,0 +1,57 @@
+name: keywords-pipeline
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project ID to run'
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project: ${{ fromJson(vars.PROJECT_MATRIX || '["default-project"]') }}
+    concurrency:
+      group: pipeline-${{ matrix.project }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm install
+      - name: Authenticate Google
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY_JSON }}
+      - name: Run scheduler
+        env:
+          GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ADS_DEVELOPER_TOKEN: ${{ secrets.ADS_DEVELOPER_TOKEN }}
+          ADS_REFRESH_TOKEN: ${{ secrets.ADS_REFRESH_TOKEN }}
+          ADS_CLIENT_ID: ${{ secrets.ADS_CLIENT_ID }}
+          ADS_CLIENT_SECRET: ${{ secrets.ADS_CLIENT_SECRET }}
+          ADS_CUSTOMER_ID: ${{ secrets.ADS_CUSTOMER_ID }}
+          ADS_LOGIN_CUSTOMER_ID: ${{ secrets.ADS_LOGIN_CUSTOMER_ID }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          FIRESTORE_DB: ${{ vars.FIRESTORE_DB }}
+        run: |
+          npm run build --workspaces --if-present
+          npm run scheduler:run -- --project ${{ github.event.inputs.project || matrix.project }} $(if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "--manual"; fi)
+      - name: Upload summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduler-summary-${{ matrix.project }}
+          path: |
+            **/keywords-monorepo*.log
+          if-no-files-found: ignore
