@@ -10,7 +10,7 @@
     "test": "echo \"tests not implemented\""
   },
   "dependencies": {
-    "@keywords/core": "file:../core",
-    "node-fetch": "^3.3.2"
+    "@google/generative-ai": "^0.24.1",
+    "@keywords/core": "file:../core"
   }
 }

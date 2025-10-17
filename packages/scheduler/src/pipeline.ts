@@ -1,6 +1,12 @@
 import { computePriorityScore, inferLinkReason, limitLinks, normalizeKeyword, nowIso } from '@keywords/core';
-import type { GroupDoc, Intent, KeywordDoc, ProjectSettings, LinkDoc } from '@keywords/core';
-import type { GroupDocWithId, KeywordDocWithId, PipelineContext, ThemeDocWithId } from './types';
+import type { GroupDoc, Intent, KeywordDoc, ProjectSettings, LinkDoc, KeywordMetrics } from '@keywords/core';
+import type {
+  GroupDocWithId,
+  KeywordDocWithId,
+  PipelineContext,
+  SchedulerStagesOptions,
+  ThemeDocWithId
+} from './types';
 import {
   fetchKeywordHashes,
   getAutoThemes,
@@ -21,15 +27,84 @@ interface StageError {
   error: unknown;
 }
 
+interface StageFlags {
+  ideas: boolean;
+  clustering: boolean;
+  scoring: boolean;
+  outline: boolean;
+  links: boolean;
+}
+
+type ProjectSettingsOverride = Partial<ProjectSettings> & {
+  thresholds?: {
+    minVolume?: number;
+    maxCompetition?: number;
+  };
+};
+
+function mergeSettings(base: ProjectSettings, overrides?: ProjectSettingsOverride): ProjectSettings {
+  if (!overrides) {
+    return { ...base };
+  }
+  const thresholds = overrides.thresholds ?? {};
+  const overrideAds = {
+    ...(overrides.ads ?? {}),
+    ...(thresholds.minVolume !== undefined ? { minVolume: thresholds.minVolume } : {}),
+    ...(thresholds.maxCompetition !== undefined ? { maxCompetition: thresholds.maxCompetition } : {})
+  };
+  const merged: ProjectSettings = {
+    ...base,
+    ...overrides,
+    pipeline: {
+      ...base.pipeline,
+      ...(overrides.pipeline ?? {}),
+      limits: {
+        ...base.pipeline.limits,
+        ...(overrides.pipeline?.limits ?? {})
+      }
+    },
+    ads: {
+      ...base.ads,
+      ...overrideAds
+    },
+    weights: {
+      ...base.weights,
+      ...(overrides.weights ?? {})
+    },
+    links: {
+      ...base.links,
+      ...(overrides.links ?? {})
+    }
+  };
+  if (!merged.projectId) {
+    merged.projectId = base.projectId;
+  }
+  if (!merged.ads.maxResults) {
+    merged.ads.maxResults = merged.pipeline.limits.ideasPerNode;
+  }
+  return merged;
+}
+
+function resolveStageFlags(stages?: SchedulerStagesOptions): StageFlags {
+  return {
+    ideas: stages?.ideas ?? true,
+    clustering: stages?.clustering ?? true,
+    scoring: stages?.scoring ?? true,
+    outline: stages?.outline ?? true,
+    links: stages?.links ?? true
+  };
+}
+
 export async function runPipelineStages(ctx: PipelineContext): Promise<StageError[]> {
   const errors: StageError[] = [];
   try {
+    const stageFlags = resolveStageFlags(ctx.options.stages);
     const themes = await getAutoThemes(ctx.deps.firestore, ctx.projectId, ctx.options.themeIds);
     for (const theme of themes) {
-      await handleTheme(ctx, theme, errors);
+        await handleTheme(ctx, theme, stageFlags, errors);
     }
   } catch (error) {
-    ctx.deps.logger.error('pipeline_failed', { error });
+    ctx.deps.logger.error({ err: error instanceof Error ? error : undefined, error }, 'pipeline_failed');
     errors.push({ type: 'pipeline', error });
   }
   return errors;
@@ -38,17 +113,48 @@ export async function runPipelineStages(ctx: PipelineContext): Promise<StageErro
 async function handleTheme(
   ctx: PipelineContext,
   theme: ThemeDocWithId,
+  stages: StageFlags,
   errors: StageError[]
 ): Promise<void> {
-  const themeSettings = { ...ctx.settings, ...(theme.settings ?? {}) };
+  const themeSettings = mergeSettings(ctx.settings, theme.settings);
   try {
-    await stageAKeywordDiscovery(ctx, theme, themeSettings);
-    const grouped = await stageBClustering(ctx, theme, themeSettings);
-    const scoredGroups = await stageCScoring(ctx, theme, themeSettings, grouped);
-    const outlined = await stageDOutline(ctx, theme, themeSettings, scoredGroups);
-    await stageEInternalLinks(ctx, theme, themeSettings, outlined);
+    if (stages.ideas) {
+      await stageAKeywordDiscovery(ctx, theme, themeSettings);
+    } else {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_a_skipped');
+    }
+
+    let clusteredGroups: GroupDocWithId[] = [];
+    if (stages.clustering) {
+      clusteredGroups = await stageBClustering(ctx, theme, themeSettings);
+    } else {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_b_skipped');
+    }
+
+    let scoredGroups: GroupDocWithId[] = clusteredGroups;
+    if (stages.scoring && clusteredGroups.length) {
+      scoredGroups = await stageCScoring(ctx, theme, themeSettings, clusteredGroups);
+    } else if (!stages.scoring) {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_c_skipped');
+    }
+
+    let outlined: GroupDocWithId[] = [];
+    if (stages.outline) {
+      outlined = await stageDOutline(ctx, theme, themeSettings, scoredGroups);
+    } else {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_d_skipped');
+    }
+
+    if (stages.links) {
+      await stageEInternalLinks(ctx, theme, themeSettings, outlined);
+    } else {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_e_skipped');
+    }
   } catch (error) {
-    ctx.deps.logger.error('theme_failed', { themeId: theme.id, error });
+    ctx.deps.logger.error(
+      { themeId: theme.id, err: error instanceof Error ? error : undefined, error },
+      'theme_failed'
+    );
     errors.push({ type: `theme:${theme.id}`, error });
   }
 }
@@ -58,14 +164,23 @@ async function stageAKeywordDiscovery(
   theme: ThemeDocWithId,
   settings: ProjectSettings
 ): Promise<void> {
-  ctx.deps.logger.info('stage_a_start', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_a_start');
   const nodes = await getEligibleNodes(ctx.deps.firestore, ctx.projectId, theme.id, settings);
   ctx.counters.nodesProcessed += nodes.length;
   const existingHashes = await fetchKeywordHashes(ctx.deps.firestore, ctx.projectId, theme.id);
   for (const { id: nodeId, node } of nodes) {
-    const ideas = await ctx.deps.ads.generateIdeas({ node, settings });
+    let ideas: { keyword: string; metrics: KeywordMetrics }[];
+    try {
+      ideas = await ctx.deps.ads.generateIdeas({ node, settings });
+    } catch (error) {
+      ctx.deps.logger.error(
+        { themeId: theme.id, nodeId, error: error instanceof Error ? { message: error.message, stack: error.stack } : error },
+        'keyword_idea_failed'
+      );
+      continue;
+    }
     const normalizedIdeas = ideas
-      .map((idea) => {
+      .map((idea: { keyword: string; metrics: KeywordMetrics }) => {
         const { normalized, hash } = normalizeKeyword(idea.keyword);
         return {
           keyword: normalized,
@@ -74,7 +189,7 @@ async function stageAKeywordDiscovery(
           sourceNodeId: nodeId
         };
       })
-      .filter((item) => !existingHashes.has(item.dedupeHash));
+      .filter((item: { dedupeHash: string }) => !existingHashes.has(item.dedupeHash));
     if (normalizedIdeas.length) {
       const saved = await saveKeywords(
         ctx.deps.firestore,
@@ -83,11 +198,11 @@ async function stageAKeywordDiscovery(
         normalizedIdeas
       );
       ctx.counters.newKeywords += saved.length;
-      normalizedIdeas.forEach((item) => existingHashes.add(item.dedupeHash));
+      normalizedIdeas.forEach((item: { dedupeHash: string }) => existingHashes.add(item.dedupeHash));
     }
     await updateNodeIdeasAt(ctx.deps.firestore, ctx.projectId, theme.id, nodeId);
   }
-  ctx.deps.logger.info('stage_a_end', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_a_end');
 }
 
 async function stageBClustering(
@@ -95,7 +210,7 @@ async function stageBClustering(
   theme: ThemeDocWithId,
   settings: ProjectSettings
 ): Promise<GroupDocWithId[]> {
-  ctx.deps.logger.info('stage_b_start', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_b_start');
   const keywords = await loadKeywordsForClustering(
     ctx.deps.firestore,
     ctx.projectId,
@@ -125,7 +240,6 @@ async function stageBClustering(
       title: representative.text,
       keywords: cluster.keywords.map((kw) => kw.id),
       intent,
-      summary: undefined,
       priorityScore: 0,
       clusterStats: {
         size: cluster.keywords.length,
@@ -166,7 +280,7 @@ async function stageBClustering(
       updates
     );
   }
-  ctx.deps.logger.info('stage_b_end', { themeId: theme.id, clusters: clusters.length });
+  ctx.deps.logger.info({ themeId: theme.id, clusters: clusters.length }, 'stage_b_end');
   return result;
 }
 
@@ -176,18 +290,18 @@ async function stageCScoring(
   settings: ProjectSettings,
   groups: GroupDocWithId[]
 ): Promise<GroupDocWithId[]> {
-  ctx.deps.logger.info('stage_c_start', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_c_start');
   const updated: GroupDocWithId[] = [];
   for (const group of groups) {
     const keywordDocsSnapshot = await ctx.deps.firestore
       .collection(`projects/${ctx.projectId}/themes/${theme.id}/keywords`)
       .where('groupId', '==', group.id)
       .get();
-    const keywords = keywordDocsSnapshot.docs.map((doc) => doc.data() as KeywordDoc);
+    const keywords = keywordDocsSnapshot.docs.map((doc: { data: () => KeywordDoc; }) => doc.data() as KeywordDoc);
     const avgMonthly = keywords
-      .map((kw) => kw.metrics.avgMonthly ?? 0)
-      .filter((value) => value > 0);
-    const competitionFirst = keywords.find((kw) => kw.metrics.competition !== undefined);
+      .map((kw: { metrics: { avgMonthly: number | undefined; }; }) => kw.metrics.avgMonthly ?? 0)
+      .filter((value: number) => value > 0);
+    const competitionFirst = keywords.find((kw: { metrics: { competition: number | undefined; }; }) => kw.metrics.competition !== undefined);
     const novelty = 1 - Math.min(1, keywords.length / 20);
     const nodeIntent = group.intent;
     const score = computePriorityScore({
@@ -206,7 +320,7 @@ async function stageCScoring(
       });
     updated.push({ ...group, priorityScore: score });
   }
-  ctx.deps.logger.info('stage_c_end', { themeId: theme.id, groups: updated.length });
+  ctx.deps.logger.info({ themeId: theme.id, groups: updated.length }, 'stage_c_end');
   return updated;
 }
 
@@ -216,7 +330,7 @@ async function stageDOutline(
   settings: ProjectSettings,
   groups: GroupDocWithId[]
 ): Promise<GroupDocWithId[]> {
-  ctx.deps.logger.info('stage_d_start', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_d_start');
   const limit = settings.pipeline.limits.groupsOutlinePerRun;
   const toOutline = await loadGroupsNeedingOutline(
     ctx.deps.firestore,
@@ -230,7 +344,7 @@ async function stageDOutline(
       .collection(`projects/${ctx.projectId}/themes/${theme.id}/keywords`)
       .where('groupId', '==', group.id)
       .get();
-    const keywordDocs = keywordDocsSnapshot.docs.map((doc) => ({
+    const keywordDocs = keywordDocsSnapshot.docs.map((doc: { id: string; data: () => KeywordDoc; }) => ({
       id: doc.id,
       ...(doc.data() as KeywordDoc)
     })) as KeywordDocWithId[];
@@ -239,10 +353,21 @@ async function stageDOutline(
       keywords: keywordDocs,
       settings
     });
-    await saveGroupSummary(ctx.deps.firestore, ctx.projectId, theme.id, group.id, summary);
-    ctx.counters.outlinesCreated += 1;
+    try {
+      await saveGroupSummary(ctx.deps.firestore, ctx.projectId, theme.id, group.id, summary);
+      ctx.counters.outlinesCreated += 1;
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 5) {
+        ctx.deps.logger.warn(
+          { themeId: theme.id, groupId: group.id, error },
+          'group_missing_skipping_outline'
+        );
+        continue;
+      }
+      throw error;
+    }
   }
-  ctx.deps.logger.info('stage_d_end', { themeId: theme.id, outlined: selected.length });
+  ctx.deps.logger.info({ themeId: theme.id, outlined: selected.length }, 'stage_d_end');
   return selected;
 }
 
@@ -252,9 +377,9 @@ async function stageEInternalLinks(
   settings: ProjectSettings,
   outlined: GroupDocWithId[]
 ): Promise<void> {
-  ctx.deps.logger.info('stage_e_start', { themeId: theme.id });
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_e_start');
   if (!outlined.length) {
-    ctx.deps.logger.info('stage_e_end', { themeId: theme.id, links: 0 });
+    ctx.deps.logger.info({ themeId: theme.id, links: 0 }, 'stage_e_end');
     return;
   }
   const allGroups = await loadGroupsForLinking(ctx.deps.firestore, ctx.projectId, theme.id);
@@ -271,7 +396,7 @@ async function stageEInternalLinks(
     await upsertLinks(ctx.deps.firestore, ctx.projectId, theme.id, links);
     ctx.counters.linksUpdated += links.length;
   }
-  ctx.deps.logger.info('stage_e_end', { themeId: theme.id, links: limited.length });
+  ctx.deps.logger.info({ themeId: theme.id, links: limited.length }, 'stage_e_end');
 }
 
 function simpleCluster(

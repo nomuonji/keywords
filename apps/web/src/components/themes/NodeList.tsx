@@ -1,12 +1,35 @@
-﻿import type { NodeDocWithId } from '../../types';
+import { useMemo } from 'react';
+import type { NodeDocWithId } from '../../types';
 
 interface NodeListProps {
   nodes: NodeDocWithId[];
   onAddNode: () => void;
   onDeleteNode?: (nodeId: string) => void;
+  onUpdateNodeStatus?: (nodeId: string, status: NodeDocWithId['status']) => void;
 }
 
-export function NodeList({ nodes, onAddNode, onDeleteNode }: NodeListProps) {
+const NODE_STATUSES: NodeDocWithId['status'][] = ['ready', 'ideas-pending', 'ideas-done'];
+
+export function NodeList({
+  nodes,
+  onAddNode,
+  onDeleteNode,
+  onUpdateNodeStatus
+}: NodeListProps) {
+  const statusOptions = useMemo(
+    () =>
+      NODE_STATUSES.map((status) => ({
+        value: status,
+        label:
+          status === 'ready'
+            ? 'Ready'
+            : status === 'ideas-pending'
+            ? 'Ideas Pending'
+            : 'Ideas Done'
+      })),
+    []
+  );
+
   if (!nodes.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500">
@@ -29,7 +52,9 @@ export function NodeList({ nodes, onAddNode, onDeleteNode }: NodeListProps) {
       <header className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Node List</h3>
-          <p className="text-xs text-slate-500">Seed topics that drive keyword discovery for this theme.</p>
+          <p className="text-xs text-slate-500">
+            Seed topics that drive keyword discovery for this theme.
+          </p>
         </div>
         <button
           type="button"
@@ -43,15 +68,29 @@ export function NodeList({ nodes, onAddNode, onDeleteNode }: NodeListProps) {
         {nodes.map((node) => (
           <li
             key={node.id}
-            className="flex flex-col gap-1 px-4 py-3 text-sm text-slate-700 md:flex-row md:items-center md:justify-between"
+            className="flex flex-col gap-2 px-4 py-3 text-sm text-slate-700 md:flex-row md:items-center md:justify-between"
           >
             <div>
               <p className="font-medium text-slate-900">{node.title}</p>
-              <p className="text-xs text-slate-500">
-                Intent: {node.intent} / Status: {node.status}
-              </p>
+              <p className="text-xs text-slate-500">Intent: {node.intent}</p>
             </div>
             <div className="flex flex-col items-start gap-2 text-xs text-slate-500 md:flex-row md:items-center md:gap-4">
+              <label className="flex items-center gap-2">
+                <span className="text-slate-600">Status:</span>
+                <select
+                  className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-primary focus:outline-none"
+                  value={node.status}
+                  onChange={(event) =>
+                    onUpdateNodeStatus?.(node.id, event.target.value as NodeDocWithId['status'])
+                  }
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <span>
                 Updated:{' '}
                 {node.updatedAt

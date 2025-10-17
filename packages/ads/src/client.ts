@@ -1,3 +1,4 @@
+import type { NodeDoc, ProjectSettings } from '@keywords/core';
 import fetch from 'node-fetch';
 import type {
   AdsAuthConfig,
@@ -23,6 +24,22 @@ interface KeywordIdeaApiPayload {
 export class KeywordIdeaClient {
   constructor(private readonly auth: AdsAuthConfig) {
     this.auth = auth;
+  }
+
+  async generateIdeas(params: { node: NodeDoc; settings: ProjectSettings; }): Promise<{ keyword: string; metrics: KeywordMetrics; }[]> {
+    const { node, settings } = params;
+    const seedText = node.title;
+    const { locale, locationIds, languageId, maxResults, minVolume, maxCompetition } = settings.ads;
+    return this.generateKeywordIdeas({
+      projectId: settings.projectId,
+      seedText,
+      locale,
+      locationIds,
+      languageId,
+      maxResults,
+      minVolume,
+      maxCompetition
+    });
   }
 
   async generateKeywordIdeas(params: GenerateKeywordIdeasParams): Promise<KeywordIdea[]> {

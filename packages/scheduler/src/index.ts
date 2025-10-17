@@ -1,118 +1,103 @@
+export type { GroupDocWithId, KeywordDocWithId } from './types';
+
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import dotenv from 'dotenv';
+
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, '../../../.env')
+];
+const loadedEnv = new Set<string>();
+for (const candidate of envCandidates) {
+  const resolved = path.resolve(candidate);
+  if (loadedEnv.has(resolved) || !existsSync(resolved)) {
+    continue;
+  }
+  loadedEnv.add(resolved);
+  const result = dotenv.config({ path: resolved, override: false });
+  if (!result.error) {
+    // eslint-disable-next-line no-console
+    console.log(`Loaded environment variables from ${resolved}`);
+  }
+}
+
 import { KeywordIdeaClient } from '@keywords/ads';
 import { GeminiClient } from '@keywords/gemini';
 import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSummary } from './firestore';
 import { createLogger } from './logger';
 import { loadConfig } from './config';
 import { runPipelineStages } from './pipeline';
-import type { PipelineContext, PipelineCounters, SchedulerOptions } from './types';
+import type { JobDoc, JobStatus, JobSummaryError } from '@keywords/core';
+import type { SchedulerOptions, PipelineContext, PipelineCounters } from './types';
+import type { firestore as AdminFirestore } from 'firebase-admin';
 
 export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const config = loadConfig();
-  const firestore = initFirestore();
-  if (config.firestore.databaseId) {
-    firestore.settings({ databaseId: config.firestore.databaseId });
-  }
-  const projectContext = await loadProjectContext(firestore, options);
-  if (projectContext.project.halt) {
-    const logger = createLogger(options.projectId);
-    logger.warn('project_halted', { projectId: options.projectId });
-    return;
-  }
-  const lock = await acquireLock(firestore, options.projectId);
-  const jobRef = await createJob(
-    firestore,
-    options.projectId,
-    { projectId: options.projectId, themeIds: options.themeIds },
-    options.manual ? 'manual' : 'daily'
-  );
-  await lock.ref.update({ jobId: jobRef.id });
-  const counters: PipelineCounters = {
-    nodesProcessed: 0,
-    newKeywords: 0,
-    groupsCreated: 0,
-    groupsUpdated: 0,
-    outlinesCreated: 0,
-    linksUpdated: 0
-  };
   const logger = createLogger(options.projectId);
-  const adsClient = new KeywordIdeaClient(config.ads);
-  const geminiClient = new GeminiClient(config.gemini);
-
-  const ctx: PipelineContext = {
-    ...projectContext,
-    options,
-    deps: {
-      firestore,
-      ads: {
-        generateIdeas: async ({ node, settings }) => {
-          return adsClient.generateKeywordIdeas({
-            projectId: options.projectId,
-            seedText: node.title,
-            locale: 'ja',
-            locationIds: settings.ads.locationIds,
-            languageId: settings.ads.languageId,
-            maxResults: settings.pipeline.limits.ideasPerNode,
-            minVolume: settings.thresholds.minVolume,
-            maxCompetition: settings.thresholds.maxCompetition
-          });
-        }
-      },
-      gemini: {
-        embed: (keywords) =>
-          geminiClient.embedKeywords({
-            projectId: options.projectId,
-            keywords
-          }),
-        summarize: ({ group, keywords, settings }) =>
-          geminiClient.summarizeCluster({
-            groupId: group.id,
-            representativeKw: group.title,
-            intent: group.intent,
-            description: `Keywords: ${keywords.map((kw) => kw.text).join(', ')}`,
-            keywords: keywords.map((kw) => ({ text: kw.text, metrics: kw.metrics })),
-            settings
-          }),
-        classifyIntent: (text) => geminiClient.classifyIntent(text)
-      },
-      logger: {
-        info: (msg: unknown, meta?: unknown) => {
-          logger.info(meta as Record<string, unknown> | undefined, msg as string);
-        },
-        error: (msg: unknown, meta?: unknown) => {
-          logger.error(meta as Record<string, unknown> | undefined, msg as string);
-        },
-        warn: (msg: unknown, meta?: unknown) => {
-          logger.warn(meta as Record<string, unknown> | undefined, msg as string);
-        }
-      }
-    },
-    counters,
-    jobRef
+  const firestore = initFirestore();
+  const deps = {
+    ads: new KeywordIdeaClient(config.ads),
+    gemini: new GeminiClient(config.gemini),
+    firestore,
+    logger
   };
 
-  let errors: { type: string; error: unknown }[] = [];
-  let status: 'succeeded' | 'failed' = 'succeeded';
+  const projectContext = await loadProjectContext(firestore, options);
+  let lock: Awaited<ReturnType<typeof acquireLock>> | undefined;
+  let job: AdminFirestore.DocumentReference<JobDoc> | undefined;
+
   try {
-    errors = await runPipelineStages(ctx);
-    if (errors.length) {
-      status = 'failed';
-    }
-  } catch (error) {
-    logger.error('pipeline_run_error', { error });
-    errors.push({ type: 'fatal', error });
-    status = 'failed';
-  } finally {
-    await updateJobSummary(
-      jobRef,
+    lock = await acquireLock(firestore, options.projectId);
+    job = await createJob(firestore, options.projectId, options, 'manual');
+
+    const counters: PipelineCounters = {
+      nodesProcessed: 0,
+      newKeywords: 0,
+      groupsCreated: 0,
+      groupsUpdated: 0,
+      outlinesCreated: 0,
+      linksUpdated: 0
+    };
+
+    const context: PipelineContext = {
+      ...projectContext,
+      options,
+      config,
+      deps,
       counters,
-      status,
-      errors.map((e) => ({
-        type: e.type,
-        count: 1
-      }))
-    );
-    await lock.release();
-    emitSummaryLine(options.projectId, jobRef.id, counters, errors);
+      job
+    };
+
+    const collectedErrors: Array<{ type: string; error: unknown }> = [];
+    let fatalError: unknown;
+    try {
+      const stageErrors = await runPipelineStages(context);
+      collectedErrors.push(...stageErrors);
+    } catch (error) {
+      fatalError = error;
+      collectedErrors.push({ type: 'fatal', error });
+    }
+
+    const summaryErrors: JobSummaryError[] = collectedErrors.map((err) => ({
+      type: err.type,
+      message: `${err.error}`,
+      count: 1
+    }));
+    const status = (collectedErrors.length ? 'error' : 'success') as JobStatus;
+    await updateJobSummary(job, counters, status, summaryErrors);
+    if (fatalError) {
+      throw fatalError;
+    }
+  } finally {
+    if (lock) {
+      try {
+        await lock.release();
+      } catch (releaseError) {
+        logger.warn({ error: releaseError }, 'lock_release_failed');
+      }
+    }
   }
 }
 

@@ -14,12 +14,13 @@
     "start": "node dist/cli.js"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^7.9.0",
     "@keywords/ads": "file:../ads",
     "@keywords/core": "file:../core",
     "@keywords/gemini": "file:../gemini",
-    "@google-cloud/firestore": "^7.9.0",
+    "dotenv": "^17.2.3",
     "firebase-admin": "^12.1.0",
-    "yargs": "^17.7.2",
-    "pino": "^8.17.0"
+    "pino": "^8.17.0",
+    "yargs": "^17.7.2"
   }
 }

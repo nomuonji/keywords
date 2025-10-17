@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   MdArticle,
-  MdCallSplit,
+  MdCheckBox,
+  MdCheckBoxOutlineBlank,
+  MdDelete,
   MdOutlineCalendarToday,
   MdOutlineCheckCircle,
+  MdOutlineClear,
   MdOutlineInfo,
   MdOutlineKeyboardArrowDown,
   MdOutlineKeyboardArrowRight,
@@ -11,16 +14,31 @@ import {
   MdOutlineListAlt,
   MdOutlineQuestionAnswer,
   MdOutlineRadioButtonUnchecked,
-  MdOutlineStackedBarChart
+  MdOutlineStackedBarChart,
+  MdSelectAll
 } from 'react-icons/md';
 import type { IconType } from 'react-icons';
 import type { GroupSummary } from '../../types';
 
 interface GroupPanelProps {
   groups: GroupSummary[];
+  selectedGroupIds: Set<string>;
+  onToggleGroupSelection: (groupId: string) => void;
+  onSelectAllGroups: () => void;
+  onClearSelection: () => void;
+  onDeleteSelectedGroups: () => void;
+  deletingGroups?: boolean;
 }
 
-export function GroupPanel({ groups }: GroupPanelProps) {
+export function GroupPanel({
+  groups,
+  selectedGroupIds,
+  onToggleGroupSelection,
+  onSelectAllGroups,
+  onClearSelection,
+  onDeleteSelectedGroups,
+  deletingGroups
+}: GroupPanelProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
   const stats = useMemo(() => {
@@ -54,6 +72,7 @@ export function GroupPanel({ groups }: GroupPanelProps) {
 
   const selectedGroup =
     groups.find((group) => group.id === selectedGroupId) ?? groups[0] ?? undefined;
+  const selectedCount = selectedGroupIds.size;
 
   return (
     <section className="space-y-4">
@@ -74,47 +93,98 @@ export function GroupPanel({ groups }: GroupPanelProps) {
           <span className="rounded-full bg-slate-200 px-3 py-1 text-slate-700">
             キーワード総数: {stats.totalKeywords}
           </span>
+          {selectedCount > 0 ? (
+            <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-600">
+              選択中: {selectedCount}
+            </span>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onSelectAllGroups}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={!groups.length}
+          >
+            <MdSelectAll size={16} />
+            全選択
+          </button>
+          <button
+            type="button"
+            onClick={onClearSelection}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={!selectedCount}
+          >
+            <MdOutlineClear size={16} />
+            選択解除
+          </button>
+          <button
+            type="button"
+            onClick={onDeleteSelectedGroups}
+            className="inline-flex items-center gap-1 rounded-md bg-rose-500 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-rose-600 disabled:cursor-not-allowed disabled:bg-rose-300"
+            disabled={!selectedCount || deletingGroups}
+          >
+            <MdDelete size={16} />
+            {deletingGroups ? '削除中…' : '選択を削除'}
+          </button>
         </div>
       </header>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(260px,320px)_1fr]">
         <aside className="space-y-2">
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              type="button"
-              onClick={() => setSelectedGroupId(group.id)}
-              className={`w-full rounded-lg border px-3 py-2 text-left transition ${
-                group.id === selectedGroup?.id
-                  ? 'border-primary bg-primary/10 text-primary shadow'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-primary/40'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">{group.title}</p>
-                <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-xs text-secondary">
-                  <MdOutlineStackedBarChart />
-                  {group.priorityScore.toFixed(1)}
-                </span>
+          {groups.map((group) => {
+            const isMarked = selectedGroupIds.has(group.id);
+            const isActive = group.id === selectedGroup?.id;
+            return (
+              <div key={group.id} className="flex items-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => onToggleGroupSelection(group.id)}
+                  className={`mt-2 text-slate-500 transition hover:text-primary ${isMarked ? 'text-primary' : ''}`}
+                  aria-label={isMarked ? '選択解除' : '選択'}
+                >
+                  {isMarked ? <MdCheckBox size={20} /> : <MdCheckBoxOutlineBlank size={20} />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedGroupId(group.id)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-left transition ${
+                    isActive
+                      ? 'border-primary bg-primary/10 text-primary shadow'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-primary/40'
+                  } ${isMarked && !isActive ? 'ring-2 ring-rose-200' : ''}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">{group.title}</p>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-secondary/10 px-2 py-0.5 text-xs text-secondary">
+                      <MdOutlineStackedBarChart />
+                      {group.priorityScore.toFixed(1)}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-slate-600">
+                      {translateIntent(group.intent)}
+                    </span>
+                    <StatusBadge
+                      icon={group.outline ? MdOutlineCheckCircle : MdOutlineRadioButtonUnchecked}
+                      label={group.outline ? 'アウトライン生成済' : 'アウトライン未生成'}
+                      tone={group.outline ? 'success' : 'muted'}
+                    />
+                    <StatusBadge
+                      icon={MdOutlineLink}
+                      label={`リンク ${group.links.length}`}
+                      tone={group.links.length ? 'info' : 'muted'}
+                    />
+                    <StatusBadge
+                      icon={MdOutlineListAlt}
+                      label={`KW ${group.keywords.length}`}
+                      tone="info"
+                    />
+                  </div>
+                </button>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5 text-slate-600">
-                  {translateIntent(group.intent)}
-                </span>
-                <StatusBadge
-                  icon={group.outline ? MdOutlineCheckCircle : MdOutlineRadioButtonUnchecked}
-                  label={group.outline ? 'アウトライン生成済' : 'アウトライン未生成'}
-                  tone={group.outline ? 'success' : 'muted'}
-                />
-                <StatusBadge
-                  icon={MdOutlineLink}
-                  label={`リンク ${group.links.length}`}
-                  tone={group.links.length ? 'info' : 'muted'}
-                />
-                <StatusBadge icon={MdOutlineListAlt} label={`KW ${group.keywords.length}`} tone="info" />
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </aside>
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">

@@ -43,6 +43,10 @@ export interface GroupSummary {
   };
   keywords: Array<{ id: string; text: string; metrics: KeywordMetrics }>;
   links: Array<{ targetId: string; reason: "hierarchy" | "sibling" | "hub"; weight: number }>;
+  clusterStats?: {
+    size: number;
+    topKw?: string;
+  };
 }
 
 export interface JobHistoryItem {

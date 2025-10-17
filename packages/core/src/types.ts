@@ -1,10 +1,7 @@
 export type Intent = 'info' | 'trans' | 'local' | 'mixed';
 
 export interface ProjectSettings {
-  ads: {
-    locationIds: number[];
-    languageId: number;
-  };
+  name: string;
   pipeline: {
     staleDays: number;
     limits: {
@@ -13,19 +10,24 @@ export interface ProjectSettings {
       groupsOutlinePerRun: number;
     };
   };
+  ads: {
+    locale: string;
+    locationIds: number[];
+    languageId: number;
+    maxResults: number;
+    minVolume: number;
+    maxCompetition: number;
+  };
   weights: {
     volume: number;
     competition: number;
     intent: number;
     novelty: number;
   };
-  thresholds: {
-    minVolume: number;
-    maxCompetition: number;
-  };
   links: {
     maxPerGroup: number;
   };
+  projectId: string;
 }
 
 export interface ProjectDoc {
@@ -83,10 +85,14 @@ export interface KeywordDoc {
 }
 
 export interface GroupSummary {
+  id: string;
+  title: string;
+  description: string;
   outlineTitle: string;
   h2: string[];
-  h3?: string[];
+  h3?: Record<string, string[]>;
   faq?: Array<{ q: string; a: string }>;
+  intent: Intent;
 }
 
 export interface GroupDoc {

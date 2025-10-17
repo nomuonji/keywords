@@ -59,7 +59,10 @@ export default function App() {
   } | null>(null);
   const [runningProjects, setRunningProjects] = useState<Set<string>>(new Set());
   const [runningThemes, setRunningThemes] = useState<Set<string>>(new Set());
+  const [runningOutlineThemes, setRunningOutlineThemes] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<NodeDocWithId[]>([]);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
+  const [deletingGroups, setDeletingGroups] = useState(false);
 
   useEffect(() => {
     const projectsRef = collection(firestore, 'projects');
@@ -212,13 +215,31 @@ export default function App() {
               reason: link.data().reason,
               weight: link.data().weight ?? 0
             }));
+            const summary = data.summary;
+            const outline = summary
+              ? {
+                  outlineTitle: summary.outlineTitle ?? '',
+                  h2: Array.isArray(summary.h2) ? summary.h2 : [],
+                  h3: summary.h3
+                    ? Object.values(summary.h3)
+                        .flat()
+                        .filter((item: unknown): item is string => typeof item === 'string')
+                    : undefined,
+                  faq: Array.isArray(summary.faq)
+                    ? summary.faq.filter(
+                        (item: unknown): item is { q: string; a: string } =>
+                          !!item && typeof (item as { q?: string }).q === 'string'
+                      )
+                    : undefined
+                }
+              : undefined;
             return {
               id: docSnap.id,
               title: data.title ?? docSnap.id,
               intent: data.intent ?? 'info',
-              summary: data.summary,
               priorityScore: data.priorityScore ?? 0,
               clusterStats: data.clusterStats ?? { size: keywords.length },
+              outline,
               keywords,
               links
             };
@@ -226,6 +247,22 @@ export default function App() {
         );
         groupData.sort((a, b) => b.priorityScore - a.priorityScore);
         setGroups(groupData);
+        setSelectedGroupIds((prev) => {
+          const validIds = new Set(groupData.map((group) => group.id));
+          let changed = false;
+          const retained: string[] = [];
+          prev.forEach((id) => {
+            if (validIds.has(id)) {
+              retained.push(id);
+            } else {
+              changed = true;
+            }
+          });
+          if (!changed && retained.length === prev.size) {
+            return prev;
+          }
+          return new Set(retained);
+        });
       },
       (error) => {
         console.error('Failed to load groups', error);
@@ -344,7 +381,8 @@ export default function App() {
     try {
       await postJson<{ status: string }>(`/projects/${selectedProjectId}/run`, {
         manual: true,
-        themeIds: [themeId]
+        themeIds: [themeId],
+        stages: { outline: false, links: false }
       });
       setToast({ message: `Queued theme update for ${themeId}`, type: 'success' });
     } catch (error) {
@@ -356,6 +394,85 @@ export default function App() {
         next.delete(themeId);
         return next;
       });
+    }
+  };
+
+  const handleRunOutline = async (themeId: string) => {
+    if (!selectedProjectId) {
+      setToast({ message: 'Select a project first', type: 'info' });
+      return;
+    }
+    if (runningOutlineThemes.has(themeId)) {
+      return;
+    }
+    setRunningOutlineThemes((prev) => {
+      const next = new Set(prev);
+      next.add(themeId);
+      return next;
+    });
+    try {
+      await postJson<{ status: string }>(
+        `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
+        { includeLinks: true }
+      );
+      setToast({ message: `Queued outline generation for ${themeId}`, type: 'success' });
+    } catch (error) {
+      console.error('Failed to trigger outline generation', error);
+      setToast({ message: 'Failed to trigger outline generation', type: 'error' });
+    } finally {
+      setRunningOutlineThemes((prev) => {
+        const next = new Set(prev);
+        next.delete(themeId);
+        return next;
+      });
+    }
+  };
+
+  const handleToggleGroupSelection = (groupId: string) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllGroups = () => {
+    setSelectedGroupIds(new Set(groups.map((group) => group.id)));
+  };
+
+  const handleClearGroupSelection = () => {
+    setSelectedGroupIds(new Set());
+  };
+
+  const handleDeleteSelectedGroups = async () => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
+      return;
+    }
+    if (!selectedGroupIds.size) {
+      setToast({ message: '削除するクラスタを選択してください', type: 'info' });
+      return;
+    }
+    setDeletingGroups(true);
+    try {
+      await postJson<{ deleted: number }>(
+        `/projects/${selectedProjectId}/themes/${selectedThemeId}/groups:delete`,
+        { groupIds: Array.from(selectedGroupIds) }
+      );
+      setToast({
+        message: `${selectedGroupIds.size} 件のクラスタを削除しました`,
+        type: 'success'
+      });
+      setSelectedGroupIds(new Set());
+    } catch (error) {
+      console.error('Failed to delete groups', error);
+      setToast({ message: 'クラスタの削除に失敗しました', type: 'error' });
+    } finally {
+      setDeletingGroups(false);
     }
   };
 
@@ -394,6 +511,33 @@ export default function App() {
     } catch (error) {
       console.error('Failed to delete node', error);
       setToast({ message: 'Failed to delete node', type: 'error' });
+    }
+  };
+
+  const handleUpdateNodeStatus = async (
+    nodeId: string,
+    status: NodeDocWithId['status']
+  ) => {
+    if (!selectedProjectId || !selectedThemeId) {
+      return;
+    }
+    try {
+      const nodeRef = doc(
+        firestore,
+        `projects/${selectedProjectId}/themes/${selectedThemeId}/nodes/${nodeId}`
+      );
+      const payload: Record<string, unknown> = {
+        status,
+        updatedAt: new Date().toISOString()
+      };
+      if (status === 'ready') {
+        payload.lastIdeasAt = deleteField();
+      }
+      await updateDoc(nodeRef, payload);
+      setToast({ message: `Updated node status to ${status}`, type: 'success' });
+    } catch (error) {
+      console.error('Failed to update node status', error);
+      setToast({ message: 'Failed to update node status', type: 'error' });
     }
   };
 
@@ -562,11 +706,13 @@ export default function App() {
               setShowNodeModal(true);
             }}
             onRunTheme={handleRunTheme}
+            onRunOutline={handleRunOutline}
             onEditTheme={(theme) => {
               setSelectedThemeId(theme.id);
               setThemeModal({ mode: 'edit', theme });
             }}
             runningThemeIds={runningThemes}
+            runningOutlineIds={runningOutlineThemes}
             activeNodesCount={selectedThemeId ? nodes.length : undefined}
           />
         </section>
@@ -585,10 +731,19 @@ export default function App() {
             nodes={nodes}
             onAddNode={() => setShowNodeModal(true)}
             onDeleteNode={handleDeleteNode}
+            onUpdateNodeStatus={handleUpdateNodeStatus}
           />
         ) : null}
 
-        <GroupPanel groups={groups} />
+        <GroupPanel
+          groups={groups}
+          selectedGroupIds={selectedGroupIds}
+          onToggleGroupSelection={handleToggleGroupSelection}
+          onSelectAllGroups={handleSelectAllGroups}
+          onClearSelection={handleClearGroupSelection}
+          onDeleteSelectedGroups={handleDeleteSelectedGroups}
+          deletingGroups={deletingGroups}
+        />
       </div>
 
       <ProjectFormModal

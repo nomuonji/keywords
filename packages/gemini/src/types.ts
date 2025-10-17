@@ -1,7 +1,7 @@
 import type { GroupSummary, Intent, KeywordDoc, ProjectSettings } from '@keywords/core';
 
 export interface GeminiConfig {
-  apiKey: string;
+  apiKey?: string;
   embeddingModel?: string;
   generativeModel?: string;
 }

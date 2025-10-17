@@ -10,10 +10,19 @@ import type {
   ThemeDoc
 } from '@keywords/core';
 
+export interface SchedulerStagesOptions {
+  ideas?: boolean;
+  clustering?: boolean;
+  scoring?: boolean;
+  outline?: boolean;
+  links?: boolean;
+}
+
 export interface SchedulerOptions {
   projectId: string;
   themeIds?: string[];
   manual?: boolean;
+  stages?: SchedulerStagesOptions;
 }
 
 export interface PipelineCounters {
@@ -25,30 +34,18 @@ export interface PipelineCounters {
   linksUpdated: number;
 }
 
+import type { Logger } from 'pino';
+import type { FirebaseFirestore } from '@google-cloud/firestore';
+import type { KeywordIdeaClient } from '@keywords/ads';
+import type { GeminiClient } from '@keywords/gemini';
+
+// ...
+
 export interface PipelineDependencies {
+  ads: KeywordIdeaClient;
+  gemini: GeminiClient;
   firestore: FirebaseFirestore.Firestore;
-  ads: {
-    generateIdeas: (params: {
-      node: NodeDoc;
-      settings: ProjectSettings;
-    }) => Promise<Array<{ keyword: string; metrics: KeywordDoc['metrics'] }>>;
-  };
-  gemini: {
-    embed: (
-      keywords: Array<{ id: string; text: string }>
-    ) => Promise<Array<{ id: string; vector: number[] }>>;
-    summarize: (params: {
-      group: GroupDocWithId;
-      keywords: KeywordDocWithId[];
-      settings: ProjectSettings;
-    }) => Promise<GroupDoc['summary']>;
-    classifyIntent: (text: string) => Promise<Intent>;
-  };
-  logger: {
-    info: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-  };
+  logger: Logger;
 }
 
 export interface NodeDocWithId extends NodeDoc {
@@ -80,7 +77,8 @@ export interface ProjectContext {
 
 export interface PipelineContext extends ProjectContext {
   options: SchedulerOptions;
+  config: EnvironmentConfig;
   deps: PipelineDependencies;
   counters: PipelineCounters;
-  jobRef: FirebaseFirestore.DocumentReference<JobDoc>;
+  job: FirebaseFirestore.DocumentReference<JobDoc>;
 }

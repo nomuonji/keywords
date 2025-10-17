@@ -9,12 +9,12 @@ export interface KeywordMetrics {
 }
 
 export interface AdsAuthConfig {
-  developerToken: string;
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
+  developerToken?: string;
+  clientId?: string;
+  clientSecret?: string;
+  refreshToken?: string;
   loginCustomerId?: string;
-  customerId: string;
+  customerId?: string;
 }
 
 export interface GenerateKeywordIdeasParams {

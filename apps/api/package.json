@@ -10,13 +10,14 @@
     "dev": "ts-node --project tsconfig.json --require tsconfig-paths/register src/server.ts"
   },
   "dependencies": {
-    "express": "^4.19.2",
     "@keywords/scheduler": "file:../../packages/scheduler",
-    "firebase-admin": "^12.1.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.1.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/cors": "^2.8.17"
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21"
   }
 }

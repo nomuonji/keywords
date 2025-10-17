@@ -1,5 +1,6 @@
-import fetch from 'node-fetch';
-import type { Intent } from '@keywords/core';
+import type { Intent, ProjectSettings, GroupSummary } from '@keywords/core';
+import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
+import type { GroupDocWithId, KeywordDocWithId } from '@keywords/scheduler';
 import { retry } from '@keywords/core';
 import type {
   EmbedKeywordsInput,
@@ -9,86 +10,136 @@ import type {
   SummarizeClusterOutput
 } from './types';
 
-const DEFAULT_EMBEDDING_MODEL = 'models/text-embedding-004';
-const DEFAULT_GENERATIVE_MODEL = 'models/gemini-1.5-pro-latest';
-
 export class GeminiClient {
-  private embeddingModel: string;
-  private generativeModel: string;
+  private readonly client: GoogleGenerativeAI;
+  private readonly embeddingModel: string;
+  private readonly generativeModel: string;
 
   constructor(private readonly config: GeminiConfig) {
-    this.embeddingModel = config.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
-    this.generativeModel = config.generativeModel ?? DEFAULT_GENERATIVE_MODEL;
+    if (!config.apiKey) {
+      throw new Error('Gemini API key is not configured.');
+    }
+    this.client = new GoogleGenerativeAI(config.apiKey);
+    this.embeddingModel = this.normalizeModelId(
+      config.embeddingModel ?? 'models/text-embedding-004'
+    );
+    this.generativeModel = this.normalizeModelId(
+      config.generativeModel ?? 'models/gemini-2.5-flash'
+    );
+  }
+
+  async embed(keywords: { id: string; text: string }[]): Promise<{ id: string; vector: number[] }[]> {
+    return this.embedKeywords({ projectId: '', keywords });
+  }
+
+  async summarize(params: {
+    group: GroupDocWithId;
+    keywords: KeywordDocWithId[];
+    settings: ProjectSettings;
+  }): Promise<GroupSummary> {
+    const { group, keywords, settings } = params;
+    return this.summarizeCluster({
+      groupId: group.id,
+      representativeKw: group.clusterStats.topKw ?? '',
+      intent: group.intent,
+      description: group.summary?.description ?? '',
+      keywords,
+      settings
+    });
   }
 
   async embedKeywords(input: EmbedKeywordsInput): Promise<EmbedKeywordsOutput[]> {
     if (input.keywords.length === 0) {
       return [];
     }
-    const body = {
-      model: this.embeddingModel,
-      input: input.keywords.map((kw) => kw.text),
-      task_type: 'retrieval_query'
-    };
-    const response = await this.apiRequest<{ embeddings: { values: number[] }[] }>(
-      'v1beta/models/embedContent',
-      body
-    );
-    return response.embeddings.map((emb, idx) => ({
-      id: input.keywords[idx].id,
-      vector: emb.values
+    const model = this.getModel(this.embeddingModel);
+    const vectors: number[][] = [];
+    const chunkSize = 100;
+    for (let start = 0; start < input.keywords.length; start += chunkSize) {
+      const slice = input.keywords.slice(start, start + chunkSize);
+      if (slice.length === 1) {
+        const [{ vector }] = await retry(async () => this.embedIndividual(model, slice));
+        vectors.push(vector);
+        continue;
+      }
+      const result = await retry(async () =>
+        model.batchEmbedContents({
+          requests: slice.map((kw) => ({
+            content: { parts: [{ text: kw.text }] }
+          }))
+        })
+      );
+      if (!result.embeddings?.length) {
+        throw new Error('Gemini API returned no embeddings');
+      }
+      if (result.embeddings.length !== slice.length) {
+        throw new Error('Gemini embedding count mismatch for chunk');
+      }
+      result.embeddings.forEach((emb) => vectors.push(emb.values));
+    }
+    if (vectors.length !== input.keywords.length) {
+      throw new Error('Gemini embedding count mismatch');
+    }
+    return input.keywords.map((kw, idx) => ({
+      id: kw.id,
+      vector: vectors[idx]
     }));
   }
 
   async summarizeCluster(input: SummarizeClusterInput): Promise<SummarizeClusterOutput> {
     const prompt = this.buildOutlinePrompt(input);
-    const body = {
-      contents: [{ parts: [{ text: prompt }] }]
-    };
-    const response = await this.apiRequest<{
-      candidates: Array<{
-        content: { parts: Array<{ text?: string }> };
-      }>;
-    }>(`v1beta/${this.generativeModel}:generateContent`, body);
-
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      })
+    );
     const text =
-      response.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('\n') ?? '';
+      response.response?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text ?? '')
+        .join('\n') ?? '';
     return this.parseOutline(text);
   }
 
   async classifyIntent(text: string): Promise<Intent> {
     const prompt = `Classify the dominant search intent for the keyword below. Respond with one token: info, trans, local, or mixed.\nKeyword: ${text}`;
-    const body = {
-      contents: [{ parts: [{ text: prompt }] }]
-    };
-    const response = await this.apiRequest<{
-      candidates: Array<{
-        content: { parts: Array<{ text?: string }> };
-      }>;
-    }>(`v1beta/${this.generativeModel}:generateContent`, body);
-    const answer = response.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase();
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      })
+    );
+    const answer =
+      response.response?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toLowerCase();
     if (answer === 'trans' || answer === 'local' || answer === 'mixed') {
       return answer;
     }
     return 'info';
   }
 
-  private async apiRequest<T>(path: string, body: unknown): Promise<T> {
-    const url = `https://generativelanguage.googleapis.com/${path}?key=${this.config.apiKey}`;
-    return retry(async () => {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
+  private normalizeModelId(model: string): string {
+    return model.startsWith('models/') ? model : `models/${model}`;
+  }
+
+  private getModel(model: string): GenerativeModel {
+    return this.client.getGenerativeModel({ model });
+  }
+
+  private async embedIndividual(
+    model: GenerativeModel,
+    keywords: Array<{ id: string; text: string }>
+  ): Promise<Array<{ id: string; vector: number[] }>> {
+    const results: Array<{ id: string; vector: number[] }> = [];
+    for (const keyword of keywords) {
+      const result = await model.embedContent({
+        content: { parts: [{ text: keyword.text }] }
       });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`Gemini API error: ${res.status} ${text}`);
+      if (!result.embedding?.values?.length) {
+        throw new Error('Gemini API returned no embedding vector');
       }
-      return (await res.json()) as T;
-    });
+      results.push({ id: keyword.id, vector: result.embedding.values });
+    }
+    return results;
   }
 
   private buildOutlinePrompt(input: SummarizeClusterInput): string {
@@ -108,26 +159,34 @@ export class GeminiClient {
     ].join('\n');
   }
 
-  private parseOutline(text: string): SummarizeClusterOutput {
+  private parseOutline(text: string): GroupSummary {
     try {
       const json = JSON.parse(text);
-      return {
+      const summary: GroupSummary = {
+        id: '',
+        title: '',
+        description: '',
         outlineTitle: json.outlineTitle ?? '',
         h2: Array.isArray(json.h2) ? json.h2 : [],
-        h3: Array.isArray(json.h3) ? json.h3 : undefined,
-        faq: Array.isArray(json.faq)
-          ? json.faq.map((item: { q: string; a: string }) => ({
-              q: item.q,
-              a: item.a
-            }))
-          : undefined
+        intent: 'info'
       };
-    } catch {
+      if (Array.isArray(json.h3)) {
+        summary.h3 = json.h3;
+      }
+      if (Array.isArray(json.faq)) {
+        summary.faq = json.faq.map((item: { q: string; a: string }) => ({ q: item.q, a: item.a }));
+      }
+      return summary;
+    } catch (error) {
       return {
+        id: '',
+        title: '',
+        description: '',
         outlineTitle: '',
         h2: [],
         h3: undefined,
-        faq: undefined
+        faq: undefined,
+        intent: 'info'
       };
     }
   }
