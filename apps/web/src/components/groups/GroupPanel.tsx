@@ -26,8 +26,10 @@ interface GroupPanelProps {
   onToggleGroupSelection: (groupId: string) => void;
   onSelectAllGroups: () => void;
   onClearSelection: () => void;
+  onClearOutlines: () => void;
   onDeleteSelectedGroups: () => void;
   deletingGroups?: boolean;
+  clearingOutlines?: boolean;
 }
 
 export function GroupPanel({
@@ -36,8 +38,10 @@ export function GroupPanel({
   onToggleGroupSelection,
   onSelectAllGroups,
   onClearSelection,
+  onClearOutlines,
   onDeleteSelectedGroups,
-  deletingGroups
+  deletingGroups,
+  clearingOutlines
 }: GroupPanelProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
@@ -117,6 +121,15 @@ export function GroupPanel({
           >
             <MdOutlineClear size={16} />
             選択解除
+          </button>
+          <button
+            type="button"
+            onClick={onClearOutlines}
+            className="inline-flex items-center gap-1 rounded-md border border-amber-400 px-2 py-1 text-xs text-amber-600 transition hover:border-amber-500 hover:text-amber-700 disabled:opacity-50"
+            disabled={!selectedCount || clearingOutlines}
+          >
+            <MdOutlineListAlt size={16} />
+            {clearingOutlines ? '削除中…' : 'アウトライン削除'}
           </button>
           <button
             type="button"

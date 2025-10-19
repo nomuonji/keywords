@@ -65,7 +65,7 @@ export class GeminiClient {
       const result = await retry(async () =>
         model.batchEmbedContents({
           requests: slice.map((kw) => ({
-            content: { parts: [{ text: kw.text }] }
+            content: { role: 'user', parts: [{ text: kw.text }] }
           }))
         })
       );
@@ -91,14 +91,15 @@ export class GeminiClient {
     const model = this.getModel(this.generativeModel);
     const response = await retry(async () =>
       model.generateContent({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
       })
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
         ?.map((part) => part.text ?? '')
         .join('\n') ?? '';
-    return this.parseOutline(text);
+    return this.parseOutline(text, input);
   }
 
   async classifyIntent(text: string): Promise<Intent> {
@@ -132,7 +133,7 @@ export class GeminiClient {
     const results: Array<{ id: string; vector: number[] }> = [];
     for (const keyword of keywords) {
       const result = await model.embedContent({
-        content: { parts: [{ text: keyword.text }] }
+        content: { role: 'user', parts: [{ text: keyword.text }] }
       });
       if (!result.embedding?.values?.length) {
         throw new Error('Gemini API returned no embedding vector');
@@ -147,47 +148,144 @@ export class GeminiClient {
       .map((kw) => `- ${kw.text} (volume: ${kw.metrics.avgMonthly ?? 'n/a'})`)
       .join('\n');
     return [
-      'You are an SEO strategist creating article outlines.',
+      'You are an SEO strategist drafting a high-quality article outline in natural Japanese.',
       `Representative keyword: ${input.representativeKw}`,
       `Search intent: ${input.intent}`,
       `Cluster description: ${input.description}`,
-      'Provide a concise outline with the following structure:',
-      'Title (<= 70 characters), H2 headings, optional H3 subheadings, and 2-4 FAQ pairs.',
-      'Return JSON with keys outlineTitle, h2 (array), optional h3 (array), faq (array of {q,a}).',
-      'Keywords with metrics:',
+      'Use the keyword list to infer searcher problems and desired solutions.',
+      'Output requirements (strict):',
+      '- Respond ONLY with JSON. No commentary or code fences.',
+      '- JSON schema: {"outlineTitle": string, "h2": string[], "h3": Record<string,string[]>, "faq": Array<{ "q": string, "a": string }>}',
+      '- Each heading must be descriptive, natural Japanese, without prefixes like "H2" or numbering.',
+      '- h2 should contain 4-6 entries. For headings needing subtopics, include them as h3[h2Heading] = [...subheadings].',
+      '- Provide 2-4 FAQ pairs that address intent-specific concerns.',
+      '- Keep outlineTitle concise (<= 28 full-width characters when possible).',
+      'Context keywords:',
       keywordList
     ].join('\n');
   }
 
-  private parseOutline(text: string): GroupSummary {
+  private parseOutline(text: string, input: SummarizeClusterInput): GroupSummary {
     try {
-      const json = JSON.parse(text);
-      const summary: GroupSummary = {
-        id: '',
-        title: '',
-        description: '',
-        outlineTitle: json.outlineTitle ?? '',
-        h2: Array.isArray(json.h2) ? json.h2 : [],
-        intent: 'info'
+      const target = this.extractJson(text);
+      const json = JSON.parse(target) as {
+        outlineTitle?: unknown;
+        description?: unknown;
+        h2?: unknown;
+        h3?: unknown;
+        faq?: unknown;
       };
-      if (Array.isArray(json.h3)) {
-        summary.h3 = json.h3;
+      const outlineTitle =
+        typeof json.outlineTitle === 'string' && json.outlineTitle.trim().length
+          ? json.outlineTitle.trim()
+          : this.buildDefaultTitle(input);
+      const description =
+        typeof json.description === 'string' ? json.description.trim() : input.description ?? '';
+      let h2: string[] = [];
+      if (Array.isArray(json.h2)) {
+        h2 = json.h2
+          .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+          .map((item) => item.trim());
+      }
+      if (!h2.length) {
+        h2 = this.buildFallbackH2(input);
+      }
+      const summary: GroupSummary = {
+        id: input.groupId,
+        title: input.representativeKw || input.groupId,
+        description,
+        outlineTitle,
+        h2,
+        intent: input.intent ?? 'info'
+      };
+      if (json.h3 && typeof json.h3 === 'object' && !Array.isArray(json.h3)) {
+        const h3Record: Record<string, string[]> = {};
+        Object.entries(json.h3).forEach(([key, value]) => {
+          if (!Array.isArray(value)) {
+            return;
+          }
+          const cleaned = value
+            .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+            .map((item) => item.trim());
+          if (cleaned.length) {
+            h3Record[key] = cleaned;
+          }
+        });
+        if (Object.keys(h3Record).length) {
+          summary.h3 = h3Record;
+        }
       }
       if (Array.isArray(json.faq)) {
-        summary.faq = json.faq.map((item: { q: string; a: string }) => ({ q: item.q, a: item.a }));
+        const cleanedFaq = json.faq
+          .map((item) => {
+            if (!item || typeof item !== 'object') return undefined;
+            const q = (item as { q?: unknown }).q;
+            const a = (item as { a?: unknown }).a;
+            if (typeof q !== 'string' || typeof a !== 'string') return undefined;
+            if (!q.trim().length || !a.trim().length) return undefined;
+            return { q: q.trim(), a: a.trim() };
+          })
+          .filter((item): item is { q: string; a: string } => !!item);
+        if (cleanedFaq.length) {
+          summary.faq = cleanedFaq;
+        }
       }
       return summary;
     } catch (error) {
-      return {
-        id: '',
-        title: '',
-        description: '',
-        outlineTitle: '',
-        h2: [],
-        h3: undefined,
-        faq: undefined,
-        intent: 'info'
-      };
+      return this.buildFallbackSummary(input);
     }
+  }
+
+  private extractJson(text: string): string {
+    const trimmed = text.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      return trimmed;
+    }
+    const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+    if (codeBlockMatch?.[1]) {
+      return codeBlockMatch[1].trim();
+    }
+    const firstBrace = trimmed.indexOf('{');
+    if (firstBrace === -1) {
+      throw new Error('Gemini response did not contain JSON object');
+    }
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (lastBrace === -1 || lastBrace <= firstBrace) {
+      throw new Error('Gemini response JSON was incomplete');
+    }
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  private buildDefaultTitle(input: SummarizeClusterInput): string {
+    return input.representativeKw || input.keywords[0]?.text || 'Outline Plan';
+  }
+
+  private buildFallbackH2(input: SummarizeClusterInput): string[] {
+    const uniqueKeywords = Array.from(
+      new Set(
+        input.keywords
+          .map((kw) => kw.text.trim())
+          .filter((text) => text.length > 0)
+      )
+    );
+    if (!uniqueKeywords.length) {
+      return [
+        `Key basics: ${input.representativeKw ?? input.groupId}`,
+        'Related topics overview',
+        'Practical tips and cautions'
+      ];
+    }
+    return uniqueKeywords.slice(0, 5).map((text) => `Deep dive: ${text}`);
+  }
+
+  private buildFallbackSummary(input: SummarizeClusterInput): GroupSummary {
+    return {
+      id: input.groupId,
+      title: input.representativeKw || input.groupId,
+      description: input.description ?? '',
+      outlineTitle: this.buildDefaultTitle(input),
+      h2: this.buildFallbackH2(input),
+      intent: input.intent ?? 'info'
+    };
   }
 }

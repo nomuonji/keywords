@@ -42,7 +42,7 @@ type ProjectSettingsOverride = Partial<ProjectSettings> & {
   };
 };
 
-function mergeSettings(base: ProjectSettings, overrides?: ProjectSettingsOverride): ProjectSettings {
+export function mergeSettings(base: ProjectSettings, overrides?: ProjectSettingsOverride): ProjectSettings {
   if (!overrides) {
     return { ...base };
   }
@@ -324,21 +324,31 @@ async function stageCScoring(
   return updated;
 }
 
-async function stageDOutline(
+export async function stageDOutline(
   ctx: PipelineContext,
   theme: ThemeDocWithId,
   settings: ProjectSettings,
-  groups: GroupDocWithId[]
+  groups: GroupDocWithId[],
+  options?: { explicitGroups?: GroupDocWithId[] }
 ): Promise<GroupDocWithId[]> {
   ctx.deps.logger.info({ themeId: theme.id }, 'stage_d_start');
   const limit = settings.pipeline.limits.groupsOutlinePerRun;
-  const toOutline = await loadGroupsNeedingOutline(
-    ctx.deps.firestore,
-    ctx.projectId,
-    theme.id,
-    limit
-  );
-  const selected = toOutline.slice(0, limit);
+  let selected: GroupDocWithId[] = [];
+  if (options?.explicitGroups?.length) {
+    selected = options.explicitGroups.slice(0, limit);
+  } else {
+    const toOutline = await loadGroupsNeedingOutline(
+      ctx.deps.firestore,
+      ctx.projectId,
+      theme.id,
+      limit
+    );
+    selected = toOutline.slice(0, limit);
+  }
+  if (!selected.length) {
+    ctx.deps.logger.info({ themeId: theme.id, outlined: 0 }, 'stage_d_end');
+    return [];
+  }
   for (const group of selected) {
     const keywordDocsSnapshot = await ctx.deps.firestore
       .collection(`projects/${ctx.projectId}/themes/${theme.id}/keywords`)
@@ -371,7 +381,7 @@ async function stageDOutline(
   return selected;
 }
 
-async function stageEInternalLinks(
+export async function stageEInternalLinks(
   ctx: PipelineContext,
   theme: ThemeDocWithId,
   settings: ProjectSettings,
@@ -522,6 +532,27 @@ function buildLinkCandidates(
         hubAuthority: 1,
         targetPriority: Math.min(1, target.priorityScore / 10)
       });
+    }
+  }
+  if (!candidates.length) {
+    const fallbackTargets = allGroups
+      .filter((group) => !outlinedSet.has(group.id))
+      .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0))
+      .slice(0, settings.links.maxPerGroup);
+    for (const source of outlined) {
+      for (const target of fallbackTargets) {
+        if (source.id === target.id) {
+          continue;
+        }
+        candidates.push({
+          fromGroupId: source.id,
+          toGroupId: target.id,
+          reason: 'sibling',
+          topicalSimilarity: 0.2,
+          hubAuthority: 1,
+          targetPriority: Math.min(1, (target.priorityScore ?? 0) / 10)
+        });
+      }
     }
   }
   return candidates;

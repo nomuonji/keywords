@@ -5,6 +5,7 @@ import {
   MdOutlineAutoFixHigh,
   MdOutlineAddCircle,
   MdOutlineCalendarToday,
+  MdOutlineLink,
   MdOutlinePlayArrow
 } from 'react-icons/md';
 import type { ThemeSummary } from '../../types';
@@ -16,9 +17,11 @@ interface ThemeTableProps {
   onExpandCategory: (themeId: string) => void;
   onRunTheme: (themeId: string) => void;
   onRunOutline: (themeId: string) => void;
+  onRunLinks: (themeId: string) => void;
   onEditTheme: (theme: ThemeSummary) => void;
   runningThemeIds?: Set<string>;
   runningOutlineIds?: Set<string>;
+  runningLinkIds?: Set<string>;
   activeNodesCount?: number;
 }
 
@@ -29,9 +32,11 @@ export function ThemeTable({
   onExpandCategory,
   onRunTheme,
   onRunOutline,
+  onRunLinks,
   onEditTheme,
   runningThemeIds,
   runningOutlineIds,
+  runningLinkIds,
   activeNodesCount
 }: ThemeTableProps) {
   if (!themes.length) {
@@ -48,6 +53,7 @@ export function ThemeTable({
         const isSelected = theme.id === selectedThemeId;
         const isRunning = runningThemeIds?.has(theme.id) ?? false;
         const isOutlineRunning = runningOutlineIds?.has(theme.id) ?? false;
+        const isLinkRunning = runningLinkIds?.has(theme.id) ?? false;
         const pending =
           isSelected && activeNodesCount !== undefined ? activeNodesCount : theme.pendingNodes;
         return (
@@ -124,6 +130,15 @@ export function ThemeTable({
               >
                 <MdOutlineAutoFixHigh size={16} />
                 {isOutlineRunning ? '生成中…' : 'アウトライン'}
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"
+                onClick={() => onRunLinks(theme.id)}
+                disabled={isLinkRunning}
+              >
+                <MdOutlineLink size={16} />
+                {isLinkRunning ? '生成中…' : 'リンク生成'}
               </button>
               <button
                 type="button"

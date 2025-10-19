@@ -531,7 +531,14 @@ export async function loadGroupsNeedingOutline(
     .get();
   return snapshot.docs
     .map((doc) => ({ id: doc.id, ...(doc.data() as GroupDoc) }))
-    .filter((group) => !group.summary);
+    .filter((group) => {
+      const typed = group as GroupDoc & {
+        summaryDisabledAt?: string;
+        summary?: { disabled?: boolean };
+      };
+      const hasSummary = !!typed.summary && !typed.summary?.disabled;
+      return !hasSummary && !typed.summaryDisabledAt;
+    });
 }
 
 export async function saveGroupSummary(
@@ -547,6 +554,7 @@ export async function saveGroupSummary(
   };
   if (summary) {
     payload.summary = pruneUndefined(summary);
+    payload.summaryDisabledAt = admin.firestore.FieldValue.delete();
   }
   await ref.update(payload);
 }
@@ -564,6 +572,25 @@ export async function loadGroupsForLinking(
     id: doc.id,
     ...(doc.data() as GroupDoc)
   }));
+}
+
+export async function loadGroupsByIds(
+  firestore: FirebaseFirestore.Firestore,
+  projectId: string,
+  themeId: string,
+  groupIds: string[]
+): Promise<GroupDocWithId[]> {
+  if (!groupIds.length) {
+    return [];
+  }
+  const uniqueIds = [...new Set(groupIds)];
+  const collection = firestore.collection(
+    `projects/${projectId}/themes/${themeId}/groups`
+  ) as FirebaseFirestore.CollectionReference<GroupDoc>;
+  const snapshots = await Promise.all(uniqueIds.map((id) => collection.doc(id).get()));
+  return snapshots
+    .filter((snap) => snap.exists)
+    .map((snap) => ({ id: snap.id, ...(snap.data() as GroupDoc) }));
 }
 
 export async function upsertLinks(

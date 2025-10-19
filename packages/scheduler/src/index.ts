@@ -1,4 +1,5 @@
 export type { GroupDocWithId, KeywordDocWithId } from './types';
+export { runOutlineGeneration, runLinkGeneration } from './inline';
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';

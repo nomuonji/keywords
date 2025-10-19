@@ -38,6 +38,24 @@ import type {
   NodeDocWithId
 } from './types';
 
+type OutlineRunResponse = {
+  status: 'completed';
+  outlinesCreated: number;
+  outlinedGroupIds: string[];
+  linksCreated?: number;
+  linkSourceGroupIds?: string[];
+};
+
+type LinkRunResponse = {
+  status: 'completed';
+  linksCreated: number;
+  linkSourceGroupIds: string[];
+};
+
+type ClearOutlineResponse = {
+  cleared: number;
+};
+
 export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
@@ -60,9 +78,11 @@ export default function App() {
   const [runningProjects, setRunningProjects] = useState<Set<string>>(new Set());
   const [runningThemes, setRunningThemes] = useState<Set<string>>(new Set());
   const [runningOutlineThemes, setRunningOutlineThemes] = useState<Set<string>>(new Set());
+  const [runningLinkThemes, setRunningLinkThemes] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<NodeDocWithId[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [deletingGroups, setDeletingGroups] = useState(false);
+  const [clearingOutlines, setClearingOutlines] = useState(false);
 
   useEffect(() => {
     const projectsRef = collection(firestore, 'projects');
@@ -411,14 +431,26 @@ export default function App() {
       return next;
     });
     try {
-      await postJson<{ status: string }>(
+      const groupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
+      const response = await postJson<OutlineRunResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
-        { includeLinks: true }
+        { includeLinks: false, groupIds }
       );
-      setToast({ message: `Queued outline generation for ${themeId}`, type: 'success' });
+      const created = response.outlinesCreated ?? 0;
+      if (created > 0) {
+        const message = groupIds?.length
+          ? `Generated ${created} outlines for the selected clusters`
+          : `Generated ${created} outlines`;
+        setToast({ message, type: 'success' });
+      } else {
+        const message = groupIds?.length
+          ? 'No outline targets were available for the selected clusters'
+          : 'No outline targets available';
+        setToast({ message, type: 'info' });
+      }
     } catch (error) {
       console.error('Failed to trigger outline generation', error);
-      setToast({ message: 'Failed to trigger outline generation', type: 'error' });
+      setToast({ message: 'Failed to generate outlines', type: 'error' });
     } finally {
       setRunningOutlineThemes((prev) => {
         const next = new Set(prev);
@@ -428,7 +460,47 @@ export default function App() {
     }
   };
 
-  const handleToggleGroupSelection = (groupId: string) => {
+  const handleRunLinks = async (themeId: string) => {
+    if (!selectedProjectId) {
+      setToast({ message: 'Select a project first', type: 'info' });
+      return;
+    }
+    if (runningLinkThemes.has(themeId)) {
+      return;
+    }
+    setRunningLinkThemes((prev) => {
+      const next = new Set(prev);
+      next.add(themeId);
+      return next;
+    });
+    try {
+      const sourceGroupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
+      const response = await postJson<LinkRunResponse>(
+        `/projects/${selectedProjectId}/themes/${themeId}/links:generate`,
+        { sourceGroupIds }
+      );
+      if (response.linksCreated > 0) {
+        const message = sourceGroupIds?.length
+          ? `Updated ${response.linksCreated} internal links for the selected clusters`
+          : `Updated ${response.linksCreated} internal links`;
+        setToast({ message, type: 'success' });
+      } else {
+        const message = sourceGroupIds?.length
+          ? 'No new link candidates found for the selected clusters'
+          : 'No link candidates available';
+        setToast({ message, type: 'info' });
+      }
+    } catch (error) {
+      console.error('Failed to trigger link generation', error);
+      setToast({ message: 'Failed to generate internal links', type: 'error' });
+    } finally {
+      setRunningLinkThemes((prev) => {
+        const next = new Set(prev);
+        next.delete(themeId);
+        return next;
+      });
+    }
+  };  const handleToggleGroupSelection = (groupId: string) => {
     setSelectedGroupIds((prev) => {
       const next = new Set(prev);
       if (next.has(groupId)) {
@@ -448,7 +520,38 @@ export default function App() {
     setSelectedGroupIds(new Set());
   };
 
-  const handleDeleteSelectedGroups = async () => {
+  const handleClearGroupOutlines = async () => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setToast({ message: 'Select a project and theme first', type: 'info' });
+      return;
+    }
+    if (!selectedGroupIds.size) {
+      setToast({ message: 'Select clusters before clearing outlines', type: 'info' });
+      return;
+    }
+    setClearingOutlines(true);
+    try {
+      const response = await postJson<ClearOutlineResponse>(
+        `/projects/${selectedProjectId}/themes/${selectedThemeId}/outlines:delete`,
+        { groupIds: Array.from(selectedGroupIds) }
+      );
+      setToast({ message: `Cleared outlines for ${response.cleared} clusters`, type: 'success' });
+      if (response.cleared > 0) {
+        setGroups((prev) =>
+          prev.map((group) =>
+            selectedGroupIds.has(group.id)
+              ? { ...group, outline: undefined }
+              : group
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Failed to clear outlines', error);
+      setToast({ message: 'Failed to clear outlines', type: 'error' });
+    } finally {
+      setClearingOutlines(false);
+    }
+  };  const handleDeleteSelectedGroups = async () => {
     if (!selectedProjectId || !selectedThemeId) {
       setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
       return;
@@ -707,12 +810,14 @@ export default function App() {
             }}
             onRunTheme={handleRunTheme}
             onRunOutline={handleRunOutline}
+            onRunLinks={handleRunLinks}
             onEditTheme={(theme) => {
               setSelectedThemeId(theme.id);
               setThemeModal({ mode: 'edit', theme });
             }}
             runningThemeIds={runningThemes}
             runningOutlineIds={runningOutlineThemes}
+            runningLinkIds={runningLinkThemes}
             activeNodesCount={selectedThemeId ? nodes.length : undefined}
           />
         </section>
@@ -741,8 +846,10 @@ export default function App() {
           onToggleGroupSelection={handleToggleGroupSelection}
           onSelectAllGroups={handleSelectAllGroups}
           onClearSelection={handleClearGroupSelection}
+          onClearOutlines={handleClearGroupOutlines}
           onDeleteSelectedGroups={handleDeleteSelectedGroups}
           deletingGroups={deletingGroups}
+          clearingOutlines={clearingOutlines}
         />
       </div>
 

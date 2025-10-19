@@ -24,7 +24,8 @@ for (const candidate of envCandidates) {
 import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
-import { runScheduler } from '@keywords/scheduler';
+import { nowIso } from '@keywords/core';
+import { runScheduler, runOutlineGeneration, runLinkGeneration } from '@keywords/scheduler';
 
 const app = express();
 app.use(cors({ origin: 'http://localhost:3000' }));
@@ -196,7 +197,7 @@ app.delete('/projects/:projectId/themes/:themeId/nodes/:nodeId', async (req, res
   }
 });
 
-app.post('/projects/:projectId/themes/:themeId/groups:delete', async (req, res) => {
+app.post('/projects/:projectId/themes/:themeId/groups\\:delete', async (req, res) => {
   const { projectId, themeId } = req.params;
   const { groupIds } = req.body ?? {};
   if (!Array.isArray(groupIds) || !groupIds.length) {
@@ -247,23 +248,114 @@ app.post('/projects/:projectId/themes/:themeId/groups:delete', async (req, res) 
   }
 });
 
-app.post('/projects/:projectId/themes/:themeId/outlines:run', async (req, res) => {
+app.post('/projects/:projectId/themes/:themeId/outlines\\:run', async (req, res) => {
   const { projectId, themeId } = req.params;
-  const { includeLinks = true } = req.body ?? {};
+  const { includeLinks = false, groupIds } = req.body ?? {};
   try {
-    await runScheduler({
+    const parsedGroupIds = Array.isArray(groupIds)
+      ? groupIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+      : undefined;
+    const outlineResult = await runOutlineGeneration({
       projectId,
-      themeIds: [themeId],
-      manual: true,
-      stages: {
-        ideas: false,
-        clustering: false,
-        scoring: false,
-        outline: true,
-        links: !!includeLinks
-      }
+      themeId,
+      groupIds: parsedGroupIds
     });
-    res.json({ status: 'queued', projectId, themeId, stages: { outline: true, links: !!includeLinks } });
+    let linkResult: Awaited<ReturnType<typeof runLinkGeneration>> | undefined;
+    if (includeLinks) {
+      const inferredSourceGroupIds =
+        parsedGroupIds && parsedGroupIds.length
+          ? parsedGroupIds
+          : outlineResult.outlinedGroupIds.length
+            ? outlineResult.outlinedGroupIds
+            : undefined;
+      if (inferredSourceGroupIds && inferredSourceGroupIds.length) {
+        linkResult = await runLinkGeneration({
+          projectId,
+          themeId,
+          sourceGroupIds: inferredSourceGroupIds
+        });
+      } else {
+        linkResult = await runLinkGeneration({ projectId, themeId });
+      }
+    }
+    res.json({
+      status: 'completed',
+      projectId,
+      themeId,
+      outlinesCreated: outlineResult.outlinesCreated,
+      outlinedGroupIds: outlineResult.outlinedGroupIds,
+      linksCreated: linkResult?.linksCreated ?? 0,
+      linkSourceGroupIds: linkResult?.sourceGroupIds ?? []
+    });
+  } catch (error) {
+    console.error(
+      '[outlines:run] failed',
+      JSON.stringify({ projectId, themeId, groupIds, error: `${error}` })
+    );
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/themes/:themeId/outlines\\:delete', async (req, res) => {
+  const { projectId, themeId } = req.params;
+  const { groupIds } = req.body ?? {};
+  if (!Array.isArray(groupIds) || !groupIds.length) {
+    res.status(400).json({ error: 'groupIds array is required' });
+    return;
+  }
+  const validIds = groupIds
+    .filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+    .map((id) => id.trim());
+  if (!validIds.length) {
+    res.status(400).json({ error: 'No valid groupIds provided' });
+    return;
+  }
+  try {
+    const firestore = initFirestore();
+    const batch = firestore.batch();
+    let cleared = 0;
+    for (const groupId of validIds) {
+      const ref = firestore.doc(`projects/${projectId}/themes/${themeId}/groups/${groupId}`);
+      const snapshot = await ref.get();
+      batch.update(ref, {
+        summary: {
+          disabled: true
+        },
+        summaryDisabledAt: nowIso(),
+        updatedAt: nowIso()
+      });
+      cleared += 1;
+    }
+    if (!cleared) {
+      res.json({ cleared: 0 });
+      return;
+    }
+    await batch.commit();
+    res.json({ cleared });
+  } catch (error) {
+    console.error(
+      '[outlines:delete] failed',
+      JSON.stringify({ projectId, themeId, groupIds: validIds, error: `${error}` })
+    );
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/themes/:themeId/links\\:generate', async (req, res) => {
+  const { projectId, themeId } = req.params;
+  const { sourceGroupIds } = req.body ?? {};
+  try {
+    const parsedIds = Array.isArray(sourceGroupIds)
+      ? sourceGroupIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+      : undefined;
+    const result = await runLinkGeneration({ projectId, themeId, sourceGroupIds: parsedIds });
+    res.json({
+      status: 'completed',
+      projectId,
+      themeId,
+      linksCreated: result.linksCreated,
+      linkSourceGroupIds: result.sourceGroupIds
+    });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }
