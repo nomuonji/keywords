@@ -3,6 +3,7 @@ import admin from 'firebase-admin';
 import { nowIso } from '@keywords/core';
 import type {
   GroupDoc,
+  Intent,
   JobDoc,
   JobSummary,
   KeywordDoc,
@@ -10,11 +11,11 @@ import type {
   NodeDoc,
   ProjectDoc,
   ProjectSettings,
-  ThemeDoc
+  ThemeDoc,
+  GroupDocWithId,
+  KeywordDocWithId
 } from '@keywords/core';
 import type {
-  GroupDocWithId,
-  KeywordDocWithId,
   PipelineCounters,
   ProjectContext,
   SchedulerOptions,
@@ -146,7 +147,7 @@ function createCredential(): admin.credential.Credential {
   }
 }
 
-export function initFirestore(): FirebaseFirestore.Firestore {
+export function initFirestore(): admin.firestore.Firestore {
   if (!firebaseApp) {
     const projectId = resolveProjectId();
     const options: admin.AppOptions = {
@@ -161,7 +162,7 @@ export function initFirestore(): FirebaseFirestore.Firestore {
 }
 
 export async function loadProjectContext(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   options: SchedulerOptions
 ): Promise<ProjectContext> {
   const projectSnap = await firestore.doc(`projects/${options.projectId}`).get();
@@ -189,11 +190,11 @@ export async function loadProjectContext(
 
 export interface PipelineLock {
   release: () => Promise<void>;
-  ref: FirebaseFirestore.DocumentReference;
+  ref: admin.firestore.DocumentReference;
 }
 
 export async function acquireLock(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string
 ): Promise<PipelineLock> {
   const lockRef = firestore.doc(`projects/${projectId}/locks/pipeline`);
@@ -215,12 +216,12 @@ export async function acquireLock(
 }
 
 export async function createJob(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   payload: JobDoc['payload'],
   type: JobDoc['type']
-): Promise<FirebaseFirestore.DocumentReference<JobDoc>> {
-  const jobsRef = firestore.collection(`projects/${projectId}/jobs`) as FirebaseFirestore.CollectionReference<JobDoc>;
+): Promise<admin.firestore.DocumentReference<JobDoc>> {
+  const jobsRef = firestore.collection(`projects/${projectId}/jobs`) as admin.firestore.CollectionReference<JobDoc>;
   const jobRef = jobsRef.doc();
   const initialSummary: JobSummary = {
     nodesProcessed: 0,
@@ -244,7 +245,7 @@ export async function createJob(
 }
 
 export async function updateJobSummary(
-  jobRef: FirebaseFirestore.DocumentReference<JobDoc>,
+  jobRef: admin.firestore.DocumentReference<JobDoc>,
   counters: PipelineCounters,
   status: JobDoc['status'],
   errors: JobDoc['summary']['errors']
@@ -263,7 +264,7 @@ export async function updateJobSummary(
 }
 
 export async function getAutoThemes(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeIds?: string[]
 ): Promise<ThemeDocWithId[]> {
@@ -278,14 +279,14 @@ export async function getAutoThemes(
 }
 
 export async function getEligibleNodes(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   settings: ProjectSettings
 ): Promise<Array<{ id: string; node: NodeDoc }>> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/nodes`
-  ) as FirebaseFirestore.CollectionReference<NodeDoc>;
+  ) as admin.firestore.CollectionReference<NodeDoc>;
   const snapshot = await collection.where('status', 'in', ['ready', 'ideas-pending']).get();
   const cutoff = new Date();
   cutoff.setUTCDate(cutoff.getUTCDate() - settings.pipeline.staleDays);
@@ -389,14 +390,14 @@ function pruneUndefined<T>(value: T): T {
 }
 
 export async function saveKeywords(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   keywords: Array<{ keyword: string; metrics: KeywordDoc['metrics']; dedupeHash: string; sourceNodeId: string }>
 ): Promise<KeywordDocWithId[]> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/keywords`
-  ) as FirebaseFirestore.CollectionReference<KeywordDoc>;
+  ) as admin.firestore.CollectionReference<KeywordDoc>;
   const batch = firestore.batch();
   const written: KeywordDocWithId[] = [];
   for (const kw of keywords) {
@@ -426,13 +427,13 @@ export async function saveKeywords(
 }
 
 export async function fetchKeywordHashes(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string
 ): Promise<Set<string>> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/keywords`
-  ) as FirebaseFirestore.CollectionReference<KeywordDoc>;
+  ) as admin.firestore.CollectionReference<KeywordDoc>;
   const snapshot = await collection.select('dedupeHash').get();
   const hashes = new Set<string>();
   snapshot.forEach((doc) => {
@@ -459,13 +460,13 @@ export async function updateNodeIdeasAt(
 }
 
 export async function loadKeywordsForClustering(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string
 ): Promise<KeywordDocWithId[]> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/keywords`
-  ) as FirebaseFirestore.CollectionReference<KeywordDoc>;
+  ) as admin.firestore.CollectionReference<KeywordDoc>;
   const snapshot = await collection.where('status', 'in', ['new', 'scored']).get();
   return snapshot.docs.map((doc) => ({
     id: doc.id,
@@ -474,7 +475,7 @@ export async function loadKeywordsForClustering(
 }
 
 export async function upsertGroup(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   group: GroupDoc,
@@ -482,7 +483,7 @@ export async function upsertGroup(
 ): Promise<GroupDocWithId> {
   const groupsCollection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/groups`
-  ) as FirebaseFirestore.CollectionReference<GroupDoc>;
+  ) as admin.firestore.CollectionReference<GroupDoc>;
   const ref = groupId ? groupsCollection.doc(groupId) : groupsCollection.doc();
   const data = {
     ...group,
@@ -493,14 +494,14 @@ export async function upsertGroup(
 }
 
 export async function updateKeywordsAfterGrouping(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   updates: Array<{ id: string; groupId: string; status: KeywordDoc['status']; score: number; metrics: KeywordDoc['metrics']; versions: KeywordDoc['versions'] }>
 ): Promise<void> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/keywords`
-  ) as FirebaseFirestore.CollectionReference<KeywordDoc>;
+  ) as admin.firestore.CollectionReference<KeywordDoc>;
   const batch = firestore.batch();
   for (const update of updates) {
     const ref = collection.doc(update.id);
@@ -517,14 +518,14 @@ export async function updateKeywordsAfterGrouping(
 }
 
 export async function loadGroupsNeedingOutline(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   limit: number
 ): Promise<GroupDocWithId[]> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/groups`
-  ) as FirebaseFirestore.CollectionReference<GroupDoc>;
+  ) as admin.firestore.CollectionReference<GroupDoc>;
   const snapshot = await collection
     .orderBy('priorityScore', 'desc')
     .limit(limit * 2)
@@ -542,7 +543,7 @@ export async function loadGroupsNeedingOutline(
 }
 
 export async function saveGroupSummary(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   groupId: string,
@@ -560,13 +561,13 @@ export async function saveGroupSummary(
 }
 
 export async function loadGroupsForLinking(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string
 ): Promise<GroupDocWithId[]> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/groups`
-  ) as FirebaseFirestore.CollectionReference<GroupDoc>;
+  ) as admin.firestore.CollectionReference<GroupDoc>;
   const snapshot = await collection.get();
   return snapshot.docs.map((doc) => ({
     id: doc.id,
@@ -575,7 +576,7 @@ export async function loadGroupsForLinking(
 }
 
 export async function loadGroupsByIds(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   groupIds: string[]
@@ -586,7 +587,7 @@ export async function loadGroupsByIds(
   const uniqueIds = [...new Set(groupIds)];
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/groups`
-  ) as FirebaseFirestore.CollectionReference<GroupDoc>;
+  ) as admin.firestore.CollectionReference<GroupDoc>;
   const snapshots = await Promise.all(uniqueIds.map((id) => collection.doc(id).get()));
   return snapshots
     .filter((snap) => snap.exists)
@@ -594,14 +595,14 @@ export async function loadGroupsByIds(
 }
 
 export async function upsertLinks(
-  firestore: FirebaseFirestore.Firestore,
+  firestore: admin.firestore.Firestore,
   projectId: string,
   themeId: string,
   links: LinkDoc[]
 ): Promise<void> {
   const collection = firestore.collection(
     `projects/${projectId}/themes/${themeId}/links`
-  ) as FirebaseFirestore.CollectionReference<LinkDoc>;
+  ) as admin.firestore.CollectionReference<LinkDoc>;
   const batch = firestore.batch();
   for (const link of links) {
     const key = `${link.fromGroupId}__${link.toGroupId}`;

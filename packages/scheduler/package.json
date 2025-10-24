@@ -22,5 +22,8 @@
     "firebase-admin": "^12.1.0",
     "pino": "^8.17.0",
     "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/yargs": "^17.0.33"
   }
 }

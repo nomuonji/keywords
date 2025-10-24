@@ -25,11 +25,15 @@ import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
 import { nowIso } from '@keywords/core';
-import { runScheduler, runOutlineGeneration, runLinkGeneration } from '@keywords/scheduler';
+import { runScheduler, runOutlineGeneration, runLinkGeneration, loadConfig } from '@keywords/scheduler';
+import { GeminiClient } from '@keywords/gemini';
 
 const app = express();
 app.use(cors({ origin: 'http://localhost:3000' }));
 app.use(express.json());
+
+const config = loadConfig();
+const geminiClient = new GeminiClient(config.gemini);
 
 let cachedServiceAccount: admin.ServiceAccount | null | undefined;
 
@@ -356,6 +360,35 @@ app.post('/projects/:projectId/themes/:themeId/links\\:generate', async (req, re
       linksCreated: result.linksCreated,
       linkSourceGroupIds: result.sourceGroupIds
     });
+  } catch (error) {
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/suggest-themes', async (req, res) => {
+  const { description } = req.body ?? {};
+  if (!description) {
+    res.status(400).json({ error: 'description is required' });
+    return;
+  }
+  try {
+    const suggestions = await geminiClient.suggestThemes({ description });
+    res.json({ suggestions });
+  } catch (error) {
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) => {
+  const { projectId, themeId } = req.params;
+  const { theme, existingNodes } = req.body ?? {};
+  if (!theme) {
+    res.status(400).json({ error: 'theme is required' });
+    return;
+  }
+  try {
+    const suggestions = await geminiClient.suggestNodes({ theme, existingNodes: existingNodes ?? [] });
+    res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }

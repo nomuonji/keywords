@@ -1,8 +1,16 @@
 import { computePriorityScore, inferLinkReason, limitLinks, normalizeKeyword, nowIso } from '@keywords/core';
-import type { GroupDoc, Intent, KeywordDoc, ProjectSettings, LinkDoc, KeywordMetrics } from '@keywords/core';
 import type {
+  GroupDoc,
+  Intent,
+  JobDoc,
+  KeywordDoc,
+  ProjectSettings,
+  LinkDoc,
+  KeywordMetrics,
   GroupDocWithId,
-  KeywordDocWithId,
+  KeywordDocWithId
+} from '@keywords/core';
+import type {
   PipelineContext,
   SchedulerStagesOptions,
   ThemeDocWithId
@@ -21,6 +29,7 @@ import {
   upsertGroup,
   upsertLinks
 } from './firestore';
+import type { firestore as AdminFirestore } from 'firebase-admin';
 
 interface StageError {
   type: string;
@@ -297,11 +306,11 @@ async function stageCScoring(
       .collection(`projects/${ctx.projectId}/themes/${theme.id}/keywords`)
       .where('groupId', '==', group.id)
       .get();
-    const keywords = keywordDocsSnapshot.docs.map((doc: { data: () => KeywordDoc; }) => doc.data() as KeywordDoc);
-    const avgMonthly = keywords
-      .map((kw: { metrics: { avgMonthly: number | undefined; }; }) => kw.metrics.avgMonthly ?? 0)
+
+const keywords = keywordDocsSnapshot.docs.map((doc: AdminFirestore.QueryDocumentSnapshot) => doc.data() as KeywordDoc);    const avgMonthly = keywords
+      .map((kw: KeywordDoc) => kw.metrics.avgMonthly ?? 0)
       .filter((value: number) => value > 0);
-    const competitionFirst = keywords.find((kw: { metrics: { competition: number | undefined; }; }) => kw.metrics.competition !== undefined);
+    const competitionFirst = keywords.find((kw: KeywordDoc) => kw.metrics.competition !== undefined);
     const novelty = 1 - Math.min(1, keywords.length / 20);
     const nodeIntent = group.intent;
     const score = computePriorityScore({
@@ -354,7 +363,7 @@ export async function stageDOutline(
       .collection(`projects/${ctx.projectId}/themes/${theme.id}/keywords`)
       .where('groupId', '==', group.id)
       .get();
-    const keywordDocs = keywordDocsSnapshot.docs.map((doc: { id: string; data: () => KeywordDoc; }) => ({
+    const keywordDocs = keywordDocsSnapshot.docs.map((doc: AdminFirestore.QueryDocumentSnapshot) => ({
       id: doc.id,
       ...(doc.data() as KeywordDoc)
     })) as KeywordDocWithId[];

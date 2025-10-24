@@ -7,8 +7,15 @@ import type {
   NodeDoc,
   ProjectDoc,
   ProjectSettings,
-  ThemeDoc
+  ThemeDoc,
+  GroupDocWithId,
+  KeywordDocWithId
 } from '@keywords/core';
+import type { firestore as AdminFirestore } from 'firebase-admin';
+import type { Logger } from 'pino';
+import type { KeywordIdeaClient } from '@keywords/ads';
+import type { GeminiClient } from '@keywords/gemini';
+import type { EnvironmentConfig } from './config';
 
 export interface SchedulerStagesOptions {
   ideas?: boolean;
@@ -34,17 +41,10 @@ export interface PipelineCounters {
   linksUpdated: number;
 }
 
-import type { Logger } from 'pino';
-import type { FirebaseFirestore } from '@google-cloud/firestore';
-import type { KeywordIdeaClient } from '@keywords/ads';
-import type { GeminiClient } from '@keywords/gemini';
-
-// ...
-
 export interface PipelineDependencies {
   ads: KeywordIdeaClient;
   gemini: GeminiClient;
-  firestore: FirebaseFirestore.Firestore;
+  firestore: AdminFirestore.Firestore;
   logger: Logger;
 }
 
@@ -53,14 +53,6 @@ export interface NodeDocWithId extends NodeDoc {
 }
 
 export interface ThemeDocWithId extends ThemeDoc {
-  id: string;
-}
-
-export interface KeywordDocWithId extends KeywordDoc {
-  id: string;
-}
-
-export interface GroupDocWithId extends GroupDoc {
   id: string;
 }
 
@@ -80,5 +72,5 @@ export interface PipelineContext extends ProjectContext {
   config: EnvironmentConfig;
   deps: PipelineDependencies;
   counters: PipelineCounters;
-  job: FirebaseFirestore.DocumentReference<JobDoc>;
+  job: AdminFirestore.DocumentReference<JobDoc>;
 }

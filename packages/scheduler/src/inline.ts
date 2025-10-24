@@ -1,13 +1,18 @@
 import { KeywordIdeaClient } from '@keywords/ads';
 import { GeminiClient } from '@keywords/gemini';
+import admin from 'firebase-admin';
 import { loadConfig } from './config';
 import { initFirestore, loadGroupsByIds, loadGroupsForLinking, loadProjectContext } from './firestore';
 import { createLogger } from './logger';
 import { mergeSettings, stageDOutline, stageEInternalLinks } from './pipeline';
+import type { JobDoc } from '@keywords/core';
+import type { PipelineCounters } from './types';
 import type {
   GroupDocWithId,
+  KeywordDocWithId
+} from '@keywords/core';
+import type {
   PipelineContext,
-  PipelineCounters,
   SchedulerOptions,
   ThemeDocWithId
 } from './types';
@@ -71,7 +76,7 @@ async function createInlineContext(
     stages
   };
   const projectContext = await loadProjectContext(firestore, options);
-  const theme = projectContext.themes.find((item) => item.id === params.themeId);
+  const theme = projectContext.themes.find((item: ThemeDocWithId) => item.id === params.themeId);
   if (!theme) {
     throw new Error(`Theme ${params.themeId} not found`);
   }
@@ -82,7 +87,7 @@ async function createInlineContext(
     config,
     deps,
     counters: createCounters(),
-    job: firestore.collection(`projects/${params.projectId}/jobs`).doc(`inline_${Date.now()}`)
+    job: firestore.collection(`projects/${params.projectId}/jobs`).doc(`inline_${Date.now()}`) as admin.firestore.DocumentReference<JobDoc>
   };
 
   return { context, theme };

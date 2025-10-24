@@ -26,3 +26,16 @@ export interface SummarizeClusterInput {
 }
 
 export type SummarizeClusterOutput = GroupSummary;
+
+export interface SuggestThemesInput {
+  description: string;
+}
+
+export type SuggestThemesOutput = string[];
+
+export interface SuggestNodesInput {
+  theme: string;
+  existingNodes: string[];
+}
+
+export type SuggestNodesOutput = string[];

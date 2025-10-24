@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/ads" },
+    { "path": "./packages/gemini" },
+    { "path": "./packages/scheduler" },
+    { "path": "./apps/api" },
+    { "path": "./apps/web" }
+  ]
+}

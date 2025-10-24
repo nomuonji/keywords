@@ -1,13 +1,16 @@
-import type { Intent, ProjectSettings, GroupSummary } from '@keywords/core';
+import type { Intent, ProjectSettings, GroupSummary, GroupDocWithId, KeywordDocWithId } from '@keywords/core';
 import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
-import type { GroupDocWithId, KeywordDocWithId } from '@keywords/scheduler';
 import { retry } from '@keywords/core';
 import type {
   EmbedKeywordsInput,
   EmbedKeywordsOutput,
   GeminiConfig,
   SummarizeClusterInput,
-  SummarizeClusterOutput
+  SummarizeClusterOutput,
+  SuggestNodesInput,
+  SuggestNodesOutput,
+  SuggestThemesInput,
+  SuggestThemesOutput
 } from './types';
 
 export class GeminiClient {
@@ -116,6 +119,87 @@ export class GeminiClient {
       return answer;
     }
     return 'info';
+  }
+
+  async suggestThemes(input: SuggestThemesInput): Promise<SuggestThemesOutput> {
+    const prompt = this.buildSuggestThemesPrompt(input);
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      })
+    );
+    const text =
+      response.response?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text ?? '')
+        .join('\n') ?? '';
+    return this.parseSuggestions(text);
+  }
+
+  async suggestNodes(input: SuggestNodesInput): Promise<SuggestNodesOutput> {
+    const prompt = this.buildSuggestNodesPrompt(input);
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      })
+    );
+    const text =
+      response.response?.candidates?.[0]?.content?.parts
+        ?.map((part) => part.text ?? '')
+        .join('\n') ?? '';
+    console.log('---- Gemini Response ----\n', text);
+    return this.parseSuggestions(text);
+  }
+
+  private buildSuggestThemesPrompt(input: SuggestThemesInput): string {
+    return [
+      'You are an expert SEO content strategist.',
+      'Based on the following project description, please suggest 5-10 potential content themes.',
+      'Each theme should be a very broad, high-level topic, ideally expressed as a single keyword.',
+      'Avoid themes that are long phrases, questions, or specific long-tail keywords.',
+      'Focus on topics that are likely to have good search volume and commercial value.',
+      'Output requirements (strict):',
+      '- Respond ONLY with a JSON code block containing a flat array of strings.',
+      '- Example: ```json\n["テーマ1", "テーマ2", "テーマ3"]\n```',
+      'Project Description:',
+      input.description
+    ].join('\n');
+  }
+
+  private buildSuggestNodesPrompt(input: SuggestNodesInput): string {
+    const existingNodesList =
+      input.existingNodes.length > 0
+        ? `Existing nodes:\n${input.existingNodes.map((node) => `- ${node}`).join('\n')}`
+        : 'No existing nodes yet.';
+
+    return [
+      'You are an expert SEO content strategist.',
+      `The current content theme is "${input.theme}".`,
+      'Based on this theme, please suggest 5-10 specific article ideas (nodes).',
+      'Each idea should be a concrete, long-tail keyword or a specific question that a user might ask.',
+      'Avoid duplicating existing nodes.',
+      'Output requirements (strict):',
+      '- Respond ONLY with a JSON code block containing a flat array of strings.',
+      '- Example: ```json\n["記事アイデア1", "記事アイデア2", "記事アイデア3"]\n```',
+      existingNodesList
+    ].join('\n');
+  }
+
+  private parseSuggestions(text: string): string[] {
+    try {
+      const target = this.extractJson(text);
+      const json = JSON.parse(target) as unknown;
+      if (Array.isArray(json)) {
+        return json.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+      }
+      return [];
+    } catch (error) {
+      console.error('Failed to parse suggestions:', error);
+      return [];
+    }
   }
 
   private normalizeModelId(model: string): string {
@@ -238,22 +322,35 @@ export class GeminiClient {
 
   private extractJson(text: string): string {
     const trimmed = text.trim();
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    // Check for JSON object or array at the top level
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       return trimmed;
     }
     const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
     if (codeBlockMatch?.[1]) {
       return codeBlockMatch[1].trim();
     }
+    // Fallback for partial JSON in text, try to find the first brace/bracket and last brace/bracket
     const firstBrace = trimmed.indexOf('{');
-    if (firstBrace === -1) {
-      throw new Error('Gemini response did not contain JSON object');
-    }
+    const firstBracket = trimmed.indexOf('[');
     const lastBrace = trimmed.lastIndexOf('}');
-    if (lastBrace === -1 || lastBrace <= firstBrace) {
-      throw new Error('Gemini response JSON was incomplete');
+    const lastBracket = trimmed.lastIndexOf(']');
+
+    let startIndex = -1;
+    let endIndex = -1;
+
+    if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      startIndex = firstBrace;
+      endIndex = lastBrace;
+    } else if (firstBracket !== -1) {
+      startIndex = firstBracket;
+      endIndex = lastBracket;
     }
-    return trimmed.slice(firstBrace, lastBrace + 1);
+
+    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+      throw new Error('Gemini response did not contain a valid JSON object or array');
+    }
+    return trimmed.slice(startIndex, endIndex + 1);
   }
 
   private buildDefaultTitle(input: SummarizeClusterInput): string {

@@ -1,5 +1,6 @@
-export type { GroupDocWithId, KeywordDocWithId } from './types';
+export type { GroupDocWithId, KeywordDocWithId } from '@keywords/core';
 export { runOutlineGeneration, runLinkGeneration } from './inline';
+export { loadConfig } from './config';
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -30,9 +31,9 @@ import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSum
 import { createLogger } from './logger';
 import { loadConfig } from './config';
 import { runPipelineStages } from './pipeline';
+import type { firestore as AdminFirestore } from 'firebase-admin';
 import type { JobDoc, JobStatus, JobSummaryError } from '@keywords/core';
 import type { SchedulerOptions, PipelineContext, PipelineCounters } from './types';
-import type { firestore as AdminFirestore } from 'firebase-admin';
 
 export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const config = loadConfig();

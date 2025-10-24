@@ -7,7 +7,7 @@
                        "packages/*"
                    ],
     "scripts":  {
-                    "build":  "npm run build --workspaces --if-present",
+                    "build":  "tsc -b tsconfig.build.json",
                     "lint":  "npm run lint --workspaces --if-present",
                     "test":  "npm run test --workspaces --if-present",
                     "scheduler:run":  "npm run build --workspace @keywords/scheduler --if-present \u0026\u0026 node packages/scheduler/dist/cli.js",

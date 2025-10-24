@@ -1,15 +1,57 @@
 import { useState } from 'react';
 import { MdExpandLess, MdExpandMore } from 'react-icons/md';
 import type { ProjectSettings } from '../../types';
+import { SuggestionModal } from '../common/SuggestionModal';
+import { suggestThemes } from '../../lib/api';
+import { firestore } from '../../lib/firebase';
+import { writeBatch, doc, collection } from 'firebase/firestore';
 
 interface ProjectSettingsPanelProps {
+  projectId: string;
+  description: string;
   settings: ProjectSettings;
   onSave: (settings: ProjectSettings) => void;
 }
 
-export function ProjectSettingsPanel({ settings, onSave }: ProjectSettingsPanelProps) {
+export function ProjectSettingsPanel({ projectId, description, settings, onSave }: ProjectSettingsPanelProps) {
   const [draft, setDraft] = useState<ProjectSettings>(settings);
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+
+  const handleSuggestThemes = async () => {
+    setModalOpen(true);
+    setLoading(true);
+    try {
+      const result = await suggestThemes(projectId, description);
+      setSuggestions(result);
+    } catch (error) {
+      console.error('Failed to suggest themes', error);
+      // TODO: Show toast
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddThemes = async (selected: string[]) => {
+    const batch = writeBatch(firestore);
+    const themesRef = collection(firestore, `projects/${projectId}/themes`);
+    selected.forEach((themeName) => {
+      const themeId = themeName.toLowerCase().replace(/\s+/g, '-');
+      const newThemeRef = doc(themesRef, themeId);
+      batch.set(newThemeRef, {
+        name: themeName,
+        autoUpdate: false,
+        pendingNodes: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    });
+    await batch.commit();
+    setModalOpen(false);
+  };
+
+
 
   const handleNumberChange =
     (path: string[]) =>
@@ -27,14 +69,23 @@ export function ProjectSettingsPanel({ settings, onSave }: ProjectSettingsPanelP
             パイプラインの上限やスコア重みをここで調整できます。保存すると即座に反映されます。
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
-          onClick={() => setOpen((prev) => !prev)}
-          aria-label="プロジェクト設定パネルの開閉"
-        >
-          {open ? <MdExpandLess size={18} /> : <MdExpandMore size={18} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSuggestThemes}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+          >
+            Geminiにテーマ案を提案させる
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
+            onClick={() => setOpen((prev) => !prev)}
+            aria-label="プロジェクト設定パネルの開閉"
+          >
+            {open ? <MdExpandLess size={18} /> : <MdExpandMore size={18} />}
+          </button>
+        </div>
       </header>
       {open ? (
         <>
@@ -128,7 +179,7 @@ export function ProjectSettingsPanel({ settings, onSave }: ProjectSettingsPanelP
               </div>
             </fieldset>
           </div>
-          <div className="flex justify-end border-t border-slate-200 px-5 py-4">
+          <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
             <button
               type="button"
               onClick={() => onSave(draft)}
@@ -139,6 +190,14 @@ export function ProjectSettingsPanel({ settings, onSave }: ProjectSettingsPanelP
           </div>
         </>
       ) : null}
+      <SuggestionModal
+        open={modalOpen}
+        title="Geminiによるテーマ提案"
+        suggestions={suggestions}
+        loading={loading}
+        onClose={() => setModalOpen(false)}
+        onAdd={handleAddThemes}
+      />
     </section>
   );
 }

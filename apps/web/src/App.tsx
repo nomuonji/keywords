@@ -769,6 +769,8 @@ export default function App() {
 
         {selectedProject ? (
           <ProjectSettingsPanel
+            projectId={selectedProject.id}
+            description={selectedProject.name}
             settings={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             onSave={handleSaveProjectSettings}
           />
@@ -822,8 +824,11 @@ export default function App() {
           />
         </section>
 
-        {selectedProject ? (
+        {selectedProject && selectedThemeId ? (
           <ThemeSettingsPanel
+            projectId={selectedProject.id}
+            themeId={selectedThemeId}
+            nodes={nodes}
             projectDefaults={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             themeSettings={selectedTheme?.settings}
             onSave={handleSaveThemeSettings}

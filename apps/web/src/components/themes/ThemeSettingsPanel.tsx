@@ -1,8 +1,15 @@
 import { useEffect, useState } from 'react';
 import { MdExpandLess, MdExpandMore } from 'react-icons/md';
-import type { ProjectSettings } from '../../types';
+import type { ProjectSettings, NodeDocWithId } from '../../types';
+import { SuggestionModal } from '../common/SuggestionModal';
+import { suggestNodes } from '../../lib/api';
+import { firestore } from '../../lib/firebase';
+import { writeBatch, doc, collection } from 'firebase/firestore';
 
 interface ThemeSettingsPanelProps {
+  projectId: string;
+  themeId: string;
+  nodes: NodeDocWithId[];
   projectDefaults: ProjectSettings;
   themeSettings?: Partial<ProjectSettings>;
   onSave: (settings: Partial<ProjectSettings>) => void;
@@ -10,6 +17,9 @@ interface ThemeSettingsPanelProps {
 }
 
 export function ThemeSettingsPanel({
+  projectId,
+  themeId,
+  nodes,
   projectDefaults,
   themeSettings,
   onSave,
@@ -17,10 +27,46 @@ export function ThemeSettingsPanel({
 }: ThemeSettingsPanelProps) {
   const [draft, setDraft] = useState<Partial<ProjectSettings>>(themeSettings ?? {});
   const [open, setOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   useEffect(() => {
     setDraft(themeSettings ?? {});
   }, [themeSettings]);
+
+  const handleSuggestNodes = async () => {
+    if (!themeName) return;
+    setModalOpen(true);
+    setLoading(true);
+    try {
+      const existingNodes = nodes.map((n) => n.title);
+      const result = await suggestNodes(projectId, themeId, themeName, existingNodes);
+      setSuggestions(result);
+    } catch (error) {
+      console.error('Failed to suggest nodes', error);
+      // TODO: Show toast
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddNodes = async (selected: string[]) => {
+    const batch = writeBatch(firestore);
+    const nodesRef = collection(firestore, `projects/${projectId}/themes/${themeId}/nodes`);
+    selected.forEach((nodeTitle) => {
+      const newNodeRef = doc(nodesRef);
+      batch.set(newNodeRef, {
+        title: nodeTitle,
+        status: 'ready',
+        intent: 'info', // Or derive from somewhere?
+        depth: 0,
+        updatedAt: new Date().toISOString(),
+      });
+    });
+    await batch.commit();
+    setModalOpen(false);
+  };
 
   const handlePartialChange =
     (path: string[]) =>
@@ -40,14 +86,24 @@ export function ThemeSettingsPanel({
             空欄の項目はプロジェクト共通設定が適用されます。必要に応じて上書きしてください。
           </p>
         </div>
-        <button
-          type="button"
-          className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
-          onClick={() => setOpen((prev) => !prev)}
-          aria-label="テーマ設定パネルの開閉"
-        >
-          {open ? <MdExpandLess size={18} /> : <MdExpandMore size={18} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSuggestNodes}
+            disabled={!themeName}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Geminiにnode案を提案させる
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
+            onClick={() => setOpen((prev) => !prev)}
+            aria-label="テーマ設定パネルの開閉"
+          >
+            {open ? <MdExpandLess size={18} /> : <MdExpandMore size={18} />}
+          </button>
+        </div>
       </header>
       {open ? (
         <>
@@ -122,6 +178,14 @@ export function ThemeSettingsPanel({
           </footer>
         </>
       ) : null}
+      <SuggestionModal
+        open={modalOpen}
+        title="GeminiによるNode提案"
+        suggestions={suggestions}
+        loading={loading}
+        onClose={() => setModalOpen(false)}
+        onAdd={handleAddNodes}
+      />
     </section>
   );
 }

@@ -148,3 +148,6 @@ export interface JobDoc {
   startedAt: string;
   finishedAt: string;
 }
+
+export type GroupDocWithId = GroupDoc & { id: string };
+export type KeywordDocWithId = KeywordDoc & { id: string };
