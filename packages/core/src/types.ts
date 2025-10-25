@@ -16,8 +16,13 @@ export interface HatenaConfig {
 
 export type BlogMediaConfig = WordpressConfig | HatenaConfig;
 
+export interface BlogPostPayload {
+  title: string;
+  content: string;
+}
+
 export interface BlogMedia {
-  post(article: string): Promise<string>;
+  post(article: BlogPostPayload): Promise<string>;
   getUrl(postId: string): Promise<string>;
 }
 
@@ -50,6 +55,7 @@ export interface ProjectSettings {
     maxPerGroup: number;
   };
   blog?: BlogMediaConfig;
+  blogLanguage?: string;
   projectId: string;
 }
 

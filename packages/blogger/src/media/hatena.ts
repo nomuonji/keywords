@@ -1,4 +1,4 @@
-import { BlogMedia, HatenaConfig } from '@keywords/core';
+import { BlogMedia, BlogPostPayload, HatenaConfig } from '@keywords/core';
 import axios from 'axios';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
@@ -9,28 +9,28 @@ export class HatenaMedia implements BlogMedia {
     this.config = config;
   }
 
-  async post(article: string): Promise<string> {
+  async post(article: BlogPostPayload): Promise<string> {
     const builder = new XMLBuilder({
       ignoreAttributes: false,
-      format: true,
+      format: true
     });
     const xmlContent = builder.build({
       entry: {
         '@_xmlns': 'http://www.w3.org/2005/Atom',
         '@_xmlns:app': 'http://www.w3.org/2007/app',
-        title: 'New Post',
-        author: { name: 'Jules' },
+        title: article.title,
+        author: { name: this.config.hatenaId },
         content: {
-          '@_type': 'text/plain',
-          '#text': article,
+          '@_type': 'text/html',
+          '#text': article.content
         },
         category: {
-          '@_term': 'API',
+          '@_term': 'API'
         },
         'app:control': {
-          'app:draft': 'no',
-        },
-      },
+          'app:draft': 'no'
+        }
+      }
     });
 
     const { data } = await axios.post(

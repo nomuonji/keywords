@@ -1,4 +1,4 @@
-import { BlogMedia, WordpressConfig } from '@keywords/core';
+import { BlogMedia, BlogPostPayload, WordpressConfig } from '@keywords/core';
 import axios from 'axios';
 
 export class WordpressMedia implements BlogMedia {
@@ -8,13 +8,13 @@ export class WordpressMedia implements BlogMedia {
     this.config = config;
   }
 
-  async post(article: string): Promise<string> {
+  async post(article: BlogPostPayload): Promise<string> {
     const { data } = await axios.post(
       `${this.config.url}/wp-json/wp/v2/posts`,
       {
-        title: 'New Post',
-        content: article,
-        status: 'publish',
+        title: article.title,
+        content: article.content,
+        status: 'publish'
       },
       {
         headers: {

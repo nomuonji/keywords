@@ -53,6 +53,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   links: {
     maxPerGroup: 3
   },
+  blogLanguage: 'ja',
   projectId: ''
 };
 
@@ -366,12 +367,16 @@ function normalizeProjectSettings(
     maxPerGroup: rawSettings?.links?.maxPerGroup ?? DEFAULT_PROJECT_SETTINGS.links.maxPerGroup
   };
 
+  const blog = rawSettings?.blog ? (pruneUndefined(rawSettings.blog) as ProjectSettings['blog']) : undefined;
+
   return {
     name: rawSettings?.name ?? projectName ?? DEFAULT_PROJECT_SETTINGS.name,
     pipeline,
     ads,
     weights,
     links,
+    blogLanguage: rawSettings?.blogLanguage ?? DEFAULT_PROJECT_SETTINGS.blogLanguage,
+    blog,
     projectId
   };
 }

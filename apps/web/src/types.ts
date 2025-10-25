@@ -47,6 +47,7 @@ export interface GroupSummary {
     size: number;
     topKw?: string;
   };
+  postUrl?: string;
 }
 
 export interface JobHistoryItem {
@@ -65,6 +66,24 @@ export interface JobHistoryItem {
   };
 }
 
+export type BlogPlatform = 'wordpress' | 'hatena';
+
+export interface WordpressBlogConfig {
+  platform: 'wordpress';
+  url: string;
+  username: string;
+  password: string;
+}
+
+export interface HatenaBlogConfig {
+  platform: 'hatena';
+  apiKey: string;
+  blogId: string;
+  hatenaId: string;
+}
+
+export type BlogMediaConfig = WordpressBlogConfig | HatenaBlogConfig;
+
 export interface ProjectSettings {
   pipeline: {
     staleDays: number;
@@ -72,6 +91,7 @@ export interface ProjectSettings {
       nodesPerRun: number;
       ideasPerNode: number;
       groupsOutlinePerRun: number;
+      groupsBlogPerRun: number;
     };
   };
   thresholds: {
@@ -87,6 +107,8 @@ export interface ProjectSettings {
   links: {
     maxPerGroup: number;
   };
+  blog?: BlogMediaConfig;
+  blogLanguage?: string;
 }
 
 export interface NodeDocWithId {

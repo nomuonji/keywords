@@ -88,7 +88,9 @@ export function mergeSettings(base: ProjectSettings, overrides?: ProjectSettings
     links: {
       ...base.links,
       ...(overrides.links ?? {})
-    }
+    },
+    blog: overrides.blog ?? base.blog,
+    blogLanguage: overrides.blogLanguage ?? base.blogLanguage ?? 'ja'
   };
   if (!merged.projectId) {
     merged.projectId = base.projectId;
@@ -633,7 +635,9 @@ export async function stageFPosting(
   }
 
   for (const group of selected) {
-    const post = await ctx.deps.blogger.createPost(group, media);
+    const post = await ctx.deps.blogger.createPost(group, media, {
+      language: settings.blogLanguage
+    });
     await savePostUrl(
       ctx.deps.firestore,
       ctx.projectId,

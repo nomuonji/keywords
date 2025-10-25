@@ -6,7 +6,8 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
     limits: {
       nodesPerRun: 10,
       ideasPerNode: 200,
-      groupsOutlinePerRun: 10
+      groupsOutlinePerRun: 10,
+      groupsBlogPerRun: 1
     }
   },
   thresholds: {
@@ -21,5 +22,6 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   },
   links: {
     maxPerGroup: 3
-  }
+  },
+  blogLanguage: 'ja'
 };
