@@ -1,4 +1,4 @@
-import { BlogMedia, WordpressConfig } from '../types';
+import { BlogMedia, WordpressConfig } from '@keywords/core';
 import axios from 'axios';
 
 export class WordpressMedia implements BlogMedia {

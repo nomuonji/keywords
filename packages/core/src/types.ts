@@ -1,5 +1,26 @@
 export type Intent = 'info' | 'trans' | 'local' | 'mixed';
 
+export interface WordpressConfig {
+  platform: 'wordpress';
+  url: string;
+  username: string;
+  password: string;
+}
+
+export interface HatenaConfig {
+  platform: 'hatena';
+  apiKey: string;
+  blogId: string;
+  hatenaId: string;
+}
+
+export type BlogMediaConfig = WordpressConfig | HatenaConfig;
+
+export interface BlogMedia {
+  post(article: string): Promise<string>;
+  getUrl(postId: string): Promise<string>;
+}
+
 export interface ProjectSettings {
   name: string;
   pipeline: {
@@ -28,6 +49,7 @@ export interface ProjectSettings {
   links: {
     maxPerGroup: number;
   };
+  blog?: BlogMediaConfig;
   projectId: string;
 }
 

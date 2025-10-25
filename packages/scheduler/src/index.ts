@@ -1,5 +1,5 @@
 export type { GroupDocWithId, KeywordDocWithId } from '@keywords/core';
-export { runOutlineGeneration, runLinkGeneration } from './inline';
+export { runOutlineGeneration, runLinkGeneration, runBlogGeneration } from './inline';
 export { loadConfig } from './config';
 
 import { existsSync } from 'node:fs';
@@ -28,7 +28,6 @@ for (const candidate of envCandidates) {
 import { KeywordIdeaClient } from '@keywords/ads';
 import { GeminiClient } from '@keywords/gemini';
 import { Blogger } from '@keywords/blogger';
-import { TavilyClient } from 'tavily-node';
 import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSummary } from './firestore';
 import { createLogger } from './logger';
 import { loadConfig } from './config';
@@ -36,6 +35,7 @@ import { runPipelineStages } from './pipeline';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 import type { JobDoc, JobStatus, JobSummaryError } from '@keywords/core';
 import type { SchedulerOptions, PipelineContext, PipelineCounters } from './types';
+import { tavily } from '@tavily/core';
 
 export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const config = loadConfig();
@@ -44,7 +44,7 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
     gemini: new GeminiClient(config.gemini),
-    blogger: new Blogger(new GeminiClient(config.gemini), new TavilyClient(config.tavily)),
+    blogger: new Blogger(new GeminiClient(config.gemini), tavily({ apiKey: config.tavily.apiKey })),
     firestore,
     logger
   };

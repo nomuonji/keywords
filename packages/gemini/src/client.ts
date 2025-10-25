@@ -51,6 +51,24 @@ export class GeminiClient {
     });
   }
 
+  async generateArticle(params: {
+    outline: any;
+    research: string;
+  }): Promise<string> {
+    const prompt = this.buildArticlePrompt(params);
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      })
+    );
+    const text =
+      response.response?.candidates?.[0]?.content?.parts
+        ?.map((part: any) => part.text ?? '')
+        .join('\n') ?? '';
+    return text;
+  }
+
   async embedKeywords(input: EmbedKeywordsInput): Promise<EmbedKeywordsOutput[]> {
     if (input.keywords.length === 0) {
       return [];
@@ -78,7 +96,7 @@ export class GeminiClient {
       if (result.embeddings.length !== slice.length) {
         throw new Error('Gemini embedding count mismatch for chunk');
       }
-      result.embeddings.forEach((emb) => vectors.push(emb.values));
+      result.embeddings.forEach((emb: any) => vectors.push(emb.values));
     }
     if (vectors.length !== input.keywords.length) {
       throw new Error('Gemini embedding count mismatch');
@@ -100,7 +118,7 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     return this.parseOutline(text, input);
   }
@@ -132,7 +150,7 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     return this.parseSuggestions(text);
   }
@@ -148,10 +166,30 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     console.log('---- Gemini Response ----\n', text);
     return this.parseSuggestions(text);
+  }
+
+  private buildArticlePrompt(params: {
+    outline: any;
+    research: string;
+  }): string {
+    return [
+      'You are an expert SEO content writer.',
+      'Based on the following article outline and research, please write a high-quality, comprehensive blog post in natural Japanese.',
+      'The article should be well-structured, easy to read, and optimized for search engines.',
+      'Use the provided headings and subheadings from the outline.',
+      'Incorporate the information from the research to provide valuable insights and answer user questions.',
+      'Output requirements (strict):',
+      '- Respond ONLY with the full article content in Markdown format.',
+      '- Do not include any commentary or code fences.',
+      'Article Outline:',
+      JSON.stringify(params.outline, null, 2),
+      'Research:',
+      params.research,
+    ].join('\n');
   }
 
   private buildSuggestThemesPrompt(input: SuggestThemesInput): string {

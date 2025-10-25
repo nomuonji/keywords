@@ -32,7 +32,8 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
     limits: {
       nodesPerRun: 10,
       ideasPerNode: 200,
-      groupsOutlinePerRun: 10
+      groupsOutlinePerRun: 10,
+      groupsBlogPerRun: 1
     }
   },
   ads: {
@@ -230,6 +231,7 @@ export async function createJob(
     groupsUpdated: 0,
     outlinesCreated: 0,
     linksUpdated: 0,
+    postsCreated: 0,
     errors: []
   };
   const now = nowIso();
@@ -326,7 +328,10 @@ function normalizeProjectSettings(
         DEFAULT_PROJECT_SETTINGS.pipeline.limits.ideasPerNode,
       groupsOutlinePerRun:
         rawSettings?.pipeline?.limits?.groupsOutlinePerRun ??
-        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsOutlinePerRun
+        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsOutlinePerRun,
+      groupsBlogPerRun:
+        rawSettings?.pipeline?.limits?.groupsBlogPerRun ??
+        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsBlogPerRun
     }
   };
 

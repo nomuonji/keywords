@@ -8,7 +8,8 @@ import type {
   LinkDoc,
   KeywordMetrics,
   GroupDocWithId,
-  KeywordDocWithId
+  KeywordDocWithId,
+  BlogMediaConfig
 } from '@keywords/core';
 import type {
   PipelineContext,
@@ -31,6 +32,7 @@ import {
   upsertGroup,
   upsertLinks
 } from './firestore';
+import { WordpressMedia, HatenaMedia } from '@keywords/blogger/media';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 
 interface StageError {
@@ -129,7 +131,7 @@ async function handleTheme(
   stages: StageFlags,
   errors: StageError[]
 ): Promise<void> {
-  const themeSettings = mergeSettings(ctx.settings, theme.settings);
+  const themeSettings = mergeSettings(ctx.settings, theme);
   try {
     if (stages.ideas) {
       await stageAKeywordDiscovery(ctx, theme, themeSettings);
@@ -620,8 +622,18 @@ export async function stageFPosting(
     return [];
   }
 
+  const mediaConfig = settings.blog;
+  let media;
+  if (mediaConfig.platform === 'wordpress') {
+    media = new WordpressMedia(mediaConfig);
+  } else if (mediaConfig.platform === 'hatena') {
+    media = new HatenaMedia(mediaConfig);
+  } else {
+    throw new Error('Unsupported blog platform');
+  }
+
   for (const group of selected) {
-    const post = await ctx.deps.blogger.createPost(group, settings.blog);
+    const post = await ctx.deps.blogger.createPost(group, media);
     await savePostUrl(
       ctx.deps.firestore,
       ctx.projectId,

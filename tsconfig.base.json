@@ -13,7 +13,9 @@
       "@keywords/gemini/*": ["packages/gemini/src/*"],
       "@keywords/gemini": ["packages/gemini/src/index"],
       "@keywords/scheduler/*": ["packages/scheduler/src/*"],
-      "@keywords/scheduler": ["packages/scheduler/src/index"]
+      "@keywords/scheduler": ["packages/scheduler/src/index"],
+      "@keywords/blogger/*": ["packages/blogger/src/*"],
+      "@keywords/blogger": ["packages/blogger/src/index"]
     },
     "types": ["node"],
     "resolveJsonModule": true,

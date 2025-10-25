@@ -1,9 +1,14 @@
 import type { AdsAuthConfig } from '@keywords/ads';
 import type { GeminiConfig } from '@keywords/gemini';
 
+export interface TavilyConfig {
+  apiKey?: string;
+}
+
 export interface EnvironmentConfig {
   ads: AdsAuthConfig;
   gemini: GeminiConfig;
+  tavily: TavilyConfig;
   firestore: {
     projectId?: string;
     databaseId?: string;
@@ -30,6 +35,9 @@ export function loadConfig(): EnvironmentConfig {
       apiKey: process.env.GEMINI_API_KEY,
       embeddingModel: process.env.GEMINI_EMBEDDING_MODEL,
       generativeModel: process.env.GEMINI_GENERATIVE_MODEL
+    },
+    tavily: {
+      apiKey: process.env.TAVILY_API_KEY
     },
     firestore: {
       projectId: process.env.GCP_PROJECT_ID,

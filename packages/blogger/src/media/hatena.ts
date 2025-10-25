@@ -1,4 +1,4 @@
-import { BlogMedia, HatenaConfig } from '../types';
+import { BlogMedia, HatenaConfig } from '@keywords/core';
 import axios from 'axios';
 import { XMLBuilder, XMLParser } from 'fast-xml-parser';
 
