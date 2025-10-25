@@ -15,6 +15,7 @@ import type { firestore as AdminFirestore } from 'firebase-admin';
 import type { Logger } from 'pino';
 import type { KeywordIdeaClient } from '@keywords/ads';
 import type { GeminiClient } from '@keywords/gemini';
+import type { Blogger } from '@keywords/blogger';
 import type { EnvironmentConfig } from './config';
 
 export interface SchedulerStagesOptions {
@@ -23,6 +24,7 @@ export interface SchedulerStagesOptions {
   scoring?: boolean;
   outline?: boolean;
   links?: boolean;
+  blogging?: boolean;
 }
 
 export interface SchedulerOptions {
@@ -39,11 +41,13 @@ export interface PipelineCounters {
   groupsUpdated: number;
   outlinesCreated: number;
   linksUpdated: number;
+  postsCreated: number;
 }
 
 export interface PipelineDependencies {
   ads: KeywordIdeaClient;
   gemini: GeminiClient;
+  blogger: Blogger;
   firestore: AdminFirestore.Firestore;
   logger: Logger;
 }

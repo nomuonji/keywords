@@ -51,8 +51,15 @@ function createCounters(): PipelineCounters {
     groupsCreated: 0,
     groupsUpdated: 0,
     outlinesCreated: 0,
-    linksUpdated: 0
+  linksUpdated: 0,
+  postsCreated: 0
   };
+}
+
+interface BlogResult {
+  status: 'completed';
+  postsCreated: number;
+  postedGroupIds: string[];
 }
 
 async function createInlineContext(
@@ -190,5 +197,67 @@ export async function runLinkGeneration(
     status: 'completed',
     linksCreated: context.counters.linksUpdated,
     sourceGroupIds: outlinedSources.map((group) => group.id)
+  };
+}
+
+export async function runBlogGeneration(params: OutlineParams): Promise<BlogResult> {
+  const { context, theme } = await createInlineContext(params, {
+    ideas: false,
+    clustering: false,
+    scoring: false,
+    outline: false,
+    links: false,
+    blogging: true
+  });
+  const settings = mergeSettings(context.settings, theme.settings);
+  const explicitIds = params.groupIds?.filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0
+  );
+  let explicitGroups: GroupDocWithId[] | undefined;
+  if (explicitIds && explicitIds.length) {
+    explicitGroups = await loadGroupsByIds(
+      context.deps.firestore,
+      params.projectId,
+      params.themeId,
+      explicitIds
+    );
+  }
+
+  let posted: GroupDocWithId[] = [];
+  if (explicitGroups && explicitGroups.length) {
+    posted = await stageFPosting(context, theme, settings, [], {
+      explicitGroups
+    });
+  }
+  if (!posted.length && !(explicitGroups && explicitGroups.length)) {
+    const allGroups = await loadGroupsForLinking(
+      context.deps.firestore,
+      params.projectId,
+      params.themeId
+    );
+    const limit = settings.pipeline.limits.groupsBlogPerRun;
+    const fallbackTargets = allGroups
+      .slice()
+      .filter((group) => {
+        const typed = group as GroupDocWithId & {
+          summary?: { disabled?: boolean };
+          postUrl?: string;
+        };
+        const hasSummary = !!typed.summary && !typed.summary?.disabled;
+        return hasSummary && !typed.postUrl;
+      })
+      .sort((a, b) => (b.priorityScore ?? 0) - (a.priorityScore ?? 0))
+      .slice(0, limit);
+    if (fallbackTargets.length) {
+      posted = await stageFPosting(context, theme, settings, [], {
+        explicitGroups: fallbackTargets
+      });
+    }
+  }
+
+  return {
+    status: 'completed',
+    postsCreated: context.counters.postsCreated,
+    postedGroupIds: posted.map((group) => group.id)
   };
 }

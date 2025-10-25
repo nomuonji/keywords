@@ -8,6 +8,7 @@ export interface ProjectSettings {
       nodesPerRun: number;
       ideasPerNode: number;
       groupsOutlinePerRun: number;
+      groupsBlogPerRun: number;
     };
   };
   ads: {
@@ -101,6 +102,7 @@ export interface GroupDoc {
   intent: Intent;
   summary?: GroupSummary;
   priorityScore: number;
+  postUrl?: string;
   clusterStats: {
     size: number;
     topKw?: string;
@@ -134,6 +136,7 @@ export interface JobSummary {
   groupsUpdated: number;
   outlinesCreated: number;
   linksUpdated: number;
+  postsCreated: number;
   errors: JobSummaryError[];
 }
 

@@ -257,6 +257,7 @@ export async function updateJobSummary(
     'summary.groupsUpdated': counters.groupsUpdated,
     'summary.outlinesCreated': counters.outlinesCreated,
     'summary.linksUpdated': counters.linksUpdated,
+    'summary.postsCreated': counters.postsCreated,
     'summary.errors': errors,
     status,
     finishedAt: nowIso()
@@ -515,6 +516,38 @@ export async function updateKeywordsAfterGrouping(
     });
   }
   await batch.commit();
+}
+
+export async function loadGroupsNeedingPost(
+  firestore: admin.firestore.Firestore,
+  projectId: string,
+  themeId: string,
+  limit: number
+): Promise<GroupDocWithId[]> {
+  const collection = firestore.collection(
+    `projects/${projectId}/themes/${themeId}/groups`
+  ) as admin.firestore.CollectionReference<GroupDoc>;
+  const snapshot = await collection
+    .where('summary', '!=', null)
+    .where('postUrl', '==', null)
+    .orderBy('priorityScore', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as GroupDoc) }));
+}
+
+export async function savePostUrl(
+  firestore: admin.firestore.Firestore,
+  projectId: string,
+  themeId: string,
+  groupId: string,
+  postUrl: string
+): Promise<void> {
+  const ref = firestore.doc(`projects/${projectId}/themes/${themeId}/groups/${groupId}`);
+  await ref.update({
+    postUrl,
+    updatedAt: nowIso()
+  });
 }
 
 export async function loadGroupsNeedingOutline(

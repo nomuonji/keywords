@@ -27,6 +27,8 @@ for (const candidate of envCandidates) {
 
 import { KeywordIdeaClient } from '@keywords/ads';
 import { GeminiClient } from '@keywords/gemini';
+import { Blogger } from '@keywords/blogger';
+import { TavilyClient } from 'tavily-node';
 import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSummary } from './firestore';
 import { createLogger } from './logger';
 import { loadConfig } from './config';
@@ -42,6 +44,7 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
     gemini: new GeminiClient(config.gemini),
+    blogger: new Blogger(new GeminiClient(config.gemini), new TavilyClient(config.tavily)),
     firestore,
     logger
   };
@@ -60,7 +63,8 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
       groupsCreated: 0,
       groupsUpdated: 0,
       outlinesCreated: 0,
-      linksUpdated: 0
+      linksUpdated: 0,
+      postsCreated: 0
     };
 
     const context: PipelineContext = {
@@ -119,6 +123,7 @@ function emitSummaryLine(
     groupsUpdated: counters.groupsUpdated,
     outlinesCreated: counters.outlinesCreated,
     linksUpdated: counters.linksUpdated,
+    'summary.postsCreated': counters.postsCreated,
     errors: errors.map((err) => ({ type: err.type, message: `${err.error}` }))
   };
   // eslint-disable-next-line no-console
