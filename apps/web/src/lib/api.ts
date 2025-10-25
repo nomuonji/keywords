@@ -1,10 +1,16 @@
-const baseUrl = import.meta.env.VITE_API_BASE_URL;
-
 function ensureBaseUrl(): string {
-  if (!baseUrl) {
+  let url = import.meta.env.VITE_API_BASE_URL;
+  if (!url) {
     throw new Error('VITE_API_BASE_URL is not configured');
   }
-  return baseUrl;
+  if (!url.startsWith('http')) {
+    if (url.includes('localhost')) {
+      url = `http://${url}`;
+    } else {
+      url = `https://${url}`;
+    }
+  }
+  return url;
 }
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
