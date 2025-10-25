@@ -1,8 +1,15 @@
 {
+  "installCommand": "npm install",
+  "builds": [
+    {
+      "src": "apps/api/src/server.ts",
+      "use": "@vercel/node"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/index.ts"
+      "destination": "/apps/api/src/server.ts"
     }
   ]
 }
