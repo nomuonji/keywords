@@ -30,6 +30,8 @@ interface GroupPanelProps {
   onDeleteSelectedGroups: () => void;
   deletingGroups?: boolean;
   clearingOutlines?: boolean;
+  onCreateArticle: (groupId: string) => void;
+  postingGroupIds?: Set<string>;
 }
 
 export function GroupPanel({
@@ -41,7 +43,9 @@ export function GroupPanel({
   onClearOutlines,
   onDeleteSelectedGroups,
   deletingGroups,
-  clearingOutlines
+  clearingOutlines,
+  onCreateArticle,
+  postingGroupIds
 }: GroupPanelProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
@@ -77,6 +81,9 @@ export function GroupPanel({
   const selectedGroup =
     groups.find((group) => group.id === selectedGroupId) ?? groups[0] ?? undefined;
   const selectedCount = selectedGroupIds.size;
+
+  const selectedGroupIsPosting =
+    selectedGroup && postingGroupIds ? postingGroupIds.has(selectedGroup.id) : false;
 
   return (
     <section className="space-y-4">
@@ -184,6 +191,11 @@ export function GroupPanel({
                       tone={group.outline ? 'success' : 'muted'}
                     />
                     <StatusBadge
+                      icon={MdArticle}
+                      label={group.postUrl ? '公開済み' : '未公開'}
+                      tone={group.postUrl ? 'success' : 'muted'}
+                    />
+                    <StatusBadge
                       icon={MdOutlineLink}
                       label={`リンク ${group.links.length}`}
                       tone={group.links.length ? 'info' : 'muted'}
@@ -202,7 +214,11 @@ export function GroupPanel({
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           {selectedGroup ? (
-            <GroupDetail group={selectedGroup} />
+            <GroupDetail
+              group={selectedGroup}
+              onCreateArticle={onCreateArticle}
+              posting={selectedGroupIsPosting}
+            />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-slate-500">
               <MdOutlineInfo size={28} />
@@ -237,7 +253,16 @@ function StatusBadge({
   );
 }
 
-function GroupDetail({ group }: { group: GroupSummary }) {
+function GroupDetail({
+  group,
+  onCreateArticle,
+  posting
+}: {
+  group: GroupSummary;
+  onCreateArticle: (groupId: string) => void;
+  posting?: boolean;
+}) {
+  const isPublished = Boolean(group.postUrl);
   const linkGroups: Array<{
     reason: GroupSummary['links'][number]['reason'];
     label: string;
@@ -267,7 +292,17 @@ function GroupDetail({ group }: { group: GroupSummary }) {
   return (
     <div className="flex h-full flex-col gap-4">
       <header className="border-b border-slate-200 pb-3">
-        <h4 className="text-lg font-semibold text-slate-900">{group.title}</h4>
+        <div className="flex items-center justify-between">
+          <h4 className="text-lg font-semibold text-slate-900">{group.title}</h4>
+          <button
+            type="button"
+            onClick={() => onCreateArticle(group.id)}
+            className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
+            disabled={posting}
+          >
+            {posting ? (isPublished ? 'リライト中…' : '記事作成中…') : isPublished ? 'リライト' : '記事作成'}
+          </button>
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5">
             {translateIntent(group.intent)}
@@ -281,6 +316,19 @@ function GroupDetail({ group }: { group: GroupSummary }) {
             キーワード {group.keywords.length} 件
           </span>
         </div>
+        {group.postUrl ? (
+          <a
+            href={group.postUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-medium text-primary underline underline-offset-2"
+          >
+            公開済み記事を開く
+          </a>
+        ) : (
+          <p className="text-xs text-slate-500">まだ公開されていません。</p>
+        )}
+
       </header>
 
       <section className="space-y-3">

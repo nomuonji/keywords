@@ -13,6 +13,19 @@ import type {
   SuggestThemesOutput
 } from './types';
 
+type GenerateArticleParams = {
+  outline: any;
+  research: string;
+  topic?: string;
+  intent?: Intent;
+  language?: string;
+};
+
+type GenerateArticleResult = {
+  title: string;
+  html: string;
+};
+
 export class GeminiClient {
   private readonly client: GoogleGenerativeAI;
   private readonly embeddingModel: string;
@@ -51,6 +64,36 @@ export class GeminiClient {
     });
   }
 
+  async generateArticle(params: GenerateArticleParams): Promise<GenerateArticleResult> {
+    const prompt = this.buildArticlePrompt(params);
+    const model = this.getModel(this.generativeModel);
+    const response = await retry(async () =>
+      model.generateContent({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json' }
+      })
+    );
+    const text =
+      response.response?.candidates?.[0]?.content?.parts
+        ?.map((part: any) => part.text ?? '')
+        .join('\n') ?? '';
+    try {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Article response is not an object');
+      }
+      if (!parsed.title || !parsed.html) {
+        throw new Error('Article response missing title or html fields');
+      }
+      return {
+        title: String(parsed.title).trim(),
+        html: String(parsed.html).trim()
+      };
+    } catch (error) {
+      throw new Error(`Failed to parse article response: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
   async embedKeywords(input: EmbedKeywordsInput): Promise<EmbedKeywordsOutput[]> {
     if (input.keywords.length === 0) {
       return [];
@@ -78,7 +121,7 @@ export class GeminiClient {
       if (result.embeddings.length !== slice.length) {
         throw new Error('Gemini embedding count mismatch for chunk');
       }
-      result.embeddings.forEach((emb) => vectors.push(emb.values));
+      result.embeddings.forEach((emb: any) => vectors.push(emb.values));
     }
     if (vectors.length !== input.keywords.length) {
       throw new Error('Gemini embedding count mismatch');
@@ -100,7 +143,7 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     return this.parseOutline(text, input);
   }
@@ -132,7 +175,7 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     return this.parseSuggestions(text);
   }
@@ -148,10 +191,76 @@ export class GeminiClient {
     );
     const text =
       response.response?.candidates?.[0]?.content?.parts
-        ?.map((part) => part.text ?? '')
+        ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
     console.log('---- Gemini Response ----\n', text);
     return this.parseSuggestions(text);
+  }
+
+  private buildArticlePrompt(params: GenerateArticleParams): string {
+    const topic = params.topic ?? params.outline?.outlineTitle ?? 'ブログ記事';
+    const intent = params.intent ?? 'info';
+    const languageCode = (params.language ?? 'ja').toLowerCase();
+    const languageName = this.describeLanguage(languageCode);
+    const writerDescriptor =
+      languageCode === 'ja' ? 'Japanese' : `${languageName} bilingual (Japanese/English-capable)`;
+    const titleGuideline =
+      languageCode === 'ja'
+        ? '60 Japanese characters'
+        : '60 characters in the target language';
+    const punctuationHint =
+      languageCode === 'ja'
+        ? 'Use Japanese punctuation and full-width characters where appropriate.'
+        : 'Use natural punctuation and typography for the selected language.';
+    return [
+      `You are an expert ${writerDescriptor} SEO copywriter and editor.`,
+      `Primary topic: ${topic}`,
+      `Search intent: ${intent}`,
+      `Target language: ${languageName}.`,
+      'Use the provided outline JSON and research JSON to craft a compelling, comprehensive article.',
+      'Formatting rules:',
+      `- Write entirely in natural ${languageName}.`,
+      '- Return valid JSON with keys "title" and "html".',
+      `- "title" should be an engaging headline under ${titleGuideline}.`,
+      '- "html" must be a complete <article>...</article> fragment that includes:',
+      '  * One <h1> for the main headline (matching the title).',
+      '  * Multiple <section> blocks with <h2> / <h3> headings derived from the outline.',
+      '  * Rich formatting: <p>, <strong>, <em>, <ul>/<ol>, <blockquote>, and tables when helpful.',
+      `- ${punctuationHint}`,
+      '- Avoid Markdown, code fences, script tags, or inline styles.',
+      '- Embed key research insights with natural paraphrasing and cite sources in-text when relevant.',
+      'Outline JSON:',
+      JSON.stringify(params.outline, null, 2),
+      'Research JSON:',
+      params.research
+    ].join('\n');
+  }
+
+  private describeLanguage(code: string): string {
+    switch (code) {
+      case 'en':
+      case 'en-us':
+      case 'en-gb':
+        return 'English';
+      case 'zh':
+      case 'zh-cn':
+      case 'zh-tw':
+        return 'Chinese';
+      case 'ko':
+        return 'Korean';
+      case 'fr':
+        return 'French';
+      case 'es':
+        return 'Spanish';
+      case 'de':
+        return 'German';
+      case 'th':
+        return 'Thai';
+      case 'vi':
+        return 'Vietnamese';
+      default:
+        return 'Japanese';
+    }
   }
 
   private buildSuggestThemesPrompt(input: SuggestThemesInput): string {

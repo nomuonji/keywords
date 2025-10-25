@@ -35,7 +35,8 @@ import type {
   ProjectSettings,
   ProjectSummary,
   ThemeSummary,
-  NodeDocWithId
+  NodeDocWithId,
+  BlogMediaConfig
 } from './types';
 
 type OutlineRunResponse = {
@@ -55,6 +56,68 @@ type LinkRunResponse = {
 type ClearOutlineResponse = {
   cleared: number;
 };
+
+type BlogRunResponse = {
+  status: 'completed';
+  postsCreated: number;
+  postedGroupIds: string[];
+};
+
+type ProjectSettingsPayload = Partial<
+  Omit<ProjectSettings, 'pipeline'>
+> & {
+  pipeline?: Partial<ProjectSettings['pipeline']> & {
+    limits?: Partial<ProjectSettings['pipeline']['limits']>;
+  };
+};
+
+function normalizeProjectSettings(raw?: ProjectSettingsPayload): ProjectSettings {
+  const base = DEFAULT_PROJECT_SETTINGS;
+  return {
+    pipeline: {
+      staleDays: raw?.pipeline?.staleDays ?? base.pipeline.staleDays,
+      limits: {
+        nodesPerRun: raw?.pipeline?.limits?.nodesPerRun ?? base.pipeline.limits.nodesPerRun,
+        ideasPerNode: raw?.pipeline?.limits?.ideasPerNode ?? base.pipeline.limits.ideasPerNode,
+        groupsOutlinePerRun:
+          raw?.pipeline?.limits?.groupsOutlinePerRun ?? base.pipeline.limits.groupsOutlinePerRun,
+        groupsBlogPerRun:
+          raw?.pipeline?.limits?.groupsBlogPerRun ?? base.pipeline.limits.groupsBlogPerRun
+      }
+    },
+    thresholds: {
+      minVolume: raw?.thresholds?.minVolume ?? base.thresholds.minVolume,
+      maxCompetition: raw?.thresholds?.maxCompetition ?? base.thresholds.maxCompetition
+    },
+    weights: {
+      volume: raw?.weights?.volume ?? base.weights.volume,
+      competition: raw?.weights?.competition ?? base.weights.competition,
+      intent: raw?.weights?.intent ?? base.weights.intent,
+      novelty: raw?.weights?.novelty ?? base.weights.novelty
+    },
+    links: {
+      maxPerGroup: raw?.links?.maxPerGroup ?? base.links.maxPerGroup
+    },
+    blog: raw?.blog,
+    blogLanguage: raw?.blogLanguage ?? base.blogLanguage ?? 'ja'
+  };
+}
+
+function validateBlogConfig(config?: BlogMediaConfig): string | null {
+  if (!config) {
+    return 'ブログ連携が未設定です。「プロジェクト設定 > ブログ連携」を入力してください。';
+  }
+  if (config.platform === 'wordpress') {
+    if (!config.url || !config.username || !config.password) {
+      return 'WordPress の URL / ユーザー / アプリパスワードをすべて設定してください。';
+    }
+  } else if (config.platform === 'hatena') {
+    if (!config.hatenaId || !config.blogId || !config.apiKey) {
+      return 'はてなブログの ID / ブログID / APIキー をすべて設定してください。';
+    }
+  }
+  return null;
+}
 
 export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -79,6 +142,7 @@ export default function App() {
   const [runningThemes, setRunningThemes] = useState<Set<string>>(new Set());
   const [runningOutlineThemes, setRunningOutlineThemes] = useState<Set<string>>(new Set());
   const [runningLinkThemes, setRunningLinkThemes] = useState<Set<string>>(new Set());
+  const [postingGroupIds, setPostingGroupIds] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<NodeDocWithId[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [deletingGroups, setDeletingGroups] = useState(false);
@@ -91,12 +155,15 @@ export default function App() {
       (snapshot) => {
         const data: ProjectSummary[] = snapshot.docs.map((docSnap) => {
           const docData = docSnap.data();
+          const normalizedSettings = normalizeProjectSettings(
+            (docData.settings ?? undefined) as ProjectSettingsPayload | undefined
+          );
           return {
             id: docSnap.id,
             name: docData.name ?? docSnap.id,
             domain: docData.domain,
             halt: docData.halt ?? false,
-            settings: docData.settings ?? DEFAULT_PROJECT_SETTINGS,
+            settings: normalizedSettings,
             lastJob: undefined
           };
         });
@@ -261,7 +328,11 @@ export default function App() {
               clusterStats: data.clusterStats ?? { size: keywords.length },
               outline,
               keywords,
-              links
+              links,
+              postUrl:
+                typeof data.postUrl === 'string' && data.postUrl.trim().length
+                  ? data.postUrl
+                  : undefined
             };
           })
         );
@@ -751,6 +822,63 @@ export default function App() {
     setThemeModal({ mode: 'create' });
   };
 
+  const handleCreateArticle = async (groupId: string) => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
+      return;
+    }
+    const blogConfigError = validateBlogConfig(selectedProject?.settings.blog);
+    if (blogConfigError) {
+      setToast({ message: blogConfigError, type: 'error' });
+      return;
+    }
+    if (postingGroupIds.has(groupId)) {
+      return;
+    }
+    const targetGroup = groups.find((group) => group.id === groupId);
+    const label = targetGroup?.title ?? groupId;
+    const isRewrite = Boolean(targetGroup?.postUrl);
+    const actionLabel = isRewrite ? 'リライト' : '記事作成';
+    setToast({ message: `${label} の${actionLabel}を開始します`, type: 'info' });
+    setPostingGroupIds((prev) => {
+      const next = new Set(prev);
+      next.add(groupId);
+      return next;
+    });
+    try {
+      const response = await postJson<BlogRunResponse>(
+        `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`,
+        { groupIds: [groupId] }
+      );
+      if (response.postsCreated > 0) {
+        setToast({
+          message: `${label} の${isRewrite ? 'リライト結果を公開しました' : '記事を公開しました'}`,
+          type: 'success'
+        });
+      } else {
+        setToast({
+          message: isRewrite
+            ? 'リライト対象が見つかりませんでした。アウトラインを見直してください。'
+            : '記事作成対象が見つかりませんでした。アウトラインをご確認ください。',
+          type: 'info'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to generate article', error);
+      const message =
+        error instanceof Error && error.message
+          ? `記事作成に失敗しました: ${error.message}`
+          : '記事作成に失敗しました';
+      setToast({ message, type: 'error' });
+    } finally {
+      setPostingGroupIds((prev) => {
+        const next = new Set(prev);
+        next.delete(groupId);
+        return next;
+      });
+    }
+  };
+
   return (
     <AppShell title="Keywords 管理UI（デモ）">
       <div className="flex flex-col gap-6">
@@ -845,17 +973,19 @@ export default function App() {
           />
         ) : null}
 
-        <GroupPanel
-          groups={groups}
-          selectedGroupIds={selectedGroupIds}
-          onToggleGroupSelection={handleToggleGroupSelection}
-          onSelectAllGroups={handleSelectAllGroups}
-          onClearSelection={handleClearGroupSelection}
-          onClearOutlines={handleClearGroupOutlines}
-          onDeleteSelectedGroups={handleDeleteSelectedGroups}
-          deletingGroups={deletingGroups}
-          clearingOutlines={clearingOutlines}
-        />
+          <GroupPanel
+            groups={groups}
+            selectedGroupIds={selectedGroupIds}
+            onToggleGroupSelection={handleToggleGroupSelection}
+            onSelectAllGroups={handleSelectAllGroups}
+            onClearSelection={handleClearGroupSelection}
+            onClearOutlines={handleClearGroupOutlines}
+            onDeleteSelectedGroups={handleDeleteSelectedGroups}
+            deletingGroups={deletingGroups}
+            clearingOutlines={clearingOutlines}
+            onCreateArticle={handleCreateArticle}
+            postingGroupIds={postingGroupIds}
+          />
       </div>
 
       <ProjectFormModal

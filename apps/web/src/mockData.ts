@@ -34,7 +34,12 @@ export const projects: ProjectSummary[] = [
     settings: createDefaultSettings({
       pipeline: {
         staleDays: 10,
-        limits: { nodesPerRun: 6, ideasPerNode: 150, groupsOutlinePerRun: 8 }
+        limits: {
+          nodesPerRun: 6,
+          ideasPerNode: 150,
+          groupsOutlinePerRun: 8,
+          groupsBlogPerRun: 1
+        }
       },
       thresholds: { minVolume: 20, maxCompetition: 0.7 },
       links: { maxPerGroup: 4 }
@@ -53,7 +58,12 @@ export const themes: Record<string, ThemeSummary[]> = {
       settings: {
         pipeline: {
           staleDays: 12,
-          limits: { nodesPerRun: 12, ideasPerNode: 220, groupsOutlinePerRun: 12 }
+          limits: {
+            nodesPerRun: 12,
+            ideasPerNode: 220,
+            groupsOutlinePerRun: 12,
+            groupsBlogPerRun: 1
+          }
         },
         thresholds: { minVolume: 15, maxCompetition: 0.85 },
         weights: { volume: 0.55, competition: 0.25, intent: 0.15, novelty: 0.05 },
@@ -185,7 +195,8 @@ function createDefaultSettings(overrides: Partial<ProjectSettings> = {}): Projec
       limits: {
         nodesPerRun: 10,
         ideasPerNode: 200,
-        groupsOutlinePerRun: 10
+        groupsOutlinePerRun: 10,
+        groupsBlogPerRun: 1
       }
     },
     thresholds: {
@@ -200,12 +211,25 @@ function createDefaultSettings(overrides: Partial<ProjectSettings> = {}): Projec
     },
     links: {
       maxPerGroup: 3
-    }
+    },
+    blogLanguage: 'ja'
   };
   return {
-    pipeline: { ...base.pipeline, ...overrides.pipeline },
+    pipeline: {
+      staleDays: overrides.pipeline?.staleDays ?? base.pipeline.staleDays,
+      limits: {
+        nodesPerRun: overrides.pipeline?.limits?.nodesPerRun ?? base.pipeline.limits.nodesPerRun,
+        ideasPerNode: overrides.pipeline?.limits?.ideasPerNode ?? base.pipeline.limits.ideasPerNode,
+        groupsOutlinePerRun:
+          overrides.pipeline?.limits?.groupsOutlinePerRun ?? base.pipeline.limits.groupsOutlinePerRun,
+        groupsBlogPerRun:
+          overrides.pipeline?.limits?.groupsBlogPerRun ?? base.pipeline.limits.groupsBlogPerRun
+      }
+    },
     thresholds: { ...base.thresholds, ...overrides.thresholds },
     weights: { ...base.weights, ...overrides.weights },
-    links: { ...base.links, ...overrides.links }
+    links: { ...base.links, ...overrides.links },
+    blog: overrides.blog ?? undefined,
+    blogLanguage: overrides.blogLanguage ?? base.blogLanguage
   };
 }

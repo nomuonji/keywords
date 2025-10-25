@@ -7,3 +7,4 @@ dist
 coverage
 firebase-debug.log
 .firebaserc
+*.tsbuildinfo

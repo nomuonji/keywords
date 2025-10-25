@@ -1,5 +1,31 @@
 export type Intent = 'info' | 'trans' | 'local' | 'mixed';
 
+export interface WordpressConfig {
+  platform: 'wordpress';
+  url: string;
+  username: string;
+  password: string;
+}
+
+export interface HatenaConfig {
+  platform: 'hatena';
+  apiKey: string;
+  blogId: string;
+  hatenaId: string;
+}
+
+export type BlogMediaConfig = WordpressConfig | HatenaConfig;
+
+export interface BlogPostPayload {
+  title: string;
+  content: string;
+}
+
+export interface BlogMedia {
+  post(article: BlogPostPayload): Promise<string>;
+  getUrl(postId: string): Promise<string>;
+}
+
 export interface ProjectSettings {
   name: string;
   pipeline: {
@@ -8,6 +34,7 @@ export interface ProjectSettings {
       nodesPerRun: number;
       ideasPerNode: number;
       groupsOutlinePerRun: number;
+      groupsBlogPerRun: number;
     };
   };
   ads: {
@@ -27,6 +54,8 @@ export interface ProjectSettings {
   links: {
     maxPerGroup: number;
   };
+  blog?: BlogMediaConfig;
+  blogLanguage?: string;
   projectId: string;
 }
 
@@ -101,6 +130,7 @@ export interface GroupDoc {
   intent: Intent;
   summary?: GroupSummary;
   priorityScore: number;
+  postUrl?: string;
   clusterStats: {
     size: number;
     topKw?: string;
@@ -134,6 +164,7 @@ export interface JobSummary {
   groupsUpdated: number;
   outlinesCreated: number;
   linksUpdated: number;
+  postsCreated: number;
   errors: JobSummaryError[];
 }
 

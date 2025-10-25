@@ -10,8 +10,6 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../core" },
-    { "path": "../ads" },
-    { "path": "../gemini" },
-    { "path": "../blogger" }
+    { "path": "../gemini" }
   ]
 }

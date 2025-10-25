@@ -94,7 +94,8 @@ class GeminiClient {
         const prompt = this.buildSuggestThemesPrompt(input);
         const model = this.getModel(this.generativeModel);
         const response = await (0, core_1.retry)(async () => model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
         }));
         const text = response.response?.candidates?.[0]?.content?.parts
             ?.map((part) => part.text ?? '')
@@ -103,10 +104,10 @@ class GeminiClient {
     }
     async suggestNodes(input) {
         const prompt = this.buildSuggestNodesPrompt(input);
-        console.log('---- Gemini Prompt ----\n', prompt);
         const model = this.getModel(this.generativeModel);
         const response = await (0, core_1.retry)(async () => model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
         }));
         const text = response.response?.candidates?.[0]?.content?.parts
             ?.map((part) => part.text ?? '')
@@ -118,11 +119,12 @@ class GeminiClient {
         return [
             'You are an expert SEO content strategist.',
             'Based on the following project description, please suggest 5-10 potential content themes.',
-            'Each theme should be a short, actionable phrase, like a high-level keyword cluster.',
+            'Each theme should be a very broad, high-level topic, ideally expressed as a single keyword.',
+            'Avoid themes that are long phrases, questions, or specific long-tail keywords.',
             'Focus on topics that are likely to have good search volume and commercial value.',
             'Output requirements (strict):',
-            '- Respond ONLY with a flat JSON array of strings. No commentary or code fences.',
-            '- Example: ["テーマ1", "テーマ2", "テーマ3"]',
+            '- Respond ONLY with a JSON code block containing a flat array of strings.',
+            '- Example: ```json\n["テーマ1", "テーマ2", "テーマ3"]\n```',
             'Project Description:',
             input.description
         ].join('\n');
@@ -138,8 +140,8 @@ class GeminiClient {
             'Each idea should be a concrete, long-tail keyword or a specific question that a user might ask.',
             'Avoid duplicating existing nodes.',
             'Output requirements (strict):',
-            '- Respond ONLY with a flat JSON array of strings. No commentary or code fences.',
-            '- Example: ["記事アイデア1", "記事アイデア2", "記事アイデア3"]',
+            '- Respond ONLY with a JSON code block containing a flat array of strings.',
+            '- Example: ```json\n["記事アイデア1", "記事アイデア2", "記事アイデア3"]\n```',
             existingNodesList
         ].join('\n');
     }
@@ -265,22 +267,33 @@ class GeminiClient {
     }
     extractJson(text) {
         const trimmed = text.trim();
-        if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        // Check for JSON object or array at the top level
+        if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
             return trimmed;
         }
         const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
         if (codeBlockMatch?.[1]) {
             return codeBlockMatch[1].trim();
         }
+        // Fallback for partial JSON in text, try to find the first brace/bracket and last brace/bracket
         const firstBrace = trimmed.indexOf('{');
-        if (firstBrace === -1) {
-            throw new Error('Gemini response did not contain JSON object');
-        }
+        const firstBracket = trimmed.indexOf('[');
         const lastBrace = trimmed.lastIndexOf('}');
-        if (lastBrace === -1 || lastBrace <= firstBrace) {
-            throw new Error('Gemini response JSON was incomplete');
+        const lastBracket = trimmed.lastIndexOf(']');
+        let startIndex = -1;
+        let endIndex = -1;
+        if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+            startIndex = firstBrace;
+            endIndex = lastBrace;
         }
-        return trimmed.slice(firstBrace, lastBrace + 1);
+        else if (firstBracket !== -1) {
+            startIndex = firstBracket;
+            endIndex = lastBracket;
+        }
+        if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
+            throw new Error('Gemini response did not contain a valid JSON object or array');
+        }
+        return trimmed.slice(startIndex, endIndex + 1);
     }
     buildDefaultTitle(input) {
         return input.representativeKw || input.keywords[0]?.text || 'Outline Plan';

@@ -1,5 +1,5 @@
 export type { GroupDocWithId, KeywordDocWithId } from '@keywords/core';
-export { runOutlineGeneration, runLinkGeneration } from './inline';
+export { runOutlineGeneration, runLinkGeneration, runBlogGeneration } from './inline';
 export { loadConfig } from './config';
 
 import { existsSync } from 'node:fs';
@@ -27,6 +27,7 @@ for (const candidate of envCandidates) {
 
 import { KeywordIdeaClient } from '@keywords/ads';
 import { GeminiClient } from '@keywords/gemini';
+import { Blogger } from '@keywords/blogger';
 import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSummary } from './firestore';
 import { createLogger } from './logger';
 import { loadConfig } from './config';
@@ -34,6 +35,7 @@ import { runPipelineStages } from './pipeline';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 import type { JobDoc, JobStatus, JobSummaryError } from '@keywords/core';
 import type { SchedulerOptions, PipelineContext, PipelineCounters } from './types';
+import { tavily } from '@tavily/core';
 
 export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const config = loadConfig();
@@ -42,6 +44,7 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
     gemini: new GeminiClient(config.gemini),
+    blogger: new Blogger(new GeminiClient(config.gemini), tavily({ apiKey: config.tavily.apiKey })),
     firestore,
     logger
   };
@@ -60,7 +63,8 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
       groupsCreated: 0,
       groupsUpdated: 0,
       outlinesCreated: 0,
-      linksUpdated: 0
+      linksUpdated: 0,
+      postsCreated: 0
     };
 
     const context: PipelineContext = {
@@ -119,6 +123,7 @@ function emitSummaryLine(
     groupsUpdated: counters.groupsUpdated,
     outlinesCreated: counters.outlinesCreated,
     linksUpdated: counters.linksUpdated,
+    'summary.postsCreated': counters.postsCreated,
     errors: errors.map((err) => ({ type: err.type, message: `${err.error}` }))
   };
   // eslint-disable-next-line no-console

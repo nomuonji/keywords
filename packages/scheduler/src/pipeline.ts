@@ -8,7 +8,8 @@ import type {
   LinkDoc,
   KeywordMetrics,
   GroupDocWithId,
-  KeywordDocWithId
+  KeywordDocWithId,
+  BlogMediaConfig
 } from '@keywords/core';
 import type {
   PipelineContext,
@@ -21,14 +22,17 @@ import {
   getEligibleNodes,
   loadGroupsForLinking,
   loadGroupsNeedingOutline,
+  loadGroupsNeedingPost,
   loadKeywordsForClustering,
   saveGroupSummary,
   saveKeywords,
+  savePostUrl,
   updateKeywordsAfterGrouping,
   updateNodeIdeasAt,
   upsertGroup,
   upsertLinks
 } from './firestore';
+import { WordpressMedia, HatenaMedia } from '@keywords/blogger/media';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 
 interface StageError {
@@ -42,6 +46,7 @@ interface StageFlags {
   scoring: boolean;
   outline: boolean;
   links: boolean;
+  blogging: boolean;
 }
 
 type ProjectSettingsOverride = Partial<ProjectSettings> & {
@@ -83,7 +88,9 @@ export function mergeSettings(base: ProjectSettings, overrides?: ProjectSettings
     links: {
       ...base.links,
       ...(overrides.links ?? {})
-    }
+    },
+    blog: overrides.blog ?? base.blog,
+    blogLanguage: overrides.blogLanguage ?? base.blogLanguage ?? 'ja'
   };
   if (!merged.projectId) {
     merged.projectId = base.projectId;
@@ -100,7 +107,8 @@ function resolveStageFlags(stages?: SchedulerStagesOptions): StageFlags {
     clustering: stages?.clustering ?? true,
     scoring: stages?.scoring ?? true,
     outline: stages?.outline ?? true,
-    links: stages?.links ?? true
+    links: stages?.links ?? true,
+    blogging: stages?.blogging ?? true
   };
 }
 
@@ -125,7 +133,7 @@ async function handleTheme(
   stages: StageFlags,
   errors: StageError[]
 ): Promise<void> {
-  const themeSettings = mergeSettings(ctx.settings, theme.settings);
+  const themeSettings = mergeSettings(ctx.settings, theme);
   try {
     if (stages.ideas) {
       await stageAKeywordDiscovery(ctx, theme, themeSettings);
@@ -158,6 +166,12 @@ async function handleTheme(
       await stageEInternalLinks(ctx, theme, themeSettings, outlined);
     } else {
       ctx.deps.logger.info({ themeId: theme.id }, 'stage_e_skipped');
+    }
+
+    if (stages.blogging) {
+      await stageFPosting(ctx, theme, themeSettings, outlined, {});
+    } else {
+      ctx.deps.logger.info({ themeId: theme.id }, 'stage_f_skipped');
     }
   } catch (error) {
     ctx.deps.logger.error(
@@ -576,4 +590,63 @@ function computeGroupSimilarity(a: GroupDocWithId, b: GroupDocWithId): number {
     return 0;
   }
   return intersection.length / union.size;
+}
+
+export async function stageFPosting(
+  ctx: PipelineContext,
+  theme: ThemeDocWithId,
+  settings: ProjectSettings,
+  groups: GroupDocWithId[],
+  options?: { explicitGroups?: GroupDocWithId[] }
+): Promise<GroupDocWithId[]> {
+  ctx.deps.logger.info({ themeId: theme.id }, 'stage_f_start');
+  if (!settings.blog) {
+    ctx.deps.logger.info({ themeId: theme.id }, 'blog_settings_missing');
+    return [];
+  }
+
+  const limit = settings.pipeline.limits.groupsBlogPerRun;
+  let selected: GroupDocWithId[] = [];
+  if (options?.explicitGroups?.length) {
+    selected = options.explicitGroups.slice(0, limit);
+  } else {
+    const toBlog = await loadGroupsNeedingPost(
+      ctx.deps.firestore,
+      ctx.projectId,
+      theme.id,
+      limit
+    );
+    selected = toBlog.slice(0, limit);
+  }
+
+  if (!selected.length) {
+    ctx.deps.logger.info({ themeId: theme.id, posted: 0 }, 'stage_f_end');
+    return [];
+  }
+
+  const mediaConfig = settings.blog;
+  let media;
+  if (mediaConfig.platform === 'wordpress') {
+    media = new WordpressMedia(mediaConfig);
+  } else if (mediaConfig.platform === 'hatena') {
+    media = new HatenaMedia(mediaConfig);
+  } else {
+    throw new Error('Unsupported blog platform');
+  }
+
+  for (const group of selected) {
+    const post = await ctx.deps.blogger.createPost(group, media, {
+      language: settings.blogLanguage
+    });
+    await savePostUrl(
+      ctx.deps.firestore,
+      ctx.projectId,
+      theme.id,
+      group.id,
+      post.url
+    );
+    ctx.counters.postsCreated += 1;
+  }
+  ctx.deps.logger.info({ themeId: theme.id, posted: selected.length }, 'stage_f_end');
+  return selected;
 }

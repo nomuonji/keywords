@@ -32,7 +32,8 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
     limits: {
       nodesPerRun: 10,
       ideasPerNode: 200,
-      groupsOutlinePerRun: 10
+      groupsOutlinePerRun: 10,
+      groupsBlogPerRun: 1
     }
   },
   ads: {
@@ -52,6 +53,7 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   links: {
     maxPerGroup: 3
   },
+  blogLanguage: 'ja',
   projectId: ''
 };
 
@@ -230,6 +232,7 @@ export async function createJob(
     groupsUpdated: 0,
     outlinesCreated: 0,
     linksUpdated: 0,
+    postsCreated: 0,
     errors: []
   };
   const now = nowIso();
@@ -257,6 +260,7 @@ export async function updateJobSummary(
     'summary.groupsUpdated': counters.groupsUpdated,
     'summary.outlinesCreated': counters.outlinesCreated,
     'summary.linksUpdated': counters.linksUpdated,
+    'summary.postsCreated': counters.postsCreated,
     'summary.errors': errors,
     status,
     finishedAt: nowIso()
@@ -325,7 +329,10 @@ function normalizeProjectSettings(
         DEFAULT_PROJECT_SETTINGS.pipeline.limits.ideasPerNode,
       groupsOutlinePerRun:
         rawSettings?.pipeline?.limits?.groupsOutlinePerRun ??
-        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsOutlinePerRun
+        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsOutlinePerRun,
+      groupsBlogPerRun:
+        rawSettings?.pipeline?.limits?.groupsBlogPerRun ??
+        DEFAULT_PROJECT_SETTINGS.pipeline.limits.groupsBlogPerRun
     }
   };
 
@@ -360,12 +367,16 @@ function normalizeProjectSettings(
     maxPerGroup: rawSettings?.links?.maxPerGroup ?? DEFAULT_PROJECT_SETTINGS.links.maxPerGroup
   };
 
+  const blog = rawSettings?.blog ? (pruneUndefined(rawSettings.blog) as ProjectSettings['blog']) : undefined;
+
   return {
     name: rawSettings?.name ?? projectName ?? DEFAULT_PROJECT_SETTINGS.name,
     pipeline,
     ads,
     weights,
     links,
+    blogLanguage: rawSettings?.blogLanguage ?? DEFAULT_PROJECT_SETTINGS.blogLanguage,
+    blog,
     projectId
   };
 }
@@ -515,6 +526,38 @@ export async function updateKeywordsAfterGrouping(
     });
   }
   await batch.commit();
+}
+
+export async function loadGroupsNeedingPost(
+  firestore: admin.firestore.Firestore,
+  projectId: string,
+  themeId: string,
+  limit: number
+): Promise<GroupDocWithId[]> {
+  const collection = firestore.collection(
+    `projects/${projectId}/themes/${themeId}/groups`
+  ) as admin.firestore.CollectionReference<GroupDoc>;
+  const snapshot = await collection
+    .where('summary', '!=', null)
+    .where('postUrl', '==', null)
+    .orderBy('priorityScore', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...(doc.data() as GroupDoc) }));
+}
+
+export async function savePostUrl(
+  firestore: admin.firestore.Firestore,
+  projectId: string,
+  themeId: string,
+  groupId: string,
+  postUrl: string
+): Promise<void> {
+  const ref = firestore.doc(`projects/${projectId}/themes/${themeId}/groups/${groupId}`);
+  await ref.update({
+    postUrl,
+    updatedAt: nowIso()
+  });
 }
 
 export async function loadGroupsNeedingOutline(

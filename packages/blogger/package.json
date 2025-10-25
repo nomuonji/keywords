@@ -1,0 +1,24 @@
+{
+  "name": "@keywords/blogger",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./media": "./dist/media/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"lint not configured\"",
+    "test": "echo \"tests not implemented\""
+  },
+  "dependencies": {
+    "@keywords/core": "file:../core",
+    "@keywords/gemini": "file:../gemini",
+    "@tavily/core": "^0.5.12",
+    "axios": "^1.6.8",
+    "fast-xml-parser": "^4.3.6"
+  },
+  "devDependencies": {}
+}

@@ -25,7 +25,7 @@ import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
 import { nowIso } from '@keywords/core';
-import { runScheduler, runOutlineGeneration, runLinkGeneration, loadConfig } from '@keywords/scheduler';
+import { runScheduler, runOutlineGeneration, runLinkGeneration, runBlogGeneration, loadConfig } from '@keywords/scheduler';
 import { GeminiClient } from '@keywords/gemini';
 
 const app = express();
@@ -300,7 +300,35 @@ app.post('/projects/:projectId/themes/:themeId/outlines\:run', async (req, res) 
   }
 });
 
-app.post('/projects/:projectId/themes/:themeId/outlines\:delete', async (req, res) => {
+app.post('/projects/:projectId/themes/:themeId/posts:run', async (req, res) => {
+  const { projectId, themeId } = req.params;
+  const { groupIds } = req.body ?? {};
+  try {
+    const parsedGroupIds = Array.isArray(groupIds)
+      ? groupIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
+      : undefined;
+    const result = await runBlogGeneration({
+      projectId,
+      themeId,
+      groupIds: parsedGroupIds,
+    });
+    res.json({
+      status: 'completed',
+      projectId,
+      themeId,
+      postsCreated: result.postsCreated,
+      postedGroupIds: result.postedGroupIds,
+    });
+  } catch (error) {
+    console.error(
+      '[posts:run] failed',
+      JSON.stringify({ projectId, themeId, groupIds, error: `${error}` })
+    );
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/themes/:themeId/outlines:delete', async (req, res) => {
   const { projectId, themeId } = req.params;
   const { groupIds } = req.body ?? {};
   if (!Array.isArray(groupIds) || !groupIds.length) {
