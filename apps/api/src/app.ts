@@ -29,7 +29,11 @@ import { runScheduler, runOutlineGeneration, runLinkGeneration, runBlogGeneratio
 import { GeminiClient } from '@keywords/gemini';
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:3000' }));
+const allowedOrigins = ['http://localhost:3000'];
+if (process.env.CORS_ALLOWED_ORIGINS) {
+  allowedOrigins.push(...process.env.CORS_ALLOWED_ORIGINS.split(','));
+}
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 const config = loadConfig();
