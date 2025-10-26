@@ -3,7 +3,14 @@
   "builds": [
     {
       "src": "apps/api/src/server.ts",
-      "use": "@vercel/node"
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": [
+          "../../packages/core/dist/**",
+          "../../packages/gemini/dist/**",
+          "../../packages/scheduler/dist/**"
+        ]
+      }
     }
   ],
   "rewrites": [
