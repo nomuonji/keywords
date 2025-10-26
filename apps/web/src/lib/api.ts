@@ -1,20 +1,5 @@
-function ensureBaseUrl(): string {
-  let url = import.meta.env.VITE_API_BASE_URL;
-  if (!url) {
-    throw new Error('VITE_API_BASE_URL is not configured');
-  }
-  if (!url.startsWith('http')) {
-    if (url.includes('localhost')) {
-      url = `http://${url}`;
-    } else {
-      url = `https://${url}`;
-    }
-  }
-  return url;
-}
-
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(`${ensureBaseUrl()}${path}`, {
+  const response = await fetch(`/api${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
@@ -27,7 +12,7 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function deleteRequest(path: string): Promise<void> {
-  const response = await fetch(`${ensureBaseUrl()}${path}`, {
+  const response = await fetch(`/api${path}`, {
     method: 'DELETE'
   });
   if (!response.ok && response.status !== 204) {
