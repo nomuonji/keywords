@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@keywords/core": "workspace:*",
-    "@keywords/scheduler": "file:../../packages/scheduler",
+    "@keywords/scheduler": "workspace:*",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.19.2",

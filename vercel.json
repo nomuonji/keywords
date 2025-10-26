@@ -17,7 +17,7 @@
       "destination": "/apps/api/dist/server.js"
     },
     {
-      "source": "/:path*",
+      "source": "/((?!api/).*)",
       "destination": "/apps/web/dist/index.html"
     }
   ]
