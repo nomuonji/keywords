@@ -26,5 +26,12 @@ function loadApp(): ExpressHandler {
 
 export default function handler(req: VercelRequest, res: VercelResponse): void {
   const app = loadApp();
+  const slug = Array.isArray(req.query.slug)
+    ? `/${(req.query.slug as string[]).join('/')}`
+    : typeof req.query.slug === 'string'
+      ? `/${req.query.slug}`
+      : req.url ?? '/';
+  req.url = slug;
+  req.originalUrl = slug;
   app(req, res);
 }

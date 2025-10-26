@@ -35,6 +35,11 @@ import {
 import { GeminiClient } from './lib/gemini';
 
 const app = express();
+app.use((req, _res, next) => {
+  // eslint-disable-next-line no-console
+  console.log('[api] received', { method: req.method, url: req.originalUrl });
+  next();
+});
 const allowedOrigins = ['http://localhost:3000', 'https://keywords-web-eight.vercel.app'];
 if (process.env.CORS_ALLOWED_ORIGINS) {
   allowedOrigins.push(...process.env.CORS_ALLOWED_ORIGINS.split(','));
