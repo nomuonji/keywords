@@ -7,18 +7,22 @@
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "lint": "echo \"lint not configured\"",
     "test": "echo \"tests not implemented\"",
     "start": "node dist/cli.js"
   },
   "dependencies": {
     "@google-cloud/firestore": "^7.9.0",
-    "@keywords/ads": "file:../ads",
-    "@keywords/core": "file:../core",
-    "@keywords/gemini": "file:../gemini",
-    "@keywords/blogger": "file:../blogger",
+    "@keywords/ads": "workspace:*",
+    "@keywords/core": "workspace:*",
+    "@keywords/gemini": "workspace:*",
+    "@keywords/blogger": "workspace:*",
     "@tavily/core": "^0.5.12",
     "dotenv": "^17.2.3",
     "firebase-admin": "^12.1.0",

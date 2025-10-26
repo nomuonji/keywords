@@ -4,13 +4,17 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "lint": "echo \"lint not configured\"",
     "test": "echo \"tests not implemented\""
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@keywords/core": "file:../core"
+    "@keywords/core": "workspace:*"
   }
 }
