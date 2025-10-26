@@ -1,1 +1,25 @@
-{"outputDirectory":"dist/client","functions":{"api/**":{"includeFiles":"dist/server/**"}}}
+{
+  "builds": [
+    {
+      "src": "api/[[...slug]].ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist/client"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ]
+}
