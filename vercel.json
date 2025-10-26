@@ -1,19 +1,16 @@
 {
-  "builds": [
-    {
-      "src": "api/[[...slug]].ts",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist/client"
-      }
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/client",
+  "functions": {
+    "api/**": {
+      "includeFiles": "dist/server/**"
     }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/[[...slug]]?slug=$1" },
-    { "src": "/(.*)", "dest": "/$1" }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    }
   ]
 }

@@ -5,25 +5,43 @@ function buildUrl(path: string): string {
 }
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const response = await fetch(buildUrl(path), {
+  const url = buildUrl(path);
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed with status ${response.status}`);
+    throw new Error(
+      text ||
+        JSON.stringify({
+          message: 'Request failed',
+          url,
+          status: response.status,
+          statusText: response.statusText
+        })
+    );
   }
   return (await response.json()) as T;
 }
 
 export async function deleteRequest(path: string): Promise<void> {
-  const response = await fetch(buildUrl(path), {
+  const url = buildUrl(path);
+  const response = await fetch(url, {
     method: 'DELETE'
   });
   if (!response.ok && response.status !== 204) {
     const text = await response.text();
-    throw new Error(text || `Delete failed with status ${response.status}`);
+    throw new Error(
+      text ||
+        JSON.stringify({
+          message: 'Delete failed',
+          url,
+          status: response.status,
+          statusText: response.statusText
+        })
+    );
   }
 }
 
