@@ -10,9 +10,9 @@
     "dev": "npm run build --prefix ../.. && node dist/server.js"
   },
   "dependencies": {
-    "@keywords/core": "workspace:*",
-    "@keywords/gemini": "workspace:*",
-    "@keywords/scheduler": "workspace:*",
+    "@keywords/core": "file:../../packages/core",
+    "@keywords/gemini": "file:../../packages/gemini",
+    "@keywords/scheduler": "file:../../packages/scheduler",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^4.19.2",
