@@ -5,12 +5,20 @@
     {
       "src": "apps/api/dist/server.js",
       "use": "@vercel/node"
+    },
+    {
+      "src": "apps/web/dist",
+      "use": "@vercel/static-dist"
     }
   ],
   "rewrites": [
     {
       "source": "/api/:path*",
       "destination": "/apps/api/dist/server.js"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/apps/web/dist/index.html"
     }
   ]
 }

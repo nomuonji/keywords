@@ -33,18 +33,8 @@ const allowedOrigins = ['http://localhost:3000'];
 if (process.env.CORS_ALLOWED_ORIGINS) {
   allowedOrigins.push(...process.env.CORS_ALLOWED_ORIGINS.split(','));
 }
-// eslint-disable-next-line no-console
-console.log('CORS allowed origins:', allowedOrigins);
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
-
-app.get('/api/debug/cors', (req, res) => {
-  res.json({
-    message: 'CORS configuration debug endpoint.',
-    allowedOrigins,
-    envValue: process.env.CORS_ALLOWED_ORIGINS || 'Not Set'
-  });
-});
 
 const config = loadConfig();
 const geminiClient = new GeminiClient(config.gemini);
