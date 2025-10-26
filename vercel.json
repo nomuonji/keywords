@@ -1,5 +1,5 @@
 {
-  "installCommand": "npm install",
+  "buildCommand": "npm run build",
   "builds": [
     {
       "src": "apps/api/src/server.ts",
