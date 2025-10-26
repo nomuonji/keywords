@@ -44,11 +44,20 @@ console.log('CORS allowed origins:', allowedOrigins);
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
   if (req.url?.startsWith('/api/')) {
     req.url = req.url.slice(4) || '/';
   } else if (req.url === '/api') {
     req.url = '/';
+  }
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.log('[api] incoming:', {
+      method: req.method,
+      originalUrl: req.originalUrl,
+      url: req.url,
+      path: req.path
+    });
   }
   next();
 });
