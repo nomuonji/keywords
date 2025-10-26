@@ -1,5 +1,5 @@
 {
-  "installCommand": "npm install",
+  "installCommand": "npm install -g npm@latest && npm install",
   "buildCommand": "npm run build",
   "builds": [
     {
