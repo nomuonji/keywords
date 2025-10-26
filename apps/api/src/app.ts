@@ -38,6 +38,14 @@ console.log('CORS allowed origins:', allowedOrigins);
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
+app.get('/api/debug/cors', (req, res) => {
+  res.json({
+    message: 'CORS configuration debug endpoint.',
+    allowedOrigins,
+    envValue: process.env.CORS_ALLOWED_ORIGINS || 'Not Set'
+  });
+});
+
 const config = loadConfig();
 const geminiClient = new GeminiClient(config.gemini);
 
