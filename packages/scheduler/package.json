@@ -12,7 +12,6 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "prepare": "npm run build",
     "lint": "echo \"lint not configured\"",
     "test": "echo \"tests not implemented\"",
     "start": "node dist/cli.js"
