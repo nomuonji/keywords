@@ -1,8 +1,9 @@
 {
+  "buildCommand": "npm run build",
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/apps/api/src/server.ts"
+      "destination": "/api/index.js"
     }
   ]
 }

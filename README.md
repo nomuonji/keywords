@@ -1,4 +1,4 @@
-﻿# Keywords Automation Monorepo
+# Keywords Automation Monorepo
 
 This repository hosts a monorepo that automates keyword research, clustering, outline drafting, and internal link suggestions for content teams. Firestore is used as the system of record, while a scheduler CLI, Express API, and React-based admin UI orchestrate the workflows.
 
@@ -12,17 +12,17 @@ packages/
   core/        Shared types, scoring helpers, normalization utilities
   ads/         Keyword volume client (calls the external API)
   gemini/      Gemini integration for embeddings and outline generation
-  scheduler/   Orchestrates pipeline stages A–E
+  scheduler/   Orchestrates pipeline stages A?E
 scripts/
   test-google-ads.js  Smoke test for the keyword volume API
 ```
 
-## Pipeline Stages (A → E)
-1. **Keyword Discovery** – gathers keyword ideas for Firestore `nodes`, normalizes them, stores in `keywords`
-2. **Clustering** – groups new keywords via Gemini embeddings and lightweight clustering, writes to `groups`
-3. **SEO Scoring** – calculates `priorityScore` using volume, competition, intent alignment, and novelty
-4. **Outline Drafting** – generates titles/H2/H3/FAQ with Gemini for top-priority groups
-5. **Internal Link Suggestions** – computes hierarchy / hub / sibling link candidates and stores them in `links`
+## Pipeline Stages (A �� E)
+1. **Keyword Discovery** ? gathers keyword ideas for Firestore `nodes`, normalizes them, stores in `keywords`
+2. **Clustering** ? groups new keywords via Gemini embeddings and lightweight clustering, writes to `groups`
+3. **SEO Scoring** ? calculates `priorityScore` using volume, competition, intent alignment, and novelty
+4. **Outline Drafting** ? generates titles/H2/H3/FAQ with Gemini for top-priority groups
+5. **Internal Link Suggestions** ? computes hierarchy / hub / sibling link candidates and stores them in `links`
 
 Every run writes a summary document to `jobs` and keeps data isolated per project.
 
@@ -39,8 +39,8 @@ npm run dev --workspace @keywords/web
 ```
 
 Additional commands:
-- `npm run scheduler:run -- --project <projectId> --manual` – execute pipeline A–E from the CLI
-- `npm run test:ads` – hit the external keyword-volume API for a quick sanity check
+- `npm run scheduler:run -- --project <projectId> --manual` ? execute pipeline A?E from the CLI
+- `npm run test:ads` ? hit the external keyword-volume API for a quick sanity check
 
 ## Environment Variables
 
@@ -51,8 +51,8 @@ Additional commands:
 - `GCP_PROJECT_ID`, `FIRESTORE_DB`
 
 **Admin UI (`apps/web/.env`)**
-- `VITE_FIREBASE_*` – Firebase client settings
-- `VITE_API_BASE_URL` – URL of the Express API (default: `http://localhost:3001`)
+- `VITE_FIREBASE_*` ? Firebase client settings
+- `VITE_API_BASE_URL` ? URL of the Express API (default: `http://localhost:3001`)
 
 ## Admin UI Highlights
 - Create / edit projects and themes, trigger the pipeline, and see job history
@@ -61,5 +61,9 @@ Additional commands:
 
 ## Notes
 - Firestore data is fully isolated per project
-- The admin UI triggers `packages/scheduler` stages (A–E) via the API
-- Never print external API credentials to logs—use environment variables or secret managers
+- The admin UI triggers `packages/scheduler` stages (A?E) via the API
+- Never print external API credentials to logs?use environment variables or secret managers
+## Deployment
+- `vercel.json` rewrites `/api/*` to the serverless entrypoint in `api/index.js`, which simply re-exports the compiled Express app from `apps/api/dist/app.js`.
+- Ensure the Vercel build command runs `npm run build` (defined at the repo root) before deploying so `apps/api/dist` exists and contains the compiled API plus shared package artifacts.
+- Expose the required environment variables (Firebase service account, Gemini keys, etc.) in the Vercel project so the API can connect to Firestore and external services.
