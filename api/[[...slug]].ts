@@ -32,7 +32,7 @@ function handler(req: VercelRequest, res: VercelResponse): void {
       ? `/${req.query.slug}`
       : req.url ?? '/';
   req.url = slug;
-  req.originalUrl = slug;
+  (req as VercelRequest & { originalUrl?: string }).originalUrl = slug;
   app(req, res);
 }
 
