@@ -29,7 +29,13 @@ import { runScheduler, runOutlineGeneration, runLinkGeneration, runBlogGeneratio
 import { GeminiClient } from '@keywords/gemini';
 
 const app = express();
-app.use(cors());
+const allowedOrigins = ['http://localhost:3000', 'https://keywords-web-eight.vercel.app'];
+if (process.env.CORS_ALLOWED_ORIGINS) {
+  allowedOrigins.push(...process.env.CORS_ALLOWED_ORIGINS.split(','));
+}
+// eslint-disable-next-line no-console
+console.log('CORS allowed origins:', allowedOrigins);
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.get('/api/debug/cors', (req, res) => {
