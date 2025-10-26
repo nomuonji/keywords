@@ -10,6 +10,7 @@
     "dev": "npm run build --prefix ../.. && node dist/server.js"
   },
   "dependencies": {
+    "@keywords/core": "workspace:*",
     "@keywords/scheduler": "file:../../packages/scheduler",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
