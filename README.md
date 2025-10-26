@@ -1,72 +1,49 @@
-# Keywords Automation Monorepo
+# Keywords Automation App
 
-This repository hosts a monorepo that automates keyword research, clustering, outline drafting, and internal link suggestions for content teams. Firestore is used as the system of record, while a scheduler CLI, Express API, and React-based admin UI orchestrate the workflows.
+React ŠÇ— UI ‚Æ Express API ‚ğ 1 ‚Â‚Ì Node.js ƒvƒƒWƒFƒNƒg‚É‚Ü‚Æ‚ß‚½\¬‚Å‚·BFirestore ‚ğƒf[ƒ^ƒXƒgƒA‚ÉAGeminiEGoogle Ads APIE“Æ©ƒXƒPƒWƒ…[ƒ‰‚ÅƒL[ƒ[ƒhƒŠƒT[ƒ`?ƒAƒEƒgƒ‰ƒCƒ“¶¬?‹L–“Še‚Ü‚Å‚ğ©“®‰»‚µ‚Ü‚·B
 
-## Repository Layout
+## ƒfƒBƒŒƒNƒgƒŠ\¬
 
 ```
-apps/
-  api/     Express API used for manual triggers and node creation
-  web/     Admin UI (React + Vite)
-packages/
-  core/        Shared types, scoring helpers, normalization utilities
-  ads/         Keyword volume client (calls the external API)
-  gemini/      Gemini integration for embeddings and outline generation
-  scheduler/   Orchestrates pipeline stages A?E
-scripts/
-  test-google-ads.js  Smoke test for the keyword volume API
+index.html          Vite ƒGƒ“ƒgƒŠ
+src/                React + Firebase ŠÇ— UI
+server/             Express API ‚ÆƒXƒPƒWƒ…[ƒ‰AGemini/Ads/Blogger ˜AŒg
+  lib/core          ‹¤—Lƒ†[ƒeƒBƒŠƒeƒB
+  lib/gemini        Gemini ƒNƒ‰ƒCƒAƒ“ƒg
+  lib/ads           ƒL[ƒ[ƒhƒAƒCƒfƒAæ“¾ƒNƒ‰ƒCƒAƒ“ƒg
+  lib/blogger       ‹L–“ŠeƒƒWƒbƒN
+  lib/scheduler     Firestore ‚Æ˜AŒg‚·‚éƒpƒCƒvƒ‰ƒCƒ“
+api/[[...slug]].ts  Vercel Œü‚¯ƒT[ƒoƒŒƒXƒGƒ“ƒgƒŠ (Express app ‚ğƒ‰ƒbƒv)
+vercel.json         Vite o—Íæ (dist/client) ‚ğw’è
 ```
 
-## Pipeline Stages (A ï¿½ï¿½ E)
-1. **Keyword Discovery** ? gathers keyword ideas for Firestore `nodes`, normalizes them, stores in `keywords`
-2. **Clustering** ? groups new keywords via Gemini embeddings and lightweight clustering, writes to `groups`
-3. **SEO Scoring** ? calculates `priorityScore` using volume, competition, intent alignment, and novelty
-4. **Outline Drafting** ? generates titles/H2/H3/FAQ with Gemini for top-priority groups
-5. **Internal Link Suggestions** ? computes hierarchy / hub / sibling link candidates and stores them in `links`
+## ƒXƒNƒŠƒvƒg
 
-Every run writes a summary document to `jobs` and keeps data isolated per project.
+| ƒRƒ}ƒ“ƒh | à–¾ |
+| --- | --- |
+| `npm install` | ˆË‘¶ŠÖŒW‚ğƒCƒ“ƒXƒg[ƒ‹ (•W€İ’è) |
+| `npm run dev` | Vite ŠJ”­ƒT[ƒo (3000) ‚Æ Express API (3001) ‚ğ“¯‹N“® |
+| `npm run build` | ƒT[ƒo (`dist/server`) ‚Æƒtƒƒ“ƒg (`dist/client`) ‚ğƒrƒ‹ƒh |
+| `npm run preview` | ƒrƒ‹ƒhÏ‚İƒtƒƒ“ƒg‚ğƒ[ƒJƒ‹‚ÅŠm”F |
+| `npm run start` | ƒrƒ‹ƒhÏ‚İ Express API ‚ğ‹N“® |
 
-## Quick Start
+`scripts/test-google-ads.js` ‚â `test.js` ‚Í `npm run build` Ï‚İ‚Ì¬‰Ê•¨‚ğ—Dæ‚µAƒrƒ‹ƒh‘O‚Í `ts-node` ‚ğg‚Á‚Ä TypeScript ƒ\[ƒX‚ğ“Ç‚İ‚İ‚Ü‚·B
 
-```bash
-npm install
+## ŠJ”­è‡
 
-# Start the API server (listens on port 3001)
-npm run dev --workspace apps/api
+1. `.env` ‚É FirebaseEGeminiEFirestoreEGoogle Ads ‚È‚Ç‚ÌƒT[ƒoŠÂ‹«•Ï”‚ğİ’è‚µ‚Ü‚·B
+2. `src/lib/firebase.ts` ‚ÅQÆ‚·‚é Vite —p‚Ì’l‚Í `.env.local` ‚È‚Ç‚É `VITE_FIREBASE_*`A`VITE_API_BASE_URL` (”CˆÓA–¢İ’è‚È‚ç `/api`) ‚ğ‹Lq‚µ‚Ü‚·B
+3. `npm run dev` ‚ğÀs‚·‚é‚ÆAVite (http://localhost:3000) ‚ª `/api` ‚ğ http://localhost:3001 ‚ÖƒvƒƒLƒV‚µAReact UI ‚©‚ç API ‚ğ’@‚¯‚Ü‚·B
 
-# Start the admin UI (Vite dev server)
-npm run dev --workspace @keywords/web
-```
+## ƒfƒvƒƒC (Vercel)
 
-Additional commands:
-- `npm run scheduler:run -- --project <projectId> --manual` ? execute pipeline A?E from the CLI
-- `npm run test:ads` ? hit the external keyword-volume API for a quick sanity check
+1. `npm install` ¨ `npm run build` ‚ªƒfƒtƒHƒ‹ƒg‚ÅÀs‚³‚êA`dist/client` ‚Éƒtƒƒ“ƒgA`dist/server` ‚É Express{ƒXƒPƒWƒ…[ƒ‰‚ªo—Í‚³‚ê‚Ü‚·B
+2. `vercel.json` ‚Ì `outputDirectory` ‚Í `dist/client` ‚Éİ’èÏ‚İ‚Å‚·B
+3. `api/[[...slug]].ts` ‚Íƒrƒ‹ƒhÏ‚İ‚Ì `dist/server/app.js` ‚ğ“Ç‚İ‚İAVercel ã‚Ì `/api/*` ƒŠƒNƒGƒXƒg‚ğ Express ‚ÉˆÏ÷‚µ‚Ü‚·Bƒrƒ‹ƒh‘O‚ÉƒfƒvƒƒC‚·‚é‚Æ 500 ‚É‚È‚é‚½‚ßA•K‚¸ `npm run build` ‚ğŠ®—¹‚³‚¹‚Ä‚­‚¾‚³‚¢B
+4. FirebaseEGeminiEGoogle AdsETavily ‚È‚Ç‚ÌŠÂ‹«•Ï”‚ğ Vercel ƒvƒƒWƒFƒNƒg‚Öİ’è‚µ‚Ü‚·B
 
-## Environment Variables
+## Firestore / ‹@”\
 
-**Server / Scheduler (`.env`, GitHub Actions, etc.)**
-- `GCP_SA_KEY_JSON`, `GEMINI_API_KEY`
-- `ADS_DEVELOPER_TOKEN`, `ADS_REFRESH_TOKEN`, `ADS_CLIENT_ID`, `ADS_CLIENT_SECRET`, `ADS_CUSTOMER_ID`, `ADS_LOGIN_CUSTOMER_ID`
-- `KEYWORD_VOLUME_API_URL` (provided external endpoint)
-- `GCP_PROJECT_ID`, `FIRESTORE_DB`
-
-**Admin UI (`apps/web/.env`)**
-- `VITE_FIREBASE_*` ? Firebase client settings
-- `VITE_API_BASE_URL` ? URL of the Express API (default: `http://localhost:3001`)
-
-## Admin UI Highlights
-- Create / edit projects and themes, trigger the pipeline, and see job history
-- Manage seed nodes per theme (node list + add modal)
-- Inspect clusters with generated outlines, keyword metrics, and internal link hierarchy
-
-## Notes
-- Firestore data is fully isolated per project
-- The admin UI triggers `packages/scheduler` stages (A?E) via the API
-- Never print external API credentials to logs?use environment variables or secret managers
-
-## Deployment
-- `vercel.json` rewrites `/api/*` to the serverless entrypoint in `api/index.js`, which simply re-exports the compiled Express app from `apps/api/dist/app.js`.
-- Vercel installs dependencies via `npx -y npm@10 ci --workspaces --include-workspace-root || npx -y npm@10 install --workspaces --include-workspace-root` to match the monorepo setup.
-- The build step runs `tsc -b tsconfig.build.json && npm run build --workspace=@keywords/web`, which emits the Express API bundle plus the static admin UI.
-- Static assets are emitted to `apps/web/dist`, and `vercel.json` sets `outputDirectory` accordingly so the frontend deploys alongside the `/api` serverless functions.
-- Expose the required environment variables (Firebase service account, Gemini keys, etc.) in the Vercel project so the API can connect to Firestore and external services.
+- ƒvƒƒWƒFƒNƒgEƒe[ƒ}Eƒm[ƒhEƒL[ƒ[ƒhEƒNƒ‰ƒXƒ^EƒŠƒ“ƒNEƒWƒ‡ƒu‚Æ‚¢‚Á‚½ƒhƒLƒ…ƒƒ“ƒg\¬‚Í]—ˆ‚Ì‚Ü‚Ü‚Å‚·B
+- React UI ‚©‚ç‚Ì‘€ì‚Í‚·‚×‚Ä `/api/projects/...` ”z‰º‚Ì Express ƒ‹[ƒg‚Ö‘—M‚³‚êAƒT[ƒo‘¤‚Å Firestore / Gemini / Ads / Blogger ƒƒWƒbƒN‚ğÀs‚µ‚Ü‚·B
+- ƒXƒPƒWƒ…[ƒ‰‚ÌƒpƒCƒvƒ‰ƒCƒ“ (ƒAƒCƒfƒAæ“¾¨ƒNƒ‰ƒXƒ^ƒŠƒ“ƒO¨ƒXƒRƒAƒŠƒ“ƒO¨ƒAƒEƒgƒ‰ƒCƒ“¨“à•”ƒŠƒ“ƒN¨ƒuƒƒO“Še) ‚à]—ˆ’Ê‚è `server/lib/scheduler` ‚É‚Ü‚Æ‚Ü‚Á‚Ä‚¢‚Ü‚·B

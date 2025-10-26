@@ -1,7 +1,17 @@
 #!/usr/bin/env node
+const path = require('node:path');
 require('dotenv').config({ path: '.env' });
 
-const { KeywordIdeaClient } = require('@keywords/ads');
+let KeywordIdeaClient;
+try {
+  // Prefer compiled output when available
+  ({ KeywordIdeaClient } = require('../dist/server/lib/ads'));
+} catch {
+  process.env.TS_NODE_PROJECT =
+    process.env.TS_NODE_PROJECT || path.resolve(__dirname, '../tsconfig.server.json');
+  require('ts-node/register');
+  ({ KeywordIdeaClient } = require('../server/lib/ads'));
+}
 
 const requiredEnv = [
   'ADS_DEVELOPER_TOKEN',
@@ -51,3 +61,4 @@ const client = new KeywordIdeaClient({
     process.exitCode = 1;
   }
 })();
+

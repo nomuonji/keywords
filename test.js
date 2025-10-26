@@ -1,13 +1,31 @@
+const path = require('node:path');
+
 try {
-  require('@keywords/blogger');
-  console.log('Successfully imported @keywords/blogger');
+  require('./dist/server/lib/blogger');
+  console.log('Successfully imported blogger lib (built)');
 } catch (e) {
-  console.error('Failed to import @keywords/blogger', e);
+  try {
+    process.env.TS_NODE_PROJECT =
+      process.env.TS_NODE_PROJECT || path.resolve(__dirname, 'tsconfig.server.json');
+    require('ts-node/register');
+    require('./server/lib/blogger');
+    console.log('Successfully imported blogger lib (ts)');
+  } catch (inner) {
+    console.error('Failed to import blogger lib', inner);
+  }
 }
 
 try {
-  require('@keywords/blogger/media');
-  console.log('Successfully imported @keywords/blogger/media');
+  require('./dist/server/lib/blogger/media');
+  console.log('Successfully imported blogger media (built)');
 } catch (e) {
-  console.error('Failed to import @keywords/blogger/media', e);
+  try {
+    process.env.TS_NODE_PROJECT =
+      process.env.TS_NODE_PROJECT || path.resolve(__dirname, 'tsconfig.server.json');
+    require('ts-node/register');
+    require('./server/lib/blogger/media');
+    console.log('Successfully imported blogger media (ts)');
+  } catch (inner) {
+    console.error('Failed to import blogger media', inner);
+  }
 }
