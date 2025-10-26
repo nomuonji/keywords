@@ -1,4 +1,7 @@
 {
+  "engines": {
+    "node": "20.x"
+  },
   "builds": [
     {
       "src": "apps/api/src/server.ts",
