@@ -1,5 +1,7 @@
 {
-  "buildCommand": "npm run build",
+  "installCommand": "npx -y npm@10 ci --workspaces --include-workspace-root || npx -y npm@10 install --workspaces --include-workspace-root",
+  "buildCommand": "tsc -b tsconfig.build.json && npm run build --workspace=@keywords/web",
+  "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
       "source": "/api/(.*)",

@@ -17,7 +17,7 @@ scripts/
   test-google-ads.js  Smoke test for the keyword volume API
 ```
 
-## Pipeline Stages (A Å® E)
+## Pipeline Stages (A ÔøΩÔøΩ E)
 1. **Keyword Discovery** ? gathers keyword ideas for Firestore `nodes`, normalizes them, stores in `keywords`
 2. **Clustering** ? groups new keywords via Gemini embeddings and lightweight clustering, writes to `groups`
 3. **SEO Scoring** ? calculates `priorityScore` using volume, competition, intent alignment, and novelty
@@ -63,7 +63,10 @@ Additional commands:
 - Firestore data is fully isolated per project
 - The admin UI triggers `packages/scheduler` stages (A?E) via the API
 - Never print external API credentials to logs?use environment variables or secret managers
+
 ## Deployment
 - `vercel.json` rewrites `/api/*` to the serverless entrypoint in `api/index.js`, which simply re-exports the compiled Express app from `apps/api/dist/app.js`.
-- Ensure the Vercel build command runs `npm run build` (defined at the repo root) before deploying so `apps/api/dist` exists and contains the compiled API plus shared package artifacts.
+- Vercel installs dependencies via `npx -y npm@10 ci --workspaces --include-workspace-root || npx -y npm@10 install --workspaces --include-workspace-root` to match the monorepo setup.
+- The build step runs `tsc -b tsconfig.build.json && npm run build --workspace=@keywords/web`, which emits the Express API bundle plus the static admin UI.
+- Static assets are emitted to `apps/web/dist`, and `vercel.json` sets `outputDirectory` accordingly so the frontend deploys alongside the `/api` serverless functions.
 - Expose the required environment variables (Firebase service account, Gemini keys, etc.) in the Vercel project so the API can connect to Firestore and external services.
