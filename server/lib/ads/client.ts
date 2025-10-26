@@ -1,11 +1,30 @@
 import type { NodeDoc, ProjectSettings } from '../core';
-import fetch from 'node-fetch';
 import type {
   AdsAuthConfig,
   GenerateKeywordIdeasParams,
   KeywordIdea,
   KeywordMetrics
 } from './types';
+
+type FetchFn = typeof globalThis.fetch;
+let fetchInstance: FetchFn | null = null;
+
+async function getFetch(): Promise<FetchFn> {
+  if (fetchInstance) {
+    return fetchInstance;
+  }
+  if (typeof globalThis.fetch === 'function') {
+    fetchInstance = globalThis.fetch.bind(globalThis);
+    return fetchInstance;
+  }
+  const mod = await import('node-fetch');
+  const fetched = ((mod as { default?: unknown }).default ?? mod) as unknown as FetchFn;
+  if (typeof fetched !== 'function') {
+    throw new Error('Failed to load fetch implementation');
+  }
+  fetchInstance = fetched;
+  return fetchInstance;
+}
 
 interface KeywordIdeaApiResponse {
   keyword: string;
@@ -57,8 +76,9 @@ export class KeywordIdeaClient {
       }
     };
 
+    const fetchFn = await getFetch();
     const response = await retry(async () => {
-      const res = await fetch(endpoint, {
+      const res = await fetchFn(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
