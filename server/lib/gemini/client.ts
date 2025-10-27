@@ -272,7 +272,8 @@ export class GeminiClient {
   private buildSuggestThemesPrompt(input: SuggestThemesInput): string {
     return [
       'You are an expert SEO content strategist.',
-      'Based on the following project description, please suggest 5-10 potential content themes.',
+      `The overall goal of this project is: "${input.description}"`,
+      'Based on the project goal, please suggest 5-10 potential content themes.',
       'Each theme should be a very broad, high-level topic, ideally expressed as a single keyword.',
       'Avoid themes that are long phrases, questions, or specific long-tail keywords.',
       'Focus on topics that are likely to have good search volume and commercial value.',

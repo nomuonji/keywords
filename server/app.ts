@@ -444,13 +444,17 @@ app.post('/projects/:projectId/themes/:themeId/links\:generate', async (req, res
 });
 
 app.post('/projects/:projectId/suggest-themes', async (req, res) => {
-  const { description } = req.body ?? {};
-  if (!description) {
-    res.status(400).json({ error: 'description is required' });
-    return;
-  }
+  const { projectId } = req.params;
   try {
-    const suggestions = await geminiClient.suggestThemes({ description });
+    const firestore = initFirestore();
+    const projectDoc = await firestore.doc(`projects/${projectId}`).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    const projectData = projectDoc.data();
+    const projectDescription = projectData?.description ?? '';
+    const suggestions = await geminiClient.suggestThemes({ description: projectDescription });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });

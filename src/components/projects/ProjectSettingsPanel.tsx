@@ -8,17 +8,21 @@ import { collection, doc, writeBatch } from 'firebase/firestore';
 
 interface ProjectSettingsPanelProps {
   projectId: string;
+  name: string;
   description: string;
   settings: ProjectSettings;
-  onSave: (settings: ProjectSettings) => void;
+  onSave: (data: { name: string; description: string; settings: ProjectSettings }) => void;
 }
 
 export function ProjectSettingsPanel({
   projectId,
+  name,
   description,
   settings,
   onSave
 }: ProjectSettingsPanelProps) {
+  const [draftName, setDraftName] = useState(name);
+  const [draftDescription, setDraftDescription] = useState(description);
   const [draft, setDraft] = useState<ProjectSettings>(settings);
   const [open, setOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
@@ -26,8 +30,10 @@ export function ProjectSettingsPanel({
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
   useEffect(() => {
+    setDraftName(name);
+    setDraftDescription(description);
     setDraft(settings);
-  }, [settings]);
+  }, [name, description, settings]);
 
   const handleSuggestThemes = async () => {
     setModalOpen(true);
@@ -168,6 +174,18 @@ export function ProjectSettingsPanel({
 
       {open ? (
         <>
+          <div className="border-t border-slate-200 px-5 py-5 space-y-4">
+            <TextInput label="プロジェクト名" value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+            <label className="flex flex-col gap-1 text-xs text-slate-600">
+              <span>プロジェクトコンセプト</span>
+              <textarea
+                value={draftDescription}
+                onChange={(e) => setDraftDescription(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                rows={3}
+              />
+            </label>
+          </div>
           <div className="grid gap-4 border-t border-slate-200 px-5 py-5 md:grid-cols-2">
             <fieldset className="space-y-3">
               <legend className="text-sm font-semibold text-slate-700">パイプライン</legend>
@@ -363,7 +381,7 @@ export function ProjectSettingsPanel({
           <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
             <button
               type="button"
-              onClick={() => onSave(draft)}
+              onClick={() => onSave({ name: draftName, description: draftDescription, settings: draft })}
               className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white shadow hover:bg-primary/90"
             >
               保存

@@ -755,10 +755,14 @@ export default function App() {
     }
   };
 
-  const handleSaveProjectSettings = async (settings: ProjectSettings) => {
+  const handleSaveProjectSettings = async (data: { name: string; description: string; settings: ProjectSettings }) => {
     if (!selectedProjectId) return;
     try {
-      await updateDoc(doc(firestore, `projects/${selectedProjectId}`), { settings });
+      await updateDoc(doc(firestore, `projects/${selectedProjectId}`), {
+        name: data.name,
+        description: data.description,
+        settings: data.settings
+      });
       setToast({ message: 'Updated project settings', type: 'success' });
     } catch (error) {
       console.error('Failed to update project settings', error);
@@ -800,7 +804,7 @@ export default function App() {
         settings: data.settings ?? DEFAULT_PROJECT_SETTINGS,
         createdAt: now,
         updatedAt: now,
-        description: data.description
+        description: data.description ?? '' ?? ''
       };
       if (data.domain) {
         payload.domain = data.domain;
@@ -813,7 +817,7 @@ export default function App() {
         name: data.name,
         halt: data.halt ?? false,
         updatedAt: now,
-        description: data.description
+        description: data.description ?? ''
       };
       if (data.domain) {
         updatePayload.domain = data.domain;

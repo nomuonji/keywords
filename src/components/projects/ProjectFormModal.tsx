@@ -5,6 +5,7 @@ import { DEFAULT_PROJECT_SETTINGS } from '../../constants/settings';
 export interface ProjectFormData {
   id: string;
   name: string;
+  description: string;
   domain?: string;
   halt?: boolean;
 }
@@ -27,6 +28,7 @@ export function ProjectFormModal({
   const [form, setForm] = useState<ProjectFormData>({
     id: '',
     name: '',
+    description: '',
     domain: '',
     halt: false
   });
@@ -38,6 +40,7 @@ export function ProjectFormModal({
       setForm({
         id: '',
         name: '',
+        description: '',
         domain: '',
         halt: false
       });
@@ -45,10 +48,12 @@ export function ProjectFormModal({
       setError(null);
       return;
     }
+
     if (mode === 'edit' && initialProject) {
       setForm({
         id: initialProject.id,
         name: initialProject.name,
+        description: initialProject.description ?? '',
         domain: initialProject.domain ?? '',
         halt: initialProject.halt ?? false
       });
@@ -56,6 +61,7 @@ export function ProjectFormModal({
       setForm({
         id: '',
         name: '',
+        description: '',
         domain: '',
         halt: false
       });
@@ -141,6 +147,19 @@ export function ProjectFormModal({
               onChange={handleChange('name')}
               className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
               placeholder="例: 英語学習ブログ"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="block text-sm font-medium text-slate-700" htmlFor="project-description">
+              プロジェクトコンセプト
+            </label>
+            <textarea
+              id="project-description"
+              value={form.description}
+              onChange={(e) => setForm(prev => ({...prev, description: e.target.value}))}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="例: 英語学習者向けのブログ。特にスピーキング力向上に焦点を当てる。"
+              rows={3}
             />
           </div>
           <div className="space-y-1">

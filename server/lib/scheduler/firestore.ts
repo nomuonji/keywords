@@ -313,11 +313,33 @@ export async function getEligibleNodes(
   return sorted.slice(0, settings.pipeline.limits.nodesPerRun);
 }
 
+function getLanguageId(languageCode: string): number {
+  switch (languageCode.toLowerCase()) {
+    case 'en':
+      return 1000;
+    case 'zh':
+      return 1004;
+    case 'ko':
+      return 1002;
+    case 'fr':
+      return 1002;
+    case 'es':
+      return 1003;
+    case 'de':
+      return 1001;
+    default:
+      return 1005; // Japanese
+  }
+}
+
 function normalizeProjectSettings(
   projectId: string,
   projectName: string | undefined,
   rawSettings: ProjectSettingsLike | undefined
 ): ProjectSettings {
+  const blogLanguage = rawSettings?.blogLanguage ?? DEFAULT_PROJECT_SETTINGS.blogLanguage;
+  const languageId = getLanguageId(blogLanguage ?? 'ja');
+
   const pipeline = {
     staleDays: rawSettings?.pipeline?.staleDays ?? DEFAULT_PROJECT_SETTINGS.pipeline.staleDays,
     limits: {
@@ -345,7 +367,7 @@ function normalizeProjectSettings(
 
   const ads = {
     locale: overrideAds.locale ?? DEFAULT_PROJECT_SETTINGS.ads.locale,
-    languageId: overrideAds.languageId ?? DEFAULT_PROJECT_SETTINGS.ads.languageId,
+    languageId: languageId,
     locationIds: overrideAds.locationIds ?? DEFAULT_PROJECT_SETTINGS.ads.locationIds,
     maxResults:
       overrideAds.maxResults ??
@@ -375,7 +397,7 @@ function normalizeProjectSettings(
     ads,
     weights,
     links,
-    blogLanguage: rawSettings?.blogLanguage ?? DEFAULT_PROJECT_SETTINGS.blogLanguage,
+    blogLanguage: blogLanguage,
     blog,
     projectId
   };
