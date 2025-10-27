@@ -3,6 +3,7 @@ export type Intent = "info" | "trans" | "local" | "mixed";
 export interface ProjectSummary {
   id: string;
   name: string;
+  description: string;
   domain?: string;
   halt?: boolean;
   lastJob?: {

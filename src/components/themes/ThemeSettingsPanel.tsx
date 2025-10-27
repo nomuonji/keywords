@@ -8,6 +8,7 @@ import { writeBatch, doc, collection } from 'firebase/firestore';
 
 interface ThemeSettingsPanelProps {
   projectId: string;
+  projectDescription: string;
   themeId: string;
   nodes: NodeDocWithId[];
   projectDefaults: ProjectSettings;
@@ -18,6 +19,7 @@ interface ThemeSettingsPanelProps {
 
 export function ThemeSettingsPanel({
   projectId,
+  projectDescription,
   themeId,
   nodes,
   projectDefaults,
@@ -41,7 +43,13 @@ export function ThemeSettingsPanel({
     setLoading(true);
     try {
       const existingNodes = nodes.map((n) => n.title);
-      const result = await suggestNodes(projectId, themeId, themeName, existingNodes);
+      const result = await suggestNodes(
+        projectId,
+        themeId,
+        themeName,
+        existingNodes,
+        projectDescription
+      );
       setSuggestions(result);
     } catch (error) {
       console.error('Failed to suggest nodes', error);
@@ -93,7 +101,7 @@ export function ThemeSettingsPanel({
             disabled={!themeName}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Geminiにnode案を提案させる
+            Geminiにtopic案を提案させる
           </button>
           <button
             type="button"
@@ -180,7 +188,7 @@ export function ThemeSettingsPanel({
       ) : null}
       <SuggestionModal
         open={modalOpen}
-        title="GeminiによるNode提案"
+        title="GeminiによるTopic提案"
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}

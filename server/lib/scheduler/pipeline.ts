@@ -14,7 +14,8 @@ import type {
 import type {
   PipelineContext,
   SchedulerStagesOptions,
-  ThemeDocWithId
+  ThemeDocWithId,
+  PipelineCounters
 } from './types';
 import {
   fetchKeywordHashes,
@@ -125,6 +126,16 @@ export async function runPipelineStages(ctx: PipelineContext): Promise<StageErro
     errors.push({ type: 'pipeline', error });
   }
   return errors;
+}
+
+export async function runThemeRefresh(
+  ctx: PipelineContext,
+  theme: ThemeDocWithId
+): Promise<PipelineCounters> {
+  const themeSettings = mergeSettings(ctx.settings, theme);
+  await stageAKeywordDiscovery(ctx, theme, themeSettings);
+  await stageBClustering(ctx, theme, themeSettings);
+  return ctx.counters;
 }
 
 async function handleTheme(

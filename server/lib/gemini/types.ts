@@ -34,6 +34,7 @@ export interface SuggestThemesInput {
 export type SuggestThemesOutput = string[];
 
 export interface SuggestNodesInput {
+  projectDescription: string;
   theme: string;
   existingNodes: string[];
 }

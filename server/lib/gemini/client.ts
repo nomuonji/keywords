@@ -292,13 +292,14 @@ export class GeminiClient {
 
     return [
       'You are an expert SEO content strategist.',
+      `The overall goal of this project is: "${input.projectDescription}"`,
       `The current content theme is "${input.theme}".`,
-      'Based on this theme, please suggest 5-10 specific article ideas (nodes).',
-      'Each idea should be a concrete, long-tail keyword or a specific question that a user might ask.',
-      'Avoid duplicating existing nodes.',
+      'Based on the project goal and the current theme, please suggest 5-10 related topics.',
+      'Each topic should be a broader category or a general concept, not a specific article title.',
+      'Avoid duplicating existing topics.',
       'Output requirements (strict):',
       '- Respond ONLY with a JSON code block containing a flat array of strings.',
-      '- Example: ```json\n["記事アイデア1", "記事アイデア2", "記事アイデア3"]\n```',
+      '- Example: ```json\n["関連トピック1", "関連トピック2", "関連トピック3"]\n```',
       existingNodesList
     ].join('\n');
   }

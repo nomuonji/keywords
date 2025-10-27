@@ -30,9 +30,11 @@ import {
   runOutlineGeneration,
   runLinkGeneration,
   runBlogGeneration,
+  runThemeRefreshInline,
   loadConfig
 } from './lib/scheduler';
 import { GeminiClient } from './lib/gemini';
+
 
 const app = express();
 app.use((req, _res, next) => {
@@ -181,6 +183,17 @@ app.post('/projects/:projectId/run', async (req, res) => {
     });
     res.json({ status: 'queued', projectId });
   } catch (error) {
+    res.status(500).json({ error: `${error}` });
+  }
+});
+
+app.post('/projects/:projectId/themes/:themeId/refresh', async (req, res) => {
+  const { projectId, themeId } = req.params;
+  try {
+    const result = await runThemeRefreshInline({ projectId, themeId });
+    res.json(result);
+  } catch (error) {
+    console.error('Theme refresh failed', error);
     res.status(500).json({ error: `${error}` });
   }
 });
@@ -452,7 +465,20 @@ app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) 
     return;
   }
   try {
-    const suggestions = await geminiClient.suggestNodes({ theme, existingNodes: existingNodes ?? [] });
+    const firestore = initFirestore();
+    const projectDoc = await firestore.doc(`projects/${projectId}`).get();
+    if (!projectDoc.exists) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    const projectData = projectDoc.data();
+    const projectDescription = projectData?.description ?? '';
+
+    const suggestions = await geminiClient.suggestNodes({
+      projectDescription,
+      theme,
+      existingNodes: existingNodes ?? []
+    });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });

@@ -6,7 +6,7 @@ import admin from 'firebase-admin';
 import { loadConfig } from './config';
 import { initFirestore, loadGroupsByIds, loadGroupsForLinking, loadProjectContext } from './firestore';
 import { createLogger } from './logger';
-import { mergeSettings, stageDOutline, stageEInternalLinks, stageFPosting } from './pipeline';
+import { mergeSettings, stageDOutline, stageEInternalLinks, stageFPosting, runThemeRefresh } from './pipeline';
 import type { JobDoc } from '../core';
 import type { PipelineCounters } from './types';
 import type { GroupDocWithId, KeywordDocWithId } from '../core';
@@ -260,4 +260,12 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
     postsCreated: context.counters.postsCreated,
     postedGroupIds: posted.map((group) => group.id)
   };
+}
+
+export async function runThemeRefreshInline(params: BaseInlineParams): Promise<PipelineCounters> {
+  const { context, theme } = await createInlineContext(params, {
+    ideas: true,
+    clustering: true
+  });
+  return runThemeRefresh(context, theme);
 }

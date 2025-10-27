@@ -63,6 +63,13 @@ type BlogRunResponse = {
   postedGroupIds: string[];
 };
 
+type ThemeRefreshResponse = {
+  nodesProcessed: number;
+  newKeywords: number;
+  groupsCreated: number;
+  groupsUpdated: number;
+};
+
 type ProjectSettingsPayload = Partial<
   Omit<ProjectSettings, 'pipeline'>
 > & {
@@ -161,6 +168,7 @@ export default function App() {
           return {
             id: docSnap.id,
             name: docData.name ?? docSnap.id,
+            description: docData.description ?? '',
             domain: docData.domain,
             halt: docData.halt ?? false,
             settings: normalizedSettings,
@@ -470,15 +478,18 @@ export default function App() {
       return next;
     });
     try {
-      await postJson<{ status: string }>(`/projects/${selectedProjectId}/run`, {
-        manual: true,
-        themeIds: [themeId],
-        stages: { outline: false, links: false }
+      const result = await postJson<ThemeRefreshResponse>(
+        `/projects/${selectedProjectId}/themes/${themeId}/refresh`,
+        {}
+      );
+      const { newKeywords, groupsCreated } = result;
+      setToast({
+        message: `Theme refreshed: ${newKeywords} new keywords, ${groupsCreated} new groups.`,
+        type: 'success'
       });
-      setToast({ message: `Queued theme update for ${themeId}`, type: 'success' });
     } catch (error) {
-      console.error('Failed to trigger theme pipeline', error);
-      setToast({ message: 'Failed to trigger theme pipeline', type: 'error' });
+      console.error('Failed to refresh theme', error);
+      setToast({ message: 'Failed to refresh theme', type: 'error' });
     } finally {
       setRunningThemes((prev) => {
         const next = new Set(prev);
@@ -898,7 +909,7 @@ export default function App() {
         {selectedProject ? (
           <ProjectSettingsPanel
             projectId={selectedProject.id}
-            description={selectedProject.name}
+            description={selectedProject.description}
             settings={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             onSave={handleSaveProjectSettings}
           />
@@ -955,6 +966,7 @@ export default function App() {
         {selectedProject && selectedThemeId ? (
           <ThemeSettingsPanel
             projectId={selectedProject.id}
+            projectDescription={selectedProject.description}
             themeId={selectedThemeId}
             nodes={nodes}
             projectDefaults={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}

@@ -1,5 +1,5 @@
 export type { GroupDocWithId, KeywordDocWithId } from '../core';
-export { runOutlineGeneration, runLinkGeneration, runBlogGeneration } from './inline';
+export { runOutlineGeneration, runLinkGeneration, runBlogGeneration, runThemeRefreshInline } from './inline';
 export { loadConfig } from './config';
 
 import { existsSync } from 'node:fs';

@@ -58,10 +58,12 @@ export async function suggestNodes(
   projectId: string,
   themeId: string,
   theme: string,
-  existingNodes: string[]
+  existingNodes: string[],
+  projectDescription: string
 ): Promise<string[]> {
   const path = `/projects/${projectId}/themes/${themeId}/suggest-nodes`;
   const { suggestions } = await postJson<{ suggestions: string[] }>(path, {
+    projectDescription,
     theme,
     existingNodes
   });
