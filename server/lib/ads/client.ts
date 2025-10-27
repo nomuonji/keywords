@@ -108,6 +108,8 @@ export class KeywordIdeaClient {
       };
     });
 
+    console.log(`Filtering with minVolume: ${params.minVolume}, maxCompetition: ${params.maxCompetition}`);
+
     return ideas
       .filter((idea) => !!idea.keyword)
       .filter((idea) => {

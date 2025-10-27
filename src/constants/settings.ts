@@ -23,5 +23,13 @@ export const DEFAULT_PROJECT_SETTINGS: ProjectSettings = {
   links: {
     maxPerGroup: 3
   },
+  ads: {
+    locale: 'ja-JP',
+    languageId: 1005,
+    locationIds: [2392],
+    maxResults: 200,
+    minVolume: 10,
+    maxCompetition: 0.8
+  },
   blogLanguage: 'ja'
 };

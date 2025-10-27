@@ -36,7 +36,8 @@ import type {
   ProjectSummary,
   ThemeSummary,
   NodeDocWithId,
-  BlogMediaConfig
+  BlogMediaConfig,
+  KeywordDocWithId
 } from './types';
 
 type OutlineRunResponse = {
@@ -105,6 +106,10 @@ function normalizeProjectSettings(raw?: ProjectSettingsPayload): ProjectSettings
     links: {
       maxPerGroup: raw?.links?.maxPerGroup ?? base.links.maxPerGroup
     },
+    ads: {
+      ...base.ads,
+      ...(raw?.ads ?? {})
+    },
     blog: raw?.blog,
     blogLanguage: raw?.blogLanguage ?? base.blogLanguage ?? 'ja'
   };
@@ -129,7 +134,9 @@ function validateBlogConfig(config?: BlogMediaConfig): string | null {
 export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [themes, setThemes] = useState<ThemeSummary[]>([]);
+  const [rawGroups, setRawGroups] = useState<Omit<GroupSummary, 'keywords'>[]>([]);
   const [groups, setGroups] = useState<GroupSummary[]>([]);
+  const [allKeywords, setAllKeywords] = useState<KeywordDocWithId[]>([]);
   const [jobs, setJobs] = useState<JobHistoryItem[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>();
   const [selectedThemeId, setSelectedThemeId] = useState<string>();
@@ -269,7 +276,7 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedProjectId || !selectedThemeId) {
-      setGroups([]);
+      setRawGroups([]);
       return;
     }
     const groupsRef = collection(
@@ -279,23 +286,9 @@ export default function App() {
     const unsubscribe = onSnapshot(
       groupsRef,
       async (snapshot) => {
-        const groupData: GroupSummary[] = await Promise.all(
+        const groupData: Omit<GroupSummary, 'keywords'>[] = await Promise.all(
           snapshot.docs.map(async (docSnap) => {
             const data = docSnap.data();
-            const keywordsSnap = await getDocs(
-              query(
-                collection(
-                  firestore,
-                  `projects/${selectedProjectId}/themes/${selectedThemeId}/keywords`
-                ),
-                where('groupId', '==', docSnap.id)
-              )
-            );
-            const keywords = keywordsSnap.docs.map((kw) => ({
-              id: kw.id,
-              text: kw.data().text,
-              metrics: kw.data().metrics ?? {}
-            }));
             const linksSnap = await getDocs(
               query(
                 collection(
@@ -333,9 +326,8 @@ export default function App() {
               title: data.title ?? docSnap.id,
               intent: data.intent ?? 'info',
               priorityScore: data.priorityScore ?? 0,
-              clusterStats: data.clusterStats ?? { size: keywords.length },
+              clusterStats: data.clusterStats ?? { size: 0 },
               outline,
-              keywords,
               links,
               postUrl:
                 typeof data.postUrl === 'string' && data.postUrl.trim().length
@@ -345,7 +337,7 @@ export default function App() {
           })
         );
         groupData.sort((a, b) => b.priorityScore - a.priorityScore);
-        setGroups(groupData);
+        setRawGroups(groupData);
         setSelectedGroupIds((prev) => {
           const validIds = new Set(groupData.map((group) => group.id));
           let changed = false;
@@ -370,6 +362,43 @@ export default function App() {
     );
     return () => unsubscribe();
   }, [selectedProjectId, selectedThemeId]);
+
+  useEffect(() => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setAllKeywords([]);
+      return;
+    }
+    const keywordsRef = collection(
+      firestore,
+      `projects/${selectedProjectId}/themes/${selectedThemeId}/keywords`
+    );
+    const unsubscribe = onSnapshot(keywordsRef, (snapshot) => {
+      const data: KeywordDocWithId[] = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...(docSnap.data() as Omit<KeywordDocWithId, 'id'>)
+      }));
+      setAllKeywords(data);
+    });
+    return () => unsubscribe();
+  }, [selectedProjectId, selectedThemeId]);
+
+  useEffect(() => {
+    const keywordsByGroup = new Map<string, KeywordDocWithId[]>();
+    allKeywords.forEach((kw) => {
+      if (!kw.groupId) return;
+      if (!keywordsByGroup.has(kw.groupId)) {
+        keywordsByGroup.set(kw.groupId, []);
+      }
+      keywordsByGroup.get(kw.groupId)!.push(kw);
+    });
+
+    const mergedGroups: GroupSummary[] = rawGroups.map((group) => ({
+      ...group,
+      keywords: keywordsByGroup.get(group.id) ?? []
+    }));
+
+    setGroups(mergedGroups);
+  }, [rawGroups, allKeywords]);
 
   useEffect(() => {
     if (!selectedProjectId) {
@@ -770,7 +799,8 @@ export default function App() {
         halt: data.halt ?? false,
         settings: data.settings ?? DEFAULT_PROJECT_SETTINGS,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        description: data.description
       };
       if (data.domain) {
         payload.domain = data.domain;
@@ -782,7 +812,8 @@ export default function App() {
       const updatePayload: Record<string, unknown> = {
         name: data.name,
         halt: data.halt ?? false,
-        updatedAt: now
+        updatedAt: now,
+        description: data.description
       };
       if (data.domain) {
         updatePayload.domain = data.domain;

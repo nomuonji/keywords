@@ -108,6 +108,14 @@ export interface ProjectSettings {
   links: {
     maxPerGroup: number;
   };
+  ads: {
+    locale: string;
+    locationIds: number[];
+    languageId: number;
+    maxResults: number;
+    minVolume: number;
+    maxCompetition: number;
+  };
   blog?: BlogMediaConfig;
   blogLanguage?: string;
 }
@@ -120,5 +128,20 @@ export interface NodeDocWithId {
   intent: Intent;
   lastIdeasAt?: string;
   status: "ready" | "ideas-pending" | "ideas-done";
+  updatedAt: string;
+  groupId?: string;
+}
+
+export interface KeywordDocWithId {
+  id: string;
+  text: string;
+  dedupeHash: string;
+  locale: 'ja';
+  sourceNodeId: string;
+  metrics: KeywordMetrics;
+  score: number;
+  groupId?: string;
+  status: string;
+  versions: Array<{ metrics: KeywordMetrics; score: number; at: string }>;
   updatedAt: string;
 }

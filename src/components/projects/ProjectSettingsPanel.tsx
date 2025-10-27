@@ -191,6 +191,13 @@ export function ProjectSettingsPanel({
                 onChange={handleNumberChange(['pipeline', 'limits', 'ideasPerNode'])}
               />
               <NumberInput
+                label="ads.maxResults"
+                value={draft.ads.maxResults}
+                min={10}
+                step={10}
+                onChange={handleNumberChange(['ads', 'maxResults'])}
+              />
+              <NumberInput
                 label="groupsOutlinePerRun"
                 value={draft.pipeline.limits.groupsOutlinePerRun}
                 min={1}
