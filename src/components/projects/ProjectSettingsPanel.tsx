@@ -35,12 +35,18 @@ export function ProjectSettingsPanel({
     setDraft(settings);
   }, [name, description, settings]);
 
-  const handleSuggestThemes = async () => {
+  const handleSuggestThemes = async (regenerate = false) => {
+    if (!regenerate) {
+      setSuggestions([]);
+    }
     setModalOpen(true);
     setLoading(true);
     try {
       const result = await suggestThemes(projectId, description);
-      setSuggestions(result);
+      setSuggestions((prev) => {
+        const combined = [...prev, ...result];
+        return Array.from(new Set(combined));
+      });
     } catch (error) {
       console.error('Failed to suggest themes', error);
     } finally {
@@ -156,7 +162,7 @@ export function ProjectSettingsPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSuggestThemes}
+            onClick={() => handleSuggestThemes()}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
           >
             Geminiにテーマ案を提案させる
@@ -397,6 +403,7 @@ export function ProjectSettingsPanel({
         loading={loading}
         onClose={() => setModalOpen(false)}
         onAdd={handleAddThemes}
+        onRegenerate={() => handleSuggestThemes(true)}
       />
     </section>
   );

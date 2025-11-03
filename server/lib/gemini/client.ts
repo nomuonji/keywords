@@ -274,12 +274,12 @@ export class GeminiClient {
       'You are an expert SEO content strategist.',
       `The overall goal of this project is: "${input.description}"`,
       'Based on the project goal, please suggest 5-10 potential content themes.',
-      'Each theme should be a very broad, high-level topic, ideally expressed as a single keyword.',
-      'Avoid themes that are long phrases, questions, or specific long-tail keywords.',
+      'Each theme should be a broad topic category that can be broken down into more specific subtopics.',
+      'Avoid suggesting specific, long-tail article titles. Focus on the larger categories.',
       'Focus on topics that are likely to have good search volume and commercial value.',
       'Output requirements (strict):',
       '- Respond ONLY with a JSON code block containing a flat array of strings.',
-      '- Example: ```json\n["テーマ1", "テーマ2", "テーマ3"]\n```',
+      '- Example: ```json\n["テーマカテゴリ1", "テーマカテゴリ2", "テーマカテゴリ3"]\n```',
       'Project Description:',
       input.description
     ].join('\n');
