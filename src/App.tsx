@@ -943,7 +943,9 @@ export default function App() {
 
         {selectedProject ? (
           <ProjectSettingsPanel
+            key={selectedProject.id}
             projectId={selectedProject.id}
+            name={selectedProject.name}
             description={selectedProject.description}
             settings={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             onSave={handleSaveProjectSettings}

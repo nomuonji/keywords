@@ -278,7 +278,9 @@ export class GeminiClient {
       'Avoid suggesting specific, long-tail article titles. Focus on the larger categories.',
       'Focus on topics that are likely to have good search volume and commercial value.',
       'Output requirements (strict):',
-      '- Respond ONLY with a JSON code block containing a flat array of strings.',
+      '- Your response MUST start with ```json and end with ```.',
+      '- Inside the JSON code block, provide a single flat array of strings.',
+      '- Do not include any text or commentary before or after the JSON block.',
       '- Example: ```json\n["テーマカテゴリ1", "テーマカテゴリ2", "テーマカテゴリ3"]\n```',
       'Project Description:',
       input.description
