@@ -183,6 +183,7 @@ export class GeminiClient {
       response.response?.candidates?.[0]?.content?.parts
         ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
+    console.log('---- Raw Gemini Response for Themes ----\n', text);
     return this.parseSuggestions(text);
   }
 

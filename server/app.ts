@@ -465,6 +465,9 @@ app.post('/projects/:projectId/suggest-themes', async (req, res) => {
     });
     res.json({ suggestions });
   } catch (error) {
+    console.error(
+      `[suggest-themes] Failed to get suggestions for project ${projectId}. Error: ${error}`
+    );
     res.status(500).json({ error: `${error}` });
   }
 });
