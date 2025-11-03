@@ -440,36 +440,43 @@ export class GeminiClient {
   }
 
   private extractJson(text: string): string {
-    const trimmed = text.trim();
-    // Check for JSON object or array at the top level
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      return trimmed;
-    }
-    const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+    // First, try to find a JSON code block.
+    const codeBlockMatch = text.match(/```json\s*([\s\S]*?)```/i);
     if (codeBlockMatch?.[1]) {
       return codeBlockMatch[1].trim();
     }
-    // Fallback for partial JSON in text, try to find the first brace/bracket and last brace/bracket
-    const firstBrace = trimmed.indexOf('{');
-    const firstBracket = trimmed.indexOf('[');
-    const lastBrace = trimmed.lastIndexOf('}');
-    const lastBracket = trimmed.lastIndexOf(']');
 
+    // If no code block, find the largest valid JSON object or array within the text.
     let startIndex = -1;
     let endIndex = -1;
 
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    const lastBrace = text.lastIndexOf('}');
+    const lastBracket = text.lastIndexOf(']');
+
     if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      // Prefers object if it appears first.
       startIndex = firstBrace;
       endIndex = lastBrace;
     } else if (firstBracket !== -1) {
+      // Otherwise, looks for an array.
       startIndex = firstBracket;
       endIndex = lastBracket;
     }
 
-    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
-      throw new Error('Gemini response did not contain a valid JSON object or array');
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      try {
+        const potentialJson = text.slice(startIndex, endIndex + 1);
+        // A quick validation to see if it's likely JSON.
+        JSON.parse(potentialJson);
+        return potentialJson;
+      } catch (e) {
+        // Ignore parsing errors here, we'll throw a generic error later.
+      }
     }
-    return trimmed.slice(startIndex, endIndex + 1);
+
+    throw new Error('Gemini response did not contain a valid JSON object or array');
   }
 
   private buildDefaultTitle(input: SummarizeClusterInput): string {
