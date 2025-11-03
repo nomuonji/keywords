@@ -270,20 +270,25 @@ export class GeminiClient {
   }
 
   private buildSuggestThemesPrompt(input: SuggestThemesInput): string {
+    const languageName = this.describeLanguage(input.language ?? 'ja');
+    const languageInstruction = `Generate all suggestions in ${languageName}.`;
+
     return [
-      'You are an expert SEO content strategist.',
-      `The overall goal of this project is: "${input.description}"`,
-      'Based on the project goal, please suggest 5-10 potential content themes.',
-      'Each theme should be a broad topic category that can be broken down into more specific subtopics.',
-      'Avoid suggesting specific, long-tail article titles. Focus on the larger categories.',
-      'Focus on topics that are likely to have good search volume and commercial value.',
+      `You are an expert SEO content strategist creating a content plan for a blog. Your output language must be ${languageName}.`,
+      `The core concept of the blog is: "${input.description}"`,
+      '---',
+      'Your task is to suggest 5 to 10 broad, high-level content themes based *only* on the blog\'s core concept.',
+      'Instructions:',
+      '1.  **Relevance is key:** Every theme must be directly and strongly related to the blog concept.',
+      '2.  **High Abstraction:** Each theme must be a broad category, not a specific article title. Think "chapter titles" in a book, not "page titles".',
+      '    -   *Good Example (high abstraction):* "Japanese Traditional Crafts", "Modern Japanese Cuisine"',
+      '    -   *Bad Example (too specific):* "How to Make Origami Cranes", "Top 5 Ramen Restaurants in Tokyo"',
+      `3.  **Language:** ${languageInstruction}`,
+      '4.  **Format:** Your entire response must be a valid JSON object. No introductory text, no explanations, just the JSON.',
+      '---',
       'Output requirements (strict):',
-      '- Your response MUST start with ```json and end with ```.',
-      '- Inside the JSON code block, provide a single flat array of strings.',
-      '- Do not include any text or commentary before or after the JSON block.',
-      '- Example: ```json\n["テーマカテゴリ1", "テーマカテゴリ2", "テーマカテゴリ3"]\n```',
-      'Project Description:',
-      input.description
+      '- Your response MUST be a JSON code block starting with ```json and ending with ```.',
+      '- Inside the block, provide a single flat array of strings: `["Theme 1", "Theme 2", ...]`.'
     ].join('\n');
   }
 

@@ -453,8 +453,16 @@ app.post('/projects/:projectId/suggest-themes', async (req, res) => {
       return;
     }
     const projectData = projectDoc.data();
-    const projectDescription = projectData?.description ?? '';
-    const suggestions = await geminiClient.suggestThemes({ description: projectDescription });
+    if (!projectData) {
+      res.status(404).json({ error: 'Project data not found' });
+      return;
+    }
+    const projectDescription = projectData.description ?? '';
+    const blogLanguage = projectData.settings?.blogLanguage ?? 'ja';
+    const suggestions = await geminiClient.suggestThemes({
+      description: projectDescription,
+      language: blogLanguage,
+    });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
