@@ -130,11 +130,12 @@ export async function runPipelineStages(ctx: PipelineContext): Promise<StageErro
 
 export async function runThemeRefresh(
   ctx: PipelineContext,
-  theme: ThemeDocWithId
+  theme: ThemeDocWithId,
+  options?: { model?: string }
 ): Promise<PipelineCounters> {
   const themeSettings = mergeSettings(ctx.settings, theme);
   await stageAKeywordDiscovery(ctx, theme, themeSettings);
-  await stageBClustering(ctx, theme, themeSettings);
+  await stageBClustering(ctx, theme, themeSettings, options);
   return ctx.counters;
 }
 
@@ -154,7 +155,7 @@ async function handleTheme(
 
     let clusteredGroups: GroupDocWithId[] = [];
     if (stages.clustering) {
-      clusteredGroups = await stageBClustering(ctx, theme, themeSettings);
+      clusteredGroups = await stageBClustering(ctx, theme, themeSettings, { model: ctx.options.model });
     } else {
       ctx.deps.logger.info({ themeId: theme.id }, 'stage_b_skipped');
     }
@@ -242,7 +243,8 @@ async function stageAKeywordDiscovery(
 async function stageBClustering(
   ctx: PipelineContext,
   theme: ThemeDocWithId,
-  settings: ProjectSettings
+  settings: ProjectSettings,
+  options?: { model?: string }
 ): Promise<GroupDocWithId[]> {
   ctx.deps.logger.info({ themeId: theme.id }, 'stage_b_start');
   const keywords = await loadKeywordsForClustering(
@@ -253,10 +255,22 @@ async function stageBClustering(
   if (!keywords.length) {
     return [];
   }
-  const embeddings = await ctx.deps.gemini.embed(
-    keywords.map((kw) => ({ id: kw.id, text: kw.text }))
-  );
-  const clusters = simpleCluster(keywords, embeddings);
+  let clusters;
+  if (options?.model === 'grok') {
+    const result = await ctx.deps.grok.clusterKeywords({
+      keywords: keywords.map((kw) => ({ id: kw.id, text: kw.text })),
+    });
+    // The output from grok needs to be mapped back to the original keyword objects.
+    const keywordMap = new Map(keywords.map(kw => [kw.id, kw]));
+    clusters = result.map(cluster => ({
+      keywords: cluster.keywords.map(kw => keywordMap.get(kw.id)).filter(Boolean) as KeywordDocWithId[]
+    }));
+  } else {
+    const embeddings = await ctx.deps.gemini.embed(
+      keywords.map((kw) => ({ id: kw.id, text: kw.text }))
+    );
+    clusters = simpleCluster(keywords, embeddings);
+  }
   const result: GroupDocWithId[] = [];
   const updates: Array<{
     id: string;
@@ -363,7 +377,7 @@ export async function stageDOutline(
   theme: ThemeDocWithId,
   settings: ProjectSettings,
   groups: GroupDocWithId[],
-  options?: { explicitGroups?: GroupDocWithId[] }
+  options?: { explicitGroups?: GroupDocWithId[]; model?: string }
 ): Promise<GroupDocWithId[]> {
   ctx.deps.logger.info({ themeId: theme.id }, 'stage_d_start');
   const limit = settings.pipeline.limits.groupsOutlinePerRun;
@@ -392,7 +406,8 @@ export async function stageDOutline(
       id: doc.id,
       ...(doc.data() as KeywordDoc)
     })) as KeywordDocWithId[];
-    const summary = await ctx.deps.gemini.summarize({
+    const client = options?.model === 'grok' ? ctx.deps.grok : ctx.deps.gemini;
+    const summary = await client.summarize({
       group,
       keywords: keywordDocs,
       settings
@@ -608,7 +623,7 @@ export async function stageFPosting(
   theme: ThemeDocWithId,
   settings: ProjectSettings,
   groups: GroupDocWithId[],
-  options?: { explicitGroups?: GroupDocWithId[] }
+  options?: { explicitGroups?: GroupDocWithId[]; model?: string }
 ): Promise<GroupDocWithId[]> {
   ctx.deps.logger.info({ themeId: theme.id }, 'stage_f_start');
   if (!settings.blog) {
@@ -646,7 +661,9 @@ export async function stageFPosting(
   }
 
   for (const group of selected) {
-    const post = await ctx.deps.blogger.createPost(group, media, {
+    const client = options?.model === 'grok' ? ctx.deps.grok : ctx.deps.gemini;
+    const blogger = new Blogger(client, ctx.deps.tavily);
+    const post = await blogger.createPost(group, media, {
       language: settings.blogLanguage
     });
     await savePostUrl(

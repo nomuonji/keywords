@@ -1,5 +1,6 @@
 import { KeywordIdeaClient } from '../ads';
 import { GeminiClient } from '../gemini';
+import { GrokClient } from '../grok/client';
 import { Blogger } from '../blogger';
 import { tavily } from '@tavily/core';
 import admin from 'firebase-admin';
@@ -62,16 +63,20 @@ interface BlogResult {
 }
 
 async function createInlineContext(
-  params: BaseInlineParams,
+  params: BaseInlineParams & { model?: string },
   stages: SchedulerOptions['stages']
 ): Promise<{ context: PipelineContext; theme: ThemeDocWithId }> {
   const config = loadConfig();
   const firestore = initFirestore();
   const logger = createLogger(params.projectId);
+
+  const gemini = new GeminiClient(config.gemini);
+  const grok = new GrokClient({ apiKey: process.env.GROK_API_KEY ?? '' });
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
-    gemini: new GeminiClient(config.gemini),
-    blogger: new Blogger(new GeminiClient(config.gemini), tavily({ apiKey: config.tavily.apiKey })),
+    gemini,
+    grok,
+    blogger: new Blogger(params.model === 'grok' ? grok : gemini, tavily({ apiKey: config.tavily.apiKey })),
     firestore,
     logger
   };
@@ -100,7 +105,7 @@ async function createInlineContext(
   return { context, theme };
 }
 
-export async function runOutlineGeneration(params: OutlineParams): Promise<OutlineResult> {
+export async function runOutlineGeneration(params: OutlineParams & { model?: string }): Promise<OutlineResult> {
   const { context, theme } = await createInlineContext(params, {
     ideas: false,
     clustering: false,
@@ -200,7 +205,7 @@ export async function runLinkGeneration(
   };
 }
 
-export async function runBlogGeneration(params: OutlineParams): Promise<BlogResult> {
+export async function runBlogGeneration(params: OutlineParams & { model?: string }): Promise<BlogResult> {
   const { context, theme } = await createInlineContext(params, {
     ideas: false,
     clustering: false,
@@ -226,7 +231,8 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
   let posted: GroupDocWithId[] = [];
   if (explicitGroups && explicitGroups.length) {
     posted = await stageFPosting(context, theme, settings, [], {
-      explicitGroups
+      explicitGroups,
+      model: params.model,
     });
   }
   if (!posted.length && !(explicitGroups && explicitGroups.length)) {
@@ -250,7 +256,8 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
       .slice(0, limit);
     if (fallbackTargets.length) {
       posted = await stageFPosting(context, theme, settings, [], {
-        explicitGroups: fallbackTargets
+        explicitGroups: fallbackTargets,
+        model: params.model,
       });
     }
   }
@@ -262,10 +269,10 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
   };
 }
 
-export async function runThemeRefreshInline(params: BaseInlineParams): Promise<PipelineCounters> {
+export async function runThemeRefreshInline(params: BaseInlineParams & { model?: string }): Promise<PipelineCounters> {
   const { context, theme } = await createInlineContext(params, {
     ideas: true,
     clustering: true
   });
-  return runThemeRefresh(context, theme);
+  return runThemeRefresh(context, theme, { model: params.model });
 }
