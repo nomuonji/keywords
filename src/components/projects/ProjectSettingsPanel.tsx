@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { MdExpandLess, MdExpandMore } from 'react-icons/md';
 import type { BlogPlatform, ProjectSettings } from '../../types';
 import { SuggestionModal } from '../common/SuggestionModal';
-import { suggestThemes } from '../../lib/api';
+import { suggestThemes, suggestThemesGrok } from '../../lib/api';
 import { firestore } from '../../lib/firebase';
 import { collection, doc, writeBatch } from 'firebase/firestore';
 
@@ -35,11 +35,11 @@ export function ProjectSettingsPanel({
     setDraft(settings);
   }, [name, description, settings]);
 
-  const handleSuggestThemes = async () => {
+  const handleSuggestThemes = (suggester: typeof suggestThemes | typeof suggestThemesGrok) => async () => {
     setModalOpen(true);
     setLoading(true);
     try {
-      const result = await suggestThemes(projectId, description);
+      const result = await suggester(projectId, description);
       setSuggestions(result);
     } catch (error) {
       console.error('Failed to suggest themes', error);
@@ -156,10 +156,17 @@ export function ProjectSettingsPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSuggestThemes}
+            onClick={handleSuggestThemes(suggestThemes)}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
           >
             Geminiにテーマ案を提案させる
+          </button>
+          <button
+            type="button"
+            onClick={handleSuggestThemes(suggestThemesGrok)}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+          >
+            Grokにテーマ案を提案させる
           </button>
           <button
             type="button"
@@ -392,7 +399,7 @@ export function ProjectSettingsPanel({
 
       <SuggestionModal
         open={modalOpen}
-        title="Geminiにテーマ案を提案してもらう"
+        title="AIにテーマ案を提案してもらう"
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}

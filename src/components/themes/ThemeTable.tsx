@@ -8,6 +8,7 @@ import {
   MdOutlineLink,
   MdOutlinePlayArrow
 } from 'react-icons/md';
+import { useState } from 'react';
 import type { ThemeSummary } from '../../types';
 
 interface ThemeTableProps {
@@ -15,8 +16,8 @@ interface ThemeTableProps {
   selectedThemeId?: string;
   onSelect: (themeId: string) => void;
   onExpandCategory: (themeId: string) => void;
-  onRunTheme: (themeId: string) => void;
-  onRunOutline: (themeId: string) => void;
+  onRunTheme: (model: 'gemini' | 'grok') => (themeId: string) => void;
+  onRunOutline: (model: 'gemini' | 'grok') => (themeId: string) => void;
   onRunLinks: (themeId: string) => void;
   onEditTheme: (theme: ThemeSummary) => void;
   runningThemeIds?: Set<string>;
@@ -39,6 +40,8 @@ export function ThemeTable({
   runningLinkIds,
   activeNodesCount
 }: ThemeTableProps) {
+  const [model, setModel] = useState<'gemini' | 'grok'>('gemini');
+
   if (!themes.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
@@ -113,24 +116,44 @@ export function ThemeTable({
                 <MdOutlineAddCircle />
                 拡張
               </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-white shadow hover:bg-primary/90 disabled:opacity-50"
-                onClick={() => onRunTheme(theme.id)}
-                disabled={isRunning}
-              >
-                <MdOutlinePlayArrow size={16} />
-                {isRunning ? '実行中…' : '更新'}
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"
-                onClick={() => onRunOutline(theme.id)}
-                disabled={isOutlineRunning}
-              >
-                <MdOutlineAutoFixHigh size={16} />
-                {isOutlineRunning ? '生成中…' : 'アウトライン'}
-              </button>
+              <div className="flex items-center gap-1">
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value as 'gemini' | 'grok')}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="gemini">Gemini</option>
+                  <option value="grok">Grok</option>
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-medium text-white shadow hover:bg-primary/90 disabled:opacity-50"
+                  onClick={() => onRunTheme(model)(theme.id)}
+                  disabled={isRunning}
+                >
+                  <MdOutlinePlayArrow size={16} />
+                  {isRunning ? '実行中…' : '更新'}
+                </button>
+              </div>
+              <div className="flex items-center gap-1">
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value as 'gemini' | 'grok')}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                >
+                  <option value="gemini">Gemini</option>
+                  <option value="grok">Grok</option>
+                </select>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"
+                  onClick={() => onRunOutline(model)(theme.id)}
+                  disabled={isOutlineRunning}
+                >
+                  <MdOutlineAutoFixHigh size={16} />
+                  {isOutlineRunning ? '生成中…' : 'アウトライン'}
+                </button>
+              </div>
               <button
                 type="button"
                 className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 transition hover:border-primary hover:text-primary disabled:opacity-50"

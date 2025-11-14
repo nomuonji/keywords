@@ -54,6 +54,15 @@ export async function suggestThemes(
   return suggestions;
 }
 
+export async function suggestThemesGrok(
+  projectId: string,
+  description: string
+): Promise<string[]> {
+  const path = `/projects/${projectId}/suggest-themes-grok`;
+  const { suggestions } = await postJson<{ suggestions: string[] }>(path, { description });
+  return suggestions;
+}
+
 export async function suggestNodes(
   projectId: string,
   themeId: string,
@@ -62,6 +71,58 @@ export async function suggestNodes(
   projectDescription: string
 ): Promise<string[]> {
   const path = `/projects/${projectId}/themes/${themeId}/suggest-nodes`;
+  const { suggestions } = await postJson<{ suggestions: string[] }>(path, {
+    projectDescription,
+    theme,
+    existingNodes
+  });
+  return suggestions;
+}
+
+export async function summarizeCluster(
+  projectId: string,
+  themeId: string,
+  groupId: string
+): Promise<any> {
+  const path = `/projects/${projectId}/themes/${themeId}/groups/${groupId}/summarize-cluster`;
+  return await postJson(path, {});
+}
+
+export async function summarizeClusterGrok(
+  projectId: string,
+  themeId: string,
+  groupId: string
+): Promise<any> {
+  const path = `/projects/${projectId}/themes/${themeId}/groups/${groupId}/summarize-cluster-grok`;
+  return await postJson(path, {});
+}
+
+export async function generateArticle(
+  projectId: string,
+  themeId: string,
+  groupId: string
+): Promise<any> {
+  const path = `/projects/${projectId}/themes/${themeId}/groups/${groupId}/generate-article`;
+  return await postJson(path, {});
+}
+
+export async function generateArticleGrok(
+  projectId: string,
+  themeId: string,
+  groupId: string
+): Promise<any> {
+  const path = `/projects/${projectId}/themes/${themeId}/groups/${groupId}/generate-article-grok`;
+  return await postJson(path, {});
+}
+
+export async function suggestNodesGrok(
+  projectId: string,
+  themeId: string,
+  theme: string,
+  existingNodes: string[],
+  projectDescription: string
+): Promise<string[]> {
+  const path = `/projects/${projectId}/themes/${themeId}/suggest-nodes-grok`;
   const { suggestions } = await postJson<{ suggestions: string[] }>(path, {
     projectDescription,
     theme,
