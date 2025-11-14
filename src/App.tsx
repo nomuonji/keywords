@@ -493,7 +493,7 @@ export default function App() {
     }
   };
 
-  const handleRunTheme = async (themeId: string) => {
+  const handleRunTheme = (model: 'gemini' | 'grok') => async (themeId: string) => {
     if (!selectedProjectId) {
       setToast({ message: 'Select a project first', type: 'info' });
       return;
@@ -509,7 +509,7 @@ export default function App() {
     try {
       const result = await postJson<ThemeRefreshResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/refresh`,
-        {}
+        { model }
       );
       const { newKeywords, groupsCreated } = result;
       setToast({
@@ -528,7 +528,7 @@ export default function App() {
     }
   };
 
-  const handleRunOutline = async (themeId: string) => {
+  const handleRunOutline = (model: 'gemini' | 'grok') => async (themeId: string) => {
     if (!selectedProjectId) {
       setToast({ message: 'Select a project first', type: 'info' });
       return;
@@ -543,9 +543,10 @@ export default function App() {
     });
     try {
       const groupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
+      const path = model === 'grok' ? `/projects/${selectedProjectId}/themes/${themeId}/outlines:run-grok` : `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`;
       const response = await postJson<OutlineRunResponse>(
-        `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
-        { includeLinks: false, groupIds }
+        path,
+        { includeLinks: false, groupIds, model }
       );
       const created = response.outlinesCreated ?? 0;
       if (created > 0) {
@@ -868,7 +869,7 @@ export default function App() {
     setThemeModal({ mode: 'create' });
   };
 
-  const handleCreateArticle = async (groupId: string) => {
+  const handleCreateArticle = (model: 'gemini' | 'grok') => async (groupId: string) => {
     if (!selectedProjectId || !selectedThemeId) {
       setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
       return;
@@ -892,9 +893,10 @@ export default function App() {
       return next;
     });
     try {
+      const path = model === 'grok' ? `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run-grok` : `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`;
       const response = await postJson<BlogRunResponse>(
-        `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`,
-        { groupIds: [groupId] }
+        path,
+        { groupIds: [groupId], model }
       );
       if (response.postsCreated > 0) {
         setToast({
