@@ -449,27 +449,33 @@ function OutlineView({
 }: {
   outline: NonNullable<GroupSummary['outline']>;
 }) {
+  // `outline.h3` is a Record<string, string[]> where keys are H2 headings.
+  // We need to handle cases where it might not be a record.
+  const h3Map =
+    outline.h3 && typeof outline.h3 === 'object' && !Array.isArray(outline.h3)
+      ? (outline.h3 as Record<string, string[]>)
+      : {};
+
   return (
     <div className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-3">
       <h6 className="text-sm font-semibold text-slate-800">{outline.outlineTitle}</h6>
       <div>
-        <p className="text-xs font-semibold text-slate-600">H2 ブロック</p>
+        <p className="text-xs font-semibold text-slate-600">H2/H3 構造</p>
         <ul className="list-disc pl-5 text-sm text-slate-700">
-          {outline.h2.map((heading) => (
-            <li key={heading}>{heading}</li>
+          {outline.h2.map((h2) => (
+            <li key={h2}>
+              {h2}
+              {h3Map[h2] && h3Map[h2].length ? (
+                <ul className="list-[circle] pl-5">
+                  {h3Map[h2].map((h3) => (
+                    <li key={h3}>{h3}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
           ))}
         </ul>
       </div>
-      {outline.h3 && outline.h3.length ? (
-        <div>
-          <p className="text-xs font-semibold text-slate-600">H3 アイデア</p>
-          <ul className="list-disc pl-5 text-sm text-slate-700">
-            {outline.h3.map((heading) => (
-              <li key={heading}>{heading}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
       {outline.faq && outline.faq.length ? (
         <div>
           <p className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-600">

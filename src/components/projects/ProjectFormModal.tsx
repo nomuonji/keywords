@@ -63,7 +63,7 @@ export function ProjectFormModal({
         name: '',
         description: '',
         domain: '',
-        halt: false
+        halt: true
       });
     }
   }, [open, mode, initialProject]);

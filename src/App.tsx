@@ -308,11 +308,7 @@ export default function App() {
               ? {
                   outlineTitle: summary.outlineTitle ?? '',
                   h2: Array.isArray(summary.h2) ? summary.h2 : [],
-                  h3: summary.h3
-                    ? Object.values(summary.h3)
-                        .flat()
-                        .filter((item: unknown): item is string => typeof item === 'string')
-                    : undefined,
+                  h3: summary.h3,
                   faq: Array.isArray(summary.faq)
                     ? summary.faq.filter(
                         (item: unknown): item is { q: string; a: string } =>
@@ -943,7 +939,9 @@ export default function App() {
 
         {selectedProject ? (
           <ProjectSettingsPanel
+            key={selectedProject.id}
             projectId={selectedProject.id}
+            name={selectedProject.name}
             description={selectedProject.description}
             settings={selectedProject.settings ?? DEFAULT_PROJECT_SETTINGS}
             onSave={handleSaveProjectSettings}
