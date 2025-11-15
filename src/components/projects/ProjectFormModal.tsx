@@ -111,7 +111,7 @@ export function ProjectFormModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+    <div id="project-form-modal" data-testid="project-form-modal" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl">
         <form onSubmit={handleSubmit} className="space-y-4 px-6 py-6">
           <header>
