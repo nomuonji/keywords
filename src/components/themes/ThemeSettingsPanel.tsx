@@ -37,7 +37,7 @@ export function ThemeSettingsPanel({
     setDraft(themeSettings ?? {});
   }, [themeSettings]);
 
-  const handleSuggestNodes = async () => {
+  const handleSuggestNodes = (model: 'gemini' | 'grok') => async () => {
     if (!themeName) return;
     setModalOpen(true);
     setLoading(true);
@@ -48,7 +48,8 @@ export function ThemeSettingsPanel({
         themeId,
         themeName,
         existingNodes,
-        projectDescription
+        projectDescription,
+        model
       );
       setSuggestions(result);
     } catch (error) {
@@ -97,11 +98,19 @@ export function ThemeSettingsPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSuggestNodes}
+            onClick={handleSuggestNodes('gemini')}
             disabled={!themeName}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             Geminiにtopic案を提案させる
+          </button>
+          <button
+            type="button"
+            onClick={handleSuggestNodes('grok')}
+            disabled={!themeName}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Grokにtopic案を提案させる
           </button>
           <button
             type="button"
@@ -188,7 +197,7 @@ export function ThemeSettingsPanel({
       ) : null}
       <SuggestionModal
         open={modalOpen}
-        title="GeminiによるTopic提案"
+        title="AIによるTopic提案"
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}

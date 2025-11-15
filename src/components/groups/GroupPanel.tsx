@@ -30,7 +30,7 @@ interface GroupPanelProps {
   onDeleteSelectedGroups: () => void;
   deletingGroups?: boolean;
   clearingOutlines?: boolean;
-  onCreateArticle: (groupId: string) => void;
+  onCreateArticle: (model: 'gemini' | 'grok') => (groupId: string) => void;
   postingGroupIds?: Set<string>;
 }
 
@@ -259,9 +259,10 @@ function GroupDetail({
   posting
 }: {
   group: GroupSummary;
-  onCreateArticle: (groupId: string) => void;
+  onCreateArticle: (model: 'gemini' | 'grok') => (groupId: string) => void;
   posting?: boolean;
 }) {
+  const [model, setModel] = useState<'gemini' | 'grok'>('gemini');
   const isPublished = Boolean(group.postUrl);
   const linkGroups: Array<{
     reason: GroupSummary['links'][number]['reason'];
@@ -294,14 +295,24 @@ function GroupDetail({
       <header className="border-b border-slate-200 pb-3">
         <div className="flex items-center justify-between">
           <h4 className="text-lg font-semibold text-slate-900">{group.title}</h4>
-          <button
-            type="button"
-            onClick={() => onCreateArticle(group.id)}
-            className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
-            disabled={posting}
-          >
-            {posting ? (isPublished ? 'リライト中…' : '記事作成中…') : isPublished ? 'リライト' : '記事作成'}
-          </button>
+          <div className="flex items-center gap-2">
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value as 'gemini' | 'grok')}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="gemini">Gemini</option>
+              <option value="grok">Grok</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => onCreateArticle(model)(group.id)}
+              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
+              disabled={posting}
+            >
+              {posting ? (isPublished ? 'リライト中…' : '記事作成中…') : isPublished ? 'リライト' : '記事作成'}
+            </button>
+          </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-2 py-0.5">

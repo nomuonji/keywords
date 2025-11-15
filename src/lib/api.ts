@@ -47,10 +47,11 @@ export async function deleteRequest(path: string): Promise<void> {
 
 export async function suggestThemes(
   projectId: string,
-  description: string
+  description: string,
+  model: string
 ): Promise<string[]> {
   const path = `/projects/${projectId}/suggest-themes`;
-  const { suggestions } = await postJson<{ suggestions: string[] }>(path, { description });
+  const { suggestions } = await postJson<{ suggestions: string[] }>(path, { description, model });
   return suggestions;
 }
 
@@ -59,13 +60,15 @@ export async function suggestNodes(
   themeId: string,
   theme: string,
   existingNodes: string[],
-  projectDescription: string
+  projectDescription: string,
+  model: string
 ): Promise<string[]> {
   const path = `/projects/${projectId}/themes/${themeId}/suggest-nodes`;
   const { suggestions } = await postJson<{ suggestions: string[] }>(path, {
     projectDescription,
     theme,
-    existingNodes
+    existingNodes,
+    model
   });
   return suggestions;
 }

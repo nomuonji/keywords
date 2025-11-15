@@ -24,7 +24,7 @@ for (const candidate of envCandidates) {
 import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
-import { nowIso } from './lib/core';
+import { nowIso, GroupDoc, KeywordDocWithId } from './lib/core';
 import {
   runScheduler,
   runOutlineGeneration,
@@ -34,6 +34,7 @@ import {
   loadConfig
 } from './lib/scheduler';
 import { GeminiClient } from './lib/gemini';
+import { GrokClient } from './lib/grok/client';
 
 
 const app = express();
@@ -73,6 +74,9 @@ app.use((req, res, next) => {
 
 const config = loadConfig();
 const geminiClient = new GeminiClient(config.gemini);
+const grokClient = new GrokClient({
+  apiKey: process.env.GROK_API_KEY ?? '',
+});
 
 let cachedServiceAccount: admin.ServiceAccount | null | undefined;
 
@@ -189,8 +193,9 @@ app.post('/projects/:projectId/run', async (req, res) => {
 
 app.post('/projects/:projectId/themes/:themeId/refresh', async (req, res) => {
   const { projectId, themeId } = req.params;
+  const { model } = req.body;
   try {
-    const result = await runThemeRefreshInline({ projectId, themeId });
+    const result = await runThemeRefreshInline({ projectId, themeId, model });
     res.json(result);
   } catch (error) {
     console.error('Theme refresh failed', error);
@@ -304,7 +309,7 @@ app.post('/projects/:projectId/themes/:themeId/groups\:delete', async (req, res)
 
 app.post('/projects/:projectId/themes/:themeId/outlines\:run', async (req, res) => {
   const { projectId, themeId } = req.params;
-  const { includeLinks = false, groupIds } = req.body ?? {};
+  const { includeLinks = false, groupIds, model } = req.body ?? {};
   try {
     const parsedGroupIds = Array.isArray(groupIds)
       ? groupIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
@@ -312,6 +317,7 @@ app.post('/projects/:projectId/themes/:themeId/outlines\:run', async (req, res) 
     const outlineResult = await runOutlineGeneration({
       projectId,
       themeId,
+      model,
       groupIds: parsedGroupIds
     });
     let linkResult: Awaited<ReturnType<typeof runLinkGeneration>> | undefined;
@@ -352,7 +358,7 @@ app.post('/projects/:projectId/themes/:themeId/outlines\:run', async (req, res) 
 
 app.post('/projects/:projectId/themes/:themeId/posts:run', async (req, res) => {
   const { projectId, themeId } = req.params;
-  const { groupIds } = req.body ?? {};
+  const { groupIds, model } = req.body ?? {};
   try {
     const parsedGroupIds = Array.isArray(groupIds)
       ? groupIds.filter((id: unknown): id is string => typeof id === 'string' && id.trim().length > 0)
@@ -361,6 +367,7 @@ app.post('/projects/:projectId/themes/:themeId/posts:run', async (req, res) => {
       projectId,
       themeId,
       groupIds: parsedGroupIds,
+      model,
     });
     res.json({
       status: 'completed',
@@ -443,8 +450,10 @@ app.post('/projects/:projectId/themes/:themeId/links\:generate', async (req, res
   }
 });
 
-app.post('/projects/:projectId/suggest-themes', async (req, res) => {
+const suggestThemesHandler = async (req: express.Request, res: express.Response) => {
   const { projectId } = req.params;
+  const { model } = req.body;
+  const client = model === 'grok' ? grokClient : geminiClient;
   try {
     const firestore = initFirestore();
     const projectDoc = await firestore.doc(`projects/${projectId}`).get();
@@ -454,20 +463,23 @@ app.post('/projects/:projectId/suggest-themes', async (req, res) => {
     }
     const projectData = projectDoc.data();
     const projectDescription = projectData?.description ?? '';
-    const suggestions = await geminiClient.suggestThemes({ description: projectDescription });
+    const suggestions = await client.suggestThemes({ description: projectDescription });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }
-});
+};
 
-app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) => {
-  const { projectId, themeId } = req.params;
-  const { theme, existingNodes } = req.body ?? {};
+app.post('/projects/:projectId/suggest-themes', suggestThemesHandler);
+
+const suggestNodesHandler = async (req: express.Request, res: express.Response) => {
+  const { projectId } = req.params;
+  const { theme, existingNodes, model } = req.body ?? {};
   if (!theme) {
     res.status(400).json({ error: 'theme is required' });
     return;
   }
+  const client = model === 'grok' ? grokClient : geminiClient;
   try {
     const firestore = initFirestore();
     const projectDoc = await firestore.doc(`projects/${projectId}`).get();
@@ -478,15 +490,20 @@ app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) 
     const projectData = projectDoc.data();
     const projectDescription = projectData?.description ?? '';
 
-    const suggestions = await geminiClient.suggestNodes({
+    const suggestions = await client.suggestNodes({
       projectDescription,
       theme,
-      existingNodes: existingNodes ?? []
+      existingNodes: existingNodes ?? [],
     });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }
-});
+};
+
+app.post('/projects/:projectId/themes/:themeId/suggest-nodes', suggestNodesHandler);
+
+
+
 
 export default app;

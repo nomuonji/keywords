@@ -35,11 +35,11 @@ export function ProjectSettingsPanel({
     setDraft(settings);
   }, [name, description, settings]);
 
-  const handleSuggestThemes = async () => {
+  const handleSuggestThemes = (model: 'gemini' | 'grok') => async () => {
     setModalOpen(true);
     setLoading(true);
     try {
-      const result = await suggestThemes(projectId, description);
+      const result = await suggestThemes(projectId, description, model);
       setSuggestions(result);
     } catch (error) {
       console.error('Failed to suggest themes', error);
@@ -156,10 +156,17 @@ export function ProjectSettingsPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleSuggestThemes}
+            onClick={handleSuggestThemes('gemini')}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
           >
             Geminiにテーマ案を提案させる
+          </button>
+          <button
+            type="button"
+            onClick={handleSuggestThemes('grok')}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary"
+          >
+            Grokにテーマ案を提案させる
           </button>
           <button
             type="button"
@@ -392,7 +399,7 @@ export function ProjectSettingsPanel({
 
       <SuggestionModal
         open={modalOpen}
-        title="Geminiにテーマ案を提案してもらう"
+        title="AIにテーマ案を提案してもらう"
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}
