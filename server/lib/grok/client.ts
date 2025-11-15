@@ -1,5 +1,4 @@
 
-import fetch from 'node-fetch';
 import { retry } from '../core';
 import type {
   GrokConfig,
@@ -69,6 +68,7 @@ export class GrokClient {
     };
 
     const response = await retry(async () => {
+      const { default: fetch } = await import('node-fetch');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
 
