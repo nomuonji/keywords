@@ -48,7 +48,7 @@ export async function deleteRequest(path: string): Promise<void> {
 export async function suggestThemes(
   projectId: string,
   description: string,
-  model: string,
+  model: 'gemini' | 'grok'
 ): Promise<string[]> {
   const path = `/projects/${projectId}/suggest-themes`;
   const { suggestions } = await postJson<{ suggestions: string[] }>(path, { description, model });
@@ -61,14 +61,14 @@ export async function suggestNodes(
   theme: string,
   existingNodes: string[],
   projectDescription: string,
-  model: string,
+  model: 'gemini' | 'grok'
 ): Promise<string[]> {
   const path = `/projects/${projectId}/themes/${themeId}/suggest-nodes`;
   const { suggestions } = await postJson<{ suggestions: string[] }>(path, {
     projectDescription,
     theme,
     existingNodes,
-    model,
+    model
   });
   return suggestions;
 }

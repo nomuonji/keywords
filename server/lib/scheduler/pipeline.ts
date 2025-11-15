@@ -130,12 +130,11 @@ export async function runPipelineStages(ctx: PipelineContext): Promise<StageErro
 
 export async function runThemeRefresh(
   ctx: PipelineContext,
-  theme: ThemeDocWithId,
-  options?: { model?: string }
+  theme: ThemeDocWithId
 ): Promise<PipelineCounters> {
   const themeSettings = mergeSettings(ctx.settings, theme);
   await stageAKeywordDiscovery(ctx, theme, themeSettings);
-  await stageBClustering(ctx, theme, themeSettings, options);
+  await stageBClustering(ctx, theme, themeSettings, { model: ctx.options.model });
   return ctx.counters;
 }
 
@@ -255,13 +254,13 @@ async function stageBClustering(
   if (!keywords.length) {
     return [];
   }
+
   let clusters: { keywords: KeywordDocWithId[] }[];
   if (options?.model === 'grok') {
     const result = await ctx.deps.grok.clusterKeywords({
       keywords: keywords.map((kw) => ({ id: kw.id, text: kw.text })),
     });
     const keywordMap = new Map(keywords.map((kw) => [kw.id, kw]));
-    // The output from grok needs to be mapped back to the original keyword objects.
     clusters = result.map((cluster) => ({
       keywords: cluster.keywords
         .map((kw) => keywordMap.get(kw.id))
@@ -273,6 +272,7 @@ async function stageBClustering(
     );
     clusters = simpleCluster(keywords, embeddings);
   }
+
   const result: GroupDocWithId[] = [];
   const updates: Array<{
     id: string;
@@ -300,7 +300,7 @@ async function stageBClustering(
       },
       updatedAt: nowIso()
     };
-    const existing = cluster.keywords.find((kw: KeywordDocWithId) => kw.groupId);
+    const existing = cluster.keywords.find((kw) => kw.groupId);
     const saved = await upsertGroup(
       ctx.deps.firestore,
       ctx.projectId,

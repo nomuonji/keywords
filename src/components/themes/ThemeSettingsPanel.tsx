@@ -32,12 +32,13 @@ export function ThemeSettingsPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionModel, setSuggestionModel] = useState<'gemini' | 'grok'>('gemini');
 
   useEffect(() => {
     setDraft(themeSettings ?? {});
   }, [themeSettings]);
 
-  const handleSuggestNodes = (model: 'gemini' | 'grok') => async () => {
+  const handleSuggestNodes = async () => {
     if (!themeName) return;
     setModalOpen(true);
     setLoading(true);
@@ -49,7 +50,7 @@ export function ThemeSettingsPanel({
         themeName,
         existingNodes,
         projectDescription,
-        model
+        suggestionModel
       );
       setSuggestions(result);
     } catch (error) {
@@ -96,22 +97,24 @@ export function ThemeSettingsPanel({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSuggestNodes('gemini')}
-            disabled={!themeName}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Geminiにtopic案を提案させる
-          </button>
-          <button
-            type="button"
-            onClick={handleSuggestNodes('grok')}
-            disabled={!themeName}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Grokにtopic案を提案させる
-          </button>
+          <div className="flex items-center gap-1">
+            <select
+              value={suggestionModel}
+              onChange={(e) => setSuggestionModel(e.target.value as 'gemini' | 'grok')}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="gemini">Gemini</option>
+              <option value="grok">Grok</option>
+            </select>
+            <button
+              type="button"
+              onClick={handleSuggestNodes}
+              disabled={!themeName}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Topic案を提案
+            </button>
+          </div>
           <button
             type="button"
             className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
@@ -197,7 +200,7 @@ export function ThemeSettingsPanel({
       ) : null}
       <SuggestionModal
         open={modalOpen}
-        title="AIによるTopic提案"
+        title={`${suggestionModel === 'grok' ? 'Grok' : 'Gemini'}によるTopic提案`}
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}

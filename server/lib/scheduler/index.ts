@@ -27,8 +27,7 @@ for (const candidate of envCandidates) {
 
 import { KeywordIdeaClient } from '../ads';
 import { GeminiClient } from '../gemini';
-import { GrokClient } from '../grok/client';
-import { Blogger } from '../blogger';
+import { GrokClient } from '../grok';
 import { initFirestore, loadProjectContext, acquireLock, createJob, updateJobSummary } from './firestore';
 import { createLogger } from './logger';
 import { loadConfig } from './config';
@@ -42,17 +41,13 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
   const config = loadConfig();
   const logger = createLogger(options.projectId);
   const firestore = initFirestore();
-  const gemini = new GeminiClient(config.gemini);
-  const grok = new GrokClient({ apiKey: process.env.GROK_API_KEY ?? '' });
-  const tavilyClient = tavily({ apiKey: config.tavily.apiKey });
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
-    gemini,
-    grok,
-    blogger: new Blogger(gemini, tavilyClient),
+    gemini: new GeminiClient(config.gemini),
+    grok: new GrokClient({ apiKey: config.grok.apiKey }),
+    tavily: tavily({ apiKey: config.tavily.apiKey }),
     firestore,
-    logger,
-    tavily: tavilyClient
+    logger
   };
 
   const projectContext = await loadProjectContext(firestore, options);

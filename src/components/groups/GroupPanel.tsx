@@ -30,8 +30,10 @@ interface GroupPanelProps {
   onDeleteSelectedGroups: () => void;
   deletingGroups?: boolean;
   clearingOutlines?: boolean;
+  onRunOutline: (model: 'gemini' | 'grok') => (groupId: string) => void;
   onCreateArticle: (model: 'gemini' | 'grok') => (groupId: string) => void;
   postingGroupIds?: Set<string>;
+  outliningGroupIds?: Set<string>;
 }
 
 export function GroupPanel({
@@ -44,8 +46,10 @@ export function GroupPanel({
   onDeleteSelectedGroups,
   deletingGroups,
   clearingOutlines,
+  onRunOutline,
   onCreateArticle,
-  postingGroupIds
+  postingGroupIds,
+  outliningGroupIds
 }: GroupPanelProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
@@ -84,6 +88,9 @@ export function GroupPanel({
 
   const selectedGroupIsPosting =
     selectedGroup && postingGroupIds ? postingGroupIds.has(selectedGroup.id) : false;
+
+  const selectedGroupIsOutlining =
+    selectedGroup && outliningGroupIds ? outliningGroupIds.has(selectedGroup.id) : false;
 
   return (
     <section className="space-y-4">
@@ -216,8 +223,10 @@ export function GroupPanel({
           {selectedGroup ? (
             <GroupDetail
               group={selectedGroup}
+              onRunOutline={onRunOutline}
               onCreateArticle={onCreateArticle}
               posting={selectedGroupIsPosting}
+              outlining={selectedGroupIsOutlining}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-slate-500">
@@ -255,14 +264,19 @@ function StatusBadge({
 
 function GroupDetail({
   group,
+  onRunOutline,
   onCreateArticle,
-  posting
+  posting,
+  outlining
 }: {
   group: GroupSummary;
+  onRunOutline: (model: 'gemini' | 'grok') => (groupId: string) => void;
   onCreateArticle: (model: 'gemini' | 'grok') => (groupId: string) => void;
   posting?: boolean;
+  outlining?: boolean;
 }) {
-  const [model, setModel] = useState<'gemini' | 'grok'>('gemini');
+  const [outlineModel, setOutlineModel] = useState<'gemini' | 'grok'>('gemini');
+  const [articleModel, setArticleModel] = useState<'gemini' | 'grok'>('gemini');
   const isPublished = Boolean(group.postUrl);
   const linkGroups: Array<{
     reason: GroupSummary['links'][number]['reason'];
@@ -295,23 +309,43 @@ function GroupDetail({
       <header className="border-b border-slate-200 pb-3">
         <div className="flex items-center justify-between">
           <h4 className="text-lg font-semibold text-slate-900">{group.title}</h4>
-          <div className="flex items-center gap-1">
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value as 'gemini' | 'grok')}
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="gemini">Gemini</option>
-              <option value="grok">Grok</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => onCreateArticle(model)(group.id)}
-              className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
-              disabled={posting}
-            >
-              {posting ? (isPublished ? 'リライト中…' : '記事作成中…') : isPublished ? 'リライト' : '記事作成'}
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <select
+                value={outlineModel}
+                onChange={(e) => setOutlineModel(e.target.value as 'gemini' | 'grok')}
+                className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="grok">Grok</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => onRunOutline(outlineModel)(group.id)}
+                className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
+                disabled={outlining}
+              >
+                {outlining ? '生成中…' : 'アウトライン再生成'}
+              </button>
+            </div>
+            <div className="flex items-center gap-1">
+              <select
+                value={articleModel}
+                onChange={(e) => setArticleModel(e.target.value as 'gemini' | 'grok')}
+                className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              >
+                <option value="gemini">Gemini</option>
+                <option value="grok">Grok</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => onCreateArticle(articleModel)(group.id)}
+                className="rounded-md bg-primary px-3 py-1 text-sm font-semibold text-white shadow hover:bg-primary-dark disabled:cursor-not-allowed disabled:bg-primary/50"
+                disabled={posting}
+              >
+                {posting ? (isPublished ? 'リライト中…' : '記事作成中…') : isPublished ? 'リライト' : '記事作成'}
+              </button>
+            </div>
           </div>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">

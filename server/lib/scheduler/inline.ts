@@ -1,7 +1,6 @@
 import { KeywordIdeaClient } from '../ads';
 import { GeminiClient } from '../gemini';
-import { GrokClient } from '../grok/client';
-import { Blogger } from '../blogger';
+import { GrokClient } from '../grok';
 import { tavily } from '@tavily/core';
 import admin from 'firebase-admin';
 import { loadConfig } from './config';
@@ -20,7 +19,6 @@ import type {
 interface BaseInlineParams {
   projectId: string;
   themeId: string;
-  model?: string;
 }
 
 interface OutlineParams extends BaseInlineParams {
@@ -70,17 +68,13 @@ async function createInlineContext(
   const config = loadConfig();
   const firestore = initFirestore();
   const logger = createLogger(params.projectId);
-  const gemini = new GeminiClient(config.gemini);
-  const grok = new GrokClient({ apiKey: process.env.GROK_API_KEY ?? '' });
-  const tavilyClient = tavily({ apiKey: config.tavily.apiKey });
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
-    gemini,
-    grok,
-    blogger: new Blogger(gemini, tavilyClient),
+    gemini: new GeminiClient(config.gemini),
+    grok: new GrokClient({ apiKey: config.grok.apiKey }),
+    tavily: tavily({ apiKey: config.tavily.apiKey }),
     firestore,
-    logger,
-    tavily: tavilyClient,
+    logger
   };
 
   const options: SchedulerOptions = {
@@ -131,8 +125,7 @@ export async function runOutlineGeneration(params: OutlineParams): Promise<Outli
   let outlined: GroupDocWithId[] = [];
   if (explicitGroups && explicitGroups.length) {
     outlined = await stageDOutline(context, theme, settings, [], {
-      explicitGroups,
-      model: params.model,
+      explicitGroups
     });
   }
   if (!outlined.length && !(explicitGroups && explicitGroups.length)) {
@@ -234,8 +227,7 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
   let posted: GroupDocWithId[] = [];
   if (explicitGroups && explicitGroups.length) {
     posted = await stageFPosting(context, theme, settings, [], {
-      explicitGroups,
-      model: params.model,
+      explicitGroups
     });
   }
   if (!posted.length && !(explicitGroups && explicitGroups.length)) {
@@ -271,10 +263,13 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
   };
 }
 
-export async function runThemeRefreshInline(params: BaseInlineParams): Promise<PipelineCounters> {
+export async function runThemeRefreshInline(
+  params: BaseInlineParams & { model?: string }
+): Promise<PipelineCounters> {
   const { context, theme } = await createInlineContext(params, {
     ideas: true,
     clustering: true
   });
-  return runThemeRefresh(context, theme, { model: params.model });
+  context.options.model = params.model;
+  return runThemeRefresh(context, theme);
 }

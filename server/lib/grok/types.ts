@@ -1,9 +1,5 @@
-import type {
-  GroupSummary,
-  Intent,
-  KeywordDocWithId,
-  ProjectSettings,
-} from '../core';
+
+import type { KeywordDocWithId, ProjectSettings, GroupDocWithId, Intent, GroupSummary } from '../core';
 
 export interface GrokConfig {
   apiKey: string;
@@ -27,18 +23,18 @@ export type SuggestNodesOutput = string[];
 export interface SummarizeClusterInput {
   groupId: string;
   representativeKw: string;
-  intent: Intent;
-  description: string;
+  intent?: Intent;
+  description?: string;
   keywords: KeywordDocWithId[];
   settings: ProjectSettings;
 }
 
 export type SummarizeClusterOutput = GroupSummary;
 
-export interface ClusterKeywordsInput {
-  keywords: { id: string; text: string }[];
-}
+export type ClusterKeywordsInput = {
+  keywords: Array<{ id: string; text: string }>;
+};
 
-export type ClusterKeywordsOutput = {
-  keywords: { id: string; text: string }[];
-}[];
+export type ClusterKeywordsOutput = Array<{
+  keywords: Array<{ id: string; text: string }>;
+}>;

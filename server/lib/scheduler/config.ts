@@ -1,5 +1,6 @@
 import type { AdsAuthConfig } from '../ads';
 import type { GeminiConfig } from '../gemini';
+import type { GrokConfig } from '../grok';
 
 export interface TavilyConfig {
   apiKey?: string;
@@ -8,6 +9,7 @@ export interface TavilyConfig {
 export interface EnvironmentConfig {
   ads: AdsAuthConfig;
   gemini: GeminiConfig;
+  grok: GrokConfig;
   tavily: TavilyConfig;
   firestore: {
     projectId?: string;
@@ -35,6 +37,9 @@ export function loadConfig(): EnvironmentConfig {
       apiKey: process.env.GEMINI_API_KEY,
       embeddingModel: process.env.GEMINI_EMBEDDING_MODEL,
       generativeModel: process.env.GEMINI_GENERATIVE_MODEL
+    },
+    grok: {
+      apiKey: process.env.XAI_API_KEY ?? ''
     },
     tavily: {
       apiKey: process.env.TAVILY_API_KEY

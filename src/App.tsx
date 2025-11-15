@@ -493,7 +493,7 @@ export default function App() {
     }
   };
 
-  const handleRunTheme = (model: 'gemini' | 'grok') => async (themeId: string) => {
+  const handleRunTheme = async (themeId: string) => {
     if (!selectedProjectId) {
       setToast({ message: 'Select a project first', type: 'info' });
       return;
@@ -509,7 +509,7 @@ export default function App() {
     try {
       const result = await postJson<ThemeRefreshResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/refresh`,
-        { model }
+        {}
       );
       const { newKeywords, groupsCreated } = result;
       setToast({
@@ -528,7 +528,7 @@ export default function App() {
     }
   };
 
-  const handleRunOutline = (model: 'gemini' | 'grok') => async (themeId: string) => {
+  const handleRunOutline = async (themeId: string) => {
     if (!selectedProjectId) {
       setToast({ message: 'Select a project first', type: 'info' });
       return;
@@ -545,7 +545,7 @@ export default function App() {
       const groupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
       const response = await postJson<OutlineRunResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
-        { includeLinks: false, groupIds, model }
+        { includeLinks: false, groupIds }
       );
       const created = response.outlinesCreated ?? 0;
       if (created > 0) {
@@ -868,7 +868,7 @@ export default function App() {
     setThemeModal({ mode: 'create' });
   };
 
-  const handleCreateArticle = (model: 'gemini' | 'grok') => async (groupId: string) => {
+  const handleCreateArticle = async (groupId: string) => {
     if (!selectedProjectId || !selectedThemeId) {
       setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
       return;
@@ -894,7 +894,7 @@ export default function App() {
     try {
       const response = await postJson<BlogRunResponse>(
         `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`,
-        { groupIds: [groupId], model }
+        { groupIds: [groupId] }
       );
       if (response.postsCreated > 0) {
         setToast({

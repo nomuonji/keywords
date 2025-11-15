@@ -65,26 +65,32 @@ export class GrokClient {
     const body = {
       model: this.generativeModel,
       messages,
-      // The xAI API expects a JSON response to be explicitly requested like this
       response_format: { type: 'json_object' },
     };
 
     const response = await retry(async () => {
-      const res = await fetch(this.apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        timeout: 30000, // 30 seconds
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
 
-      if (!res.ok) {
-        const errorBody = await res.text();
-        throw new Error(`xAI API request failed with status ${res.status}: ${errorBody}`);
+      try {
+        const res = await fetch(this.apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          const errorBody = await res.text();
+          throw new Error(`xAI API request failed with status ${res.status}: ${errorBody}`);
+        }
+        return res.json() as Promise<XaiChatCompletion>;
+      } finally {
+        clearTimeout(timeoutId);
       }
-      return res.json() as Promise<XaiChatCompletion>;
     });
 
     return response.choices[0]?.message?.content ?? '';
@@ -152,8 +158,6 @@ export class GrokClient {
     return this.parseClusters(text, input);
   }
 
-  // All the prompt building and parsing methods remain the same as they are not API-specific.
-  // ... (buildArticlePrompt, parseSuggestions, buildOutlinePrompt, parseOutline, etc.)
   private buildArticlePrompt(params: GenerateArticleParams): string {
     const topic = params.topic ?? params.outline?.outlineTitle ?? 'ブログ記事';
     const intent = params.intent ?? 'info';
@@ -195,28 +199,15 @@ export class GrokClient {
 
   private describeLanguage(code: string): string {
     switch (code) {
-      case 'en':
-      case 'en-us':
-      case 'en-gb':
-        return 'English';
-      case 'zh':
-      case 'zh-cn':
-      case 'zh-tw':
-        return 'Chinese';
-      case 'ko':
-        return 'Korean';
-      case 'fr':
-        return 'French';
-      case 'es':
-        return 'Spanish';
-      case 'de':
-        return 'German';
-      case 'th':
-        return 'Thai';
-      case 'vi':
-        return 'Vietnamese';
-      default:
-        return 'Japanese';
+      case 'en': case 'en-us': case 'en-gb': return 'English';
+      case 'zh': case 'zh-cn': case 'zh-tw': return 'Chinese';
+      case 'ko': return 'Korean';
+      case 'fr': return 'French';
+      case 'es': return 'Spanish';
+      case 'de': return 'German';
+      case 'th': return 'Thai';
+      case 'vi': return 'Vietnamese';
+      default: return 'Japanese';
     }
   }
 
@@ -241,7 +232,6 @@ export class GrokClient {
       input.existingNodes.length > 0
         ? `Existing nodes:\n${input.existingNodes.map((node) => `- ${node}`).join('\n')}`
         : 'No existing nodes yet.';
-
     return [
       'You are an expert SEO content strategist.',
       `The overall goal of this project is: "${input.projectDescription}"`,
@@ -251,7 +241,7 @@ export class GrokClient {
       'Avoid duplicating existing topics.',
       'Output requirements (strict):',
       '- Respond ONLY with a JSON object containing a "suggestions" key with a flat array of strings.',
-      '- Example: {"suggestions": ["関連トピック1", "関連トピック2", "関連トピック3"]}',
+      '- Example: {"suggestions": ["関連トピックス1", "関連トピックス2", "関連トピックス3"]}',
       existingNodesList
     ].join('\n');
   }
@@ -326,19 +316,13 @@ export class GrokClient {
       if (json.h3 && typeof json.h3 === 'object' && !Array.isArray(json.h3)) {
         const h3Record: Record<string, string[]> = {};
         Object.entries(json.h3).forEach(([key, value]) => {
-          if (!Array.isArray(value)) {
-            return;
-          }
+          if (!Array.isArray(value)) return;
           const cleaned = value
             .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
             .map((item) => item.trim());
-          if (cleaned.length) {
-            h3Record[key] = cleaned;
-          }
+          if (cleaned.length) h3Record[key] = cleaned;
         });
-        if (Object.keys(h3Record).length) {
-          summary.h3 = h3Record;
-        }
+        if (Object.keys(h3Record).length) summary.h3 = h3Record;
       }
       if (Array.isArray(json.faq)) {
         const cleanedFaq = json.faq
@@ -351,9 +335,7 @@ export class GrokClient {
             return { q: q.trim(), a: a.trim() };
           })
           .filter((item): item is { q: string; a: string } => !!item);
-        if (cleanedFaq.length) {
-          summary.faq = cleanedFaq;
-        }
+        if (cleanedFaq.length) summary.faq = cleanedFaq;
       }
       return summary;
     } catch (error) {
