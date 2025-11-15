@@ -42,7 +42,6 @@ export function ThemeTable({
 }: ThemeTableProps) {
   const [refreshModel, setRefreshModel] = useState<'gemini' | 'grok'>('gemini');
   const [outlineModel, setOutlineModel] = useState<'gemini' | 'grok'>('gemini');
-
   if (!themes.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
@@ -151,9 +150,9 @@ export function ThemeTable({
                   onClick={() => onRunOutline(outlineModel)(theme.id)}
                   disabled={isOutlineRunning}
                 >
-                  <MdOutlineAutoFixHigh size={16} />
-                  {isOutlineRunning ? '生成中…' : 'アウトライン'}
-                </button>
+                <MdOutlineAutoFixHigh size={16} />
+                {isOutlineRunning ? '生成中…' : 'アウトライン'}
+              </button>
               </div>
               <button
                 type="button"

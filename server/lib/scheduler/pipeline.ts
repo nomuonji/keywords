@@ -34,7 +34,6 @@ import {
   upsertLinks
 } from './firestore';
 import { WordpressMedia, HatenaMedia } from '../blogger/media';
-import { Blogger } from '../blogger';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 
 interface StageError {
@@ -170,7 +169,7 @@ async function handleTheme(
 
     let outlined: GroupDocWithId[] = [];
     if (stages.outline) {
-      outlined = await stageDOutline(ctx, theme, themeSettings, scoredGroups);
+      outlined = await stageDOutline(ctx, theme, themeSettings, scoredGroups, { model: ctx.options.model });
     } else {
       ctx.deps.logger.info({ themeId: theme.id }, 'stage_d_skipped');
     }
@@ -182,7 +181,7 @@ async function handleTheme(
     }
 
     if (stages.blogging) {
-      await stageFPosting(ctx, theme, themeSettings, outlined, {});
+      await stageFPosting(ctx, theme, themeSettings, outlined, { model: ctx.options.model });
     } else {
       ctx.deps.logger.info({ themeId: theme.id }, 'stage_f_skipped');
     }
@@ -256,15 +255,17 @@ async function stageBClustering(
   if (!keywords.length) {
     return [];
   }
-  let clusters;
+  let clusters: { keywords: KeywordDocWithId[] }[];
   if (options?.model === 'grok') {
     const result = await ctx.deps.grok.clusterKeywords({
       keywords: keywords.map((kw) => ({ id: kw.id, text: kw.text })),
     });
+    const keywordMap = new Map(keywords.map((kw) => [kw.id, kw]));
     // The output from grok needs to be mapped back to the original keyword objects.
-    const keywordMap = new Map(keywords.map((kw: KeywordDocWithId) => [kw.id, kw]));
-    clusters = result.map((cluster: { keywords: { id: string; text: string }[] }) => ({
-      keywords: cluster.keywords.map((kw: { id: string; text: string }) => keywordMap.get(kw.id)).filter(Boolean) as KeywordDocWithId[]
+    clusters = result.map((cluster) => ({
+      keywords: cluster.keywords
+        .map((kw) => keywordMap.get(kw.id))
+        .filter((kw): kw is KeywordDocWithId => !!kw),
     }));
   } else {
     const embeddings = await ctx.deps.gemini.embed(
@@ -283,11 +284,14 @@ async function stageBClustering(
   }> = [];
 
   for (const cluster of clusters) {
+    if (!cluster.keywords.length) {
+      continue;
+    }
     const representative = selectRepresentative(cluster.keywords);
     const intent = coalesceIntent(cluster.keywords);
     const groupDoc: GroupDoc = {
       title: representative.text,
-      keywords: cluster.keywords.map((kw: KeywordDocWithId) => kw.id),
+      keywords: cluster.keywords.map((kw) => kw.id),
       intent,
       priorityScore: 0,
       clusterStats: {
@@ -347,8 +351,7 @@ async function stageCScoring(
       .where('groupId', '==', group.id)
       .get();
 
-    const keywords = keywordDocsSnapshot.docs.map((doc: AdminFirestore.QueryDocumentSnapshot) => doc.data() as KeywordDoc);
-    const avgMonthly = keywords
+const keywords = keywordDocsSnapshot.docs.map((doc: AdminFirestore.QueryDocumentSnapshot) => doc.data() as KeywordDoc);    const avgMonthly = keywords
       .map((kw: KeywordDoc) => kw.metrics.avgMonthly ?? 0)
       .filter((value: number) => value > 0);
     const competitionFirst = keywords.find((kw: KeywordDoc) => kw.metrics.competition !== undefined);
@@ -619,6 +622,8 @@ function computeGroupSimilarity(a: GroupDocWithId, b: GroupDocWithId): number {
   }
   return intersection.length / union.size;
 }
+
+import { Blogger } from '../blogger';
 
 export async function stageFPosting(
   ctx: PipelineContext,

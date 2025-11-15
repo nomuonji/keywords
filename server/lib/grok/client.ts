@@ -1,4 +1,5 @@
-import Groq from 'groq-sdk';
+
+import fetch from 'node-fetch';
 import { retry } from '../core';
 import type {
   GrokConfig,
@@ -32,16 +33,61 @@ type GenerateArticleResult = {
   html: string;
 };
 
-export class GrokClient {
-  private readonly client: Groq;
-  private readonly generativeModel: string;
+// Represents the structure of a message in the xAI Chat API
+interface XaiChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
 
-  constructor(private readonly config: GrokConfig) {
+// Represents the response from the xAI Chat Completions API
+interface XaiChatCompletion {
+  choices: Array<{
+    message: {
+      content: string;
+    };
+  }>;
+}
+
+export class GrokClient {
+  private readonly apiKey: string;
+  private readonly generativeModel: string;
+  private readonly apiUrl = 'https://api.x.ai/v1/chat/completions';
+
+  constructor(config: GrokConfig) {
     if (!config.apiKey) {
-      throw new Error('Grok API key is not configured.');
+      throw new Error('xAI API key is not configured.');
     }
-    this.client = new Groq({ apiKey: config.apiKey });
+    this.apiKey = config.apiKey;
     this.generativeModel = config.generativeModel ?? 'grok-4-fast-non-reasoning';
+  }
+
+  private async _createChatCompletion(messages: XaiChatMessage[]): Promise<string> {
+    const body = {
+      model: this.generativeModel,
+      messages,
+      // The xAI API expects a JSON response to be explicitly requested like this
+      response_format: { type: 'json_object' },
+    };
+
+    const response = await retry(async () => {
+      const res = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify(body),
+        timeout: 30000, // 30 seconds
+      });
+
+      if (!res.ok) {
+        const errorBody = await res.text();
+        throw new Error(`xAI API request failed with status ${res.status}: ${errorBody}`);
+      }
+      return res.json() as Promise<XaiChatCompletion>;
+    });
+
+    return response.choices[0]?.message?.content ?? '';
   }
 
   async summarize(params: {
@@ -62,21 +108,12 @@ export class GrokClient {
 
   async generateArticle(params: GenerateArticleParams): Promise<GenerateArticleResult> {
     const prompt = this.buildArticlePrompt(params);
-    const response = await retry(async () =>
-      this.client.chat.completions.create({
-        model: this.generativeModel,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      })
-    );
-    const text = response.choices[0]?.message?.content ?? '';
+    const messages: XaiChatMessage[] = [{ role: 'user', content: prompt }];
+    const text = await this._createChatCompletion(messages);
     try {
       const parsed = JSON.parse(text);
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error('Article response is not an object');
-      }
-      if (!parsed.title || !parsed.html) {
-        throw new Error('Article response missing title or html fields');
+      if (!parsed || typeof parsed !== 'object' || !parsed.title || !parsed.html) {
+        throw new Error('Article response is invalid');
       }
       return {
         title: String(parsed.title).trim(),
@@ -89,56 +126,34 @@ export class GrokClient {
 
   async summarizeCluster(input: SummarizeClusterInput): Promise<SummarizeClusterOutput> {
     const prompt = this.buildOutlinePrompt(input);
-    const response = await retry(async () =>
-      this.client.chat.completions.create({
-        model: this.generativeModel,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      })
-    );
-    const text = response.choices[0]?.message?.content ?? '';
+    const messages: XaiChatMessage[] = [{ role: 'user', content: prompt }];
+    const text = await this._createChatCompletion(messages);
     return this.parseOutline(text, input);
   }
 
   async suggestThemes(input: SuggestThemesInput): Promise<SuggestThemesOutput> {
     const prompt = this.buildSuggestThemesPrompt(input);
-    const response = await retry(async () =>
-      this.client.chat.completions.create({
-        model: this.generativeModel,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      })
-    );
-    const text = response.choices[0]?.message?.content ?? '';
+    const messages: XaiChatMessage[] = [{ role: 'user', content: prompt }];
+    const text = await this._createChatCompletion(messages);
     return this.parseSuggestions(text);
   }
 
   async suggestNodes(input: SuggestNodesInput): Promise<SuggestNodesOutput> {
     const prompt = this.buildSuggestNodesPrompt(input);
-    const response = await retry(async () =>
-      this.client.chat.completions.create({
-        model: this.generativeModel,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      })
-    );
-    const text = response.choices[0]?.message?.content ?? '';
+    const messages: XaiChatMessage[] = [{ role: 'user', content: prompt }];
+    const text = await this._createChatCompletion(messages);
     return this.parseSuggestions(text);
   }
 
   async clusterKeywords(input: ClusterKeywordsInput): Promise<ClusterKeywordsOutput> {
     const prompt = this.buildClusterKeywordsPrompt(input);
-    const response = await retry(async () =>
-      this.client.chat.completions.create({
-        model: this.generativeModel,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' },
-      })
-    );
-    const text = response.choices[0]?.message?.content ?? '';
-    return this.parseClusters(text);
+    const messages: XaiChatMessage[] = [{ role: 'user', content: prompt }];
+    const text = await this._createChatCompletion(messages);
+    return this.parseClusters(text, input);
   }
 
+  // All the prompt building and parsing methods remain the same as they are not API-specific.
+  // ... (buildArticlePrompt, parseSuggestions, buildOutlinePrompt, parseOutline, etc.)
   private buildArticlePrompt(params: GenerateArticleParams): string {
     const topic = params.topic ?? params.outline?.outlineTitle ?? 'ブログ記事';
     const intent = params.intent ?? 'info';
@@ -393,24 +408,24 @@ export class GrokClient {
     ].join('\n');
   }
 
-  private parseClusters(text: string): ClusterKeywordsOutput {
+  private parseClusters(text: string, input: ClusterKeywordsInput): ClusterKeywordsOutput {
     try {
       const parsed = JSON.parse(text);
       if (parsed && Array.isArray(parsed.clusters)) {
-        const keywordMap = new Map<string, { id: string, text: string }>();
-        // This is inefficient, but we need to reconstruct the keyword text.
-        // In a real application, we would pass the keywords in the input.
-        // For now, we'll just return the IDs.
-        return parsed.clusters.map((cluster: string[]) => {
-          return {
-            keywords: cluster.map(id => ({ id, text: '' }))
-          }
-        });
+        const keywordMap = new Map(input.keywords.map(kw => [kw.id, kw]));
+        return parsed.clusters
+          .map((cluster: string[]) => {
+            const keywords = cluster
+              .map(id => keywordMap.get(id))
+              .filter((kw): kw is { id: string; text: string } => !!kw);
+            return { keywords };
+          })
+          .filter((cluster: { keywords: { id: string; text: string }[] }) => cluster.keywords.length > 0);
       }
-      return [];
+      return [] as unknown as ClusterKeywordsOutput;
     } catch (error) {
       console.error('Failed to parse clusters:', error);
-      return [];
+      return [] as unknown as ClusterKeywordsOutput;
     }
   }
 }

@@ -295,7 +295,7 @@ function GroupDetail({
       <header className="border-b border-slate-200 pb-3">
         <div className="flex items-center justify-between">
           <h4 className="text-lg font-semibold text-slate-900">{group.title}</h4>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <select
               value={model}
               onChange={(e) => setModel(e.target.value as 'gemini' | 'grok')}

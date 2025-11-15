@@ -543,9 +543,8 @@ export default function App() {
     });
     try {
       const groupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
-      const path = `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`;
       const response = await postJson<OutlineRunResponse>(
-        path,
+        `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
         { includeLinks: false, groupIds, model }
       );
       const created = response.outlinesCreated ?? 0;
@@ -893,9 +892,8 @@ export default function App() {
       return next;
     });
     try {
-      const path = `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`;
       const response = await postJson<BlogRunResponse>(
-        path,
+        `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`,
         { groupIds: [groupId], model }
       );
       if (response.postsCreated > 0) {

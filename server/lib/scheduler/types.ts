@@ -17,10 +17,7 @@ import type { KeywordIdeaClient } from '../ads';
 import type { GeminiClient } from '../gemini';
 import type { GrokClient } from '../grok/client';
 import type { Blogger } from '../blogger';
-import type { tavily } from '@tavily/core';
 import type { EnvironmentConfig } from './config';
-
-type TavilyClient = ReturnType<typeof tavily>;
 
 export interface SchedulerStagesOptions {
   ideas?: boolean;
@@ -54,9 +51,9 @@ export interface PipelineDependencies {
   gemini: GeminiClient;
   grok: GrokClient;
   blogger: Blogger;
-  tavily: TavilyClient;
   firestore: AdminFirestore.Firestore;
   logger: Logger;
+  tavily: any;
 }
 
 export interface NodeDocWithId extends NodeDoc {

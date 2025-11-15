@@ -1,37 +1,14 @@
 import type {
-  Intent,
-  ProjectSettings,
   GroupSummary,
-  GroupDocWithId,
+  Intent,
   KeywordDocWithId,
+  ProjectSettings,
 } from '../core';
 
 export interface GrokConfig {
   apiKey: string;
   generativeModel?: string;
-  embeddingModel?: string;
 }
-
-export interface EmbedKeywordsInput {
-  projectId: string;
-  keywords: Array<{ id: string; text: string }>;
-}
-
-export type EmbedKeywordsOutput = {
-  id: string;
-  vector: number[];
-};
-
-export interface SummarizeClusterInput {
-  groupId: string;
-  representativeKw: string;
-  intent?: Intent;
-  description?: string;
-  keywords: KeywordDocWithId[];
-  settings: ProjectSettings;
-}
-
-export type SummarizeClusterOutput = GroupSummary;
 
 export interface SuggestThemesInput {
   description: string;
@@ -47,10 +24,21 @@ export interface SuggestNodesInput {
 
 export type SuggestNodesOutput = string[];
 
-export interface ClusterKeywordsInput {
-  keywords: Array<{ id: string; text: string }>;
+export interface SummarizeClusterInput {
+  groupId: string;
+  representativeKw: string;
+  intent: Intent;
+  description: string;
+  keywords: KeywordDocWithId[];
+  settings: ProjectSettings;
 }
 
-export type ClusterKeywordsOutput = Array<{
-  keywords: Array<{ id: string; text: string }>;
-}>;
+export type SummarizeClusterOutput = GroupSummary;
+
+export interface ClusterKeywordsInput {
+  keywords: { id: string; text: string }[];
+}
+
+export type ClusterKeywordsOutput = {
+  keywords: { id: string; text: string }[];
+}[];

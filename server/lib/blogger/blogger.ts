@@ -5,12 +5,13 @@ import type { GroupDocWithId } from '../core';
 import { BlogMedia, BlogPost } from './types';
 
 type TavilyClient = ReturnType<typeof tavily>;
+type AiClient = GeminiClient | GrokClient;
 
 export class Blogger {
-  private readonly client: GeminiClient | GrokClient;
+  private readonly client: AiClient;
   private readonly tavily: TavilyClient;
 
-  constructor(client: GeminiClient | GrokClient, tavily: TavilyClient) {
+  constructor(client: AiClient, tavily: TavilyClient) {
     this.client = client;
     this.tavily = tavily;
   }

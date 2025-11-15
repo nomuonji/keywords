@@ -49,10 +49,10 @@ export async function runScheduler(options: SchedulerOptions): Promise<void> {
     ads: new KeywordIdeaClient(config.ads),
     gemini,
     grok,
-    blogger: new Blogger(options.model === 'grok' ? grok : gemini, tavilyClient),
-    tavily: tavilyClient,
+    blogger: new Blogger(gemini, tavilyClient),
     firestore,
-    logger
+    logger,
+    tavily: tavilyClient
   };
 
   const projectContext = await loadProjectContext(firestore, options);

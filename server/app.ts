@@ -24,7 +24,7 @@ for (const candidate of envCandidates) {
 import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
-import { nowIso, GroupDoc, KeywordDocWithId } from './lib/core';
+import { nowIso } from './lib/core';
 import {
   runScheduler,
   runOutlineGeneration,
@@ -450,7 +450,7 @@ app.post('/projects/:projectId/themes/:themeId/links\:generate', async (req, res
   }
 });
 
-const suggestThemesHandler = async (req: express.Request, res: express.Response) => {
+app.post('/projects/:projectId/suggest-themes', async (req, res) => {
   const { projectId } = req.params;
   const { model } = req.body;
   const client = model === 'grok' ? grokClient : geminiClient;
@@ -468,12 +468,10 @@ const suggestThemesHandler = async (req: express.Request, res: express.Response)
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }
-};
+});
 
-app.post('/projects/:projectId/suggest-themes', suggestThemesHandler);
-
-const suggestNodesHandler = async (req: express.Request, res: express.Response) => {
-  const { projectId } = req.params;
+app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) => {
+  const { projectId, themeId } = req.params;
   const { theme, existingNodes, model } = req.body ?? {};
   if (!theme) {
     res.status(400).json({ error: 'theme is required' });
@@ -493,17 +491,12 @@ const suggestNodesHandler = async (req: express.Request, res: express.Response) 
     const suggestions = await client.suggestNodes({
       projectDescription,
       theme,
-      existingNodes: existingNodes ?? [],
+      existingNodes: existingNodes ?? []
     });
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
   }
-};
-
-app.post('/projects/:projectId/themes/:themeId/suggest-nodes', suggestNodesHandler);
-
-
-
+});
 
 export default app;
