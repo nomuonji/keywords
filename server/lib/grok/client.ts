@@ -1,4 +1,5 @@
 
+import axios from 'axios';
 import { retry } from '../core';
 import type {
   GrokConfig,
@@ -32,13 +33,11 @@ type GenerateArticleResult = {
   html: string;
 };
 
-// Represents the structure of a message in the xAI Chat API
 interface XaiChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
 }
 
-// Represents the response from the xAI Chat Completions API
 interface XaiChatCompletion {
   choices: Array<{
     message: {
@@ -68,34 +67,27 @@ export class GrokClient {
     };
 
     const response = await retry(async () => {
-      const { default: fetch } = await import('node-fetch');
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 seconds timeout
-
       try {
-        const res = await fetch(this.apiUrl, {
-          method: 'POST',
+        const res = await axios.post<XaiChatCompletion>(this.apiUrl, body, {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${this.apiKey}`,
           },
-          body: JSON.stringify(body),
-          signal: controller.signal,
+          timeout: 30000, // 30 seconds timeout
         });
-
-        if (!res.ok) {
-          const errorBody = await res.text();
-          throw new Error(`xAI API request failed with status ${res.status}: ${errorBody}`);
+        return res.data;
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          throw new Error(`xAI API request failed: ${error.response?.status} ${error.response?.data}`);
         }
-        return res.json() as Promise<XaiChatCompletion>;
-      } finally {
-        clearTimeout(timeoutId);
+        throw error;
       }
     });
 
     return response.choices[0]?.message?.content ?? '';
   }
 
+  // ... (the rest of the class methods remain the same)
   async summarize(params: {
     group: GroupDocWithId;
     keywords: KeywordDocWithId[];
