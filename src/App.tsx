@@ -157,6 +157,7 @@ export default function App() {
   const [runningOutlineThemes, setRunningOutlineThemes] = useState<Set<string>>(new Set());
   const [runningLinkThemes, setRunningLinkThemes] = useState<Set<string>>(new Set());
   const [postingGroupIds, setPostingGroupIds] = useState<Set<string>>(new Set());
+  const [outliningGroupIds, setOutliningGroupIds] = useState<Set<string>>(new Set());
   const [nodes, setNodes] = useState<NodeDocWithId[]>([]);
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set());
   const [deletingGroups, setDeletingGroups] = useState(false);
@@ -493,7 +494,7 @@ export default function App() {
     }
   };
 
-  const handleRunTheme = async (themeId: string) => {
+  const handleRunTheme = (model: 'gemini' | 'grok') => async (themeId: string) => {
     if (!selectedProjectId) {
       setToast({ message: 'Select a project first', type: 'info' });
       return;
@@ -509,7 +510,7 @@ export default function App() {
     try {
       const result = await postJson<ThemeRefreshResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/refresh`,
-        {}
+        { model }
       );
       const { newKeywords, groupsCreated } = result;
       setToast({
@@ -528,24 +529,29 @@ export default function App() {
     }
   };
 
-  const handleRunOutline = async (themeId: string) => {
-    if (!selectedProjectId) {
-      setToast({ message: 'Select a project first', type: 'info' });
+  const handleRunOutline = (model: 'gemini' | 'grok') => async (themeIdOrGroupId: string) => {
+    if (!selectedProjectId || !selectedThemeId) {
+      setToast({ message: 'Select a project and theme first', type: 'info' });
       return;
     }
-    if (runningOutlineThemes.has(themeId)) {
+    const isSingleGroup = groups.some((g) => g.id === themeIdOrGroupId);
+    const groupIds = isSingleGroup ? [themeIdOrGroupId] : selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
+
+    const themeId = selectedThemeId;
+    if (runningOutlineThemes.has(themeId) || outliningGroupIds.has(themeIdOrGroupId)) {
       return;
     }
-    setRunningOutlineThemes((prev) => {
-      const next = new Set(prev);
-      next.add(themeId);
-      return next;
-    });
+
+    if (isSingleGroup) {
+      setOutliningGroupIds((prev) => new Set(prev).add(themeIdOrGroupId));
+    } else {
+      setRunningOutlineThemes((prev) => new Set(prev).add(themeId));
+    }
+
     try {
-      const groupIds = selectedGroupIds.size ? Array.from(selectedGroupIds) : undefined;
       const response = await postJson<OutlineRunResponse>(
         `/projects/${selectedProjectId}/themes/${themeId}/outlines:run`,
-        { includeLinks: false, groupIds }
+        { includeLinks: false, groupIds, model }
       );
       const created = response.outlinesCreated ?? 0;
       if (created > 0) {
@@ -563,11 +569,19 @@ export default function App() {
       console.error('Failed to trigger outline generation', error);
       setToast({ message: 'Failed to generate outlines', type: 'error' });
     } finally {
-      setRunningOutlineThemes((prev) => {
-        const next = new Set(prev);
-        next.delete(themeId);
-        return next;
-      });
+      if (isSingleGroup) {
+        setOutliningGroupIds((prev) => {
+          const next = new Set(prev);
+          next.delete(themeIdOrGroupId);
+          return next;
+        });
+      } else {
+        setRunningOutlineThemes((prev) => {
+          const next = new Set(prev);
+          next.delete(themeId);
+          return next;
+        });
+      }
     }
   };
 
@@ -868,7 +882,7 @@ export default function App() {
     setThemeModal({ mode: 'create' });
   };
 
-  const handleCreateArticle = async (groupId: string) => {
+  const handleCreateArticle = (model: 'gemini' | 'grok') => async (groupId: string) => {
     if (!selectedProjectId || !selectedThemeId) {
       setToast({ message: 'プロジェクトとテーマを選択してください', type: 'info' });
       return;
@@ -894,7 +908,7 @@ export default function App() {
     try {
       const response = await postJson<BlogRunResponse>(
         `/projects/${selectedProjectId}/themes/${selectedThemeId}/posts:run`,
-        { groupIds: [groupId] }
+        { groupIds: [groupId], model }
       );
       if (response.postsCreated > 0) {
         setToast({
@@ -1030,8 +1044,10 @@ export default function App() {
             onDeleteSelectedGroups={handleDeleteSelectedGroups}
             deletingGroups={deletingGroups}
             clearingOutlines={clearingOutlines}
+            onRunOutline={handleRunOutline}
             onCreateArticle={handleCreateArticle}
             postingGroupIds={postingGroupIds}
+            outliningGroupIds={outliningGroupIds}
           />
       </div>
 
