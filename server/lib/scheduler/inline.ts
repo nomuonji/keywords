@@ -1,6 +1,6 @@
 import { KeywordIdeaClient } from '../ads';
 import { GeminiClient } from '../gemini';
-import { Blogger } from '../blogger';
+import { GrokClient } from '../grok';
 import { tavily } from '@tavily/core';
 import admin from 'firebase-admin';
 import { loadConfig } from './config';
@@ -71,7 +71,8 @@ async function createInlineContext(
   const deps = {
     ads: new KeywordIdeaClient(config.ads),
     gemini: new GeminiClient(config.gemini),
-    blogger: new Blogger(new GeminiClient(config.gemini), tavily({ apiKey: config.tavily.apiKey })),
+    grok: new GrokClient({ apiKey: config.grok.apiKey }),
+    tavily: tavily({ apiKey: config.tavily.apiKey }),
     firestore,
     logger
   };
@@ -262,10 +263,13 @@ export async function runBlogGeneration(params: OutlineParams): Promise<BlogResu
   };
 }
 
-export async function runThemeRefreshInline(params: BaseInlineParams): Promise<PipelineCounters> {
+export async function runThemeRefreshInline(
+  params: BaseInlineParams & { model?: string }
+): Promise<PipelineCounters> {
   const { context, theme } = await createInlineContext(params, {
     ideas: true,
     clustering: true
   });
+  context.options.model = params.model;
   return runThemeRefresh(context, theme);
 }

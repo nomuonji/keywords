@@ -32,6 +32,7 @@ export function ThemeSettingsPanel({
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionModel, setSuggestionModel] = useState<'gemini' | 'grok'>('gemini');
 
   useEffect(() => {
     setDraft(themeSettings ?? {});
@@ -51,7 +52,8 @@ export function ThemeSettingsPanel({
         themeId,
         themeName,
         existingNodes,
-        projectDescription
+        projectDescription,
+        suggestionModel
       );
       setSuggestions((prev) => {
         const combined = [...prev, ...result];
@@ -101,6 +103,24 @@ export function ThemeSettingsPanel({
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <select
+              value={suggestionModel}
+              onChange={(e) => setSuggestionModel(e.target.value as 'gemini' | 'grok')}
+              className="rounded-md border border-slate-300 px-2 py-1 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="gemini">Gemini</option>
+              <option value="grok">Grok</option>
+            </select>
+            <button
+              type="button"
+              onClick={handleSuggestNodes}
+              disabled={!themeName}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Topic案を提案
+            </button>
+          </div>
           <button
             type="button"
             onClick={() => handleSuggestNodes()}
@@ -194,7 +214,7 @@ export function ThemeSettingsPanel({
       ) : null}
       <SuggestionModal
         open={modalOpen}
-        title="GeminiによるTopic提案"
+        title={`${suggestionModel === 'grok' ? 'Grok' : 'Gemini'}によるTopic提案`}
         suggestions={suggestions}
         loading={loading}
         onClose={() => setModalOpen(false)}

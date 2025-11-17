@@ -1,16 +1,18 @@
 import { GeminiClient } from '../gemini';
+import { GrokClient } from '../grok';
 import { tavily } from '@tavily/core';
 import type { GroupDocWithId } from '../core';
 import { BlogMedia, BlogPost } from './types';
 
 type TavilyClient = ReturnType<typeof tavily>;
+type AiClient = GeminiClient | GrokClient;
 
 export class Blogger {
-  private readonly gemini: GeminiClient;
+  private readonly aiClient: AiClient;
   private readonly tavily: TavilyClient;
 
-  constructor(gemini: GeminiClient, tavily: TavilyClient) {
-    this.gemini = gemini;
+  constructor(aiClient: AiClient, tavily: TavilyClient) {
+    this.aiClient = aiClient;
     this.tavily = tavily;
   }
 
@@ -30,7 +32,7 @@ export class Blogger {
       maxResults: 5
     });
 
-    const article = await this.gemini.generateArticle({
+    const article = await this.aiClient.generateArticle({
       outline: summary,
       research: JSON.stringify(research),
       topic: group.title,

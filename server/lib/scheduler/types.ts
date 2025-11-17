@@ -13,10 +13,13 @@ import type {
 } from '../core';
 import type { firestore as AdminFirestore } from 'firebase-admin';
 import type { Logger } from 'pino';
+import { tavily } from '@tavily/core';
 import type { KeywordIdeaClient } from '../ads';
 import type { GeminiClient } from '../gemini';
-import type { Blogger } from '../blogger';
+import type { GrokClient } from '../grok';
 import type { EnvironmentConfig } from './config';
+
+type TavilyClient = ReturnType<typeof tavily>;
 
 export interface SchedulerStagesOptions {
   ideas?: boolean;
@@ -32,6 +35,7 @@ export interface SchedulerOptions {
   themeIds?: string[];
   manual?: boolean;
   stages?: SchedulerStagesOptions;
+  model?: string;
 }
 
 export interface PipelineCounters {
@@ -47,7 +51,8 @@ export interface PipelineCounters {
 export interface PipelineDependencies {
   ads: KeywordIdeaClient;
   gemini: GeminiClient;
-  blogger: Blogger;
+  grok: GrokClient;
+  tavily: TavilyClient;
   firestore: AdminFirestore.Firestore;
   logger: Logger;
 }

@@ -1,8 +1,11 @@
+
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import dotenv from 'dotenv';
 
+// 1. Load environment variables first.
 const envCandidates = [
+  path.resolve(process.cwd(), 'server/.env'), // Explicitly check server/.env
   path.resolve(process.cwd(), '.env'),
   path.resolve(__dirname, '../../.env'),
   path.resolve(__dirname, '../../../.env')
@@ -16,11 +19,11 @@ for (const candidate of envCandidates) {
   loadedEnv.add(resolved);
   const result = dotenv.config({ path: resolved, override: false });
   if (!result.error) {
-    // eslint-disable-next-line no-console
     console.log(`Loaded environment variables from ${resolved}`);
   }
 }
 
+// 2. Now, import other modules that might depend on them.
 import express from 'express';
 import admin from 'firebase-admin';
 import cors from 'cors';
@@ -34,6 +37,7 @@ import {
   loadConfig
 } from './lib/scheduler';
 import { GeminiClient } from './lib/gemini';
+import { GrokClient } from './lib/grok';
 
 
 const app = express();
@@ -73,6 +77,7 @@ app.use((req, res, next) => {
 
 const config = loadConfig();
 const geminiClient = new GeminiClient(config.gemini);
+const grokClient = new GrokClient({ apiKey: config.grok.apiKey });
 
 let cachedServiceAccount: admin.ServiceAccount | null | undefined;
 
@@ -445,6 +450,7 @@ app.post('/projects/:projectId/themes/:themeId/links\:generate', async (req, res
 
 app.post('/projects/:projectId/suggest-themes', async (req, res) => {
   const { projectId } = req.params;
+  const { model = 'gemini' } = req.body ?? {};
   try {
     const firestore = initFirestore();
     const projectDoc = await firestore.doc(`projects/${projectId}`).get();
@@ -458,23 +464,26 @@ app.post('/projects/:projectId/suggest-themes', async (req, res) => {
       return;
     }
     const projectDescription = projectData.description ?? '';
-    const blogLanguage = projectData.settings?.blogLanguage ?? 'ja';
-    const suggestions = await geminiClient.suggestThemes({
-      description: projectDescription,
-      language: blogLanguage,
-    });
+
+    let suggestions: string[];
+    if (model === 'grok') {
+      suggestions = await grokClient.suggestThemes({ description: projectDescription });
+    } else {
+      const blogLanguage = projectData.settings?.blogLanguage ?? 'ja';
+      suggestions = await geminiClient.suggestThemes({
+        description: projectDescription,
+        language: blogLanguage,
+      });
+    }
     res.json({ suggestions });
   } catch (error) {
-    console.error(
-      `[suggest-themes] Failed to get suggestions for project ${projectId}. Error: ${error}`
-    );
     res.status(500).json({ error: `${error}` });
   }
 });
 
 app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) => {
   const { projectId, themeId } = req.params;
-  const { theme, existingNodes } = req.body ?? {};
+  const { theme, existingNodes, model = 'gemini' } = req.body ?? {};
   if (!theme) {
     res.status(400).json({ error: 'theme is required' });
     return;
@@ -489,11 +498,17 @@ app.post('/projects/:projectId/themes/:themeId/suggest-nodes', async (req, res) 
     const projectData = projectDoc.data();
     const projectDescription = projectData?.description ?? '';
 
-    const suggestions = await geminiClient.suggestNodes({
+    let suggestions: string[];
+    const params = {
       projectDescription,
       theme,
       existingNodes: existingNodes ?? []
-    });
+    };
+    if (model === 'grok') {
+      suggestions = await grokClient.suggestNodes(params);
+    } else {
+      suggestions = await geminiClient.suggestNodes(params);
+    }
     res.json({ suggestions });
   } catch (error) {
     res.status(500).json({ error: `${error}` });
