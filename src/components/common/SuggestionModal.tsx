@@ -7,6 +7,7 @@ interface SuggestionModalProps {
   loading: boolean;
   onClose: () => void;
   onAdd: (selected: string[]) => void;
+  onRegenerate?: () => void;
 }
 
 export function SuggestionModal({
@@ -15,7 +16,8 @@ export function SuggestionModal({
   suggestions,
   loading,
   onClose,
-  onAdd
+  onAdd,
+  onRegenerate
 }: SuggestionModalProps) {
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -63,6 +65,16 @@ export function SuggestionModal({
           )}
         </div>
         <footer className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+          {onRegenerate ? (
+            <button
+              type="button"
+              onClick={onRegenerate}
+              disabled={loading}
+              className="mr-auto rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              再生成
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onClose}
@@ -73,7 +85,7 @@ export function SuggestionModal({
           <button
             type="button"
             onClick={() => onAdd(selected)}
-            disabled={selected.length === 0}
+            disabled={selected.length === 0 || loading}
             className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {`選択中の ${selected.length} 件を追加`}

@@ -38,12 +38,15 @@ export function ThemeSettingsPanel({
     setDraft(themeSettings ?? {});
   }, [themeSettings]);
 
-  const handleSuggestNodes = async () => {
+  const handleSuggestNodes = async (regenerate = false) => {
     if (!themeName) return;
+    if (!regenerate) {
+      setSuggestions([]);
+    }
     setModalOpen(true);
     setLoading(true);
     try {
-      const existingNodes = nodes.map((n) => n.title);
+      const existingNodes = [...nodes.map((n) => n.title), ...suggestions];
       const result = await suggestNodes(
         projectId,
         themeId,
@@ -52,7 +55,10 @@ export function ThemeSettingsPanel({
         projectDescription,
         suggestionModel
       );
-      setSuggestions(result);
+      setSuggestions((prev) => {
+        const combined = [...prev, ...result];
+        return Array.from(new Set(combined));
+      });
     } catch (error) {
       console.error('Failed to suggest nodes', error);
       // TODO: Show toast
@@ -115,6 +121,14 @@ export function ThemeSettingsPanel({
               Topic案を提案
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => handleSuggestNodes()}
+            disabled={!themeName}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-600 shadow-sm transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Geminiにtopic案を提案させる
+          </button>
           <button
             type="button"
             className="rounded-full border border-slate-300 p-2 text-slate-500 transition hover:bg-slate-100"
@@ -205,6 +219,7 @@ export function ThemeSettingsPanel({
         loading={loading}
         onClose={() => setModalOpen(false)}
         onAdd={handleAddNodes}
+        onRegenerate={() => handleSuggestNodes(true)}
       />
     </section>
   );

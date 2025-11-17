@@ -29,6 +29,7 @@ export type SummarizeClusterOutput = GroupSummary;
 
 export interface SuggestThemesInput {
   description: string;
+  language?: string;
 }
 
 export type SuggestThemesOutput = string[];

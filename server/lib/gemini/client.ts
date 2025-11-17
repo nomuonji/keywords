@@ -183,6 +183,7 @@ export class GeminiClient {
       response.response?.candidates?.[0]?.content?.parts
         ?.map((part: any) => part.text ?? '')
         .join('\n') ?? '';
+    console.log('---- Raw Gemini Response for Themes ----\n', text);
     return this.parseSuggestions(text);
   }
 
@@ -270,18 +271,25 @@ export class GeminiClient {
   }
 
   private buildSuggestThemesPrompt(input: SuggestThemesInput): string {
+    const languageName = this.describeLanguage(input.language ?? 'ja');
+    const languageInstruction = `Generate all suggestions in ${languageName}.`;
+
     return [
-      'You are an expert SEO content strategist.',
-      `The overall goal of this project is: "${input.description}"`,
-      'Based on the project goal, please suggest 5-10 potential content themes.',
-      'Each theme should be a very broad, high-level topic, ideally expressed as a single keyword.',
-      'Avoid themes that are long phrases, questions, or specific long-tail keywords.',
-      'Focus on topics that are likely to have good search volume and commercial value.',
+      `You are an expert SEO content strategist creating a content plan for a blog. Your output language must be ${languageName}.`,
+      `The core concept of the blog is: "${input.description}"`,
+      '---',
+      'Your task is to suggest 5 to 10 broad, high-level content themes based *only* on the blog\'s core concept.',
+      'Instructions:',
+      '1.  **Relevance is key:** Every theme must be directly and strongly related to the blog concept.',
+      '2.  **High Abstraction:** Each theme must be a broad category, not a specific article title. Think "chapter titles" in a book, not "page titles".',
+      '    -   *Good Example (high abstraction):* "Japanese Traditional Crafts", "Modern Japanese Cuisine"',
+      '    -   *Bad Example (too specific):* "How to Make Origami Cranes", "Top 5 Ramen Restaurants in Tokyo"',
+      `3.  **Language:** ${languageInstruction}`,
+      '4.  **Format:** Your entire response must be a valid JSON object. No introductory text, no explanations, just the JSON.',
+      '---',
       'Output requirements (strict):',
-      '- Respond ONLY with a JSON code block containing a flat array of strings.',
-      '- Example: ```json\n["テーマ1", "テーマ2", "テーマ3"]\n```',
-      'Project Description:',
-      input.description
+      '- Your response MUST be a JSON code block starting with ```json and ending with ```.',
+      '- Inside the block, provide a single flat array of strings: `["Theme 1", "Theme 2", ...]`.'
     ].join('\n');
   }
 
@@ -438,36 +446,43 @@ export class GeminiClient {
   }
 
   private extractJson(text: string): string {
-    const trimmed = text.trim();
-    // Check for JSON object or array at the top level
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      return trimmed;
-    }
-    const codeBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/i);
+    // First, try to find a JSON code block.
+    const codeBlockMatch = text.match(/```json\s*([\s\S]*?)```/i);
     if (codeBlockMatch?.[1]) {
       return codeBlockMatch[1].trim();
     }
-    // Fallback for partial JSON in text, try to find the first brace/bracket and last brace/bracket
-    const firstBrace = trimmed.indexOf('{');
-    const firstBracket = trimmed.indexOf('[');
-    const lastBrace = trimmed.lastIndexOf('}');
-    const lastBracket = trimmed.lastIndexOf(']');
 
+    // If no code block, find the largest valid JSON object or array within the text.
     let startIndex = -1;
     let endIndex = -1;
 
+    const firstBrace = text.indexOf('{');
+    const firstBracket = text.indexOf('[');
+    const lastBrace = text.lastIndexOf('}');
+    const lastBracket = text.lastIndexOf(']');
+
     if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+      // Prefers object if it appears first.
       startIndex = firstBrace;
       endIndex = lastBrace;
     } else if (firstBracket !== -1) {
+      // Otherwise, looks for an array.
       startIndex = firstBracket;
       endIndex = lastBracket;
     }
 
-    if (startIndex === -1 || endIndex === -1 || endIndex <= startIndex) {
-      throw new Error('Gemini response did not contain a valid JSON object or array');
+    if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+      try {
+        const potentialJson = text.slice(startIndex, endIndex + 1);
+        // A quick validation to see if it's likely JSON.
+        JSON.parse(potentialJson);
+        return potentialJson;
+      } catch (e) {
+        // Ignore parsing errors here, we'll throw a generic error later.
+      }
     }
-    return trimmed.slice(startIndex, endIndex + 1);
+
+    throw new Error('Gemini response did not contain a valid JSON object or array');
   }
 
   private buildDefaultTitle(input: SummarizeClusterInput): string {

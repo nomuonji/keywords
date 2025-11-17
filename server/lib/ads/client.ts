@@ -62,6 +62,25 @@ export class KeywordIdeaClient {
   }
 
   async generateKeywordIdeas(params: GenerateKeywordIdeasParams): Promise<KeywordIdea[]> {
+    // 開発環境用のダミーデータを返す
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[KeywordIdeaClient] Using dummy data for development.');
+      const dummyKeywords = [
+        { keyword: `${params.seedText} basic`, metrics: { avgMonthly: 1000, competition: 0.1 } },
+        { keyword: `${params.seedText} advanced`, metrics: { avgMonthly: 500, competition: 0.5 } },
+        { keyword: `${params.seedText} guide`, metrics: { avgMonthly: 800, competition: 0.3 } },
+        { keyword: `${params.seedText} tutorial`, metrics: { avgMonthly: 1200, competition: 0.2 } },
+        { keyword: `${params.seedText} tips`, metrics: { avgMonthly: 1500, competition: 0.4 } },
+      ];
+      return dummyKeywords
+        .filter((idea) => {
+          const volume = idea.metrics.avgMonthly ?? 0;
+          const competition = idea.metrics.competition ?? 0;
+          return volume >= params.minVolume && competition <= params.maxCompetition;
+        })
+        .slice(0, params.maxResults);
+    }
+
     const endpoint = process.env.KEYWORD_VOLUME_API_URL;
     if (!endpoint) {
       throw new Error('KEYWORD_VOLUME_API_URL is not configured.');
