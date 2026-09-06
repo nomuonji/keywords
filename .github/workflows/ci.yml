@@ -35,4 +35,5 @@ jobs:
       - run: KEYWORDS_DB_PATH=/tmp/keywords-planning-smoke.sqlite npx tsx scripts/planning-smoke.ts
       - run: KEYWORDS_DB_PATH=/tmp/keywords-policy-smoke.sqlite npx tsx scripts/policy-smoke.ts
       - run: KEYWORDS_DB_PATH=/tmp/keywords-work-loop-smoke.sqlite npx tsx scripts/work-loop-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-review-smoke.sqlite npx tsx scripts/review-smoke.ts
       - run: npm run build -w @keywords/web
