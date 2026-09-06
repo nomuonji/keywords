@@ -1,12 +1,13 @@
 # Keywords — Agent-native SEO Workspace
 
-`keywords` is being rebuilt as a shared SEO workspace for humans and AI agents. The product is no longer a fixed article-generation pipeline. The same domain commands are exposed to the web UI, CLI, and MCP server, so a human click and an agent tool call mutate the same project state.
+`keywords` is a shared SEO workspace for humans and AI agents. The product is not a fixed article-generation pipeline. The same domain commands are exposed to the web UI, CLI, API, and MCP server, so a human action and an agent tool call operate on the same project state.
 
 ## Current scope
 
 - SQL-first storage with SQLite + Drizzle (no Firebase / Firestore)
 - Project, topic, keyword, cluster, page, source, insight, task, decision, and run models
 - Shared command layer with audit logging
+- External read adapters for Google Ads keyword ideas, Search Console Search Analytics, SERP research, and public web pages
 - Hono HTTP API
 - CLI for human/operator workflows
 - MCP server for AI agents
@@ -16,13 +17,14 @@
 ## Architecture
 
 ```text
-Human ── Web UI ─┐
-Human ── CLI ────┼──> @keywords/commands ──> @keywords/db ──> SQLite
-Agent ── MCP ────┘             │
-                               └──> Run / Decision audit trail
+External research ──> @keywords/research ──┐
+                                          v
+Human ── Web UI ─┐                    @keywords/commands ──> @keywords/db ──> SQLite
+Human ── CLI ────┼─────────────────────────^       │
+Agent ── MCP ────┘                                 └──> Run / Decision audit trail
 ```
 
-The command layer is the product boundary. UI components, scripts, and agents must not write SQL directly.
+`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail.
 
 ## Repository layout
 
@@ -35,7 +37,8 @@ apps/
 packages/
   domain/    shared domain types
   db/        Drizzle schema + SQLite bootstrap
-  commands/  domain command handlers + audit log
+  research/  external research adapters (read-only)
+  commands/  domain command handlers + persistence + audit log
 skills/      agent-facing operating knowledge
 ```
 
@@ -58,14 +61,57 @@ npm run cli -- project create "My SEO Project" --domain example.com
 npm run cli -- project list
 ```
 
+Inspect the agent research context:
+
+```bash
+npm run cli -- research context <projectId>
+```
+
+Fetch and persist a public page:
+
+```bash
+npm run cli -- research web <projectId> https://example.com/page
+```
+
+Run SERP research after setting `KEYWORDS_SERPER_API_KEY`:
+
+```bash
+npm run cli -- research serp <projectId> "target query" --country jp --language ja
+```
+
+Generate Google Ads keyword ideas after configuring the Ads environment variables:
+
+```bash
+npm run cli -- research ads <projectId> "seed keyword" --language-id <criterionId> --geo <geoTargetId>
+```
+
+Query Search Console after configuring its access token and property:
+
+```bash
+npm run cli -- research gsc <projectId> 2026-08-01 2026-08-31 --dimensions query,page
+```
+
 Run the MCP server:
 
 ```bash
 npm run mcp
 ```
 
+## Research credentials
+
+Credentials are environment-only and are never intentionally persisted to SQLite.
+
+- SERP: `KEYWORDS_SERPER_API_KEY` (or `SERPER_API_KEY`)
+- Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`; optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID`, `GOOGLE_ADS_API_VERSION`, language/geo defaults
+- Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
+- `GOOGLE_OAUTH_ACCESS_TOKEN` can be used as a shared access-token fallback for Ads/Search Console
+
+OAuth refresh/token issuance is deliberately kept outside workspace persistence. A later credential broker can supply short-lived tokens without changing the research or command APIs.
+
 ## Agent model
 
-Agents should follow an observe → decide → command → observe loop. They can read project state freely and make reversible workspace edits. External publishing and destructive operations will later require explicit approval gates.
+Agents should follow an observe → research only where needed → decide → command → observe loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
 
 Human decisions are stored in `decisions` and every command execution is recorded in `runs`. These records are intended to become the feedback source for project-specific skills and policies.
+
+External publishing remains intentionally unimplemented.

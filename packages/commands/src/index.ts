@@ -1,6 +1,7 @@
 import { and, count, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext, ProjectSnapshot, TaskStatus } from '@keywords/domain';
+import { researchCommands, sourceCommands } from './research.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -112,6 +113,8 @@ export const commands = {
       await db.update(schema.pages).set({ status: input.status, updatedAt: now() }).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.id, input.pageId))); return { id: input.pageId, status: input.status };
     })
   },
+  source: sourceCommands,
+  research: researchCommands,
   insight: {
     list: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'insight.list', { projectId }, async () => db.select().from(schema.insights).where(eq(schema.insights.projectId, projectId)).orderBy(desc(schema.insights.createdAt))),
     create: async (ctx: CommandContext, input: { projectId: string; type: string; text: string; confidence?: number; sourceId?: string }) => withRun(projectCtx(ctx, input.projectId), 'insight.create', input, async () => {

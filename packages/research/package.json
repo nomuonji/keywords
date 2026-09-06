@@ -1,5 +1,5 @@
 {
-  "name": "@keywords/commands",
+  "name": "@keywords/research",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,11 +7,5 @@
   "types": "./src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@keywords/db": "0.1.0",
-    "@keywords/domain": "0.1.0",
-    "@keywords/research": "0.1.0",
-    "drizzle-orm": "^0.44.5"
   }
 }

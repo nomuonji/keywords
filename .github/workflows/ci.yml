@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        workspace: [domain, db, commands, api, cli, mcp, web]
+        workspace: [domain, db, research, commands, api, cli, mcp, web]
     runs-on: ubuntu-latest
     name: typecheck / ${{ matrix.workspace }}
     steps:
