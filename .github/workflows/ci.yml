@@ -28,4 +28,5 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run db:init
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-planning-smoke.sqlite npx tsx scripts/planning-smoke.ts
       - run: npm run build -w @keywords/web
