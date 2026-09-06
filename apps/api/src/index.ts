@@ -4,16 +4,30 @@ import { cors } from 'hono/cors';
 import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
+import { workCommands } from '@keywords/commands/work';
 
 const app = new Hono();
 app.use('*', cors());
 app.get('/health', c => c.json({ ok: true }));
-const ctx = (c: any) => ({ actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent', actorId: c.req.header('x-keywords-actor-id') });
+const ctx = (c: any) => ({
+  actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent',
+  actorId: c.req.header('x-keywords-actor-id'),
+  workSessionId: c.req.header('x-keywords-work-session-id')
+});
 const body = (c: any) => c.req.json();
 
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
+
+app.get('/projects/:projectId/work/context', async c => c.json(await workCommands.context(ctx(c), { projectId: c.req.param('projectId'), sessionId: c.req.query('sessionId') })));
+app.get('/projects/:projectId/work/sessions', async c => c.json(await workCommands.list(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 20))));
+app.post('/projects/:projectId/work/sessions', async c => c.json(await workCommands.start(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/work/sessions/:sessionId/resume', async c => c.json(await workCommands.resume(ctx(c), { projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
+app.post('/projects/:projectId/work/sessions/:sessionId/checkpoint', async c => c.json(await workCommands.checkpoint(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
+app.post('/projects/:projectId/work/sessions/:sessionId/complete', async c => c.json(await workCommands.complete(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
+app.post('/projects/:projectId/work/sessions/:sessionId/cancel', async c => c.json(await workCommands.cancel(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
+
 app.get('/projects/:projectId/policies/context', async c => c.json(await policyCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('decisions') ?? 30))));
 app.get('/projects/:projectId/policies', async c => c.json(await policyCommands.list(ctx(c), c.req.param('projectId'), c.req.query('status'))));
 app.post('/projects/:projectId/policies', async c => c.json(await policyCommands.propose(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
