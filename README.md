@@ -1,25 +1,20 @@
 # Keywords — Agent-native SEO Workspace
 
-`keywords` is a shared SEO workspace for humans and AI agents. The product is not a fixed article-generation pipeline. The same domain commands are exposed to the web UI, CLI, API, and MCP server, so a human action and an agent tool call operate on the same project state.
+`keywords` is a shared SEO workspace where humans and AI agents operate on the same SQL-backed project state. It is not a fixed keyword → article pipeline: Web UI, CLI, HTTP API, and MCP all use the same command layer.
 
 ## Current scope
 
-- SQL-first storage with SQLite + Drizzle (no Firebase / Firestore)
-- Project, topic, keyword, cluster, page, page-target, source, insight, task, decision, policy-rule, and run models
-- Shared command layer with audit logging
-- External read adapters for Google Ads keyword ideas, Search Console Search Analytics, SERP research, and public web pages
-- Normalized latest Search Console query metrics on keyword records
-- Deterministic SEO opportunity context for agents/operators
-- Evidence-backed page planning with primary/secondary keyword targets
-- Cannibalization review for exact target overlap and multiple pages in one cluster
-- Bulk keyword-to-cluster assignment
-- Human-only page review/approval with conflict blocking and decision logging
-- Decision-backed project policy memory: agents propose rules; humans activate/reject/retire them
-- Hono HTTP API
-- CLI for human/operator workflows
-- MCP server for AI agents
-- React workspace UI: policy memory, content map, keyword backlog, page plans, overlap review, human review controls, tasks, decisions, evidence, and agent activity
-- Publishing integrations are intentionally out of scope for now
+- SQLite + Drizzle; no Firebase / Firestore
+- Project, topic, keyword, cluster, page, page-target, source, insight, task, decision, policy-rule, work-session, checkpoint, and run models
+- Google Ads keyword ideas, Search Console Search Analytics, SERP research, and public-web evidence adapters
+- Normalized Search Console and Google Ads signals
+- Compact deterministic opportunity context
+- Evidence-backed page planning with primary/secondary targets
+- Cannibalization review and human-only page approval
+- Decision-backed project policy memory
+- Bounded, auditable AI-agent work sessions
+- React/Vite Web UI, Hono API, CLI, and MCP server
+- External publishing intentionally not implemented yet
 
 ## Architecture
 
@@ -28,11 +23,18 @@ External research ──> @keywords/research ──┐
                                           v
 Human ── Web UI ─┐                    @keywords/commands ──> @keywords/db ──> SQLite
 Human ── CLI ────┼─────────────────────────^       │
-Agent ── MCP ────┘                                 ├──> Run / Decision audit trail
-                                                    └──> Candidate / Active project policies
+Agent ── MCP ────┘                                 ├──> runs / decisions
+                                                    ├──> policy_rules
+                                                    └──> work_sessions / checkpoints
 ```
 
-`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail. Stricter content-planning and policy-memory surfaces are exported as `@keywords/commands/planning` and `@keywords/commands/policy`.
+`@keywords/research` performs external reads only. `@keywords/commands` is the mutation boundary. Specialized command surfaces are exported as:
+
+- `@keywords/commands/planning`
+- `@keywords/commands/policy`
+- `@keywords/commands/work`
+
+Adapters do not write SQL directly.
 
 ## Repository layout
 
@@ -40,13 +42,13 @@ Agent ── MCP ────┘                                 ├──> Run 
 apps/
   api/       Hono HTTP API
   cli/       operator CLI
-  mcp/       MCP server for agents
+  mcp/       MCP server for AI agents
   web/       React/Vite workspace UI
 packages/
   domain/    shared domain types
   db/        Drizzle schema + SQLite bootstrap
-  research/  external research adapters (read-only)
-  commands/  domain + planning + policy commands + audit log
+  research/  external research adapters
+  commands/  domain, planning, policy, and work-loop commands
 scripts/     runtime smoke tests
 skills/      agent-facing operating knowledge
 ```
@@ -60,14 +62,102 @@ npm run db:init
 npm run dev
 ```
 
-- Web: http://localhost:5173
-- API: http://localhost:8787
+- Web: `http://localhost:5173`
+- API: `http://localhost:8787`
 
-Create a project from the CLI:
+Create a project:
 
 ```bash
 npm run cli -- project create "My SEO Project" --domain example.com
 npm run cli -- project list
+```
+
+## Agent work loop
+
+Substantial agent work is grouped into an explicit `work_session`.
+
+```text
+work_context
+    ↓
+work_start
+    ↓
+inspect policy / tasks / opportunities
+    ↓
+research only where needed
+    ↓
+structured commands
+    ↓
+work_checkpoint
+   ↙   ↓      ↘
+working blocked awaiting_review
+   ↓             ↓
+continue       human action
+   └──────┬──────┘
+          ↓
+      work_resume
+          ↓
+     work_complete
+          ↓
+baseline → final state diff
+```
+
+A work session stores:
+
+- bounded `objective`
+- explicit `completionCriteria`
+- `maxActions` budget
+- baseline project counts
+- command linkage through `runs.work_session_id`
+- concise checkpoints
+- status: `running`, `awaiting_review`, `blocked`, `completed`, or `cancelled`
+- final project-state diff
+
+Checkpoint text is for externally useful outcomes, blockers, and next actions. It is **not** a chain-of-thought or hidden scratchpad.
+
+MCP tools:
+
+```text
+work_context
+work_start
+work_resume
+work_checkpoint
+work_complete
+work_cancel
+work_list
+```
+
+`work_context` is the preferred bootstrap call. It returns a compact view containing:
+
+- active project policies
+- candidate policies
+- prioritized agent tasks
+- human review queue
+- open insights
+- top normalized opportunities
+- current work session + remaining action budget
+- a deterministic `next` focus hint
+
+Example CLI flow:
+
+```bash
+npm run cli -- work context <projectId>
+npm run cli -- work start <projectId> --max-actions 12
+npm run cli -- work checkpoint <projectId> <sessionId> awaiting_review \
+  --summary "Created an evidence-backed page plan; human approval is required." \
+  --next "Review page proposal"
+npm run cli -- work resume <projectId> <sessionId>
+npm run cli -- work complete <projectId> <sessionId> \
+  --summary "Completed the selected SEO task and left one approved plan."
+```
+
+The MCP server automatically associates subsequent tool calls with the active work session after `work_start`/`work_resume`. When a session is `awaiting_review` or `blocked`, MCP blocks further writes and external research until the session is resumed. When the local action budget is exhausted, the agent must checkpoint or complete instead of expanding scope.
+
+The Web UI polls recent work sessions and shows objective, status, command usage, remaining actions, latest checkpoint, and next action.
+
+The HTTP API can also link ordinary commands to a session by sending:
+
+```text
+x-keywords-work-session-id: <sessionId>
 ```
 
 ## Project policy memory
@@ -79,38 +169,26 @@ Human review / judgment
         ↓
      decision
         ↓
-policy_context groups repeated decision patterns
+policy_context groups repeated patterns
         ↓
-Agent proposes a policy candidate citing exact decision IDs
+Agent proposes candidate with exact decision IDs
         ↓
 Human Activate / Reject
         ↓
-active policy is returned to future agents before they plan work
+active policy returned to future agents
         ↓
-Human may later Retire the rule with a reason
+Human may later Retire with a reason
 ```
 
-Agents should read the project policy context near the start of each work session:
+Read policy context:
 
 ```bash
 npm run cli -- policy context <projectId>
 ```
 
-MCP exposes this as `policy_context`. It returns active rules, pending candidates, recent retired rules, recent decisions, and repeated `decisionPatterns` grouped by action × target type × verdict. Active project policies are treated as project-specific operating constraints and take precedence over generic SEO heuristics unless they conflict with a higher-level product or safety boundary.
+MCP exposes `policy_context` and `policy_propose`, but deliberately does **not** expose policy activation/rejection/retirement.
 
-An agent may propose a durable rule only when it can cite the decisions that support it:
-
-```text
-policy_propose({
-  projectId,
-  scope: "page_strategy",
-  rule: "Avoid generic ranking pages unless structured project data creates clear differentiation.",
-  rationale: "Repeated rejection of undifferentiated list-page proposals.",
-  sourceDecisionIds: ["decision-a", "decision-b"]
-})
-```
-
-The candidate is not active until a human reviews it. Human CLI equivalents:
+Human review:
 
 ```bash
 npm run cli -- policy review <projectId> <policyId> active
@@ -118,66 +196,41 @@ npm run cli -- policy review <projectId> <policyId> rejected --reason "Too broad
 npm run cli -- policy retire <projectId> <policyId> --reason "Strategy changed"
 ```
 
-MCP deliberately exposes `policy_context` and `policy_propose`, but **not** policy activation/rejection/retirement. Every human policy review writes another `decision`, so the learning loop remains auditable.
-
 ## Research and opportunities
 
-Inspect the compact research context:
+Compact research state:
 
 ```bash
 npm run cli -- research context <projectId>
 ```
 
-Inspect normalized SEO opportunities:
+Normalized opportunities:
 
 ```bash
 npm run cli -- research opportunities <projectId> --limit 25
 ```
 
-The opportunity context deliberately avoids one opaque SEO score and exposes four lenses:
+The system deliberately avoids one opaque SEO score and exposes separate lenses:
 
 - `strikingDistance`: Search Console average position 4–20, ranked by impressions
 - `searchConsoleGaps`: average position >20 with impressions
-- `highDemandUnclustered`: Google Ads demand but no cluster assignment
-- `lowCompetitionDemand`: competition <=0.4, ranked by demand × (1 − competition)
+- `highDemandUnclustered`: Google Ads demand with no cluster assignment
+- `lowCompetitionDemand`: competition <= 0.4, ranked by demand × (1 − competition)
 
-The same data is available over HTTP:
-
-```text
-GET /projects/:projectId/research/opportunities?limit=25
-```
-
-and through MCP as `opportunity_context`.
-
-Fetch and persist a public page:
+Research examples:
 
 ```bash
 npm run cli -- research web <projectId> https://example.com/page
-```
-
-Run SERP research after setting `KEYWORDS_SERPER_API_KEY`:
-
-```bash
 npm run cli -- research serp <projectId> "target query" --country jp --language ja
-```
-
-Generate Google Ads keyword ideas after configuring the Ads environment variables:
-
-```bash
 npm run cli -- research ads <projectId> "seed keyword" --language-id <criterionId> --geo <geoTargetId>
-```
-
-Query Search Console after configuring its access token and property:
-
-```bash
 npm run cli -- research gsc <projectId> 2026-08-01 2026-08-31 --dimensions query
 ```
 
-When `query` is present in the dimensions and import is enabled, the latest clicks, impressions, CTR, and average position are normalized onto the corresponding keyword. These values represent the latest imported observation, not a historical time series. The original research response remains persisted in `sources` as evidence.
+Search Console query imports update the latest clicks, impressions, CTR, and average position on the keyword record. The original external response remains persisted in `sources` as evidence.
 
 ## Content planning
 
-Assign several validated keywords to a cluster in one audited command:
+Bulk-assign validated queries to one intent cluster:
 
 ```bash
 npm run cli -- cluster assign <projectId> <clusterId> --keywords <keywordId1,keywordId2>
@@ -194,22 +247,18 @@ npm run cli -- page plan <projectId> "SEO Agent Workspace Guide" \
   --rationale "One SERP intent; no distinct existing landing page."
 ```
 
-`page plan` stores keyword targets in the relational `page_keywords` table. A primary target represents the core page intent; secondary targets are close variants expected to be satisfied by the same document. Linked research evidence is stored as source IDs rather than copied into the proposal.
-
-Before approving a new page, inspect overlap:
+Inspect overlap:
 
 ```bash
 npm run cli -- page cannibalization <projectId>
 ```
 
-The check reports:
+Signals:
 
-- `exactTargetConflicts`: two or more non-archived pages explicitly target the same keyword
-- `sameClusterConflicts`: two or more non-archived pages belong to the same intent cluster
+- `exactTargetConflicts`: multiple non-archived pages explicitly target the same keyword
+- `sameClusterConflicts`: multiple non-archived pages belong to the same intent cluster
 
-These are review signals, not proof of SEO cannibalization. SERP intent still determines whether pages should be merged, retargeted, or intentionally kept separate.
-
-Agents stop at proposal creation. There is intentionally no MCP approval tool. Human review is available in the web workspace and CLI:
+Agents stop at proposal creation. Human review only:
 
 ```bash
 npm run cli -- page review <projectId> <pageId> approved
@@ -217,35 +266,33 @@ npm run cli -- page review <projectId> <pageId> rejected --reason "Duplicate int
 npm run cli -- page review <projectId> <pageId> needs_edit --reason "Separate transactional intent first"
 ```
 
-Normal approval is blocked if another non-archived page explicitly targets the same keyword. A human can override only explicitly and with a recorded reason:
-
-```bash
-npm run cli -- page review <projectId> <pageId> approved --override-conflicts --reason "Intentional canonical/variant split"
-```
-
-Every review writes a `decision` record. The public HTTP API routes page state changes through `/projects/:projectId/pages/:pageId/review`; the old direct page-status endpoint is not exposed.
-
-Equivalent MCP planning tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`. MCP deliberately stops before `page_review`.
-
-Run the MCP server:
-
-```bash
-npm run mcp
-```
+Normal approval is blocked by exact keyword-target overlap unless a human explicitly overrides it with a recorded reason.
 
 ## Research credentials
 
 Credentials are environment-only and are never intentionally persisted to SQLite.
 
-- SERP: `KEYWORDS_SERPER_API_KEY` (or `SERPER_API_KEY`)
-- Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`; optional `GOOGLE_ADS_LOGIN_CUSTOMER_ID`, `GOOGLE_ADS_API_VERSION`, language/geo defaults
+- SERP: `KEYWORDS_SERPER_API_KEY` or `SERPER_API_KEY`
+- Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
+- optional Google Ads: `GOOGLE_ADS_LOGIN_CUSTOMER_ID`, `GOOGLE_ADS_API_VERSION`, language/geo defaults
 - Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
-- `GOOGLE_OAUTH_ACCESS_TOKEN` can be used as a shared access-token fallback for Ads/Search Console
+- shared OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
 
-OAuth refresh/token issuance is deliberately kept outside workspace persistence. A later credential broker can supply short-lived tokens without changing the research or command APIs.
+OAuth token refresh/issuance remains outside workspace persistence.
 
-## Agent model
+## Verification
 
-Agents should follow an observe → policy context → opportunity context → research only where needed → overlap check → plan/command → human review → policy feedback loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
+GitHub Actions verifies:
 
-Human decisions are stored in `decisions`, durable approved operating guidance is stored in `policy_rules`, and every command execution is recorded in `runs`. Publishing remains intentionally unimplemented.
+- typecheck: domain, db, research, commands, api, cli, mcp, web
+- SQLite initialization
+- content-planning runtime smoke test
+- policy-memory runtime smoke test
+- agent work-loop runtime smoke test
+- Web production build
+
+CI cancels superseded runs on the same branch.
+
+## Current autonomy boundary
+
+Agents may research, organize keywords/clusters, create tasks/insights/policy candidates, and create evidence-backed page plans. Human approval remains required for page approval and durable policy activation. External publishing is intentionally **not implemented** yet.
