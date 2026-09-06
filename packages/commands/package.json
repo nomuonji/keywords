@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./planning": "./src/planning.ts",
     "./policy": "./src/policy.ts",
-    "./work": "./src/work.ts"
+    "./work": "./src/work.ts",
+    "./review": "./src/review.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
