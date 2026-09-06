@@ -32,7 +32,7 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   mkdirSync(dirname(absolute), { recursive: true });
   const sqlite = new Database(absolute);
   sqlite.exec(bootstrapSql);
-  const db = drizzle(sqlite, { schema });
+  const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
 
