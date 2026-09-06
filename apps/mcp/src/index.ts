@@ -4,19 +4,20 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { commands } from '@keywords/commands';
 
 const ctx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
-const server = new Server({ name: 'keywords', version: '0.2.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'keywords', version: '0.3.0' }, { capabilities: { tools: {} } });
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const tools = [
   { name: 'project_list', description: 'List SEO projects', inputSchema: s('No input', {}) },
   { name: 'project_snapshot', description: 'Read a compact project snapshot before deciding what to do', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
   { name: 'research_context', description: 'Read keywords, unclustered backlog, insights, and recent research sources in one compact context', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'opportunity_context', description: 'Read compact ranked SEO opportunities derived from normalized Google Ads and Search Console metrics', inputSchema: s('Opportunity context', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'source_list', description: 'List stored research sources, optionally filtered by source type', inputSchema: s('Sources', { projectId: { type: 'string' }, type: { type: 'string' } }, ['projectId']) },
   { name: 'source_record', description: 'Persist evidence gathered by the agent or another research tool', inputSchema: s('Source', { projectId: { type: 'string' }, type: { type: 'string' }, label: { type: 'string' }, url: { type: 'string' }, metadata: { type: 'object', additionalProperties: true } }, ['projectId','type','label']) },
   { name: 'research_web_fetch', description: 'Fetch a public web page and store a normalized text source. Private/local network targets are blocked by default.', inputSchema: s('Web fetch', { projectId: { type: 'string' }, url: { type: 'string' }, maxChars: { type: 'number' } }, ['projectId','url']) },
   { name: 'research_serp', description: 'Query a Google SERP through a configured Serper-compatible endpoint and persist the results', inputSchema: s('SERP research', { projectId: { type: 'string' }, query: { type: 'string' }, country: { type: 'string' }, language: { type: 'string' }, location: { type: 'string' }, num: { type: 'number' } }, ['projectId','query']) },
   { name: 'research_google_ads_keywords', description: 'Generate Google Ads keyword ideas with historical metrics, store the source, and import/upsert ideas into the keyword workspace', inputSchema: s('Google Ads keyword research', { projectId: { type: 'string' }, customerId: { type: 'string' }, seedKeywords: { type: 'array', items: { type: 'string' } }, url: { type: 'string' }, languageId: { type: 'string' }, geoTargetIds: { type: 'array', items: { type: 'string' } }, network: { type: 'string', enum: ['GOOGLE_SEARCH','GOOGLE_SEARCH_AND_PARTNERS'] }, importKeywords: { type: 'boolean' } }, ['projectId']) },
-  { name: 'research_search_console', description: 'Query Search Console Search Analytics, persist the result, and optionally import query strings as keywords', inputSchema: s('Search Console research', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' }, dimensions: { type: 'array', items: { type: 'string' } }, rowLimit: { type: 'number' }, startRow: { type: 'number' }, searchType: { type: 'string' }, importQueries: { type: 'boolean' } }, ['projectId','startDate','endDate']) },
+  { name: 'research_search_console', description: 'Query Search Console Search Analytics, persist the result, and normalize query performance onto keywords for opportunity analysis', inputSchema: s('Search Console research', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' }, dimensions: { type: 'array', items: { type: 'string' } }, rowLimit: { type: 'number' }, startRow: { type: 'number' }, searchType: { type: 'string' }, importQueries: { type: 'boolean' } }, ['projectId','startDate','endDate']) },
   { name: 'keyword_list', description: 'List project keywords and their cluster assignment', inputSchema: s('Project', { projectId: { type: 'string' }, status: { type: 'string' } }, ['projectId']) },
   { name: 'keyword_create', description: 'Add a keyword to the workspace', inputSchema: s('Keyword', { projectId: { type: 'string' }, text: { type: 'string' }, source: { type: 'string' }, avgMonthly: { type: 'number' }, competition: { type: 'number' } }, ['projectId','text']) },
   { name: 'keyword_reject', description: 'Reject a keyword and optionally record the reason as a decision', inputSchema: s('Reject keyword', { projectId: { type: 'string' }, keywordId: { type: 'string' }, reason: { type: 'string' } }, ['projectId','keywordId']) },
@@ -38,6 +39,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'project_list': return text(await commands.project.list(ctx));
     case 'project_snapshot': return text(await commands.project.snapshot(ctx, a.projectId));
     case 'research_context': return text(await commands.research.context(ctx, a.projectId));
+    case 'opportunity_context': return text(await commands.research.opportunities(ctx, a.projectId, a.limit));
     case 'source_list': return text(await commands.source.list(ctx, a.projectId, a.type));
     case 'source_record': return text(await commands.source.record(ctx, a));
     case 'research_web_fetch': return text(await commands.research.webFetch(ctx, a));
