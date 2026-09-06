@@ -10,7 +10,8 @@
     "./planning": "./src/planning.ts",
     "./policy": "./src/policy.ts",
     "./work": "./src/work.ts",
-    "./review": "./src/review.ts"
+    "./review": "./src/review.ts",
+    "./budget": "./src/budget.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
