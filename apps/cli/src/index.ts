@@ -3,6 +3,7 @@ import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
+import { reviewCommands } from '@keywords/commands/review';
 const program = new Command();
 const ctx = { actor: 'human' as const, actorId: process.env.USER ?? 'cli' };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
@@ -20,6 +21,10 @@ work.command('resume').argument('<projectId>').argument('<sessionId>').action(as
 work.command('checkpoint').argument('<projectId>').argument('<sessionId>').argument('<state>', 'working | awaiting_review | blocked').requiredOption('--summary <text>').option('--next <action>').action(async (projectId: string, sessionId: string, state: 'working'|'awaiting_review'|'blocked', opts: {summary: string; next?: string}) => print(await workCommands.checkpoint(ctx, { projectId, sessionId, state, summary: opts.summary, nextAction: opts.next })));
 work.command('complete').argument('<projectId>').argument('<sessionId>').requiredOption('--summary <text>').action(async (projectId: string, sessionId: string, opts: {summary: string}) => print(await workCommands.complete(ctx, { projectId, sessionId, summary: opts.summary })));
 work.command('cancel').argument('<projectId>').argument('<sessionId>').requiredOption('--reason <text>').action(async (projectId: string, sessionId: string, opts: {reason: string}) => print(await workCommands.cancel(ctx, { projectId, sessionId, reason: opts.reason })));
+const review = program.command('review');
+review.command('list').argument('<projectId>').option('--status <status>', 'open | resolved').option('--session <sessionId>').option('--limit <number>', 'Maximum requests', '50').action(async (projectId: string, opts: {status?: string; session?: string; limit: string}) => print(await reviewCommands.list(ctx, { projectId, status: opts.status, sessionId: opts.session, limit: Number(opts.limit) })));
+review.command('request').argument('<projectId>').argument('<sessionId>').argument('<targetType>').argument('<title>').option('--target <targetId>').option('--question <question>').option('--options <csv>').action(async (projectId: string, sessionId: string, targetType: string, title: string, opts: {target?: string; question?: string; options?: string}) => print(await reviewCommands.request(ctx, { projectId, sessionId, targetType, targetId: opts.target, title, question: opts.question, options: csv(opts.options) })));
+review.command('resolve').argument('<projectId>').argument('<reviewId>').argument('<resolution>').option('--reason <reason>').option('--override-conflicts').action(async (projectId: string, reviewId: string, resolution: string, opts: {reason?: string; overrideConflicts?: boolean}) => print(await reviewCommands.resolve(ctx, { projectId, reviewId, resolution, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
 const policy = program.command('policy');
 policy.command('context').argument('<projectId>').option('--decisions <number>', 'Recent decisions to include', '30').action(async (projectId: string, opts: {decisions: string}) => print(await policyCommands.context(ctx, projectId, Number(opts.decisions))));
 policy.command('list').argument('<projectId>').option('--status <status>').action(async (projectId: string, opts: {status?: string}) => print(await policyCommands.list(ctx, projectId, opts.status)));
