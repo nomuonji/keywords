@@ -5,6 +5,7 @@ import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
+import { reviewCommands } from '@keywords/commands/review';
 
 const app = new Hono();
 app.use('*', cors());
@@ -20,13 +21,22 @@ app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
 
-app.get('/projects/:projectId/work/context', async c => c.json(await workCommands.context(ctx(c), { projectId: c.req.param('projectId'), sessionId: c.req.query('sessionId') })));
+app.get('/projects/:projectId/work/context', async c => {
+  const projectId = c.req.param('projectId');
+  const context = await workCommands.context(ctx(c), { projectId, sessionId: c.req.query('sessionId') });
+  const sessionId = context.session?.id;
+  const reviewRequests = await reviewCommands.list(ctx(c), { projectId, sessionId, status: 'open', limit: 20 });
+  return c.json({ ...context, reviewRequests });
+});
 app.get('/projects/:projectId/work/sessions', async c => c.json(await workCommands.list(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 20))));
 app.post('/projects/:projectId/work/sessions', async c => c.json(await workCommands.start(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/projects/:projectId/work/sessions/:sessionId/resume', async c => c.json(await workCommands.resume(ctx(c), { projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
 app.post('/projects/:projectId/work/sessions/:sessionId/checkpoint', async c => c.json(await workCommands.checkpoint(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
 app.post('/projects/:projectId/work/sessions/:sessionId/complete', async c => c.json(await workCommands.complete(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
 app.post('/projects/:projectId/work/sessions/:sessionId/cancel', async c => c.json(await workCommands.cancel(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
+app.get('/projects/:projectId/review-requests', async c => c.json(await reviewCommands.list(ctx(c), { projectId: c.req.param('projectId'), status: c.req.query('status'), sessionId: c.req.query('sessionId'), limit: Number(c.req.query('limit') ?? 50) })));
+app.post('/projects/:projectId/review-requests', async c => c.json(await reviewCommands.request(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/review-requests/:reviewId/resolve', async c => c.json(await reviewCommands.resolve(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), reviewId: c.req.param('reviewId') })));
 
 app.get('/projects/:projectId/policies/context', async c => c.json(await policyCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('decisions') ?? 30))));
 app.get('/projects/:projectId/policies', async c => c.json(await policyCommands.list(ctx(c), c.req.param('projectId'), c.req.query('status'))));
