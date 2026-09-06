@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { ReviewInbox } from './ReviewInbox';
 
 type WorkSession = {
   id: string;
@@ -39,21 +40,24 @@ export function WorkSessions({ projectId }: { projectId: string }) {
     return () => { alive = false; window.clearInterval(timer); };
   }, [projectId]);
 
-  return <section className="panel workPanel">
-    <div className="panelHead"><div><p className="eyebrow">AGENT WORK LOOP</p><h2>Work sessions</h2></div><span>{sessions.filter(s=>!['completed','cancelled'].includes(s.status)).length} open</span></div>
-    {error&&<div className="hint">{error}</div>}
-    <div className="workSessionList">{sessions.map(session=>{
-      const checkpoint=session.checkpoints[0];
-      const pct=Math.round((session.usage.actions/Math.max(1,session.maxActions))*100);
-      return <div className="workSession" key={session.id}>
-        <div className="workSessionTop"><span className={`status ${session.status}`}>{session.status.replace('_',' ')}</span><small>{session.usage.actions}/{session.maxActions} actions · {session.remainingActions} left</small></div>
-        <b>{session.objective}</b>
-        <div className="workMeter"><span style={{width:`${Math.min(100,pct)}%`}}/></div>
-        {checkpoint&&<p>{checkpoint.summary}</p>}
-        {checkpoint?.nextAction&&<small>Next: {checkpoint.nextAction}</small>}
-        {!checkpoint&&session.summary&&<p>{session.summary}</p>}
-        <small>{when(session.updatedAt)} · {session.usage.failed?`${session.usage.failed} failed commands`:'no command failures'}</small>
-      </div>;
-    })}{!sessions.length&&!error&&<div className="hint">No work sessions yet. An MCP agent can start one with work_start.</div>}</div>
-  </section>;
+  return <>
+    <section className="panel workPanel">
+      <div className="panelHead"><div><p className="eyebrow">AGENT WORK LOOP</p><h2>Work sessions</h2></div><span>{sessions.filter(s=>!['completed','cancelled'].includes(s.status)).length} open</span></div>
+      {error&&<div className="hint">{error}</div>}
+      <div className="workSessionList">{sessions.map(session=>{
+        const checkpoint=session.checkpoints[0];
+        const pct=Math.round((session.usage.actions/Math.max(1,session.maxActions))*100);
+        return <div className="workSession" key={session.id}>
+          <div className="workSessionTop"><span className={`status ${session.status}`}>{session.status.replace('_',' ')}</span><small>{session.usage.actions}/{session.maxActions} actions · {session.remainingActions} left</small></div>
+          <b>{session.objective}</b>
+          <div className="workMeter"><span style={{width:`${Math.min(100,pct)}%`}}/></div>
+          {checkpoint&&<p>{checkpoint.summary}</p>}
+          {checkpoint?.nextAction&&<small>Next: {checkpoint.nextAction}</small>}
+          {!checkpoint&&session.summary&&<p>{session.summary}</p>}
+          <small>{when(session.updatedAt)} · {session.usage.failed?`${session.usage.failed} failed commands`:'no command failures'}</small>
+        </div>;
+      })}{!sessions.length&&!error&&<div className="hint">No work sessions yet. An MCP agent can start one with work_start.</div>}</div>
+    </section>
+    <ReviewInbox projectId={projectId}/>
+  </>;
 }
