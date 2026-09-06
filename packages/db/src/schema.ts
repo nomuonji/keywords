@@ -28,6 +28,11 @@ export const keywords = sqliteTable('keywords', {
   avgMonthly: integer('avg_monthly'),
   competition: real('competition'),
   cpcMicros: integer('cpc_micros'),
+  gscClicks: real('gsc_clicks'),
+  gscImpressions: real('gsc_impressions'),
+  gscCtr: real('gsc_ctr'),
+  gscPosition: real('gsc_position'),
+  gscUpdatedAt: text('gsc_updated_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
