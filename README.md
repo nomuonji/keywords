@@ -8,6 +8,8 @@
 - Project, topic, keyword, cluster, page, source, insight, task, decision, and run models
 - Shared command layer with audit logging
 - External read adapters for Google Ads keyword ideas, Search Console Search Analytics, SERP research, and public web pages
+- Normalized latest Search Console query metrics on keyword records
+- Deterministic SEO opportunity context for agents/operators
 - Hono HTTP API
 - CLI for human/operator workflows
 - MCP server for AI agents
@@ -61,11 +63,32 @@ npm run cli -- project create "My SEO Project" --domain example.com
 npm run cli -- project list
 ```
 
-Inspect the agent research context:
+Inspect the compact research context:
 
 ```bash
 npm run cli -- research context <projectId>
 ```
+
+Inspect normalized SEO opportunities:
+
+```bash
+npm run cli -- research opportunities <projectId> --limit 25
+```
+
+The opportunity context deliberately avoids one opaque SEO score and exposes four lenses:
+
+- `strikingDistance`: Search Console average position 4–20, ranked by impressions
+- `searchConsoleGaps`: average position >20 with impressions
+- `highDemandUnclustered`: Google Ads demand but no cluster assignment
+- `lowCompetitionDemand`: competition <=0.4, ranked by demand × (1 − competition)
+
+The same data is available over HTTP:
+
+```text
+GET /projects/:projectId/research/opportunities?limit=25
+```
+
+and through MCP as `opportunity_context`.
 
 Fetch and persist a public page:
 
@@ -88,8 +111,10 @@ npm run cli -- research ads <projectId> "seed keyword" --language-id <criterionI
 Query Search Console after configuring its access token and property:
 
 ```bash
-npm run cli -- research gsc <projectId> 2026-08-01 2026-08-31 --dimensions query,page
+npm run cli -- research gsc <projectId> 2026-08-01 2026-08-31 --dimensions query
 ```
+
+When `query` is present in the dimensions and import is enabled, the latest clicks, impressions, CTR, and average position are normalized onto the corresponding keyword. The original research response remains persisted in `sources` as evidence.
 
 Run the MCP server:
 
@@ -110,7 +135,7 @@ OAuth refresh/token issuance is deliberately kept outside workspace persistence.
 
 ## Agent model
 
-Agents should follow an observe → research only where needed → decide → command → observe loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
+Agents should follow an observe → opportunity context → research only where needed → decide → command → observe loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
 
 Human decisions are stored in `decisions` and every command execution is recorded in `runs`. These records are intended to become the feedback source for project-specific skills and policies.
 
