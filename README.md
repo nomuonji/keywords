@@ -5,7 +5,7 @@
 ## Current scope
 
 - SQL-first storage with SQLite + Drizzle (no Firebase / Firestore)
-- Project, topic, keyword, cluster, page, page-target, source, insight, task, decision, and run models
+- Project, topic, keyword, cluster, page, page-target, source, insight, task, decision, policy-rule, and run models
 - Shared command layer with audit logging
 - External read adapters for Google Ads keyword ideas, Search Console Search Analytics, SERP research, and public web pages
 - Normalized latest Search Console query metrics on keyword records
@@ -14,10 +14,11 @@
 - Cannibalization review for exact target overlap and multiple pages in one cluster
 - Bulk keyword-to-cluster assignment
 - Human-only page review/approval with conflict blocking and decision logging
+- Decision-backed project policy memory: agents propose rules; humans activate/reject/retire them
 - Hono HTTP API
 - CLI for human/operator workflows
 - MCP server for AI agents
-- React workspace UI: content map, keyword backlog, page plans, overlap review, human review controls, tasks, decisions, evidence, and agent activity
+- React workspace UI: policy memory, content map, keyword backlog, page plans, overlap review, human review controls, tasks, decisions, evidence, and agent activity
 - Publishing integrations are intentionally out of scope for now
 
 ## Architecture
@@ -27,10 +28,11 @@ External research ──> @keywords/research ──┐
                                           v
 Human ── Web UI ─┐                    @keywords/commands ──> @keywords/db ──> SQLite
 Human ── CLI ────┼─────────────────────────^       │
-Agent ── MCP ────┘                                 └──> Run / Decision audit trail
+Agent ── MCP ────┘                                 ├──> Run / Decision audit trail
+                                                    └──> Candidate / Active project policies
 ```
 
-`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail. The stricter content-planning surface is exported as `@keywords/commands/planning` while the original lightweight page commands remain internal compatibility code.
+`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail. Stricter content-planning and policy-memory surfaces are exported as `@keywords/commands/planning` and `@keywords/commands/policy`.
 
 ## Repository layout
 
@@ -44,7 +46,7 @@ packages/
   domain/    shared domain types
   db/        Drizzle schema + SQLite bootstrap
   research/  external research adapters (read-only)
-  commands/  domain commands + planning commands + audit log
+  commands/  domain + planning + policy commands + audit log
 scripts/     runtime smoke tests
 skills/      agent-facing operating knowledge
 ```
@@ -67,6 +69,58 @@ Create a project from the CLI:
 npm run cli -- project create "My SEO Project" --domain example.com
 npm run cli -- project list
 ```
+
+## Project policy memory
+
+The feedback loop is explicit rather than hidden model fine-tuning:
+
+```text
+Human review / judgment
+        ↓
+     decision
+        ↓
+policy_context groups repeated decision patterns
+        ↓
+Agent proposes a policy candidate citing exact decision IDs
+        ↓
+Human Activate / Reject
+        ↓
+active policy is returned to future agents before they plan work
+        ↓
+Human may later Retire the rule with a reason
+```
+
+Agents should read the project policy context near the start of each work session:
+
+```bash
+npm run cli -- policy context <projectId>
+```
+
+MCP exposes this as `policy_context`. It returns active rules, pending candidates, recent retired rules, recent decisions, and repeated `decisionPatterns` grouped by action × target type × verdict.
+
+An agent may propose a durable rule only when it can cite the decisions that support it:
+
+```text
+policy_propose({
+  projectId,
+  scope: "page_strategy",
+  rule: "Avoid generic ranking pages unless structured project data creates clear differentiation.",
+  rationale: "Repeated rejection of undifferentiated list-page proposals.",
+  sourceDecisionIds: ["decision-a", "decision-b"]
+})
+```
+
+The candidate is not active until a human reviews it. Human CLI equivalents:
+
+```bash
+npm run cli -- policy review <projectId> <policyId> active
+npm run cli -- policy review <projectId> <policyId> rejected --reason "Too broad"
+npm run cli -- policy retire <projectId> <policyId> --reason "Strategy changed"
+```
+
+MCP deliberately exposes `policy_context` and `policy_propose`, but **not** policy activation/rejection/retirement. Every human policy review writes another `decision`, so the learning loop remains auditable.
+
+## Research and opportunities
 
 Inspect the compact research context:
 
@@ -169,7 +223,7 @@ Normal approval is blocked if another non-archived page explicitly targets the s
 npm run cli -- page review <projectId> <pageId> approved --override-conflicts --reason "Intentional canonical/variant split"
 ```
 
-Every review writes a `decision` record. The public HTTP API also routes page state changes through `/projects/:projectId/pages/:pageId/review`; the old direct page-status endpoint is not exposed.
+Every review writes a `decision` record. The public HTTP API routes page state changes through `/projects/:projectId/pages/:pageId/review`; the old direct page-status endpoint is not exposed.
 
 Equivalent MCP planning tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`. MCP deliberately stops before `page_review`.
 
@@ -192,8 +246,6 @@ OAuth refresh/token issuance is deliberately kept outside workspace persistence.
 
 ## Agent model
 
-Agents should follow an observe → opportunity context → research only where needed → overlap check → plan/command → observe loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
+Agents should follow an observe → policy context → opportunity context → research only where needed → overlap check → plan/command → human review → policy feedback loop. Research tools automatically persist useful evidence as `sources`. If the host agent uses its own browser/search capability, `source_record` lets it save that evidence into the same workspace.
 
-Human decisions are stored in `decisions` and every command execution is recorded in `runs`. These records are intended to become the feedback source for project-specific skills and policies.
-
-External publishing remains intentionally unimplemented.
+Human decisions are stored in `decisions`, durable approved operating guidance is stored in `policy_rules`, and every command execution is recorded in `runs`. Publishing remains intentionally unimplemented.
