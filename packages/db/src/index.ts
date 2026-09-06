@@ -12,7 +12,7 @@ PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, domain TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS topics (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS keywords (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, topic_id TEXT REFERENCES topics(id) ON DELETE SET NULL, text TEXT NOT NULL, normalized TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'manual', status TEXT NOT NULL DEFAULT 'active', avg_monthly INTEGER, competition REAL, cpc_micros INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS keywords (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, topic_id TEXT REFERENCES topics(id) ON DELETE SET NULL, text TEXT NOT NULL, normalized TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'manual', status TEXT NOT NULL DEFAULT 'active', avg_monthly INTEGER, competition REAL, cpc_micros INTEGER, gsc_clicks REAL, gsc_impressions REAL, gsc_ctr REAL, gsc_position REAL, gsc_updated_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS keywords_project_normalized_idx ON keywords(project_id, normalized);
 CREATE TABLE IF NOT EXISTS clusters (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, title TEXT NOT NULL, intent TEXT NOT NULL DEFAULT 'mixed', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cluster_keywords (cluster_id TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE, keyword_id TEXT NOT NULL REFERENCES keywords(id) ON DELETE CASCADE, PRIMARY KEY(cluster_id, keyword_id));
@@ -27,11 +27,21 @@ CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT REFERENCES
 CREATE INDEX IF NOT EXISTS runs_project_created_idx ON runs(project_id, created_at DESC);
 `;
 
+function ensureColumn(sqlite: Database.Database, table: string, name: string, definition: string) {
+  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some(column => column.name === name)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+}
+
 export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PATH) {
   const absolute = resolve(path);
   mkdirSync(dirname(absolute), { recursive: true });
   const sqlite = new Database(absolute);
   sqlite.exec(bootstrapSql);
+  ensureColumn(sqlite, 'keywords', 'gsc_clicks', 'gsc_clicks REAL');
+  ensureColumn(sqlite, 'keywords', 'gsc_impressions', 'gsc_impressions REAL');
+  ensureColumn(sqlite, 'keywords', 'gsc_ctr', 'gsc_ctr REAL');
+  ensureColumn(sqlite, 'keywords', 'gsc_position', 'gsc_position REAL');
+  ensureColumn(sqlite, 'keywords', 'gsc_updated_at', 'gsc_updated_at TEXT');
   const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
