@@ -35,6 +35,9 @@ page.command('plan').argument('<projectId>').argument('<title>')
   .action(async (projectId: string, title: string, opts: {cluster?: string; slug?: string; kind?: string; rationale?: string; primary?: string; secondary?: string; sources?: string}) => print(await planningCommands.pagePlan(ctx, { projectId, title, clusterId: opts.cluster, slug: opts.slug, kind: opts.kind, rationale: opts.rationale, primaryKeywordId: opts.primary, secondaryKeywordIds: csv(opts.secondary), sourceIds: csv(opts.sources) })));
 page.command('targets').argument('<projectId>').argument('<pageId>').action(async (projectId: string, pageId: string) => print(await planningCommands.pageTargets(ctx, { projectId, pageId })));
 page.command('cannibalization').argument('<projectId>').option('--limit <number>', 'Maximum conflict groups', '50').action(async (projectId: string, opts: {limit: string}) => print(await planningCommands.pageCannibalization(ctx, { projectId, limit: Number(opts.limit) })));
+page.command('review').argument('<projectId>').argument('<pageId>').argument('<verdict>', 'approved | rejected | needs_edit')
+  .option('--reason <reason>').option('--override-conflicts')
+  .action(async (projectId: string, pageId: string, verdict: 'approved'|'rejected'|'needs_edit', opts: {reason?: string; overrideConflicts?: boolean}) => print(await planningCommands.pageReview(ctx, { projectId, pageId, verdict, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
 const task = program.command('task');
 task.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.task.list(ctx, projectId)));
 task.command('add').argument('<projectId>').argument('<title>').option('--priority <number>').action(async (projectId: string, title: string, opts: {priority?: string}) => print(await commands.task.create(ctx, { projectId, title, priority: opts.priority ? Number(opts.priority) : undefined })));
