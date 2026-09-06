@@ -1,0 +1,20 @@
+export const BUDGETED_COMMANDS = new Set([
+  'source.record',
+  'research.web_fetch',
+  'research.serp',
+  'research.google_ads_keyword_ideas',
+  'research.search_console',
+  'keyword.create',
+  'keyword.reject',
+  'cluster.create',
+  'cluster.add_keyword',
+  'cluster.bulk_assign',
+  'page.plan',
+  'insight.create',
+  'task.create',
+  'task.set_status',
+  'policy.propose',
+  'decision.record'
+]);
+
+export const isBudgetedCommand = (command: string) => BUDGETED_COMMANDS.has(command);
