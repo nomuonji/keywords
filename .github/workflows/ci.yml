@@ -12,6 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # package-lock is intentionally not committed yet.
       - run: npm install
       - run: npm run db:init
       - run: npm run typecheck
