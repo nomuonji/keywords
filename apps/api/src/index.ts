@@ -37,7 +37,6 @@ app.post('/projects/:projectId/pages/plan', async c => c.json(await planningComm
 app.get('/projects/:projectId/pages/cannibalization', async c => c.json(await planningCommands.pageCannibalization(ctx(c), { projectId: c.req.param('projectId'), limit: Number(c.req.query('limit') ?? 50) })));
 app.get('/projects/:projectId/pages/:pageId/targets', async c => c.json(await planningCommands.pageTargets(ctx(c), { projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
 app.post('/projects/:projectId/pages/:pageId/review', async c => c.json(await planningCommands.pageReview(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
-app.patch('/projects/:projectId/pages/:pageId/status', async c => c.json(await commands.page.setStatus(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
 app.get('/projects/:projectId/insights', async c => c.json(await commands.insight.list(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/insights', async c => c.json(await commands.insight.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.get('/projects/:projectId/tasks', async c => c.json(await commands.task.list(ctx(c), c.req.param('projectId'))));
