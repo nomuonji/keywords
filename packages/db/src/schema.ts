@@ -135,9 +135,35 @@ export const policyRules = sqliteTable('policy_rules', {
   updatedAt: text('updated_at').notNull()
 });
 
+export const workSessions = sqliteTable('work_sessions', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  actorId: text('actor_id'),
+  objective: text('objective').notNull(),
+  completionCriteriaJson: text('completion_criteria_json').notNull(),
+  baselineJson: text('baseline_json').notNull(),
+  status: text('status').notNull().default('running'),
+  maxActions: integer('max_actions').notNull().default(12),
+  summary: text('summary'),
+  lastNextAction: text('last_next_action'),
+  startedAt: text('started_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+  completedAt: text('completed_at')
+});
+
+export const workCheckpoints = sqliteTable('work_checkpoints', {
+  id: text('id').primaryKey(),
+  sessionId: text('session_id').notNull().references(() => workSessions.id, { onDelete: 'cascade' }),
+  state: text('state').notNull(),
+  summary: text('summary').notNull(),
+  nextAction: text('next_action'),
+  createdAt: text('created_at').notNull()
+});
+
 export const runs = sqliteTable('runs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+  workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }),
   actor: text('actor').notNull(),
   actorId: text('actor_id'),
   command: text('command').notNull(),
