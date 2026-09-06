@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { commands } from '@keywords/commands';
+import { planningCommands } from '@keywords/commands/planning';
 
 const app = new Hono();
 app.use('*', cors());
@@ -28,9 +29,13 @@ app.post('/projects/:projectId/keywords/:keywordId/reject', async c => c.json(aw
 app.get('/projects/:projectId/clusters', async c => c.json(await commands.cluster.list(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/clusters', async c => c.json(await commands.cluster.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/projects/:projectId/clusters/:clusterId/keywords/:keywordId', async c => c.json(await commands.cluster.addKeyword(ctx(c), { projectId: c.req.param('projectId'), clusterId: c.req.param('clusterId'), keywordId: c.req.param('keywordId') })));
+app.post('/projects/:projectId/clusters/:clusterId/keywords', async c => c.json(await planningCommands.clusterBulkAssign(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), clusterId: c.req.param('clusterId') })));
 app.post('/projects/:projectId/clusters/:clusterId/merge', async c => c.json(await commands.cluster.merge(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), targetClusterId: c.req.param('clusterId') })));
 app.get('/projects/:projectId/pages', async c => c.json(await commands.page.list(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/pages', async c => c.json(await commands.page.propose(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/pages/plan', async c => c.json(await planningCommands.pagePlan(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.get('/projects/:projectId/pages/cannibalization', async c => c.json(await planningCommands.pageCannibalization(ctx(c), { projectId: c.req.param('projectId'), limit: Number(c.req.query('limit') ?? 50) })));
+app.get('/projects/:projectId/pages/:pageId/targets', async c => c.json(await planningCommands.pageTargets(ctx(c), { projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
 app.patch('/projects/:projectId/pages/:pageId/status', async c => c.json(await commands.page.setStatus(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
 app.get('/projects/:projectId/insights', async c => c.json(await commands.insight.list(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/insights', async c => c.json(await commands.insight.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
