@@ -5,10 +5,11 @@ import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
+import { reviewCommands } from '@keywords/commands/review';
 
 const baseCtx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
 let activeWorkSession: { id: string; projectId: string; status: string; remainingActions: number } | null = null;
-const server = new Server({ name: 'keywords', version: '0.6.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'keywords', version: '0.7.0' }, { capabilities: { tools: {} } });
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const toolCtx = (projectId?: string) => ({
@@ -22,7 +23,7 @@ const budgetedTools = new Set([
   'insight_create','task_create','task_set_status','policy_propose','decision_record'
 ]);
 const allowedWhilePaused = new Set([
-  'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list',
+  'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list','review_list',
   'project_snapshot','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list',
   'page_list','page_targets','page_cannibalization','insight_list','task_list'
 ]);
@@ -46,13 +47,15 @@ function syncSession(value: any, projectId: string) {
 const tools = [
   { name: 'project_list', description: 'List SEO projects', inputSchema: s('No input', {}) },
   { name: 'project_snapshot', description: 'Read a compact project snapshot before deciding what to do', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
-  { name: 'work_context', description: 'Read the compact agent work context: active policies, prioritized tasks, review queue, top opportunities, current session and next recommended focus', inputSchema: s('Work context', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId']) },
+  { name: 'work_context', description: 'Read compact operating state: current session, active policies, prioritized tasks, explicit review requests, top opportunities and next recommended focus', inputSchema: s('Work context', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId']) },
   { name: 'work_start', description: 'Start one auditable agent work session with an objective, completion criteria and bounded action budget. Only one unfinished session is allowed per project.', inputSchema: s('Start work', { projectId: { type: 'string' }, objective: { type: 'string' }, completionCriteria: { type: 'array', items: { type: 'string' } }, maxActions: { type: 'number' } }, ['projectId']) },
   { name: 'work_resume', description: 'Resume a blocked or awaiting-review work session after the external condition has changed', inputSchema: s('Resume work', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId','sessionId']) },
   { name: 'work_checkpoint', description: 'Persist a concise progress/result summary and next action. Do not store private chain-of-thought.', inputSchema: s('Checkpoint', { projectId: { type: 'string' }, sessionId: { type: 'string' }, state: { type: 'string', enum: ['working','awaiting_review','blocked'] }, summary: { type: 'string' }, nextAction: { type: 'string' } }, ['projectId','state','summary']) },
   { name: 'work_complete', description: 'Finish the current work session with a concise outcome summary and baseline-to-current project diff', inputSchema: s('Complete work', { projectId: { type: 'string' }, sessionId: { type: 'string' }, summary: { type: 'string' } }, ['projectId','summary']) },
   { name: 'work_cancel', description: 'Cancel an unfinished work session with a reason', inputSchema: s('Cancel work', { projectId: { type: 'string' }, sessionId: { type: 'string' }, reason: { type: 'string' } }, ['projectId','reason']) },
   { name: 'work_list', description: 'List recent agent work sessions and their action usage', inputSchema: s('Work sessions', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
+  { name: 'review_request', description: 'Create an explicit human review request for the active work session. This pauses the session at awaiting_review and exposes concrete resolution options.', inputSchema: s('Review request', { projectId: { type: 'string' }, sessionId: { type: 'string' }, targetType: { type: 'string' }, targetId: { type: 'string' }, title: { type: 'string' }, question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, ['projectId','targetType','title']) },
+  { name: 'review_list', description: 'List human review requests, normally open requests for the current work session', inputSchema: s('Review requests', { projectId: { type: 'string' }, sessionId: { type: 'string' }, status: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'policy_context', description: 'Read active project-specific operating rules, policy candidates, and recent human decisions before planning work', inputSchema: s('Policy context', { projectId: { type: 'string' }, recentDecisionLimit: { type: 'number' } }, ['projectId']) },
   { name: 'policy_propose', description: 'Propose a durable project rule backed by one or more decision IDs. Human review is required before it becomes active.', inputSchema: s('Policy candidate', { projectId: { type: 'string' }, scope: { type: 'string' }, rule: { type: 'string' }, rationale: { type: 'string' }, sourceDecisionIds: { type: 'array', items: { type: 'string' } } }, ['projectId','rule','sourceDecisionIds']) },
   { name: 'research_context', description: 'Read keywords, unclustered backlog, insights, and recent research sources in one compact context', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
@@ -91,9 +94,12 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'project_list': result = await commands.project.list(baseCtx); break;
     case 'project_snapshot': result = await commands.project.snapshot(toolCtx(a.projectId), a.projectId); break;
     case 'work_context': {
-      result = await workCommands.context(toolCtx(a.projectId), { projectId: a.projectId, sessionId: sessionIdFor(a.projectId, a.sessionId) });
-      const session = (result as any)?.session;
+      const sessionId = sessionIdFor(a.projectId, a.sessionId);
+      const context = await workCommands.context(toolCtx(a.projectId), { projectId: a.projectId, sessionId });
+      const session = (context as any)?.session;
       if (session?.id) syncSession(session, a.projectId);
+      const reviewRequests = await reviewCommands.list(toolCtx(a.projectId), { projectId: a.projectId, sessionId: session?.id, status: 'open', limit: 20 });
+      result = { ...(context as Record<string, unknown>), reviewRequests };
       break;
     }
     case 'work_start': {
@@ -128,6 +134,14 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       break;
     }
     case 'work_list': result = await workCommands.list(toolCtx(a.projectId), a.projectId, a.limit); break;
+    case 'review_request': {
+      const sessionId = sessionIdFor(a.projectId, a.sessionId);
+      if (!sessionId) throw new Error('No active work session. Call work_start/work_resume before requesting review.');
+      result = await reviewCommands.request(toolCtx(a.projectId), { ...a, sessionId });
+      if (activeWorkSession?.id === sessionId) activeWorkSession.status = 'awaiting_review';
+      break;
+    }
+    case 'review_list': result = await reviewCommands.list(toolCtx(a.projectId), { projectId: a.projectId, sessionId: sessionIdFor(a.projectId, a.sessionId), status: a.status ?? 'open', limit: a.limit }); break;
     case 'policy_context': result = await policyCommands.context(toolCtx(a.projectId), a.projectId, a.recentDecisionLimit); break;
     case 'policy_propose': result = await policyCommands.propose(toolCtx(a.projectId), a); break;
     case 'research_context': result = await commands.research.context(toolCtx(a.projectId), a.projectId); break;
