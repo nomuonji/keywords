@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS work_sessions (id TEXT PRIMARY KEY, project_id TEXT N
 CREATE INDEX IF NOT EXISTS work_sessions_project_status_idx ON work_sessions(project_id, status, updated_at DESC);
 CREATE TABLE IF NOT EXISTS work_checkpoints (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES work_sessions(id) ON DELETE CASCADE, state TEXT NOT NULL, summary TEXT NOT NULL, next_action TEXT, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS work_checkpoints_session_created_idx ON work_checkpoints(session_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS review_requests (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, target_type TEXT NOT NULL, target_id TEXT, title TEXT NOT NULL, question TEXT, options_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', resolution TEXT, reason TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT);
+CREATE INDEX IF NOT EXISTS review_requests_project_status_idx ON review_requests(project_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS review_requests_session_status_idx ON review_requests(work_session_id, status, created_at DESC);
 CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, actor TEXT NOT NULL, actor_id TEXT, command TEXT NOT NULL, status TEXT NOT NULL, input_json TEXT, output_json TEXT, error TEXT, duration_ms INTEGER, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS runs_project_created_idx ON runs(project_id, created_at DESC);
 `;
