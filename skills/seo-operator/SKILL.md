@@ -4,27 +4,50 @@
 
 Improve a project's search coverage by making small, evidence-backed, auditable changes to keywords, clusters, pages, insights, and tasks while respecting durable project-specific rules learned from human decisions.
 
-## Default loop
+## Session-first workflow
 
-1. Read `project_snapshot`.
-2. Read `policy_context`. Apply all active project rules as operating constraints. Inspect repeated decision patterns and pending candidates before making strategy choices.
-3. Read `opportunity_context` before opening large research payloads. It summarizes normalized Google Ads and Search Console signals into deterministic buckets.
-4. Use `research_context` when you need broader workspace state, open insights, or recent evidence sources.
-5. Inspect unclustered or rejected keywords before generating more.
-6. Use Search Console to understand real query/page performance when configured. Imported query rows update the latest clicks, impressions, CTR, and average position stored on the keyword.
-7. Use Google Ads keyword ideas when search-demand metrics can change prioritization.
-8. Use SERP research for intent, competing page shapes, PAA questions, and related searches.
-9. Use public web fetch only for specific pages whose contents matter to the decision.
-10. Persist externally gathered evidence with `source_record` if it came from a host-native browser/search tool rather than a built-in research tool.
-11. Turn evidence into explicit `insight_create` records; link them to `sourceId` when possible.
-12. Prefer creating insights or tasks when evidence is incomplete.
-13. Use `cluster_bulk_assign` when several validated queries share one search intent. Do not create clusters solely from lexical similarity.
-14. Read `page_cannibalization` before creating a new page when the cluster or target keyword may already be covered.
-15. Use `page_plan`. Supply a primary keyword when one query clearly represents the page intent, secondary keyword IDs for close variants, a concise rationale, and relevant `sourceIds`.
-16. Treat warnings returned by `page_plan` as a review requirement. A `keyword_target_overlap` warning is high risk and should normally block approval until the overlap is intentionally resolved.
-17. Stop at `proposed`. Agents do not approve, reject, or override conflicts. Page review is a human action and automatically records a decision.
-18. After meaningful human decisions accumulate, re-read `policy_context`. If a repeated pattern expresses a durable preference not already covered by an active/candidate policy, use `policy_propose` with the exact source decision IDs.
-19. Re-read project and policy state after human reviews are reflected in the workspace.
+For any substantial instruction such as "do today's SEO work", operate inside a work session.
+
+1. Call `work_context` first. It is the compact bootstrap view and includes the current session, active policies, prioritized agent tasks, review queue, open insights, normalized opportunities, and a deterministic next-focus hint.
+2. If there is no unfinished session, call `work_start`. Use the user's explicit objective when provided; otherwise prefer the focus suggested by `work_context`.
+3. Respect the session's completion criteria and action budget. Do not expand the objective merely because more possible work exists.
+4. If the session is task-driven, move the selected task to `doing` before substantive work and to `review`/`done` when appropriate.
+5. Gather only evidence that can change the current decision.
+6. Make the smallest justified structured changes through MCP commands.
+7. After a meaningful phase, call `work_checkpoint` with a concise result summary and next action. Do not record private chain-of-thought.
+8. If a human decision is required, checkpoint as `awaiting_review` and stop. Do not continue speculative writes or external research across that boundary.
+9. If blocked by missing data, credentials, or another external condition, checkpoint as `blocked` with the specific blocker and next externally useful action.
+10. Resume only after the blocking/review condition changed.
+11. When the completion criteria are satisfied, call `work_complete`. The system records the baseline-to-current project-state diff automatically.
+
+## Strategy loop inside a session
+
+1. Apply `work_context.activePolicies` as project-specific constraints. Use `policy_context` when you need decision history or candidate details.
+2. Use the compact opportunity buckets before opening large research payloads.
+3. Inspect unclustered or rejected keywords before generating more.
+4. Use Search Console to understand real query/page performance when configured. Imported query rows update the latest clicks, impressions, CTR, and average position stored on the keyword.
+5. Use Google Ads keyword ideas when search-demand metrics can change prioritization.
+6. Use SERP research for intent, competing page shapes, PAA questions, and related searches.
+7. Use public web fetch only for specific pages whose contents matter to the decision.
+8. Persist externally gathered evidence with `source_record` if it came from a host-native browser/search tool rather than a built-in research tool.
+9. Turn evidence into explicit `insight_create` records; link them to `sourceId` when possible.
+10. Prefer creating insights or tasks when evidence is incomplete.
+11. Use `cluster_bulk_assign` when several validated queries share one search intent. Do not create clusters solely from lexical similarity.
+12. Read `page_cannibalization` before creating a new page when the cluster or target keyword may already be covered.
+13. Use `page_plan`. Supply a primary keyword when one query clearly represents the page intent, secondary keyword IDs for close variants, a concise rationale, and relevant `sourceIds`.
+14. Treat warnings returned by `page_plan` as a review requirement. A `keyword_target_overlap` warning is high risk and should normally block approval until the overlap is intentionally resolved.
+15. Stop at `proposed`. Agents do not approve, reject, or override conflicts. Page review is a human action and automatically records a decision.
+16. After meaningful human decisions accumulate, re-read `policy_context`. If a repeated pattern expresses a durable preference not already covered by an active/candidate policy, use `policy_propose` with the exact source decision IDs.
+
+## Work-session discipline
+
+- A work session is an execution envelope, not a hidden scratchpad.
+- `objective` describes the bounded job being done now.
+- `completionCriteria` define when to stop.
+- `maxActions` is a scope/cost control. When the remaining budget reaches zero, checkpoint or complete instead of starting more work.
+- Checkpoints contain outcomes, blockers, evidence-backed conclusions, and the next externally useful action only.
+- `awaiting_review` and `blocked` are real pause states. Do not bypass them with another write tool.
+- A final session summary should say what changed, what did not change, and whether anything remains for human review. Do not include internal reasoning traces.
 
 ## Policy memory discipline
 
@@ -39,7 +62,7 @@ Improve a project's search coverage by making small, evidence-backed, auditable 
 
 ## Opportunity buckets
 
-`opportunity_context` deliberately avoids a single opaque SEO score:
+`opportunity_context` and `work_context` deliberately avoid a single opaque SEO score:
 
 - `strikingDistance`: Search Console average position 4–20, ranked by impressions.
 - `searchConsoleGaps`: average position worse than 20 but already receiving impressions.
@@ -66,7 +89,7 @@ Treat these as prioritization lenses, not automatic instructions. SERP intent, a
 - Treat Google Ads volume/competition, Search Console performance, and SERP composition as different signals; do not collapse them into one score without an explicit rule.
 - Search Console impressions are first-party performance data, not market-wide search volume.
 - Search Console values stored on a keyword are the latest imported observation, not a historical time series.
-- Store credentials only in environment variables. Never put tokens or API keys into source metadata, insights, decisions, tasks, or policy rules.
+- Store credentials only in environment variables. Never put tokens or API keys into source metadata, insights, decisions, tasks, policy rules, work sessions, or checkpoints.
 - Prefer source-backed insights over unsupported agent conclusions.
 
 ## Current constraints
