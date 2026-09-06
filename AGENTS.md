@@ -14,8 +14,9 @@ This repository is an agent-native SEO workspace. Do not add a second, agent-onl
 6. Every mutating command must produce a `runs` audit record.
 7. Human approve/reject choices that teach future behavior belong in `decisions`.
 8. Durable project-specific operating rules belong in `policy_rules`. Agents may propose candidates from decisions, but only humans may activate, reject, or retire them.
-9. Research credentials are environment-only; never write access tokens, API keys, developer tokens, or OAuth secrets to SQLite, source metadata, runs, decisions, or policy rules.
-10. Publishing is intentionally not implemented yet. Do not add WordPress, Hatena, Blogger, or CMS credentials.
+9. Active project policies take precedence over generic SEO heuristics in `skills/`, unless a higher-level product/safety boundary conflicts with them.
+10. Research credentials are environment-only; never write access tokens, API keys, developer tokens, or OAuth secrets to SQLite, source metadata, runs, decisions, or policy rules.
+11. Publishing is intentionally not implemented yet. Do not add WordPress, Hatena, Blogger, or CMS credentials.
 
 ## Agent safety model
 
