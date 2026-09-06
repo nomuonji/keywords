@@ -2,9 +2,10 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { commands } from '@keywords/commands';
+import { planningCommands } from '@keywords/commands/planning';
 
 const ctx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
-const server = new Server({ name: 'keywords', version: '0.3.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'keywords', version: '0.4.0' }, { capabilities: { tools: {} } });
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const tools = [
@@ -24,8 +25,12 @@ const tools = [
   { name: 'cluster_list', description: 'List content clusters', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
   { name: 'cluster_create', description: 'Create a cluster, optionally with keyword IDs', inputSchema: s('Cluster', { projectId: { type: 'string' }, title: { type: 'string' }, intent: { type: 'string' }, keywordIds: { type: 'array', items: { type: 'string' } } }, ['projectId','title']) },
   { name: 'cluster_add_keyword', description: 'Move a keyword into a cluster', inputSchema: s('Assignment', { projectId: { type: 'string' }, clusterId: { type: 'string' }, keywordId: { type: 'string' } }, ['projectId','clusterId','keywordId']) },
+  { name: 'cluster_bulk_assign', description: 'Move many project keywords into one cluster in a single audited command', inputSchema: s('Bulk cluster assignment', { projectId: { type: 'string' }, clusterId: { type: 'string' }, keywordIds: { type: 'array', items: { type: 'string' } } }, ['projectId','clusterId','keywordIds']) },
   { name: 'page_list', description: 'List proposed/approved/archived pages', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
-  { name: 'page_propose', description: 'Propose a page without publishing it', inputSchema: s('Page proposal', { projectId: { type: 'string' }, title: { type: 'string' }, slug: { type: 'string' }, clusterId: { type: 'string' }, kind: { type: 'string' } }, ['projectId','title']) },
+  { name: 'page_propose', description: 'Legacy lightweight page proposal without explicit targets', inputSchema: s('Page proposal', { projectId: { type: 'string' }, title: { type: 'string' }, slug: { type: 'string' }, clusterId: { type: 'string' }, kind: { type: 'string' } }, ['projectId','title']) },
+  { name: 'page_plan', description: 'Create an evidence-backed page proposal with primary/secondary keyword targets and cannibalization warnings', inputSchema: s('Page plan', { projectId: { type: 'string' }, title: { type: 'string' }, slug: { type: 'string' }, clusterId: { type: 'string' }, kind: { type: 'string' }, rationale: { type: 'string' }, primaryKeywordId: { type: 'string' }, secondaryKeywordIds: { type: 'array', items: { type: 'string' } }, sourceIds: { type: 'array', items: { type: 'string' } } }, ['projectId','title']) },
+  { name: 'page_targets', description: 'Inspect one page proposal together with explicit keyword targets and linked evidence IDs', inputSchema: s('Page targets', { projectId: { type: 'string' }, pageId: { type: 'string' } }, ['projectId','pageId']) },
+  { name: 'page_cannibalization', description: 'Detect multiple non-archived pages targeting the same keyword or sharing one content cluster', inputSchema: s('Cannibalization', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'insight_list', description: 'List agent/human insights', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
   { name: 'insight_create', description: 'Store a research or strategy insight', inputSchema: s('Insight', { projectId: { type: 'string' }, type: { type: 'string' }, text: { type: 'string' }, confidence: { type: 'number' }, sourceId: { type: 'string' } }, ['projectId','type','text']) },
   { name: 'task_list', description: 'List shared human/agent tasks', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
@@ -52,8 +57,12 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'cluster_list': return text(await commands.cluster.list(ctx, a.projectId));
     case 'cluster_create': return text(await commands.cluster.create(ctx, a));
     case 'cluster_add_keyword': return text(await commands.cluster.addKeyword(ctx, a));
+    case 'cluster_bulk_assign': return text(await planningCommands.clusterBulkAssign(ctx, a));
     case 'page_list': return text(await commands.page.list(ctx, a.projectId));
     case 'page_propose': return text(await commands.page.propose(ctx, a));
+    case 'page_plan': return text(await planningCommands.pagePlan(ctx, a));
+    case 'page_targets': return text(await planningCommands.pageTargets(ctx, a));
+    case 'page_cannibalization': return text(await planningCommands.pageCannibalization(ctx, a));
     case 'insight_list': return text(await commands.insight.list(ctx, a.projectId));
     case 'insight_create': return text(await commands.insight.create(ctx, a));
     case 'task_list': return text(await commands.task.list(ctx, a.projectId));
