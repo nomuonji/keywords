@@ -60,9 +60,17 @@ export const pages = sqliteTable('pages', {
   slug: text('slug').notNull(),
   kind: text('kind').notNull().default('article'),
   status: text('status').notNull().default('proposed'),
+  rationale: text('rationale'),
+  evidenceJson: text('evidence_json'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
+
+export const pageKeywords = sqliteTable('page_keywords', {
+  pageId: text('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  keywordId: text('keyword_id').notNull().references(() => keywords.id, { onDelete: 'cascade' }),
+  role: text('role').notNull().default('secondary')
+}, (table) => [primaryKey({ columns: [table.pageId, table.keywordId] })]);
 
 export const sources = sqliteTable('sources', {
   id: text('id').primaryKey(),
