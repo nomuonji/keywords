@@ -39,6 +39,23 @@ function parseIds(value: string | null): string[] {
   }
 }
 
+function summarizeDecisionPatterns(decisions: Array<{ id: string; action: string; targetType: string; verdict: string; reason: string | null; createdAt: string }>) {
+  const groups = new Map<string, { action: string; targetType: string; verdict: string; decisionIds: string[]; sampleReasons: string[]; latestAt: string }>();
+  for (const decision of decisions) {
+    const key = `${decision.action}\u0000${decision.targetType}\u0000${decision.verdict}`;
+    const current = groups.get(key) ?? { action: decision.action, targetType: decision.targetType, verdict: decision.verdict, decisionIds: [], sampleReasons: [], latestAt: decision.createdAt };
+    current.decisionIds.push(decision.id);
+    if (decision.reason && current.sampleReasons.length < 3 && !current.sampleReasons.includes(decision.reason)) current.sampleReasons.push(decision.reason);
+    if (decision.createdAt > current.latestAt) current.latestAt = decision.createdAt;
+    groups.set(key, current);
+  }
+  return [...groups.values()]
+    .filter(group => group.decisionIds.length >= 2)
+    .sort((a, b) => b.decisionIds.length - a.decisionIds.length || b.latestAt.localeCompare(a.latestAt))
+    .slice(0, 20)
+    .map(group => ({ ...group, count: group.decisionIds.length }));
+}
+
 async function requireDecisions(projectId: string, decisionIds: string[]) {
   const unique = [...new Set(decisionIds.filter(Boolean))];
   if (!unique.length) throw new Error('At least one source decision is required');
@@ -68,6 +85,7 @@ export const policyCommands = {
       active: normalized.filter(rule => rule.status === 'active'),
       candidates: normalized.filter(rule => rule.status === 'candidate'),
       retired: normalized.filter(rule => rule.status === 'retired').slice(0, 20),
+      decisionPatterns: summarizeDecisionPatterns(recentDecisions),
       recentDecisions
     };
   }),
