@@ -1,6 +1,7 @@
 import { and, count, desc, eq, isNull, ne, or } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext, WorkCheckpointState, WorkSessionStatus } from '@keywords/domain';
+import { isBudgetedCommand } from './budget.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -85,7 +86,7 @@ function diffCounts(baseline: Record<string, number>, current: Record<string, nu
 
 async function actionUsage(sessionId: string) {
   const rows = await db.select({ command: schema.runs.command, status: schema.runs.status }).from(schema.runs).where(eq(schema.runs.workSessionId, sessionId));
-  const actions = rows.filter(row => !row.command.startsWith('work.'));
+  const actions = rows.filter(row => isBudgetedCommand(row.command));
   return {
     actions: actions.length,
     succeeded: actions.filter(row => row.status === 'succeeded').length,
@@ -144,7 +145,7 @@ async function compactContext(projectId: string, requestedSessionId?: string) {
     searchConsoleGaps: keywordRows.filter(row => row.gscPosition !== null && row.gscPosition > 20 && (row.gscImpressions ?? 0) > 0).sort(byImpressions).slice(0, 6).map(opportunity)
   };
 
-  let rawSession = requestedSessionId
+  const rawSession = requestedSessionId
     ? await db.select().from(schema.workSessions).where(and(eq(schema.workSessions.id, requestedSessionId), eq(schema.workSessions.projectId, projectId))).get()
     : await unfinishedSession(projectId);
   const session = rawSession ? await sessionView(rawSession) : null;
@@ -192,7 +193,7 @@ async function compactContext(projectId: string, requestedSessionId?: string) {
 function defaultObjective(next: Record<string, unknown>) {
   switch (next.kind) {
     case 'task': return `Complete the highest-priority agent task: ${(next.task as { title?: string } | undefined)?.title ?? 'assigned task'}`;
-    case 'structure_demand': return `Resolve the top unclustered search-demand opportunity into an evidence-backed cluster/page decision.`;
+    case 'structure_demand': return 'Resolve the top unclustered search-demand opportunity into an evidence-backed cluster/page decision.';
     case 'inspect_striking_distance': return 'Investigate the highest-impression striking-distance query and create the smallest justified workspace change.';
     case 'inspect_search_console_gap': return 'Investigate the highest-impression Search Console gap and decide whether it needs a cluster, page plan, or documented insight.';
     case 'resolve_insight': return 'Resolve the highest-priority open insight into a task, structured change, or explicit no-action conclusion.';
