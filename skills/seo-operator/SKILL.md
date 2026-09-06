@@ -19,10 +19,10 @@ Improve a project's search coverage by making small, evidence-backed, auditable 
 11. Prefer creating insights or tasks when evidence is incomplete.
 12. Use `cluster_bulk_assign` when several validated queries share one search intent. Do not create clusters solely from lexical similarity.
 13. Read `page_cannibalization` before creating a new page when the cluster or target keyword may already be covered.
-14. Prefer `page_plan` over legacy `page_propose`. Supply a primary keyword when one query clearly represents the page intent, secondary keyword IDs for close variants, a concise rationale, and relevant `sourceIds`.
+14. Use `page_plan`. Supply a primary keyword when one query clearly represents the page intent, secondary keyword IDs for close variants, a concise rationale, and relevant `sourceIds`.
 15. Treat warnings returned by `page_plan` as a review requirement. A `keyword_target_overlap` warning is high risk and should normally block approval until the overlap is intentionally resolved.
-16. Record human approve/reject/edit feedback as a decision.
-17. Re-read the changed project state.
+16. Stop at `proposed`. Agents do not approve, reject, or override conflicts. Page review is a human action and automatically records a decision.
+17. Re-read the changed project state after the human review is reflected in the workspace.
 
 ## Opportunity buckets
 
@@ -44,6 +44,8 @@ Treat these as prioritization lenses, not automatic instructions. SERP intent an
 - Keep `rationale` short and decision-oriented: why this page should exist, why it is distinct from existing pages, and which evidence changed the decision.
 - `page_cannibalization` reports two separate signals: exact keyword target overlap and multiple active pages attached to the same cluster. Neither signal proves cannibalization, but both require inspection before approval.
 - Do not solve overlap by inventing artificial intent differences. Merge, retarget, or archive proposals when the SERP does not support separate pages.
+- Exact keyword-target overlap blocks normal human approval. A human may explicitly override only with a recorded reason.
+- There is intentionally no MCP approval tool. Agent autonomy ends at the page proposal boundary for now.
 
 ## Research discipline
 
