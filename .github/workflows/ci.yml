@@ -12,8 +12,40 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      # package-lock is intentionally not committed yet.
       - run: npm install
       - run: npm run db:init
-      - run: npm run typecheck
-      - run: npm run build -w @keywords/web
+      - id: domain
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/domain
+      - id: db
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/db
+      - id: commands
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/commands
+      - id: api
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/api
+      - id: cli
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/cli
+      - id: mcp
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/mcp
+      - id: web
+        continue-on-error: true
+        run: npm run typecheck -w @keywords/web
+      - id: webbuild
+        continue-on-error: true
+        run: npm run build -w @keywords/web
+      - name: verify outcomes
+        if: always()
+        run: |
+          test "${{ steps.domain.outcome }}" = success
+          test "${{ steps.db.outcome }}" = success
+          test "${{ steps.commands.outcome }}" = success
+          test "${{ steps.api.outcome }}" = success
+          test "${{ steps.cli.outcome }}" = success
+          test "${{ steps.mcp.outcome }}" = success
+          test "${{ steps.web.outcome }}" = success
+          test "${{ steps.webbuild.outcome }}" = success
