@@ -171,7 +171,7 @@ npm run cli -- page review <projectId> <pageId> approved --override-conflicts --
 
 Every review writes a `decision` record. The public HTTP API also routes page state changes through `/projects/:projectId/pages/:pageId/review`; the old direct page-status endpoint is not exposed.
 
-Equivalent MCP planning tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`.
+Equivalent MCP planning tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`. MCP deliberately stops before `page_review`.
 
 Run the MCP server:
 
