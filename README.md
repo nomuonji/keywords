@@ -114,7 +114,7 @@ Query Search Console after configuring its access token and property:
 npm run cli -- research gsc <projectId> 2026-08-01 2026-08-31 --dimensions query
 ```
 
-When `query` is present in the dimensions and import is enabled, the latest clicks, impressions, CTR, and average position are normalized onto the corresponding keyword. The original research response remains persisted in `sources` as evidence.
+When `query` is present in the dimensions and import is enabled, the latest clicks, impressions, CTR, and average position are normalized onto the corresponding keyword. These values represent the latest imported observation, not a historical time series. The original research response remains persisted in `sources` as evidence.
 
 Run the MCP server:
 
