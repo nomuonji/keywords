@@ -160,6 +160,23 @@ export const workCheckpoints = sqliteTable('work_checkpoints', {
   createdAt: text('created_at').notNull()
 });
 
+export const reviewRequests = sqliteTable('review_requests', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id'),
+  title: text('title').notNull(),
+  question: text('question'),
+  optionsJson: text('options_json').notNull(),
+  status: text('status').notNull().default('open'),
+  resolution: text('resolution'),
+  reason: text('reason'),
+  requestedBy: text('requested_by').notNull(),
+  createdAt: text('created_at').notNull(),
+  resolvedAt: text('resolved_at')
+});
+
 export const runs = sqliteTable('runs', {
   id: text('id').primaryKey(),
   projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
