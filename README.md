@@ -96,7 +96,7 @@ Agents should read the project policy context near the start of each work sessio
 npm run cli -- policy context <projectId>
 ```
 
-MCP exposes this as `policy_context`. It returns active rules, pending candidates, recent retired rules, recent decisions, and repeated `decisionPatterns` grouped by action × target type × verdict.
+MCP exposes this as `policy_context`. It returns active rules, pending candidates, recent retired rules, recent decisions, and repeated `decisionPatterns` grouped by action × target type × verdict. Active project policies are treated as project-specific operating constraints and take precedence over generic SEO heuristics unless they conflict with a higher-level product or safety boundary.
 
 An agent may propose a durable rule only when it can cite the decisions that support it:
 
