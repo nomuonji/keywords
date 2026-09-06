@@ -27,8 +27,13 @@ CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL 
 CREATE TABLE IF NOT EXISTS decisions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, actor TEXT NOT NULL, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT, verdict TEXT NOT NULL, reason TEXT, metadata_json TEXT, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS policy_rules (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, scope TEXT NOT NULL DEFAULT 'general', rule TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL DEFAULT 'candidate', source_decision_ids_json TEXT, proposed_by TEXT NOT NULL, reviewed_by TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS policy_rules_project_status_idx ON policy_rules(project_id, status, updated_at DESC);
-CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, actor TEXT NOT NULL, actor_id TEXT, command TEXT NOT NULL, status TEXT NOT NULL, input_json TEXT, output_json TEXT, error TEXT, duration_ms INTEGER, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS work_sessions (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, actor_id TEXT, objective TEXT NOT NULL, completion_criteria_json TEXT NOT NULL, baseline_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'running', max_actions INTEGER NOT NULL DEFAULT 12, summary TEXT, last_next_action TEXT, started_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT);
+CREATE INDEX IF NOT EXISTS work_sessions_project_status_idx ON work_sessions(project_id, status, updated_at DESC);
+CREATE TABLE IF NOT EXISTS work_checkpoints (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES work_sessions(id) ON DELETE CASCADE, state TEXT NOT NULL, summary TEXT NOT NULL, next_action TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS work_checkpoints_session_created_idx ON work_checkpoints(session_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, actor TEXT NOT NULL, actor_id TEXT, command TEXT NOT NULL, status TEXT NOT NULL, input_json TEXT, output_json TEXT, error TEXT, duration_ms INTEGER, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS runs_project_created_idx ON runs(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);
 `;
 
 function ensureColumn(sqlite: Database.Database, table: string, name: string, definition: string) {
@@ -48,6 +53,8 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   ensureColumn(sqlite, 'keywords', 'gsc_updated_at', 'gsc_updated_at TEXT');
   ensureColumn(sqlite, 'pages', 'rationale', 'rationale TEXT');
   ensureColumn(sqlite, 'pages', 'evidence_json', 'evidence_json TEXT');
+  ensureColumn(sqlite, 'runs', 'work_session_id', 'work_session_id TEXT');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);');
   const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
