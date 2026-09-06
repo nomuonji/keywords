@@ -27,6 +27,11 @@ const second = await commands.decision.record(human, {
   reason: 'Avoid generic ranking pages when the project cannot differentiate with structured data.'
 });
 
+let context = await policyCommands.context(agent, project.id);
+assert.equal(context.decisionPatterns.length, 1);
+assert.equal(context.decisionPatterns[0]?.count, 2);
+assert.deepEqual(context.decisionPatterns[0]?.decisionIds.sort(), [first.id, second.id].sort());
+
 const candidate = await policyCommands.propose(agent, {
   projectId: project.id,
   scope: 'page_strategy',
@@ -44,7 +49,7 @@ await assert.rejects(
 
 const activated = await policyCommands.review(human, { projectId: project.id, policyId: candidate.id, verdict: 'active' });
 assert.equal(activated.status, 'active');
-let context = await policyCommands.context(agent, project.id);
+context = await policyCommands.context(agent, project.id);
 assert.equal(context.active.length, 1);
 assert.equal(context.active[0]?.id, candidate.id);
 assert.equal(context.candidates.length, 0);
@@ -55,4 +60,4 @@ context = await policyCommands.context(agent, project.id);
 assert.equal(context.active.length, 0);
 assert.equal(context.retired[0]?.id, candidate.id);
 
-console.log(JSON.stringify({ ok: true, projectId: project.id, policyId: candidate.id, sourceDecisions: candidate.sourceDecisionIds.length }));
+console.log(JSON.stringify({ ok: true, projectId: project.id, policyId: candidate.id, sourceDecisions: candidate.sourceDecisionIds.length, repeatedPatterns: context.decisionPatterns.length }));
