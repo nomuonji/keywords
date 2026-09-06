@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./planning": "./src/planning.ts",
-    "./policy": "./src/policy.ts"
+    "./policy": "./src/policy.ts",
+    "./work": "./src/work.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
