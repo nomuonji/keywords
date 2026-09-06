@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import './review.css';
 
 type ReviewRequest = {
   id: string;
