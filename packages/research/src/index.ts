@@ -163,6 +163,7 @@ export interface GoogleAdsKeywordIdea {
   avgMonthly: number | null;
   competition: string | null;
   competitionIndex: number | null;
+  averageCpcMicros: number | null;
   lowTopOfPageBidMicros: number | null;
   highTopOfPageBidMicros: number | null;
 }
@@ -191,7 +192,8 @@ export async function googleAdsKeywordIdeas(input: {
   if (!seedKeywords.length && !input.url) throw new Error('At least one seed keyword or URL is required');
   const payload: Record<string, unknown> = {
     includeAdultKeywords: false,
-    keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH'
+    keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH',
+    historicalMetricsOptions: { includeAverageCpc: true }
   };
   const languageId = input.languageId ?? process.env.GOOGLE_ADS_LANGUAGE_ID;
   if (languageId) payload.language = `languageConstants/${languageId}`;
@@ -212,13 +214,15 @@ export async function googleAdsKeywordIdeas(input: {
   });
   const ideas = (raw.results ?? []).map((item: any): GoogleAdsKeywordIdea => {
     const metrics = item.keywordIdeaMetrics ?? {};
+    const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
     return {
       text: String(item.text ?? ''),
-      avgMonthly: typeof metrics.avgMonthlySearches === 'number' ? metrics.avgMonthlySearches : Number.isFinite(Number(metrics.avgMonthlySearches)) ? Number(metrics.avgMonthlySearches) : null,
+      avgMonthly: numeric(metrics.avgMonthlySearches),
       competition: metrics.competition ? String(metrics.competition) : null,
-      competitionIndex: Number.isFinite(Number(metrics.competitionIndex)) ? Number(metrics.competitionIndex) : null,
-      lowTopOfPageBidMicros: Number.isFinite(Number(metrics.lowTopOfPageBidMicros)) ? Number(metrics.lowTopOfPageBidMicros) : null,
-      highTopOfPageBidMicros: Number.isFinite(Number(metrics.highTopOfPageBidMicros)) ? Number(metrics.highTopOfPageBidMicros) : null
+      competitionIndex: numeric(metrics.competitionIndex),
+      averageCpcMicros: numeric(metrics.averageCpcMicros),
+      lowTopOfPageBidMicros: numeric(metrics.lowTopOfPageBidMicros),
+      highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros)
     };
   }).filter(item => item.text);
   return { customerId, apiVersion, ideas, fetchedAt: new Date().toISOString() };

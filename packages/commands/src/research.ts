@@ -89,9 +89,7 @@ export const researchCommands = {
     let updated = 0;
     if (input.importKeywords !== false) {
       for (const idea of result.ideas) {
-        const bids = [idea.lowTopOfPageBidMicros, idea.highTopOfPageBidMicros].filter((value): value is number => typeof value === 'number');
-        const cpcMicros = bids.length ? Math.round(bids.reduce((sum, value) => sum + value, 0) / bids.length) : null;
-        const outcome = await upsertKeyword(input.projectId, { text: idea.text, source: 'google_ads', avgMonthly: idea.avgMonthly, competition: idea.competitionIndex === null ? null : idea.competitionIndex / 100, cpcMicros });
+        const outcome = await upsertKeyword(input.projectId, { text: idea.text, source: 'google_ads', avgMonthly: idea.avgMonthly, competition: idea.competitionIndex === null ? null : idea.competitionIndex / 100, cpcMicros: idea.averageCpcMicros });
         if (outcome.created) created++; else updated++;
       }
     }
