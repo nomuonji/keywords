@@ -70,9 +70,10 @@ async function requireSources(projectId: string, sourceIds: string[]) {
   return unique;
 }
 
-async function targetConflictWarnings(projectId: string, keywordIds: string[], clusterId?: string) {
+async function targetConflictWarnings(projectId: string, keywordIds: string[], clusterId?: string | null, excludePageId?: string) {
   const warnings: Array<Record<string, unknown>> = [];
   if (keywordIds.length) {
+    const base = and(eq(schema.pages.projectId, projectId), ne(schema.pages.status, 'archived'), inArray(schema.pageKeywords.keywordId, keywordIds));
     const existing = await db.select({
       keywordId: schema.pageKeywords.keywordId,
       pageId: schema.pages.id,
@@ -81,13 +82,14 @@ async function targetConflictWarnings(projectId: string, keywordIds: string[], c
       role: schema.pageKeywords.role
     }).from(schema.pageKeywords)
       .innerJoin(schema.pages, eq(schema.pageKeywords.pageId, schema.pages.id))
-      .where(and(eq(schema.pages.projectId, projectId), ne(schema.pages.status, 'archived'), inArray(schema.pageKeywords.keywordId, keywordIds)));
+      .where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
     for (const row of existing) warnings.push({ type: 'keyword_target_overlap', severity: 'high', ...row });
   }
   if (clusterId) {
+    const base = and(eq(schema.pages.projectId, projectId), eq(schema.pages.clusterId, clusterId), ne(schema.pages.status, 'archived'));
     const siblings = await db.select({ pageId: schema.pages.id, pageTitle: schema.pages.title, pageStatus: schema.pages.status })
       .from(schema.pages)
-      .where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.clusterId, clusterId), ne(schema.pages.status, 'archived')));
+      .where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
     for (const row of siblings) warnings.push({ type: 'same_cluster_page', severity: 'medium', ...row });
   }
   return warnings;
@@ -220,5 +222,40 @@ export const planningCommands = {
       }));
 
     return { exactTargetConflicts, sameClusterConflicts, checkedPages: pageRows.length, checkedTargets: targetRows.length };
+  }),
+
+  pageReview: async (ctx: CommandContext, input: {
+    projectId: string;
+    pageId: string;
+    verdict: 'approved' | 'rejected' | 'needs_edit';
+    reason?: string;
+    overrideConflicts?: boolean;
+  }) => withRun(projectCtx(ctx, input.projectId), 'page.review', input, async () => {
+    if (ctx.actor !== 'human') throw new Error('Page review requires a human actor');
+    const page = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.id, input.pageId))).get();
+    if (!page) throw new Error('Page not found');
+    const targets = await db.select({ keywordId: schema.pageKeywords.keywordId }).from(schema.pageKeywords).where(eq(schema.pageKeywords.pageId, page.id));
+    const warnings = await targetConflictWarnings(input.projectId, targets.map(row => row.keywordId), page.clusterId, page.id);
+    const blocking = warnings.filter(warning => warning.type === 'keyword_target_overlap');
+    if (input.verdict === 'approved' && blocking.length && !input.overrideConflicts) {
+      throw new Error(`Approval blocked by ${blocking.length} exact keyword target overlap(s). Resolve them or explicitly override with a reason.`);
+    }
+    if (input.verdict === 'approved' && input.overrideConflicts && !input.reason?.trim()) throw new Error('Conflict override requires a reason');
+    const status = input.verdict === 'approved' ? 'approved' : input.verdict === 'rejected' ? 'archived' : 'proposed';
+    await db.update(schema.pages).set({ status, updatedAt: now() }).where(eq(schema.pages.id, page.id));
+    const decision = {
+      id: id(),
+      projectId: input.projectId,
+      actor: ctx.actor,
+      action: 'page.review',
+      targetType: 'page',
+      targetId: page.id,
+      verdict: input.verdict,
+      reason: input.reason?.trim() || null,
+      metadataJson: JSON.stringify({ previousStatus: page.status, status, overrideConflicts: Boolean(input.overrideConflicts), warnings }),
+      createdAt: now()
+    };
+    await db.insert(schema.decisions).values(decision);
+    return { pageId: page.id, status, verdict: input.verdict, warnings, decisionId: decision.id };
   })
 };
