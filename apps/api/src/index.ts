@@ -1,0 +1,38 @@
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { commands } from '@keywords/commands';
+
+const app = new Hono();
+app.use('*', cors());
+app.get('/health', c => c.json({ ok: true }));
+const ctx = (c: any) => ({ actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent', actorId: c.req.header('x-keywords-actor-id') });
+const body = (c: any) => c.req.json();
+
+app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
+app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
+app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
+app.get('/projects/:projectId/topics', async c => c.json(await commands.topic.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/topics', async c => c.json(await commands.topic.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.get('/projects/:projectId/keywords', async c => c.json(await commands.keyword.list(ctx(c), c.req.param('projectId'), c.req.query('status'))));
+app.post('/projects/:projectId/keywords', async c => c.json(await commands.keyword.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/keywords/:keywordId/reject', async c => c.json(await commands.keyword.reject(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), keywordId: c.req.param('keywordId') })));
+app.get('/projects/:projectId/clusters', async c => c.json(await commands.cluster.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/clusters', async c => c.json(await commands.cluster.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/clusters/:clusterId/keywords/:keywordId', async c => c.json(await commands.cluster.addKeyword(ctx(c), { projectId: c.req.param('projectId'), clusterId: c.req.param('clusterId'), keywordId: c.req.param('keywordId') })));
+app.post('/projects/:projectId/clusters/:clusterId/merge', async c => c.json(await commands.cluster.merge(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), targetClusterId: c.req.param('clusterId') })));
+app.get('/projects/:projectId/pages', async c => c.json(await commands.page.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/pages', async c => c.json(await commands.page.propose(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.patch('/projects/:projectId/pages/:pageId/status', async c => c.json(await commands.page.setStatus(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
+app.get('/projects/:projectId/insights', async c => c.json(await commands.insight.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/insights', async c => c.json(await commands.insight.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.get('/projects/:projectId/tasks', async c => c.json(await commands.task.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/tasks', async c => c.json(await commands.task.create(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.patch('/projects/:projectId/tasks/:taskId/status', async c => c.json(await commands.task.setStatus(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), taskId: c.req.param('taskId') })));
+app.get('/projects/:projectId/decisions', async c => c.json(await commands.decision.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/decisions', async c => c.json(await commands.decision.record(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.get('/projects/:projectId/runs', async c => c.json(await commands.run.list(ctx(c), c.req.param('projectId'))));
+app.onError((error, c) => c.json({ error: error instanceof Error ? error.message : String(error) }, 500));
+const port = Number(process.env.KEYWORDS_API_PORT ?? 8787);
+serve({ fetch: app.fetch, port });
+console.log(`Keywords API listening on http://localhost:${port}`);

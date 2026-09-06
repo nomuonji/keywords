@@ -1,49 +1,71 @@
-# Keywords Automation App
+# Keywords â€” Agent-native SEO Workspace
 
-React ŠÇ— UI ‚Æ Express API ‚ğ 1 ‚Â‚Ì Node.js ƒvƒƒWƒFƒNƒg‚É‚Ü‚Æ‚ß‚½\¬‚Å‚·BFirestore ‚ğƒf[ƒ^ƒXƒgƒA‚ÉAGeminiEGoogle Ads APIE“Æ©ƒXƒPƒWƒ…[ƒ‰‚ÅƒL[ƒ[ƒhƒŠƒT[ƒ`?ƒAƒEƒgƒ‰ƒCƒ“¶¬?‹L–“Še‚Ü‚Å‚ğ©“®‰»‚µ‚Ü‚·B
+`keywords` is being rebuilt as a shared SEO workspace for humans and AI agents. The product is no longer a fixed article-generation pipeline. The same domain commands are exposed to the web UI, CLI, and MCP server, so a human click and an agent tool call mutate the same project state.
 
-## ƒfƒBƒŒƒNƒgƒŠ\¬
+## Current scope
 
+- SQL-first storage with SQLite + Drizzle (no Firebase / Firestore)
+- Project, topic, keyword, cluster, page, source, insight, task, decision, and run models
+- Shared command layer with audit logging
+- Hono HTTP API
+- CLI for human/operator workflows
+- MCP server for AI agents
+- React workspace UI: content map, keyword backlog, tasks, decisions, and agent activity
+- Publishing integrations are intentionally out of scope for now
+
+## Architecture
+
+```text
+Human â”€â”€ Web UI â”€â”
+Human â”€â”€ CLI â”€â”€â”€â”€â”¼â”€â”€> @keywords/commands â”€â”€> @keywords/db â”€â”€> SQLite
+Agent â”€â”€ MCP â”€â”€â”€â”€â”˜             â”‚
+                               â””â”€â”€> Run / Decision audit trail
 ```
-index.html          Vite ƒGƒ“ƒgƒŠ
-src/                React + Firebase ŠÇ— UI
-server/             Express API ‚ÆƒXƒPƒWƒ…[ƒ‰AGemini/Ads/Blogger ˜AŒg
-  lib/core          ‹¤—Lƒ†[ƒeƒBƒŠƒeƒB
-  lib/gemini        Gemini ƒNƒ‰ƒCƒAƒ“ƒg
-  lib/ads           ƒL[ƒ[ƒhƒAƒCƒfƒAæ“¾ƒNƒ‰ƒCƒAƒ“ƒg
-  lib/blogger       ‹L–“ŠeƒƒWƒbƒN
-  lib/scheduler     Firestore ‚Æ˜AŒg‚·‚éƒpƒCƒvƒ‰ƒCƒ“
-api/[[...slug]].ts  Vercel Œü‚¯ƒT[ƒoƒŒƒXƒGƒ“ƒgƒŠ (Express app ‚ğƒ‰ƒbƒv)
-vercel.json         Vite o—Íæ (dist/client) ‚ğw’è
+
+The command layer is the product boundary. UI components, scripts, and agents must not write SQL directly.
+
+## Repository layout
+
+```text
+apps/
+  api/       Hono HTTP API
+  cli/       operator CLI
+  mcp/       MCP server for agents
+  web/       React/Vite workspace UI
+packages/
+  domain/    shared domain types
+  db/        Drizzle schema + SQLite bootstrap
+  commands/  domain command handlers + audit log
+skills/      agent-facing operating knowledge
 ```
 
-## ƒXƒNƒŠƒvƒg
+## Run locally
 
-| ƒRƒ}ƒ“ƒh | à–¾ |
-| --- | --- |
-| `npm install` | ˆË‘¶ŠÖŒW‚ğƒCƒ“ƒXƒg[ƒ‹ (•W€İ’è) |
-| `npm run dev` | Vite ŠJ”­ƒT[ƒo (3000) ‚Æ Express API (3001) ‚ğ“¯‹N“® |
-| `npm run build` | ƒT[ƒo (`dist/server`) ‚Æƒtƒƒ“ƒg (`dist/client`) ‚ğƒrƒ‹ƒh |
-| `npm run preview` | ƒrƒ‹ƒhÏ‚İƒtƒƒ“ƒg‚ğƒ[ƒJƒ‹‚ÅŠm”F |
-| `npm run start` | ƒrƒ‹ƒhÏ‚İ Express API ‚ğ‹N“® |
+```bash
+npm install
+cp .env.example .env
+npm run db:init
+npm run dev
+```
 
-`scripts/test-google-ads.js` ‚â `test.js` ‚Í `npm run build` Ï‚İ‚Ì¬‰Ê•¨‚ğ—Dæ‚µAƒrƒ‹ƒh‘O‚Í `ts-node` ‚ğg‚Á‚Ä TypeScript ƒ\[ƒX‚ğ“Ç‚İ‚İ‚Ü‚·B
+- Web: http://localhost:5173
+- API: http://localhost:8787
 
-## ŠJ”­è‡
+Create a project from the CLI:
 
-1. `.env` ‚É FirebaseEGeminiEFirestoreEGoogle Ads ‚È‚Ç‚ÌƒT[ƒoŠÂ‹«•Ï”‚ğİ’è‚µ‚Ü‚·B
-2. `src/lib/firebase.ts` ‚ÅQÆ‚·‚é Vite —p‚Ì’l‚Í `.env.local` ‚È‚Ç‚É `VITE_FIREBASE_*`A`VITE_API_BASE_URL` (”CˆÓA–¢İ’è‚È‚ç `/api`) ‚ğ‹Lq‚µ‚Ü‚·B
-3. `npm run dev` ‚ğÀs‚·‚é‚ÆAVite (http://localhost:3000) ‚ª `/api` ‚ğ http://localhost:3001 ‚ÖƒvƒƒLƒV‚µAReact UI ‚©‚ç API ‚ğ’@‚¯‚Ü‚·B
+```bash
+npm run cli -- project create "My SEO Project" --domain example.com
+npm run cli -- project list
+```
 
-## ƒfƒvƒƒC (Vercel)
+Run the MCP server:
 
-1. `npm install` ¨ `npm run build` ‚ªƒfƒtƒHƒ‹ƒg‚ÅÀs‚³‚êA`dist/client` ‚Éƒtƒƒ“ƒgA`dist/server` ‚É Express{ƒXƒPƒWƒ…[ƒ‰‚ªo—Í‚³‚ê‚Ü‚·B
-2. `vercel.json` ‚Ì `outputDirectory` ‚Í `dist/client` ‚Éİ’èÏ‚İ‚Å‚·B
-3. `api/[[...slug]].ts` ‚Íƒrƒ‹ƒhÏ‚İ‚Ì `dist/server/app.js` ‚ğ“Ç‚İ‚İAVercel ã‚Ì `/api/*` ƒŠƒNƒGƒXƒg‚ğ Express ‚ÉˆÏ÷‚µ‚Ü‚·Bƒrƒ‹ƒh‘O‚ÉƒfƒvƒƒC‚·‚é‚Æ 500 ‚É‚È‚é‚½‚ßA•K‚¸ `npm run build` ‚ğŠ®—¹‚³‚¹‚Ä‚­‚¾‚³‚¢B
-4. FirebaseEGeminiEGoogle AdsETavily ‚È‚Ç‚ÌŠÂ‹«•Ï”‚ğ Vercel ƒvƒƒWƒFƒNƒg‚Öİ’è‚µ‚Ü‚·B
+```bash
+npm run mcp
+```
 
-## Firestore / ‹@”\
+## Agent model
 
-- ƒvƒƒWƒFƒNƒgEƒe[ƒ}Eƒm[ƒhEƒL[ƒ[ƒhEƒNƒ‰ƒXƒ^EƒŠƒ“ƒNEƒWƒ‡ƒu‚Æ‚¢‚Á‚½ƒhƒLƒ…ƒƒ“ƒg\¬‚Í]—ˆ‚Ì‚Ü‚Ü‚Å‚·B
-- React UI ‚©‚ç‚Ì‘€ì‚Í‚·‚×‚Ä `/api/projects/...` ”z‰º‚Ì Express ƒ‹[ƒg‚Ö‘—M‚³‚êAƒT[ƒo‘¤‚Å Firestore / Gemini / Ads / Blogger ƒƒWƒbƒN‚ğÀs‚µ‚Ü‚·B
-- ƒXƒPƒWƒ…[ƒ‰‚ÌƒpƒCƒvƒ‰ƒCƒ“ (ƒAƒCƒfƒAæ“¾¨ƒNƒ‰ƒXƒ^ƒŠƒ“ƒO¨ƒXƒRƒAƒŠƒ“ƒO¨ƒAƒEƒgƒ‰ƒCƒ“¨“à•”ƒŠƒ“ƒN¨ƒuƒƒO“Še) ‚à]—ˆ’Ê‚è `server/lib/scheduler` ‚É‚Ü‚Æ‚Ü‚Á‚Ä‚¢‚Ü‚·B
+Agents should follow an observe â†’ decide â†’ command â†’ observe loop. They can read project state freely and make reversible workspace edits. External publishing and destructive operations will later require explicit approval gates.
+
+Human decisions are stored in `decisions` and every command execution is recorded in `runs`. These records are intended to become the feedback source for project-specific skills and policies.
