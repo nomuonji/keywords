@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
+import { policyCommands } from '@keywords/commands/policy';
 
 const app = new Hono();
 app.use('*', cors());
@@ -13,6 +14,11 @@ const body = (c: any) => c.req.json();
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
+app.get('/projects/:projectId/policies/context', async c => c.json(await policyCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('decisions') ?? 30))));
+app.get('/projects/:projectId/policies', async c => c.json(await policyCommands.list(ctx(c), c.req.param('projectId'), c.req.query('status'))));
+app.post('/projects/:projectId/policies', async c => c.json(await policyCommands.propose(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
+app.post('/projects/:projectId/policies/:policyId/review', async c => c.json(await policyCommands.review(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), policyId: c.req.param('policyId') })));
+app.post('/projects/:projectId/policies/:policyId/retire', async c => c.json(await policyCommands.retire(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), policyId: c.req.param('policyId') })));
 app.get('/projects/:projectId/research/context', async c => c.json(await commands.research.context(ctx(c), c.req.param('projectId'))));
 app.get('/projects/:projectId/research/opportunities', async c => c.json(await commands.research.opportunities(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 25))));
 app.get('/projects/:projectId/sources', async c => c.json(await commands.source.list(ctx(c), c.req.param('projectId'), c.req.query('type'))));
@@ -32,7 +38,6 @@ app.post('/projects/:projectId/clusters/:clusterId/keywords/:keywordId', async c
 app.post('/projects/:projectId/clusters/:clusterId/keywords', async c => c.json(await planningCommands.clusterBulkAssign(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), clusterId: c.req.param('clusterId') })));
 app.post('/projects/:projectId/clusters/:clusterId/merge', async c => c.json(await commands.cluster.merge(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId'), targetClusterId: c.req.param('clusterId') })));
 app.get('/projects/:projectId/pages', async c => c.json(await commands.page.list(ctx(c), c.req.param('projectId'))));
-app.post('/projects/:projectId/pages', async c => c.json(await commands.page.propose(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/projects/:projectId/pages/plan', async c => c.json(await planningCommands.pagePlan(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.get('/projects/:projectId/pages/cannibalization', async c => c.json(await planningCommands.pageCannibalization(ctx(c), { projectId: c.req.param('projectId'), limit: Number(c.req.query('limit') ?? 50) })));
 app.get('/projects/:projectId/pages/:pageId/targets', async c => c.json(await planningCommands.pageTargets(ctx(c), { projectId: c.req.param('projectId'), pageId: c.req.param('pageId') })));
