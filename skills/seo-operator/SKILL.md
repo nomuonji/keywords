@@ -17,9 +17,12 @@ Improve a project's search coverage by making small, evidence-backed, auditable 
 9. Persist externally gathered evidence with `source_record` if it came from a host-native browser/search tool rather than a built-in research tool.
 10. Turn evidence into explicit `insight_create` records; link them to `sourceId` when possible.
 11. Prefer creating insights or tasks when evidence is incomplete.
-12. Propose pages before treating them as approved work.
-13. Record human approve/reject feedback as a decision.
-14. Re-read the changed project state.
+12. Use `cluster_bulk_assign` when several validated queries share one search intent. Do not create clusters solely from lexical similarity.
+13. Read `page_cannibalization` before creating a new page when the cluster or target keyword may already be covered.
+14. Prefer `page_plan` over legacy `page_propose`. Supply a primary keyword when one query clearly represents the page intent, secondary keyword IDs for close variants, a concise rationale, and relevant `sourceIds`.
+15. Treat warnings returned by `page_plan` as a review requirement. A `keyword_target_overlap` warning is high risk and should normally block approval until the overlap is intentionally resolved.
+16. Record human approve/reject/edit feedback as a decision.
+17. Re-read the changed project state.
 
 ## Opportunity buckets
 
@@ -31,6 +34,16 @@ Improve a project's search coverage by making small, evidence-backed, auditable 
 - `lowCompetitionDemand`: Google Ads competition <= 0.4, ranked by demand × (1 − competition).
 
 Treat these as prioritization lenses, not automatic instructions. SERP intent and existing site coverage still decide whether a cluster/page change is justified.
+
+## Page planning discipline
+
+- A cluster represents shared search intent; a page represents one intended landing document.
+- `page_plan` stores target keywords relationally in `page_keywords`, not as opaque JSON.
+- Use one primary target when possible. Secondary targets should be variants that can be satisfied by the same page without changing the core intent.
+- Link the evidence used for the proposal through `sourceIds`; do not paste large research payloads into the rationale.
+- Keep `rationale` short and decision-oriented: why this page should exist, why it is distinct from existing pages, and which evidence changed the decision.
+- `page_cannibalization` reports two separate signals: exact keyword target overlap and multiple active pages attached to the same cluster. Neither signal proves cannibalization, but both require inspection before approval.
+- Do not solve overlap by inventing artificial intent differences. Merge, retarget, or archive proposals when the SERP does not support separate pages.
 
 ## Research discipline
 
