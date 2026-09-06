@@ -3,14 +3,17 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
+import { policyCommands } from '@keywords/commands/policy';
 
 const ctx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
-const server = new Server({ name: 'keywords', version: '0.4.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'keywords', version: '0.5.0' }, { capabilities: { tools: {} } });
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const tools = [
   { name: 'project_list', description: 'List SEO projects', inputSchema: s('No input', {}) },
   { name: 'project_snapshot', description: 'Read a compact project snapshot before deciding what to do', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'policy_context', description: 'Read active project-specific operating rules, policy candidates, and recent human decisions before planning work', inputSchema: s('Policy context', { projectId: { type: 'string' }, recentDecisionLimit: { type: 'number' } }, ['projectId']) },
+  { name: 'policy_propose', description: 'Propose a durable project rule backed by one or more decision IDs. Human review is required before it becomes active.', inputSchema: s('Policy candidate', { projectId: { type: 'string' }, scope: { type: 'string' }, rule: { type: 'string' }, rationale: { type: 'string' }, sourceDecisionIds: { type: 'array', items: { type: 'string' } } }, ['projectId','rule','sourceDecisionIds']) },
   { name: 'research_context', description: 'Read keywords, unclustered backlog, insights, and recent research sources in one compact context', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
   { name: 'opportunity_context', description: 'Read compact ranked SEO opportunities derived from normalized Google Ads and Search Console metrics', inputSchema: s('Opportunity context', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'source_list', description: 'List stored research sources, optionally filtered by source type', inputSchema: s('Sources', { projectId: { type: 'string' }, type: { type: 'string' } }, ['projectId']) },
@@ -27,7 +30,6 @@ const tools = [
   { name: 'cluster_add_keyword', description: 'Move a keyword into a cluster', inputSchema: s('Assignment', { projectId: { type: 'string' }, clusterId: { type: 'string' }, keywordId: { type: 'string' } }, ['projectId','clusterId','keywordId']) },
   { name: 'cluster_bulk_assign', description: 'Move many project keywords into one cluster in a single audited command', inputSchema: s('Bulk cluster assignment', { projectId: { type: 'string' }, clusterId: { type: 'string' }, keywordIds: { type: 'array', items: { type: 'string' } } }, ['projectId','clusterId','keywordIds']) },
   { name: 'page_list', description: 'List proposed/approved/archived pages', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
-  { name: 'page_propose', description: 'Legacy lightweight page proposal without explicit targets', inputSchema: s('Page proposal', { projectId: { type: 'string' }, title: { type: 'string' }, slug: { type: 'string' }, clusterId: { type: 'string' }, kind: { type: 'string' } }, ['projectId','title']) },
   { name: 'page_plan', description: 'Create an evidence-backed page proposal with primary/secondary keyword targets and cannibalization warnings', inputSchema: s('Page plan', { projectId: { type: 'string' }, title: { type: 'string' }, slug: { type: 'string' }, clusterId: { type: 'string' }, kind: { type: 'string' }, rationale: { type: 'string' }, primaryKeywordId: { type: 'string' }, secondaryKeywordIds: { type: 'array', items: { type: 'string' } }, sourceIds: { type: 'array', items: { type: 'string' } } }, ['projectId','title']) },
   { name: 'page_targets', description: 'Inspect one page proposal together with explicit keyword targets and linked evidence IDs', inputSchema: s('Page targets', { projectId: { type: 'string' }, pageId: { type: 'string' } }, ['projectId','pageId']) },
   { name: 'page_cannibalization', description: 'Detect multiple non-archived pages targeting the same keyword or sharing one content cluster', inputSchema: s('Cannibalization', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
@@ -43,6 +45,8 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
   switch (request.params.name) {
     case 'project_list': return text(await commands.project.list(ctx));
     case 'project_snapshot': return text(await commands.project.snapshot(ctx, a.projectId));
+    case 'policy_context': return text(await policyCommands.context(ctx, a.projectId, a.recentDecisionLimit));
+    case 'policy_propose': return text(await policyCommands.propose(ctx, a));
     case 'research_context': return text(await commands.research.context(ctx, a.projectId));
     case 'opportunity_context': return text(await commands.research.opportunities(ctx, a.projectId, a.limit));
     case 'source_list': return text(await commands.source.list(ctx, a.projectId, a.type));
@@ -59,7 +63,6 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'cluster_add_keyword': return text(await commands.cluster.addKeyword(ctx, a));
     case 'cluster_bulk_assign': return text(await planningCommands.clusterBulkAssign(ctx, a));
     case 'page_list': return text(await commands.page.list(ctx, a.projectId));
-    case 'page_propose': return text(await commands.page.propose(ctx, a));
     case 'page_plan': return text(await planningCommands.pagePlan(ctx, a));
     case 'page_targets': return text(await planningCommands.pageTargets(ctx, a));
     case 'page_cannibalization': return text(await planningCommands.pageCannibalization(ctx, a));
