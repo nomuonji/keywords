@@ -13,10 +13,11 @@
 - Evidence-backed page planning with primary/secondary keyword targets
 - Cannibalization review for exact target overlap and multiple pages in one cluster
 - Bulk keyword-to-cluster assignment
+- Human-only page review/approval with conflict blocking and decision logging
 - Hono HTTP API
 - CLI for human/operator workflows
 - MCP server for AI agents
-- React workspace UI: content map, keyword backlog, page plans, overlap review, tasks, decisions, evidence, and agent activity
+- React workspace UI: content map, keyword backlog, page plans, overlap review, human review controls, tasks, decisions, evidence, and agent activity
 - Publishing integrations are intentionally out of scope for now
 
 ## Architecture
@@ -29,7 +30,7 @@ Human ── CLI ────┼────────────────
 Agent ── MCP ────┘                                 └──> Run / Decision audit trail
 ```
 
-`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail. The stricter content-planning surface is exported as `@keywords/commands/planning` while the original lightweight page commands remain available for compatibility.
+`@keywords/research` performs external reads only. `@keywords/commands` remains the mutation boundary and persists normalized research into `sources`, `keywords`, and the audit trail. The stricter content-planning surface is exported as `@keywords/commands/planning` while the original lightweight page commands remain internal compatibility code.
 
 ## Repository layout
 
@@ -154,7 +155,23 @@ The check reports:
 
 These are review signals, not proof of SEO cannibalization. SERP intent still determines whether pages should be merged, retargeted, or intentionally kept separate.
 
-Equivalent MCP tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`.
+Agents stop at proposal creation. There is intentionally no MCP approval tool. Human review is available in the web workspace and CLI:
+
+```bash
+npm run cli -- page review <projectId> <pageId> approved
+npm run cli -- page review <projectId> <pageId> rejected --reason "Duplicate intent"
+npm run cli -- page review <projectId> <pageId> needs_edit --reason "Separate transactional intent first"
+```
+
+Normal approval is blocked if another non-archived page explicitly targets the same keyword. A human can override only explicitly and with a recorded reason:
+
+```bash
+npm run cli -- page review <projectId> <pageId> approved --override-conflicts --reason "Intentional canonical/variant split"
+```
+
+Every review writes a `decision` record. The public HTTP API also routes page state changes through `/projects/:projectId/pages/:pageId/review`; the old direct page-status endpoint is not exposed.
+
+Equivalent MCP planning tools are `cluster_bulk_assign`, `page_plan`, `page_targets`, and `page_cannibalization`.
 
 Run the MCP server:
 
