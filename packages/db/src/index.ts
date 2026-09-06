@@ -17,8 +17,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS keywords_project_normalized_idx ON keywords(pr
 CREATE TABLE IF NOT EXISTS clusters (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, title TEXT NOT NULL, intent TEXT NOT NULL DEFAULT 'mixed', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cluster_keywords (cluster_id TEXT NOT NULL REFERENCES clusters(id) ON DELETE CASCADE, keyword_id TEXT NOT NULL REFERENCES keywords(id) ON DELETE CASCADE, PRIMARY KEY(cluster_id, keyword_id));
 CREATE UNIQUE INDEX IF NOT EXISTS cluster_keyword_single_owner_idx ON cluster_keywords(keyword_id);
-CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, cluster_id TEXT REFERENCES clusters(id) ON DELETE SET NULL, title TEXT NOT NULL, slug TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'article', status TEXT NOT NULL DEFAULT 'proposed', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS pages (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, cluster_id TEXT REFERENCES clusters(id) ON DELETE SET NULL, title TEXT NOT NULL, slug TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'article', status TEXT NOT NULL DEFAULT 'proposed', rationale TEXT, evidence_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS pages_project_slug_idx ON pages(project_id, slug);
+CREATE TABLE IF NOT EXISTS page_keywords (page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE, keyword_id TEXT NOT NULL REFERENCES keywords(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'secondary', PRIMARY KEY(page_id, keyword_id));
+CREATE INDEX IF NOT EXISTS page_keywords_keyword_idx ON page_keywords(keyword_id);
 CREATE TABLE IF NOT EXISTS sources (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, type TEXT NOT NULL, label TEXT NOT NULL, url TEXT, metadata_json TEXT, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS insights (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, type TEXT NOT NULL, text TEXT NOT NULL, confidence REAL, status TEXT NOT NULL DEFAULT 'open', source_id TEXT REFERENCES sources(id) ON DELETE SET NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, title TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'todo', priority INTEGER NOT NULL DEFAULT 50, assignee_type TEXT NOT NULL DEFAULT 'agent', related_type TEXT, related_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -42,6 +44,8 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   ensureColumn(sqlite, 'keywords', 'gsc_ctr', 'gsc_ctr REAL');
   ensureColumn(sqlite, 'keywords', 'gsc_position', 'gsc_position REAL');
   ensureColumn(sqlite, 'keywords', 'gsc_updated_at', 'gsc_updated_at TEXT');
+  ensureColumn(sqlite, 'pages', 'rationale', 'rationale TEXT');
+  ensureColumn(sqlite, 'pages', 'evidence_json', 'evidence_json TEXT');
   const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
