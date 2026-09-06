@@ -13,6 +13,7 @@ app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
 app.get('/projects/:projectId/research/context', async c => c.json(await commands.research.context(ctx(c), c.req.param('projectId'))));
+app.get('/projects/:projectId/research/opportunities', async c => c.json(await commands.research.opportunities(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 25))));
 app.get('/projects/:projectId/sources', async c => c.json(await commands.source.list(ctx(c), c.req.param('projectId'), c.req.query('type'))));
 app.post('/projects/:projectId/sources', async c => c.json(await commands.source.record(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/projects/:projectId/research/web', async c => c.json(await commands.research.webFetch(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
