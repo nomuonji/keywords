@@ -76,19 +76,20 @@ function reserveExternalRequest(ctx: CommandContext, job: typeof schema.discover
   requireExecutionLease(ctx, job);
   const tx = sqlite.transaction(() => {
     const existing = sqlite.prepare('SELECT * FROM discovery_request_reservations WHERE job_id = ? AND request_key = ?').get(job.id, key) as Reservation | undefined;
-    if (existing) return { reservation: existing, cached: existing.status === 'succeeded' };
+    if (existing) return { reservation: existing, cached: existing.status === 'succeeded', created: false };
     const t = now();
     const updated = sqlite.prepare("UPDATE discovery_jobs SET external_requests_used = external_requests_used + 1, updated_at = ? WHERE id = ? AND project_id = ? AND status = 'running' AND external_requests_used < max_external_requests").run(t, job.id, job.projectId);
     if (updated.changes !== 1) throw new Error(`Discovery external request budget exhausted for job ${job.id}`);
     const row: Reservation = { id: id(), project_id: job.projectId, job_id: job.id, provider, request_key: key, status: 'reserved', source_id: null, error: null, reserved_at: t, settled_at: null };
     sqlite.prepare('INSERT INTO discovery_request_reservations (id, project_id, job_id, provider, request_key, status, source_id, error, reserved_at, settled_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(row.id, row.project_id, row.job_id, row.provider, row.request_key, row.status, row.source_id, row.error, row.reserved_at, row.settled_at);
-    return { reservation: row, cached: false };
+    return { reservation: row, cached: false, created: true };
   });
   const result = tx();
-  if (result.reservation.status === 'reserved' && result.cached === false && result.reservation.reserved_at !== undefined) return result;
+  if (result.created) return result;
+  if (result.reservation.status === 'succeeded') return { ...result, cached: true };
   if (result.reservation.status === 'failed') throw new Error('This idempotency key already failed. Supply a new idempotencyKey to retry the external request.');
   if (result.reservation.status === 'reserved') throw new Error('This external request is already in progress for the same idempotency key.');
-  return result;
+  throw new Error(`Unsupported request reservation status: ${result.reservation.status}`);
 }
 function settleReservation(reservationId: string, status: 'succeeded' | 'failed', sourceId?: string | null, error?: unknown) {
   const t = now();
@@ -172,7 +173,7 @@ async function importCandidateRows(ctx: CommandContext, job: typeof schema.disco
 }
 
 async function progressSummary(job: typeof schema.discoveryJobs.$inferSelect, candidates: Array<typeof schema.discoveryCandidates.$inferSelect>) {
-  const origins = await db.select().from(schema.decisions).where(and(eq(schema.decisions.projectId, job.projectId), eq(schema.decisions.action, 'discovery.candidate_origin'), inArray(schema.decisions.targetId, candidates.map(c => c.id).filter(Boolean))));
+  const origins = candidates.length ? await db.select().from(schema.decisions).where(and(eq(schema.decisions.projectId, job.projectId), eq(schema.decisions.action, 'discovery.candidate_origin'), inArray(schema.decisions.targetId, candidates.map(c => c.id)))) : [];
   const ruleRejects = await db.select().from(schema.decisions).where(and(eq(schema.decisions.projectId, job.projectId), eq(schema.decisions.action, 'discovery.rule_reject'), eq(schema.decisions.targetId, job.id)));
   const reservations = await db.select().from(schema.discoveryRequestReservations).where(eq(schema.discoveryRequestReservations.jobId, job.id)).orderBy(desc(schema.discoveryRequestReservations.reservedAt));
   return {
