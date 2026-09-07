@@ -77,7 +77,43 @@ export const reviewRequests = sqliteTable('review_requests', {
 });
 
 export const discoveryJobs = sqliteTable('discovery_jobs', {
-  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), seedKeywordsJson: text('seed_keywords_json').notNull(), targetUrl: text('target_url'), goal: text('goal').notNull(), language: text('language').notNull(), country: text('country').notNull(), region: text('region'), excludedTermsJson: text('excluded_terms_json'), maxCandidates: integer('max_candidates').notNull().default(50), maxExternalRequests: integer('max_external_requests').notNull().default(8), externalRequestsUsed: integer('external_requests_used').notNull().default(0), status: text('status').notNull().default('waiting_for_agent'), taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }), workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }), startedAt: text('started_at'), completedAt: text('completed_at'), error: text('error'), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull()
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  seedKeywordsJson: text('seed_keywords_json').notNull(),
+  targetUrl: text('target_url'),
+  goal: text('goal').notNull(),
+  language: text('language').notNull(),
+  country: text('country').notNull(),
+  region: text('region'),
+  excludedTermsJson: text('excluded_terms_json'),
+  maxCandidates: integer('max_candidates').notNull().default(50),
+  candidateWritesUsed: integer('candidate_writes_used').notNull().default(0),
+  maxExternalRequests: integer('max_external_requests').notNull().default(8),
+  externalRequestsUsed: integer('external_requests_used').notNull().default(0),
+  status: text('status').notNull().default('waiting_for_agent'),
+  taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+  workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }),
+  executorId: text('executor_id'),
+  heartbeatAt: text('heartbeat_at'),
+  leaseExpiresAt: text('lease_expires_at'),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  error: text('error'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
+});
+
+export const discoveryRequestReservations = sqliteTable('discovery_request_reservations', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  jobId: text('job_id').notNull().references(() => discoveryJobs.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  requestKey: text('request_key').notNull(),
+  status: text('status').notNull().default('reserved'),
+  sourceId: text('source_id').references(() => sources.id, { onDelete: 'set null' }),
+  error: text('error'),
+  reservedAt: text('reserved_at').notNull(),
+  settledAt: text('settled_at')
 });
 
 export const discoveryCandidates = sqliteTable('discovery_candidates', {
