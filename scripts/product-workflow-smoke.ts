@@ -57,7 +57,7 @@ await discoveryCommands.bulkReviewCandidates(human, { projectId: project.id, can
 detail = await discoveryCommands.detail(human, { projectId: project.id, jobId: started.job.id });
 if (detail.job.status !== 'completed') throw new Error('Human discovery review did not complete');
 
-const filtered = await workspaceCommands.keywordSearch(human, { projectId: project.id, candidateStatus: 'shortlisted', provider: 'smoke', existingPage: 'without', researchStatus: 'unresearched', sort: 'keyword_asc', limit: 10, offset: 0 });
+const filtered = await workspaceCommands.keywordSearch(human, { projectId: project.id, candidateStatus: 'shortlisted', provider: 'smoke', existingPage: 'without', researchStatus: 'researched', sort: 'keyword_asc', limit: 10, offset: 0 });
 if (filtered.total !== 1 || filtered.items[0].keyword.id !== primaryCandidate.keywordId) throw new Error('Keyword workspace filtering failed');
 const keywordDetail = await workspaceCommands.keywordDetail(human, { projectId: project.id, keywordId: primaryCandidate.keywordId });
 if (!keywordDetail.candidates.length || !keywordDetail.evidence.length || !keywordDetail.decisions.some(d => d.verdict === 'shortlisted')) throw new Error('Keyword detail history/evidence failed');
