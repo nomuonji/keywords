@@ -313,11 +313,15 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 
 - SERP: `KEYWORDS_SERPER_API_KEY` / `SERPER_API_KEY`
 - Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
+- Google Ads OAuth refresh: `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`
+- Google Ads proxy fallback: `GOOGLE_ADS_KEYWORD_VOLUME_API_URL` (or existing `KEYWORD_VOLUME_API_URL`)
 - Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
 - shared Google OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
 - scheduler: `KEYWORDS_OPERATOR_INTERVAL_MINUTES`, `KEYWORDS_OPERATOR_RUN_ON_START`
 
 OAuth refresh/token issuance remains outside workspace persistence.
+
+The API loads the repository `.env` on startup. Google Ads uses the direct API when valid credentials are available and falls back to the configured keyword-volume proxy for seed-keyword research when direct OAuth or customer access is unavailable. Credentials remain environment-only.
 
 # Verification
 

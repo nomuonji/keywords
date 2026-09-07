@@ -8,6 +8,12 @@ const id = () => crypto.randomUUID();
 const projectCtx = (ctx: CommandContext, projectId: string): CommandContext => ({ ...ctx, projectId });
 const parseStrings = (value: string | null) => { try { const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } };
 const parseArray = (value: string | null) => { try { const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } };
+const googleAdsConfigured = () => Boolean(
+  (process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL ?? process.env.KEYWORD_VOLUME_API_URL)
+  || ((process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || (process.env.GOOGLE_ADS_REFRESH_TOKEN || process.env.ADS_REFRESH_TOKEN) && (process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID) && (process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET))
+    && (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || process.env.ADS_DEVELOPER_TOKEN)
+    && (process.env.GOOGLE_ADS_CUSTOMER_ID || process.env.ADS_CUSTOMER_ID))
+);
 
 async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
   const runId = id(); const started = Date.now(); const createdAt = now();
@@ -40,7 +46,7 @@ function briefView(project: typeof schema.projects.$inferSelect) {
 
 const providerConfig = () => ({
   serp: Boolean(process.env.KEYWORDS_SERPER_API_KEY || process.env.SERPER_API_KEY),
-  google_ads: Boolean((process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN) && process.env.GOOGLE_ADS_DEVELOPER_TOKEN && process.env.GOOGLE_ADS_CUSTOMER_ID),
+  google_ads: googleAdsConfigured(),
   search_console: Boolean((process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN) && process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL),
   sitemap: true,
   public_web: true

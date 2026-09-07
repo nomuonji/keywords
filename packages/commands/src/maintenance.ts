@@ -5,6 +5,12 @@ import type { CommandContext } from '@keywords/domain';
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
+const googleAdsConfigured = () => Boolean(
+  (process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL ?? process.env.KEYWORD_VOLUME_API_URL)
+  || ((process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || (process.env.GOOGLE_ADS_REFRESH_TOKEN || process.env.ADS_REFRESH_TOKEN) && (process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID) && (process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET))
+    && (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || process.env.ADS_DEVELOPER_TOKEN)
+    && (process.env.GOOGLE_ADS_CUSTOMER_ID || process.env.ADS_CUSTOMER_ID))
+);
 
 async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
   const runId = id(); const started = Date.now(); const createdAt = now();
@@ -31,7 +37,7 @@ export const maintenanceCommands = {
       runtime: { node: process.version, cwd: process.cwd(), platform: process.platform },
       providers: {
         serpConfigured: Boolean(process.env.KEYWORDS_SERPER_API_KEY || process.env.SERPER_API_KEY),
-        googleAdsConfigured: Boolean((process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN) && process.env.GOOGLE_ADS_DEVELOPER_TOKEN && process.env.GOOGLE_ADS_CUSTOMER_ID),
+        googleAdsConfigured: googleAdsConfigured(),
         searchConsoleConfigured: Boolean((process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN) && process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL)
       },
       counts: { projects: Number(projects?.value ?? 0), keywords: Number(keywords?.value ?? 0), discoveryJobs: Number(jobs?.value ?? 0), sources: Number(sources?.value ?? 0) }

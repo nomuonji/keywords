@@ -175,6 +175,55 @@ export interface GoogleAdsKeywordIdeaResult {
   fetchedAt: string;
 }
 
+function googleAdsRefreshCredentials() {
+  const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN ?? process.env.ADS_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_ADS_CLIENT_ID ?? process.env.ADS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_ADS_CLIENT_SECRET ?? process.env.ADS_CLIENT_SECRET;
+  return refreshToken && clientId && clientSecret ? { refreshToken, clientId, clientSecret } : null;
+}
+
+async function googleAdsAccessToken() {
+  const configured = process.env.GOOGLE_ADS_ACCESS_TOKEN ?? process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+  if (configured) return configured;
+  const credentials = googleAdsRefreshCredentials();
+  if (!credentials) throw new Error('Google Ads OAuth credentials are required');
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: credentials.clientId, client_secret: credentials.clientSecret, refresh_token: credentials.refreshToken, grant_type: 'refresh_token' }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
+  if (!response.ok || !body.access_token) throw new Error(`Google OAuth token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
+  return body.access_token;
+}
+
+function googleAdsProxyUrl() {
+  return process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL ?? process.env.KEYWORD_VOLUME_API_URL;
+}
+
+async function googleAdsKeywordIdeasViaProxy(input: { seedKeywords?: string[]; languageId?: string; geoTargetIds?: string[] }, endpoint: string): Promise<GoogleAdsKeywordIdeaResult> {
+  const response = await jsonRequest<Record<string, any>>(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      keywords: (input.seedKeywords ?? []).map(value => value.trim()).filter(Boolean),
+      options: { languageConstant: input.languageId ?? '1005', geoTargetConstants: input.geoTargetIds?.length ? input.geoTargetIds : ['2392'], includeAdultKeywords: false }
+    })
+  });
+  const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const ideas = Object.values(response).map((item: any): GoogleAdsKeywordIdea => ({
+    text: String(item.keywordText ?? ''),
+    avgMonthly: numeric(item.avgMonthlySearches),
+    competition: item.competitionLevel ? String(item.competitionLevel) : item.competition === undefined || item.competition === null ? null : String(item.competition),
+    competitionIndex: numeric(item.competitionIndex),
+    averageCpcMicros: numeric(item.averageCpcMicros),
+    lowTopOfPageBidMicros: numeric(item.lowTopOfPageBidMicros),
+    highTopOfPageBidMicros: numeric(item.highTopOfPageBidMicros)
+  })).filter(item => item.text);
+  return { customerId: 'proxy', apiVersion: 'keyword-volume-proxy', ideas, fetchedAt: new Date().toISOString() };
+}
+
 export async function googleAdsKeywordIdeas(input: {
   customerId?: string;
   seedKeywords?: string[];
@@ -183,13 +232,29 @@ export async function googleAdsKeywordIdeas(input: {
   geoTargetIds?: string[];
   network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS';
 }): Promise<GoogleAdsKeywordIdeaResult> {
-  const customerId = (input.customerId ?? process.env.GOOGLE_ADS_CUSTOMER_ID ?? '').replaceAll('-', '');
-  if (!customerId) throw new Error('Google Ads customer ID is required (input.customerId or GOOGLE_ADS_CUSTOMER_ID)');
-  const accessToken = env('GOOGLE_ADS_ACCESS_TOKEN', 'GOOGLE_OAUTH_ACCESS_TOKEN');
-  const developerToken = env('GOOGLE_ADS_DEVELOPER_TOKEN');
-  const apiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
   const seedKeywords = (input.seedKeywords ?? []).map(value => value.trim()).filter(Boolean);
   if (!seedKeywords.length && !input.url) throw new Error('At least one seed keyword or URL is required');
+  const customerId = (input.customerId ?? process.env.GOOGLE_ADS_CUSTOMER_ID ?? process.env.ADS_CUSTOMER_ID ?? '').replaceAll('-', '');
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? process.env.ADS_DEVELOPER_TOKEN;
+  const proxyUrl = googleAdsProxyUrl();
+  const directConfigured = Boolean(customerId && developerToken && (process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || googleAdsRefreshCredentials()));
+  if (!directConfigured && proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
+  let accessToken: string;
+  try {
+    accessToken = await googleAdsAccessToken();
+  } catch (error) {
+    if (proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
+    throw error;
+  }
+  if (!customerId) {
+    if (proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
+    throw new Error('Google Ads customer ID is required (input.customerId or GOOGLE_ADS_CUSTOMER_ID)');
+  }
+  if (!developerToken) {
+    if (proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
+    throw new Error('Google Ads developer token is required (GOOGLE_ADS_DEVELOPER_TOKEN)');
+  }
+  const apiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
   const payload: Record<string, unknown> = {
     includeAdultKeywords: false,
     keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH',
@@ -207,25 +272,30 @@ export async function googleAdsKeywordIdeas(input: {
     'developer-token': developerToken,
     'content-type': 'application/json'
   };
-  const loginCustomerId = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID?.replaceAll('-', '');
+  const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? process.env.ADS_LOGIN_CUSTOMER_ID)?.replaceAll('-', '');
   if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
-  const raw = await jsonRequest<{ results?: any[] }>(`https://googleads.googleapis.com/${apiVersion}/customers/${customerId}:generateKeywordIdeas`, {
-    method: 'POST', headers, body: JSON.stringify(payload)
-  });
-  const ideas = (raw.results ?? []).map((item: any): GoogleAdsKeywordIdea => {
-    const metrics = item.keywordIdeaMetrics ?? {};
-    const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
-    return {
-      text: String(item.text ?? ''),
-      avgMonthly: numeric(metrics.avgMonthlySearches),
-      competition: metrics.competition ? String(metrics.competition) : null,
-      competitionIndex: numeric(metrics.competitionIndex),
-      averageCpcMicros: numeric(metrics.averageCpcMicros),
-      lowTopOfPageBidMicros: numeric(metrics.lowTopOfPageBidMicros),
-      highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros)
-    };
-  }).filter(item => item.text);
-  return { customerId, apiVersion, ideas, fetchedAt: new Date().toISOString() };
+  try {
+    const raw = await jsonRequest<{ results?: any[] }>(`https://googleads.googleapis.com/${apiVersion}/customers/${customerId}:generateKeywordIdeas`, {
+      method: 'POST', headers, body: JSON.stringify(payload)
+    });
+    const ideas = (raw.results ?? []).map((item: any): GoogleAdsKeywordIdea => {
+      const metrics = item.keywordIdeaMetrics ?? {};
+      const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+      return {
+        text: String(item.text ?? ''),
+        avgMonthly: numeric(metrics.avgMonthlySearches),
+        competition: metrics.competition ? String(metrics.competition) : null,
+        competitionIndex: numeric(metrics.competitionIndex),
+        averageCpcMicros: numeric(metrics.averageCpcMicros),
+        lowTopOfPageBidMicros: numeric(metrics.lowTopOfPageBidMicros),
+        highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros)
+      };
+    }).filter(item => item.text);
+    return { customerId, apiVersion, ideas, fetchedAt: new Date().toISOString() };
+  } catch (error) {
+    if (proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
+    throw error;
+  }
 }
 
 export interface SearchConsoleRow {
