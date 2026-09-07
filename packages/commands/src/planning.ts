@@ -49,18 +49,18 @@ async function requireTargetPage(projectId: string, targetPageId?: string) {
 }
 async function linkSource(projectId: string, sourceId: string, pageId: string) {
   const exists = await db.select().from(schema.sourceLinks).where(and(eq(schema.sourceLinks.sourceId, sourceId), eq(schema.sourceLinks.targetType, 'page'), eq(schema.sourceLinks.targetId, pageId), eq(schema.sourceLinks.kind, 'planning'))).get();
-  if (!exists) await db.insert(schema.sourceLinks).values({ id: id(), projectId, sourceId, targetType: 'page', targetId: pageId, kind: 'planning', createdAt: now() });
+  if (!exists) await db.insert(schema.sourceLinks).values({ id: id(), projectId, sourceId, targetType: 'page', targetId: pageId, kind: 'planning', createdAt: now() }).onConflictDoNothing();
 }
 async function targetConflictWarnings(projectId: string, keywordIds: string[], clusterId?: string | null, excludePageId?: string, targetPageId?: string | null) {
   const warnings: Array<Record<string, unknown>> = [];
   if (keywordIds.length) {
     const base = and(eq(schema.pages.projectId, projectId), ne(schema.pages.status, 'archived'), inArray(schema.pageKeywords.keywordId, keywordIds));
-    const existing = await db.select({ keywordId: schema.pageKeywords.keywordId, pageId: schema.pages.id, pageTitle: schema.pages.title, pageStatus: schema.pages.status, role: schema.pageKeywords.role }).from(schema.pageKeywords).innerJoin(schema.pages, eq(schema.pageKeywords.pageId, schema.pages.id)).where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
+    const existing = await db.select({ keywordId: schema.pageKeywords.keywordId, pageId: schema.pages.id, pageTitle: schema.pages.title, pageStatus: schema.pages.status, pageUrl: schema.pages.url, role: schema.pageKeywords.role }).from(schema.pageKeywords).innerJoin(schema.pages, eq(schema.pageKeywords.pageId, schema.pages.id)).where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
     for (const row of existing) if (row.pageId !== targetPageId) warnings.push({ type: 'keyword_target_overlap', severity: 'high', ...row });
   }
   if (clusterId) {
     const base = and(eq(schema.pages.projectId, projectId), eq(schema.pages.clusterId, clusterId), ne(schema.pages.status, 'archived'));
-    const siblings = await db.select({ pageId: schema.pages.id, pageTitle: schema.pages.title, pageStatus: schema.pages.status }).from(schema.pages).where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
+    const siblings = await db.select({ pageId: schema.pages.id, pageTitle: schema.pages.title, pageStatus: schema.pages.status, pageUrl: schema.pages.url }).from(schema.pages).where(excludePageId ? and(base, ne(schema.pages.id, excludePageId)) : base);
     for (const row of siblings) if (row.pageId !== targetPageId) warnings.push({ type: 'same_cluster_page', severity: 'medium', ...row });
   }
   return warnings;
@@ -102,14 +102,24 @@ export const planningCommands = {
     await db.insert(schema.pages).values(page);
     if (keywords.length) await db.insert(schema.pageKeywords).values(keywords.map(keyword => ({ pageId: page.id, keywordId: keyword.id, role: keyword.id === input.primaryKeywordId ? 'primary' : 'secondary' })));
     for (const sourceId of sourceIds) await linkSource(input.projectId, sourceId, page.id);
+    if (keywordIds.length) await db.update(schema.discoveryCandidates).set({ status: 'planned', updatedAt: t }).where(and(eq(schema.discoveryCandidates.projectId, input.projectId), eq(schema.discoveryCandidates.status, 'shortlisted'), inArray(schema.discoveryCandidates.keywordId, keywordIds)));
     return { page, targetPage: targetPage ? { id: targetPage.id, title: targetPage.title, url: targetPage.url } : null, targets: keywords.map(keyword => ({ id: keyword.id, text: keyword.text, role: keyword.id === input.primaryKeywordId ? 'primary' : 'secondary' })), sourceIds, warnings };
   }),
 
   pageTargets: async (ctx: CommandContext, input: { projectId: string; pageId: string }) => withRun(projectCtx(ctx, input.projectId), 'page.targets', input, async () => {
     const page = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.id, input.pageId))).get(); if (!page) throw new Error('Page not found');
     const targets = await db.select({ keywordId: schema.keywords.id, text: schema.keywords.text, role: schema.pageKeywords.role, avgMonthly: schema.keywords.avgMonthly, competition: schema.keywords.competition, gscImpressions: schema.keywords.gscImpressions, gscPosition: schema.keywords.gscPosition }).from(schema.pageKeywords).innerJoin(schema.keywords, eq(schema.pageKeywords.keywordId, schema.keywords.id)).where(eq(schema.pageKeywords.pageId, input.pageId));
-    const evidence = await db.select({ source: schema.sources, kind: schema.sourceLinks.kind }).from(schema.sourceLinks).innerJoin(schema.sources, eq(schema.sourceLinks.sourceId, schema.sources.id)).where(and(eq(schema.sourceLinks.targetType, 'page'), eq(schema.sourceLinks.targetId, page.id)));
-    return { page: { ...page, unresolvedAssumptions: page.unresolvedAssumptionsJson ? JSON.parse(page.unresolvedAssumptionsJson) : [], unresolvedAssumptionsJson: undefined }, targets, evidence: evidence.map(row => ({ kind: row.kind, source: row.source })) };
+    const evidence = await db.select({ source: schema.sources, kind: schema.sourceLinks.kind }).from(schema.sourceLinks).innerJoin(schema.sources, eq(schema.sourceLinks.sourceId, schema.sources.id)).where(and(eq(schema.sourceLinks.projectId, input.projectId), eq(schema.sourceLinks.targetType, 'page'), eq(schema.sourceLinks.targetId, page.id)));
+    const targetPage = page.targetPageId ? await db.select({ id: schema.pages.id, title: schema.pages.title, url: schema.pages.url, status: schema.pages.status }).from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.id, page.targetPageId))).get() : null;
+    const warnings = await targetConflictWarnings(input.projectId, targets.map(row => row.keywordId), page.clusterId, page.id, page.targetPageId);
+    return {
+      page: { ...page, unresolvedAssumptions: page.unresolvedAssumptionsJson ? JSON.parse(page.unresolvedAssumptionsJson) : [], unresolvedAssumptionsJson: undefined },
+      targetPage: targetPage ?? null,
+      targets,
+      competingPages: warnings,
+      approvalImpact: { willSetStatus: 'approved', publishingSideEffect: false, conflictCount: warnings.length, blockedWithoutOverride: warnings.some(w => w.type === 'keyword_target_overlap') },
+      evidence: evidence.map(row => ({ kind: row.kind, source: { ...row.source, metadata: row.source.metadataJson ? JSON.parse(row.source.metadataJson) : null, metadataJson: undefined } }))
+    };
   }),
 
   pageCannibalization: async (ctx: CommandContext, input: { projectId: string; limit?: number }) => withRun(projectCtx(ctx, input.projectId), 'page.cannibalization', input, async () => {
