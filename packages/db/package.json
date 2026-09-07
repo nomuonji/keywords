@@ -10,7 +10,7 @@
     "db:init": "tsx src/init.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
+    "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.44.5"
   },
   "devDependencies": {
