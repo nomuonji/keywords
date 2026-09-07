@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, ne, or } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
+import { discoveryCommands } from './discovery.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -28,11 +29,13 @@ async function inspect(projectId: string) {
   ]);
 
   const candidates: Array<Record<string, unknown>> = [];
+  const leaseExpired = discovery?.status === 'running' && (!discovery.leaseExpiresAt || Date.now() >= new Date(discovery.leaseExpiresAt).getTime());
   if (review) candidates.push({ kind: 'await_review', rank: 1, title: review.title, reason: 'A human review request is open; autonomous work should not cross this boundary.', relatedType: 'review_request', relatedId: review.id });
-  if (discovery?.status === 'awaiting_review') candidates.push({ kind: 'review_discovery', rank: 2, title: `Review discovery: ${discovery.goal}`, reason: 'Discovery research is complete and candidates need human shortlist/hold/reject decisions.', relatedType: 'discovery_job', relatedId: discovery.id });
-  if (discovery?.status === 'waiting_for_agent') candidates.push({ kind: 'claim_discovery', rank: 2, title: `Run discovery: ${discovery.goal}`, reason: 'A human-created discovery job is waiting for an agent to claim it.', relatedType: 'discovery_job', relatedId: discovery.id });
-  if (discovery?.status === 'running') candidates.push({ kind: 'resume_discovery', rank: 2, title: `Continue discovery: ${discovery.goal}`, reason: 'A discovery job is currently running.', relatedType: 'discovery_job', relatedId: discovery.id });
-  if (session) candidates.push({ kind: 'resume_session', rank: 3, title: session.objective, reason: `An unfinished work session is ${session.status}.`, relatedType: 'work_session', relatedId: session.id });
+  if (leaseExpired && discovery) candidates.push({ kind: 'recover_discovery', rank: 2, title: `Recover interrupted discovery: ${discovery.goal}`, reason: 'The discovery executor lease expired. Recover the shared job before another agent claims it.', relatedType: 'discovery_job', relatedId: discovery.id });
+  else if (discovery?.status === 'awaiting_review') candidates.push({ kind: 'review_discovery', rank: 2, title: `Review discovery: ${discovery.goal}`, reason: 'Discovery research is complete and candidates need human shortlist/hold/reject decisions.', relatedType: 'discovery_job', relatedId: discovery.id });
+  else if (discovery?.status === 'waiting_for_agent') candidates.push({ kind: 'claim_discovery', rank: 2, title: `Run discovery: ${discovery.goal}`, reason: 'A human-created discovery job is waiting for an agent to claim it.', relatedType: 'discovery_job', relatedId: discovery.id });
+  else if (discovery?.status === 'running') candidates.push({ kind: 'resume_discovery', rank: 2, title: `Continue discovery: ${discovery.goal}`, reason: `A discovery job is running under executor ${discovery.executorId ?? 'unknown'}; lease expires ${discovery.leaseExpiresAt ?? 'unknown'}.`, relatedType: 'discovery_job', relatedId: discovery.id });
+  if (session && !leaseExpired) candidates.push({ kind: 'resume_session', rank: 3, title: session.objective, reason: `An unfinished work session is ${session.status}.`, relatedType: 'work_session', relatedId: session.id });
   if (openTask) candidates.push({ kind: 'existing_task', rank: 4, title: openTask.title, reason: `The shared agent queue already has an open priority-${openTask.priority} task.`, relatedType: 'task', relatedId: openTask.id });
 
   const byQuery = new Map<string, typeof snapshots>(); for (const row of snapshots) { const list = byQuery.get(row.query) ?? []; if (!list.some(item => item.endDate === row.endDate) && list.length < 2) list.push(row); byQuery.set(row.query, list); }
@@ -54,6 +57,10 @@ export const operatorCommands = {
   inspect: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'operator.inspect', { projectId }, async () => inspect(projectId)),
   tick: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'operator.tick', { projectId }, async () => {
     const state = await inspect(projectId); const next = state.next as Record<string, unknown>; const kind = String(next.kind ?? 'no_action');
+    if (kind === 'recover_discovery' && next.relatedId) {
+      const recovery = await discoveryCommands.recoverExpired({ actor: 'system', actorId: 'operator', projectId }, { projectId, jobId: String(next.relatedId) });
+      return { ...(await inspect(projectId)), createdTask: null, recovery };
+    }
     if (['no_action','await_review','review_discovery','claim_discovery','resume_discovery','resume_session','existing_task'].includes(kind)) return { ...state, createdTask: null };
     const relatedType = String(next.relatedType ?? kind); const relatedId = next.relatedId ? String(next.relatedId) : null;
     const duplicate = await db.select().from(schema.tasks).where(and(eq(schema.tasks.projectId, projectId), eq(schema.tasks.assigneeType, 'agent'), ne(schema.tasks.status, 'done'), eq(schema.tasks.relatedType, relatedType), relatedId ? eq(schema.tasks.relatedId, relatedId) : isNull(schema.tasks.relatedId))).get();
