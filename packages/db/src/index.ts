@@ -43,8 +43,12 @@ CREATE INDEX IF NOT EXISTS work_checkpoints_session_created_idx ON work_checkpoi
 CREATE TABLE IF NOT EXISTS review_requests (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, target_type TEXT NOT NULL, target_id TEXT, title TEXT NOT NULL, question TEXT, options_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', resolution TEXT, reason TEXT, requested_by TEXT NOT NULL, created_at TEXT NOT NULL, resolved_at TEXT);
 CREATE INDEX IF NOT EXISTS review_requests_project_status_idx ON review_requests(project_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS review_requests_session_status_idx ON review_requests(work_session_id, status, created_at DESC);
-CREATE TABLE IF NOT EXISTS discovery_jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, seed_keywords_json TEXT NOT NULL, target_url TEXT, goal TEXT NOT NULL, language TEXT NOT NULL, country TEXT NOT NULL, region TEXT, excluded_terms_json TEXT, max_candidates INTEGER NOT NULL DEFAULT 50, max_external_requests INTEGER NOT NULL DEFAULT 8, external_requests_used INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'waiting_for_agent', task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, started_at TEXT, completed_at TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS discovery_jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, seed_keywords_json TEXT NOT NULL, target_url TEXT, goal TEXT NOT NULL, language TEXT NOT NULL, country TEXT NOT NULL, region TEXT, excluded_terms_json TEXT, max_candidates INTEGER NOT NULL DEFAULT 50, candidate_writes_used INTEGER NOT NULL DEFAULT 0, max_external_requests INTEGER NOT NULL DEFAULT 8, external_requests_used INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'waiting_for_agent', task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, executor_id TEXT, heartbeat_at TEXT, lease_expires_at TEXT, started_at TEXT, completed_at TEXT, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS discovery_jobs_project_status_idx ON discovery_jobs(project_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS discovery_jobs_lease_idx ON discovery_jobs(status, lease_expires_at);
+CREATE TABLE IF NOT EXISTS discovery_request_reservations (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, job_id TEXT NOT NULL REFERENCES discovery_jobs(id) ON DELETE CASCADE, provider TEXT NOT NULL, request_key TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'reserved', source_id TEXT REFERENCES sources(id) ON DELETE SET NULL, error TEXT, reserved_at TEXT NOT NULL, settled_at TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS discovery_request_reservations_job_key_idx ON discovery_request_reservations(job_id, request_key);
+CREATE INDEX IF NOT EXISTS discovery_request_reservations_job_status_idx ON discovery_request_reservations(job_id, status, reserved_at DESC);
 CREATE TABLE IF NOT EXISTS discovery_candidates (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, job_id TEXT NOT NULL REFERENCES discovery_jobs(id) ON DELETE CASCADE, keyword_id TEXT REFERENCES keywords(id) ON DELETE SET NULL, keyword TEXT NOT NULL, normalized TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'discovered', demand_value INTEGER, demand_provider TEXT, demand_observed_at TEXT, ad_competition REAL, search_intent TEXT, existing_page_overlap_json TEXT, serp_status TEXT NOT NULL DEFAULT 'not_researched', unresolved_questions_json TEXT, evidence_count INTEGER NOT NULL DEFAULT 0, language TEXT NOT NULL, country TEXT NOT NULL, region TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS discovery_candidates_job_normalized_idx ON discovery_candidates(job_id, normalized);
 CREATE INDEX IF NOT EXISTS discovery_candidates_project_status_idx ON discovery_candidates(project_id, status, updated_at DESC);
@@ -89,6 +93,10 @@ function ensureLegacyColumns(sqlite: Database.Database) {
   ensureColumn(sqlite, 'pages', 'source', "source TEXT NOT NULL DEFAULT 'workspace'");
   ensureColumn(sqlite, 'pages', 'last_seen_at', 'last_seen_at TEXT');
   ensureColumn(sqlite, 'runs', 'work_session_id', 'work_session_id TEXT');
+  ensureColumn(sqlite, 'discovery_jobs', 'candidate_writes_used', 'candidate_writes_used INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(sqlite, 'discovery_jobs', 'executor_id', 'executor_id TEXT');
+  ensureColumn(sqlite, 'discovery_jobs', 'heartbeat_at', 'heartbeat_at TEXT');
+  ensureColumn(sqlite, 'discovery_jobs', 'lease_expires_at', 'lease_expires_at TEXT');
 }
 
 export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PATH) {
@@ -99,6 +107,8 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   ensureLegacyColumns(sqlite);
   sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS pages_project_url_idx ON pages(project_id, url) WHERE url IS NOT NULL;');
   sqlite.exec('CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS discovery_jobs_lease_idx ON discovery_jobs(status, lease_expires_at);');
+  sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS discovery_request_reservations_job_key_idx ON discovery_request_reservations(job_id, request_key);');
   const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
