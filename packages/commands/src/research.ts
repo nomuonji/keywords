@@ -82,7 +82,7 @@ const opportunityRow = (row: any) => ({
   text: row.text,
   clusterId: row.clusterId,
   avgMonthly: row.avgMonthly,
-  competition: row.competition,
+  adCompetition: row.competition,
   clicks: row.gscClicks,
   impressions: row.gscImpressions,
   ctr: row.gscCtr,
@@ -117,12 +117,10 @@ export const researchCommands = {
 
     const byImpressions = (a: any, b: any) => (b.gscImpressions ?? 0) - (a.gscImpressions ?? 0);
     const byDemand = (a: any, b: any) => (b.avgMonthly ?? 0) - (a.avgMonthly ?? 0);
-    const lowCompetitionValue = (row: any) => (row.avgMonthly ?? 0) * (1 - Math.min(1, Math.max(0, row.competition ?? 1)));
-
     const strikingDistance = rows.filter(row => row.gscPosition !== null && row.gscPosition >= 4 && row.gscPosition <= 20 && (row.gscImpressions ?? 0) > 0).sort(byImpressions).slice(0, limit).map(opportunityRow);
     const searchConsoleGaps = rows.filter(row => row.gscPosition !== null && row.gscPosition > 20 && (row.gscImpressions ?? 0) > 0).sort(byImpressions).slice(0, limit).map(opportunityRow);
     const highDemandUnclustered = rows.filter(row => !row.clusterId && (row.avgMonthly ?? 0) > 0).sort(byDemand).slice(0, limit).map(opportunityRow);
-    const lowCompetitionDemand = rows.filter(row => (row.avgMonthly ?? 0) > 0 && row.competition !== null && row.competition <= 0.4).sort((a, b) => lowCompetitionValue(b) - lowCompetitionValue(a)).slice(0, limit).map(opportunityRow);
+    const paidSearchContext = rows.filter(row => (row.avgMonthly ?? 0) > 0 && row.competition !== null).sort(byDemand).slice(0, limit).map(opportunityRow);
 
     return {
       generatedAt: now(),
@@ -130,12 +128,12 @@ export const researchCommands = {
         strikingDistance: 'Search Console average position 4-20, ranked by impressions',
         searchConsoleGaps: 'Search Console average position >20 with impressions, ranked by impressions',
         highDemandUnclustered: 'Unclustered keywords with Google Ads demand, ranked by average monthly searches',
-        lowCompetitionDemand: 'Keywords with competition <=0.4, ranked by demand × (1-competition)'
+        paidSearchContext: 'Google Ads demand plus advertising competition. Advertising competition is not an SEO difficulty signal and does not rank this list.'
       },
       strikingDistance,
       searchConsoleGaps,
       highDemandUnclustered,
-      lowCompetitionDemand
+      paidSearchContext
     };
   }),
   webFetch: async (ctx: CommandContext, input: { projectId: string; url: string; maxChars?: number }) => withRun(projectCtx(ctx, input.projectId), 'research.web_fetch', input, async () => {
