@@ -9,15 +9,12 @@ import { reviewCommands } from '@keywords/commands/review';
 import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
+import { registerProductRoutes } from './product.js';
 
 const app = new Hono();
 app.use('*', cors());
 app.get('/health', c => c.json({ ok: true }));
-const ctx = (c: any) => ({
-  actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent',
-  actorId: c.req.header('x-keywords-actor-id'),
-  workSessionId: c.req.header('x-keywords-work-session-id')
-});
+const ctx = (c: any) => ({ actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent', actorId: c.req.header('x-keywords-actor-id'), workSessionId: c.req.header('x-keywords-work-session-id') });
 const body = (c: any) => c.req.json();
 
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
@@ -31,13 +28,7 @@ app.post('/projects/:projectId/site/sync', async c => c.json(await siteCommands.
 app.get('/projects/:projectId/metrics/context', async c => c.json(await metricsCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 25))));
 app.post('/projects/:projectId/metrics/capture', async c => c.json(await metricsCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 
-app.get('/projects/:projectId/work/context', async c => {
-  const projectId = c.req.param('projectId');
-  const context = await workCommands.context(ctx(c), { projectId, sessionId: c.req.query('sessionId') });
-  const sessionId = context.session?.id;
-  const reviewRequests = await reviewCommands.list(ctx(c), { projectId, sessionId, status: 'open', limit: 20 });
-  return c.json({ ...context, reviewRequests });
-});
+app.get('/projects/:projectId/work/context', async c => { const projectId = c.req.param('projectId'); const context = await workCommands.context(ctx(c), { projectId, sessionId: c.req.query('sessionId') }); const sessionId = context.session?.id; const reviewRequests = await reviewCommands.list(ctx(c), { projectId, sessionId, status: 'open', limit: 20 }); return c.json({ ...context, reviewRequests }); });
 app.get('/projects/:projectId/work/sessions', async c => c.json(await workCommands.list(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 20))));
 app.post('/projects/:projectId/work/sessions', async c => c.json(await workCommands.start(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/projects/:projectId/work/sessions/:sessionId/resume', async c => c.json(await workCommands.resume(ctx(c), { projectId: c.req.param('projectId'), sessionId: c.req.param('sessionId') })));
@@ -84,22 +75,14 @@ app.patch('/projects/:projectId/tasks/:taskId/status', async c => c.json(await c
 app.get('/projects/:projectId/decisions', async c => c.json(await commands.decision.list(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/decisions', async c => c.json(await commands.decision.record(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.get('/projects/:projectId/runs', async c => c.json(await commands.run.list(ctx(c), c.req.param('projectId'))));
+
+registerProductRoutes(app, ctx, body);
 app.onError((error, c) => c.json({ error: error instanceof Error ? error.message : String(error) }, 500));
 
 const schedulerCtx = { actor: 'system' as const, actorId: 'operator-scheduler' };
-async function scheduledTick() {
-  const projects = await commands.project.list(schedulerCtx);
-  for (const project of projects) {
-    try { await operatorCommands.tick(schedulerCtx, project.id); }
-    catch (error) { console.error(`Operator tick failed for ${project.id}:`, error); }
-  }
-}
+async function scheduledTick() { const projects = await commands.project.list(schedulerCtx); for (const project of projects) { try { await operatorCommands.tick(schedulerCtx, project.id); } catch (error) { console.error(`Operator tick failed for ${project.id}:`, error); } } }
 const intervalMinutes = Math.max(0, Number(process.env.KEYWORDS_OPERATOR_INTERVAL_MINUTES ?? 0));
-if (intervalMinutes > 0) {
-  setInterval(() => void scheduledTick(), intervalMinutes * 60_000).unref();
-  if (process.env.KEYWORDS_OPERATOR_RUN_ON_START === '1') void scheduledTick();
-  console.log(`Keywords operator scheduler enabled every ${intervalMinutes} minutes`);
-}
+if (intervalMinutes > 0) { setInterval(() => void scheduledTick(), intervalMinutes * 60_000).unref(); if (process.env.KEYWORDS_OPERATOR_RUN_ON_START === '1') void scheduledTick(); console.log(`Keywords operator scheduler enabled every ${intervalMinutes} minutes`); }
 
 const port = Number(process.env.KEYWORDS_API_PORT ?? 8787);
 serve({ fetch: app.fetch, port });
