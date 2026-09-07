@@ -11,7 +11,10 @@
     "./policy": "./src/policy.ts",
     "./work": "./src/work.ts",
     "./review": "./src/review.ts",
-    "./budget": "./src/budget.ts"
+    "./budget": "./src/budget.ts",
+    "./site": "./src/site.ts",
+    "./metrics": "./src/metrics.ts",
+    "./operator": "./src/operator.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
