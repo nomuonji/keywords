@@ -1,7 +1,11 @@
 export type ActorType = 'human' | 'agent' | 'system';
 export type KeywordStatus = 'active' | 'rejected';
+export type CandidateStatus = 'discovered' | 'shortlisted' | 'hold' | 'rejected' | 'research_more';
+export type DiscoveryJobStatus = 'waiting_for_agent' | 'running' | 'awaiting_review' | 'blocked' | 'completed' | 'failed' | 'cancelled';
+export type CapabilityStatus = 'not_configured' | 'checking' | 'available' | 'expired' | 'rate_limited' | 'failed';
+export type ProjectMode = 'existing_site' | 'topic_only';
 export type ClusterStatus = 'active' | 'archived';
-export type PageStatus = 'proposed' | 'approved' | 'archived';
+export type PageStatus = 'proposed' | 'approved' | 'published' | 'archived' | 'stale';
 export type TaskStatus = 'todo' | 'doing' | 'review' | 'done';
 export type DecisionVerdict = 'approved' | 'rejected' | 'edited' | 'noted';
 export type InsightStatus = 'open' | 'accepted' | 'dismissed';
@@ -15,6 +19,23 @@ export interface CommandContext {
   workSessionId?: string;
 }
 
+export interface ProjectBrief {
+  id: string;
+  name: string;
+  domain: string | null;
+  mode: ProjectMode;
+  topic: string | null;
+  audience: string | null;
+  language: string;
+  country: string;
+  region: string | null;
+  excludedTerms: string[];
+  discoveryCadenceDays: number;
+  discoveryMaxCandidates: number;
+  discoveryMaxExternalRequests: number;
+  lastDiscoveryAt: string | null;
+}
+
 export interface ProjectSnapshot {
   project: { id: string; name: string; domain: string | null };
   counts: {
@@ -25,6 +46,8 @@ export interface ProjectSnapshot {
     proposedPages: number;
     openTasks: number;
     openInsights: number;
+    openDiscoveryJobs?: number;
+    candidatesToReview?: number;
   };
   recentRuns: Array<{
     id: string;
