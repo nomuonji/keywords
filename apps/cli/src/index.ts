@@ -4,6 +4,9 @@ import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
 import { reviewCommands } from '@keywords/commands/review';
+import { siteCommands } from '@keywords/commands/site';
+import { metricsCommands } from '@keywords/commands/metrics';
+import { operatorCommands } from '@keywords/commands/operator';
 const program = new Command();
 const ctx = { actor: 'human' as const, actorId: process.env.USER ?? 'cli' };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
@@ -13,6 +16,17 @@ const project = program.command('project');
 project.command('list').action(async () => print(await commands.project.list(ctx)));
 project.command('create').argument('<name>').option('--domain <domain>').action(async (name: string, opts: {domain?: string}) => print(await commands.project.create(ctx, { name, domain: opts.domain })));
 project.command('snapshot').argument('<projectId>').action(async (projectId: string) => print(await commands.project.snapshot(ctx, projectId)));
+
+const operator = program.command('operator');
+operator.command('inspect').argument('<projectId>').action(async (projectId: string) => print(await operatorCommands.inspect(ctx, projectId)));
+operator.command('tick').argument('<projectId>').action(async (projectId: string) => print(await operatorCommands.tick(ctx, projectId)));
+const site = program.command('site');
+site.command('list').argument('<projectId>').action(async (projectId: string) => print(await siteCommands.list(ctx, projectId)));
+site.command('sync').argument('<projectId>').option('--sitemap <url>').action(async (projectId: string, opts: {sitemap?: string}) => print(await siteCommands.syncSitemap(ctx, { projectId, sitemapUrl: opts.sitemap })));
+const metrics = program.command('metrics');
+metrics.command('context').argument('<projectId>').option('--limit <number>', 'Maximum decline rows', '25').action(async (projectId: string, opts: {limit: string}) => print(await metricsCommands.context(ctx, projectId, Number(opts.limit))));
+metrics.command('capture').argument('<projectId>').argument('<startDate>').argument('<endDate>').option('--site <siteUrl>').option('--search-type <type>').option('--row-limit <number>').action(async (projectId: string, startDate: string, endDate: string, opts: {site?: string; searchType?: string; rowLimit?: string}) => print(await metricsCommands.capture(ctx, { projectId, siteUrl: opts.site, startDate, endDate, searchType: opts.searchType, rowLimit: opts.rowLimit ? Number(opts.rowLimit) : undefined })));
+
 const work = program.command('work');
 work.command('context').argument('<projectId>').option('--session <sessionId>').action(async (projectId: string, opts: {session?: string}) => print(await workCommands.context(ctx, { projectId, sessionId: opts.session })));
 work.command('list').argument('<projectId>').option('--limit <number>', 'Recent sessions', '20').action(async (projectId: string, opts: {limit: string}) => print(await workCommands.list(ctx, projectId, Number(opts.limit))));
