@@ -109,6 +109,9 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   sqlite.exec('CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);');
   sqlite.exec('CREATE INDEX IF NOT EXISTS discovery_jobs_lease_idx ON discovery_jobs(status, lease_expires_at);');
   sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS discovery_request_reservations_job_key_idx ON discovery_request_reservations(job_id, request_key);');
+  sqlite.exec(`UPDATE discovery_jobs
+    SET candidate_writes_used = (SELECT COUNT(*) FROM discovery_candidates WHERE discovery_candidates.job_id = discovery_jobs.id)
+    WHERE candidate_writes_used < (SELECT COUNT(*) FROM discovery_candidates WHERE discovery_candidates.job_id = discovery_jobs.id)`);
   const db = drizzle({ client: sqlite, schema });
   return { db, sqlite, path: absolute };
 }
