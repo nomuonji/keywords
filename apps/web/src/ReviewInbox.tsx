@@ -15,9 +15,11 @@ type ReviewRequest = {
   createdAt: string;
 };
 
+type Props = { projectId: string; onChanged?: () => void | Promise<void> };
+
 const when = (value: string) => new Date(value).toLocaleString();
 
-export function ReviewInbox({ projectId }: { projectId: string }) {
+export function ReviewInbox({ projectId, onChanged }: Props) {
   const [requests, setRequests] = useState<ReviewRequest[]>([]);
   const [error, setError] = useState('');
   const load = async () => {
@@ -49,14 +51,16 @@ export function ReviewInbox({ projectId }: { projectId: string }) {
     try {
       let reason: string | undefined;
       if (resolution === 'rejected' || resolution === 'needs_edit') {
-        reason = window.prompt(resolution === 'rejected' ? 'Why reject this request?' : 'What should be edited?') ?? undefined;
-        if (!reason) return;
+        const input = window.prompt(resolution === 'rejected' ? 'Why reject this request?' : 'What should be edited?');
+        if (input === null) return;
+        reason = input.trim();
+        if (!reason) { setError('A reason is required for this review action.'); return; }
       }
       await api(`/projects/${projectId}/review-requests/${request.id}/resolve`, {
         method: 'POST',
         body: JSON.stringify({ resolution, reason })
       });
-      await load();
+      await Promise.all([load(), Promise.resolve(onChanged?.())]);
     } catch (e) {
       setError(String(e));
     }
