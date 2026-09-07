@@ -148,26 +148,45 @@ async function importCandidateRows(ctx: CommandContext, job: typeof schema.disco
     const blockedBy = excluded.find(term => term && normalized.includes(term));
     if (blockedBy) { rejectedByRule++; await recordRuleReject(job.projectId, job.id, input.keyword.trim(), `Excluded term: ${blockedBy}`); continue; }
     let current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
-    const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
-    const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
     if (current) {
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
       const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
       await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
       candidateIds.push(current.id); updated++; continue;
     }
-    if (!reserveCandidateSlot(job.id)) { capped = true; break; }
-    const row = { id: id(), projectId: job.projectId, jobId: job.id, keywordId: keyword.id, keyword: input.keyword.trim(), normalized, status: 'discovered', demandValue: input.demandValue ?? null, demandProvider: input.demandProvider ?? null, demandObservedAt: input.observedAt ?? null, adCompetition: input.adCompetition ?? null, searchIntent: null, existingPageOverlapJson: JSON.stringify(overlap), serpStatus: 'not_researched', unresolvedQuestionsJson: null, evidenceCount: input.sourceId ? 1 : 0, language: job.language, country: job.country, region: job.region, createdAt: t, updatedAt: t };
-    await db.insert(schema.discoveryCandidates).values(row).onConflictDoNothing();
-    current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
-    if (!current) { releaseCandidateSlot(job.id); throw new Error('Candidate insert failed'); }
-    if (current.id !== row.id) { releaseCandidateSlot(job.id); updated++; }
-    else {
-      if (input.sourceId) await linkSource(job.projectId, input.sourceId, 'discovery_candidate', row.id, 'demand');
-      await recordOrigin(job.projectId, job.id, row.id, row.keyword, keyword.knownBefore);
-      if (keyword.knownBefore) alreadyKnown++; else newlyDiscovered++;
-      created++;
+    if (!reserveCandidateSlot(job.id)) {
+      current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
+      if (!current) { capped = true; break; }
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
+      const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
+      await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
+      candidateIds.push(current.id); updated++; continue;
     }
-    candidateIds.push(current.id);
+    let keepReservedSlot = false;
+    try {
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
+      const row = { id: id(), projectId: job.projectId, jobId: job.id, keywordId: keyword.id, keyword: input.keyword.trim(), normalized, status: 'discovered', demandValue: input.demandValue ?? null, demandProvider: input.demandProvider ?? null, demandObservedAt: input.observedAt ?? null, adCompetition: input.adCompetition ?? null, searchIntent: null, existingPageOverlapJson: JSON.stringify(overlap), serpStatus: 'not_researched', unresolvedQuestionsJson: null, evidenceCount: input.sourceId ? 1 : 0, language: job.language, country: job.country, region: job.region, createdAt: t, updatedAt: t };
+      await db.insert(schema.discoveryCandidates).values(row).onConflictDoNothing();
+      current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
+      if (!current) throw new Error('Candidate insert failed');
+      keepReservedSlot = current.id === row.id;
+      if (!keepReservedSlot) {
+        const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
+        await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
+        updated++;
+      } else {
+        if (input.sourceId) await linkSource(job.projectId, input.sourceId, 'discovery_candidate', row.id, 'demand');
+        await recordOrigin(job.projectId, job.id, row.id, row.keyword, keyword.knownBefore);
+        if (keyword.knownBefore) alreadyKnown++; else newlyDiscovered++;
+        created++;
+      }
+      candidateIds.push(current.id);
+    } finally {
+      if (!keepReservedSlot) releaseCandidateSlot(job.id);
+    }
   }
   return { created, updated, candidateIds, capped, rejectedByRule, alreadyKnown, newlyDiscovered };
 }

@@ -31,6 +31,8 @@ const imported = await discoveryCommands.importCandidates(agentSession, { projec
   { keyword: 'seo 自動化 上限外', demandValue: 70, demandProvider: 'smoke', observedAt: new Date().toISOString(), sourceId: evidence.id }
 ] });
 if (imported.created !== 3 || !imported.capped || imported.rejectedByRule !== 1 || imported.alreadyKnown !== 1 || imported.newlyDiscovered !== 2) throw new Error(`Candidate cap/origin/exclusion flow failed: ${JSON.stringify(imported)}`);
+const cappedKeywordLeak = await workspaceCommands.keywordSearch(human, { projectId: project.id, q: 'seo 自動化 上限外', limit: 10, offset: 0 });
+if (cappedKeywordLeak.total !== 0) throw new Error('Candidate cap leaked an unaccepted keyword into the workspace');
 let detail = await discoveryCommands.detail(agentSession, { projectId: project.id, jobId: started.job.id });
 if (detail.candidates.length !== 3 || detail.progress.candidateWrites.used !== 3 || detail.progress.rejectedByRule !== 1) throw new Error('Discovery progress summary failed');
 const primaryCandidate = detail.candidates.find(c => c.keyword === 'seo 自動化 方法');
