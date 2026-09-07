@@ -4,6 +4,8 @@ export const BUDGETED_COMMANDS = new Set([
   'research.serp',
   'research.google_ads_keyword_ideas',
   'research.search_console',
+  'site.sync_sitemap',
+  'metrics.capture',
   'keyword.create',
   'keyword.reject',
   'cluster.create',
