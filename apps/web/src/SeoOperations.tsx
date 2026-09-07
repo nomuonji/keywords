@@ -11,7 +11,9 @@ type MetricContext = {
   pageSnapshots: number;
 };
 
-export function SeoOperations({ projectId }: { projectId: string }) {
+type Props = { projectId: string; onChanged?: () => void | Promise<void> };
+
+export function SeoOperations({ projectId, onChanged }: Props) {
   const [operator, setOperator] = useState<OperatorState | null>(null);
   const [pages, setPages] = useState<LivePage[]>([]);
   const [metrics, setMetrics] = useState<MetricContext | null>(null);
@@ -32,8 +34,12 @@ export function SeoOperations({ projectId }: { projectId: string }) {
 
   useEffect(() => { void load(); }, [projectId]);
 
+  async function refreshAfterChange() {
+    await Promise.all([load(), Promise.resolve(onChanged?.())]);
+  }
+
   async function tick() {
-    try { setBusy('operator'); await api(`/projects/${projectId}/operator/tick`, { method: 'POST', body: '{}' }); await load(); }
+    try { setBusy('operator'); await api(`/projects/${projectId}/operator/tick`, { method: 'POST', body: '{}' }); await refreshAfterChange(); }
     catch (e) { setError(String(e)); } finally { setBusy(''); }
   }
 
@@ -43,7 +49,7 @@ export function SeoOperations({ projectId }: { projectId: string }) {
     try {
       setBusy('site');
       await api(`/projects/${projectId}/site/sync`, { method: 'POST', body: JSON.stringify({ sitemapUrl: f.get('sitemap') || undefined }) });
-      await load();
+      await refreshAfterChange();
     } catch (e) { setError(String(e)); } finally { setBusy(''); }
   }
 
@@ -53,7 +59,7 @@ export function SeoOperations({ projectId }: { projectId: string }) {
     try {
       setBusy('metrics');
       await api(`/projects/${projectId}/metrics/capture`, { method: 'POST', body: JSON.stringify({ startDate: f.get('startDate'), endDate: f.get('endDate'), siteUrl: f.get('siteUrl') || undefined }) });
-      await load();
+      await refreshAfterChange();
     } catch (e) { setError(String(e)); } finally { setBusy(''); }
   }
 
@@ -61,7 +67,7 @@ export function SeoOperations({ projectId }: { projectId: string }) {
     <div className="panelHead"><div><p className="eyebrow">SEO OPERATIONS</p><h2>Operator · site · trends</h2></div><span>{pages.length} live URLs</span></div>
     {error&&<div className="error">{error}</div>}
     <div className="policyList">
-      <div className="policyRule activePolicy"><div><span className="sourceType">operator</span><b>{operator?.next.title ?? operator?.next.kind ?? 'No action'}</b><small>{operator?.next.reason ?? 'No prioritized operator action.'}</small></div><div className="pageActions"><button disabled={busy==='operator'} onClick={()=>void tick()}>{busy==='operator'?'Running…':'Tick'}</button></div></div>
+      <div className="policyRule activePolicy"><div><span className="sourceType">operator</span><b>{operator?.next.title ?? operator?.next.kind ?? 'No action'}</b><small>{operator?.next.reason ?? 'No prioritized operator action.'}</small></div><div className="pageActions"><button disabled={busy==='operator'} onClick={()=>void tick()}>{busy==='operator'?'Running…':'Choose next task'}</button></div></div>
       <div className="policyRule"><div><span className="sourceType">live site</span><b>{pages.length} imported URLs</b><small>{pages[0]?.lastSeenAt ? `Last seen ${new Date(pages[0].lastSeenAt).toLocaleString()}` : 'Sync sitemap to import the real site.'}</small></div><form className="pageActions" onSubmit={syncSite}><input name="sitemap" placeholder="sitemap URL (optional)"/><button disabled={busy==='site'}>{busy==='site'?'Syncing…':'Sync'}</button></form></div>
       <div className="policyRule"><div><span className="sourceType">gsc history</span><b>{metrics?.querySnapshots ?? 0} query · {metrics?.pageSnapshots ?? 0} page snapshots</b><small>{metrics?.positionDrops.length ?? 0} position drops · {metrics?.clickDrops.length ?? 0} query click drops · {metrics?.pageClickDrops.length ?? 0} page click drops</small></div><form className="pageActions" onSubmit={capture}><input name="startDate" type="date" required/><input name="endDate" type="date" required/><input name="siteUrl" placeholder="GSC site (optional)"/><button disabled={busy==='metrics'}>{busy==='metrics'?'Capturing…':'Capture'}</button></form></div>
     </div>
