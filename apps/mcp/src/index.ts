@@ -6,10 +6,13 @@ import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
 import { reviewCommands } from '@keywords/commands/review';
+import { siteCommands } from '@keywords/commands/site';
+import { metricsCommands } from '@keywords/commands/metrics';
+import { operatorCommands } from '@keywords/commands/operator';
 
 const baseCtx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
 let activeWorkSession: { id: string; projectId: string; status: string; remainingActions: number } | null = null;
-const server = new Server({ name: 'keywords', version: '0.7.0' }, { capabilities: { tools: {} } });
+const server = new Server({ name: 'keywords', version: '0.8.0' }, { capabilities: { tools: {} } });
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 const toolCtx = (projectId?: string) => ({
@@ -18,13 +21,13 @@ const toolCtx = (projectId?: string) => ({
 });
 const sessionIdFor = (projectId: string, explicit?: string) => explicit ?? (activeWorkSession?.projectId === projectId ? activeWorkSession.id : undefined);
 const budgetedTools = new Set([
-  'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console',
+  'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan',
   'insight_create','task_create','task_set_status','policy_propose','decision_record'
 ]);
 const allowedWhilePaused = new Set([
   'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list','review_list',
-  'project_snapshot','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list',
+  'project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list',
   'page_list','page_targets','page_cannibalization','insight_list','task_list'
 ]);
 function guardTool(name: string) {
@@ -47,6 +50,11 @@ function syncSession(value: any, projectId: string) {
 const tools = [
   { name: 'project_list', description: 'List SEO projects', inputSchema: s('No input', {}) },
   { name: 'project_snapshot', description: 'Read a compact project snapshot before deciding what to do', inputSchema: s('Project', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'operator_context', description: 'Read the deterministic operator queue and the single highest-priority reasoned next action', inputSchema: s('Operator context', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'site_list', description: 'List real site pages imported from sitemap/Search Console state', inputSchema: s('Site pages', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'site_sync', description: 'Refresh the live URL inventory from sitemap.xml or an explicit sitemap URL', inputSchema: s('Sitemap sync', { projectId: { type: 'string' }, sitemapUrl: { type: 'string' } }, ['projectId']) },
+  { name: 'metrics_context', description: 'Compare the two latest captured Search Console periods and surface explicit query/page declines', inputSchema: s('Metric trends', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
+  { name: 'metrics_capture', description: 'Capture query-level and page-level Search Console history for one period and update live workspace state', inputSchema: s('Metric capture', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' }, searchType: { type: 'string' }, rowLimit: { type: 'number' } }, ['projectId','startDate','endDate']) },
   { name: 'work_context', description: 'Read compact operating state: current session, active policies, prioritized tasks, explicit review requests, top opportunities and next recommended focus', inputSchema: s('Work context', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId']) },
   { name: 'work_start', description: 'Start one auditable agent work session with an objective, completion criteria and bounded action budget. Only one unfinished session is allowed per project.', inputSchema: s('Start work', { projectId: { type: 'string' }, objective: { type: 'string' }, completionCriteria: { type: 'array', items: { type: 'string' } }, maxActions: { type: 'number' } }, ['projectId']) },
   { name: 'work_resume', description: 'Resume a blocked or awaiting-review work session after the external condition has changed', inputSchema: s('Resume work', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId','sessionId']) },
@@ -93,6 +101,11 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
   switch (name) {
     case 'project_list': result = await commands.project.list(baseCtx); break;
     case 'project_snapshot': result = await commands.project.snapshot(toolCtx(a.projectId), a.projectId); break;
+    case 'operator_context': result = await operatorCommands.inspect(toolCtx(a.projectId), a.projectId); break;
+    case 'site_list': result = await siteCommands.list(toolCtx(a.projectId), a.projectId); break;
+    case 'site_sync': result = await siteCommands.syncSitemap(toolCtx(a.projectId), a); break;
+    case 'metrics_context': result = await metricsCommands.context(toolCtx(a.projectId), a.projectId, a.limit); break;
+    case 'metrics_capture': result = await metricsCommands.capture(toolCtx(a.projectId), a); break;
     case 'work_context': {
       const sessionId = sessionIdFor(a.projectId, a.sessionId);
       const context = await workCommands.context(toolCtx(a.projectId), { projectId: a.projectId, sessionId });
