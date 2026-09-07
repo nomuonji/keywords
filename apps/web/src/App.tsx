@@ -1,140 +1,53 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { api } from './api';
-import { WorkSessions } from './WorkSessions';
+import { DiscoveryWorkspace } from './DiscoveryWorkspace';
+import { KeywordWorkspace } from './KeywordWorkspace';
+import { PlanningWorkspace } from './PlanningWorkspace';
+import { SettingsWorkspace } from './SettingsWorkspace';
+import { GovernanceWorkspace } from './GovernanceWorkspace';
 import { SeoOperations } from './SeoOperations';
+import type { Project, Snapshot, Task } from './product-types';
 
-type Project={id:string;name:string;domain:string|null};
-type Snapshot={project:Project;counts:Record<string,number>;recentRuns:Array<{id:string;actor:string;command:string;status:string;createdAt:string;durationMs:number|null}>};
-type KeywordRow={keyword:{id:string;text:string;source:string;status:string;avgMonthly:number|null};clusterId:string|null};
-type ClusterRow={cluster:{id:string;title:string;intent:string};keywordCount:number};
-type Task={id:string;title:string;status:string;assigneeType:string;priority:number};
-type Decision={id:string;verdict:string;action:string;targetType:string;reason:string|null};
-type Source={id:string;type:string;label:string;url:string|null;createdAt:string};
-type Insight={id:string;type:string;text:string;confidence:number|null;status:string;sourceId:string|null;createdAt:string};
-type Page={id:string;title:string;slug:string;status:string;kind:string;clusterId:string|null;rationale:string|null;createdAt:string;updatedAt:string};
-type Cannibalization={exactTargetConflicts:Array<{keywordId:string;keyword:string;severity:string;pages:Array<{id:string;title:string;status:string;role:string}>}>;sameClusterConflicts:Array<{clusterId:string;clusterTitle:string|null;severity:string;pages:Array<{id:string;title:string;status:string}>}>;checkedPages:number;checkedTargets:number};
-type PolicyRule={id:string;scope:string;rule:string;rationale:string|null;status:string;sourceDecisionIds:string[];proposedBy:string;reviewedBy:string|null;createdAt:string;updatedAt:string};
-type PolicyContext={active:PolicyRule[];candidates:PolicyRule[];retired:PolicyRule[];recentDecisions:Array<{id:string;action:string;targetType:string;targetId:string|null;verdict:string;reason:string|null;createdAt:string}>};
-
+type View='home'|'discovery'|'keywords'|'planning'|'performance'|'work'|'settings';
+const nav:Array<{id:View;label:string;hint:string}>=[
+ {id:'home',label:'ホーム',hint:'次の作業'},
+ {id:'discovery',label:'キーワード探索',hint:'新しい候補'},
+ {id:'keywords',label:'キーワード',hint:'全件一覧'},
+ {id:'planning',label:'コンテンツ計画',hint:'クラスタ・企画'},
+ {id:'performance',label:'検索実績',hint:'サイト・GSC'},
+ {id:'work',label:'作業・レビュー',hint:'Agent・人間判断'},
+ {id:'settings',label:'設定',hint:'対象・接続・データ'}
+];
 const when=(value:string)=>new Date(value).toLocaleString();
-const sourceHost=(value:string|null)=>{if(!value)return '';try{return new URL(value).hostname}catch{return value}};
+const metricLabel=(value:string)=>({topics:'トピック',keywords:'キーワード',unclusteredKeywords:'未クラスタ',clusters:'クラスタ',proposedPages:'企画確認待ち',openTasks:'未完了タスク',openInsights:'未解決Insight'}[value]||value.replace(/([A-Z])/g,' $1'));
 
 export function App(){
- const [projects,setProjects]=useState<Project[]>([]),[projectId,setProjectId]=useState(''),[snapshot,setSnapshot]=useState<Snapshot|null>(null);
- const [keywords,setKeywords]=useState<KeywordRow[]>([]),[clusters,setClusters]=useState<ClusterRow[]>([]),[tasks,setTasks]=useState<Task[]>([]),[decisions,setDecisions]=useState<Decision[]>([]),[sources,setSources]=useState<Source[]>([]),[insights,setInsights]=useState<Insight[]>([]),[pages,setPages]=useState<Page[]>([]),[cannibalization,setCannibalization]=useState<Cannibalization|null>(null),[policies,setPolicies]=useState<PolicyContext|null>(null),[error,setError]=useState('');
- const [loading,setLoading]=useState(false),[busy,setBusy]=useState('');
- const loadAbortRef=useRef<AbortController|null>(null);
- const projectIdRef=useRef(projectId);
- projectIdRef.current=projectId;
-
- const loadProjects=async()=>{
-   const p=await api<Project[]>('/projects');
-   setProjects(p);
-   setProjectId(current=>current||p[0]?.id||'');
- };
-
- const load=async(targetProjectId=projectIdRef.current)=>{
-   if(!targetProjectId)return;
-   loadAbortRef.current?.abort();
-   const controller=new AbortController();
-   loadAbortRef.current=controller;
-   setLoading(true);
-   try{
-     setError('');
-     const [s,k,c,t,d,so,i,p,ca,po]=await Promise.all([
-       api<Snapshot>(`/projects/${targetProjectId}/snapshot`,{signal:controller.signal}),
-       api<KeywordRow[]>(`/projects/${targetProjectId}/keywords`,{signal:controller.signal}),
-       api<ClusterRow[]>(`/projects/${targetProjectId}/clusters`,{signal:controller.signal}),
-       api<Task[]>(`/projects/${targetProjectId}/tasks`,{signal:controller.signal}),
-       api<Decision[]>(`/projects/${targetProjectId}/decisions`,{signal:controller.signal}),
-       api<Source[]>(`/projects/${targetProjectId}/sources`,{signal:controller.signal}),
-       api<Insight[]>(`/projects/${targetProjectId}/insights`,{signal:controller.signal}),
-       api<Page[]>(`/projects/${targetProjectId}/pages`,{signal:controller.signal}),
-       api<Cannibalization>(`/projects/${targetProjectId}/pages/cannibalization?limit=20`,{signal:controller.signal}),
-       api<PolicyContext>(`/projects/${targetProjectId}/policies/context?decisions=20`,{signal:controller.signal})
-     ]);
-     if(controller.signal.aborted||projectIdRef.current!==targetProjectId)return;
-     setSnapshot(s);setKeywords(k);setClusters(c);setTasks(t);setDecisions(d);setSources(so);setInsights(i);setPages(p);setCannibalization(ca);setPolicies(po);
-   }catch(e){
-     if(!controller.signal.aborted&&projectIdRef.current===targetProjectId)setError(String(e));
-   }finally{
-     if(loadAbortRef.current===controller){loadAbortRef.current=null;if(projectIdRef.current===targetProjectId)setLoading(false)}
-   }
- };
-
+ const [projects,setProjects]=useState<Project[]>([]),[projectId,setProjectId]=useState(''),[view,setView]=useState<View>('home'),[snapshot,setSnapshot]=useState<Snapshot|null>(null),[tasks,setTasks]=useState<Task[]>([]),[error,setError]=useState(''),[busy,setBusy]=useState(''),[loading,setLoading]=useState(false),[refreshKey,setRefreshKey]=useState(0);
+ const abortRef=useRef<AbortController|null>(null),projectIdRef=useRef(projectId);projectIdRef.current=projectId;
+ const loadProjects=async()=>{const rows=await api<Project[]>('/projects');setProjects(rows);setProjectId(current=>current||rows[0]?.id||'')};
+ const loadHome=async(target=projectIdRef.current)=>{if(!target)return;abortRef.current?.abort();const controller=new AbortController();abortRef.current=controller;try{setLoading(true);const [s,t]=await Promise.all([api<Snapshot>(`/projects/${target}/snapshot`,{signal:controller.signal}),api<Task[]>(`/projects/${target}/tasks`,{signal:controller.signal})]);if(controller.signal.aborted||projectIdRef.current!==target)return;setSnapshot(s);setTasks(t);setError('')}catch(e){if(!controller.signal.aborted)setError(String(e))}finally{if(abortRef.current===controller){abortRef.current=null;setLoading(false)}}};
  useEffect(()=>{loadProjects().catch(e=>setError(String(e)))},[]);
- useEffect(()=>{
-   loadAbortRef.current?.abort();
-   if(!projectId){setSnapshot(null);setLoading(false);return}
-   setSnapshot(null);
-   void load(projectId);
-   return()=>loadAbortRef.current?.abort();
- },[projectId]);
+ useEffect(()=>{abortRef.current?.abort();setSnapshot(null);if(projectId){setView('home');void loadHome(projectId)}return()=>abortRef.current?.abort()},[projectId]);
+ const refresh=()=>{setRefreshKey(k=>k+1);void loadHome(projectIdRef.current)};
+ async function createProject(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=e.currentTarget,f=new FormData(form);try{setBusy('project');const p=await api<Project>('/projects',{method:'POST',body:JSON.stringify({name:f.get('name'),domain:f.get('domain')})});form.reset();await loadProjects();setProjectId(p.id);setView('settings')}catch(e){setError(String(e))}finally{setBusy('')}}
+ const openTasks=tasks.filter(t=>t.status!=='done');
+ return <div className="app productApp"><aside><div className="brand"><span className="dot"/>KEYWORDS</div><div className="sideSection"><h4>Projects</h4>{projects.map(p=><button className={p.id===projectId?'project active':'project'} onClick={()=>setProjectId(p.id)} key={p.id}><b>{p.name}</b><small>{p.domain||'topic only'}</small></button>)}<form className="stack createProject" onSubmit={createProject}><input name="name" placeholder="新しいプロジェクト" required/><input name="domain" placeholder="domain（任意）"/><button disabled={busy==='project'}>{busy==='project'?'作成中…':'作成'}</button></form></div>{projectId&&<nav className="productNav">{nav.map(item=><button key={item.id} className={view===item.id?'active':''} onClick={()=>setView(item.id)}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav>}<div className="sideFooter"><small>Agent-native · Human-governed</small><small>Publishing is out of scope</small></div></aside>
+ <main>{error&&<div className="error globalError">{error}<button onClick={()=>setError('')}>×</button></div>}{!projectId?<section className="empty"><h1>プロジェクトを作成</h1><p>サイトがなくてもテーマだけで探索を開始できます。</p></section>:loading&&!snapshot?<section className="empty"><h1>ワークスペースを読み込み中…</h1></section>:snapshot?<><header className="productHeader"><div><p className="eyebrow">SEO WORKSPACE</p><h1>{snapshot.project.name}</h1><p>{snapshot.project.domain||'テーマ起点のプロジェクト'}</p></div><div className="agent"><span className="pulse"/>共有状態 接続中</div></header>
+  {view==='home'&&<Home snapshot={snapshot} tasks={openTasks} onNavigate={setView}/>} 
+  {view==='discovery'&&<DiscoveryWorkspace key={`d-${projectId}-${refreshKey}`} projectId={projectId} onChanged={refresh}/>} 
+  {view==='keywords'&&<KeywordWorkspace key={`k-${projectId}-${refreshKey}`} projectId={projectId}/>} 
+  {view==='planning'&&<PlanningWorkspace key={`p-${projectId}-${refreshKey}`} projectId={projectId} onChanged={refresh}/>} 
+  {view==='performance'&&<div className="productStack"><SeoOperations key={`s-${projectId}-${refreshKey}`} projectId={projectId} onChanged={refresh}/></div>} 
+  {view==='work'&&<GovernanceWorkspace key={`w-${projectId}-${refreshKey}`} projectId={projectId} onChanged={refresh}/>} 
+  {view==='settings'&&<SettingsWorkspace key={`set-${projectId}-${refreshKey}`} projectId={projectId} onChanged={refresh}/>} 
+ </>:<section className="empty"><h1>プロジェクトを読み込めません</h1><button onClick={()=>void loadHome(projectId)}>再試行</button></section>}</main></div>;
+}
 
- const unclustered=useMemo(()=>keywords.filter(x=>!x.clusterId&&x.keyword.status!=='rejected'),[keywords]);
- const conflictCount=(cannibalization?.exactTargetConflicts.length??0)+(cannibalization?.sameClusterConflicts.length??0);
- const refreshWorkspace=()=>load(projectIdRef.current);
-
- async function createProject(e:FormEvent<HTMLFormElement>){
-   e.preventDefault();const form=e.currentTarget;const f=new FormData(form);
-   try{setBusy('project');setError('');const p=await api<Project>('/projects',{method:'POST',body:JSON.stringify({name:f.get('name'),domain:f.get('domain')})});form.reset();await loadProjects();setProjectId(p.id)}catch(e){setError(String(e))}finally{setBusy('')}
- }
- async function addKeyword(e:FormEvent<HTMLFormElement>){
-   e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const targetProjectId=projectIdRef.current;
-   try{setBusy('keyword');setError('');await api(`/projects/${targetProjectId}/keywords`,{method:'POST',body:JSON.stringify({text:f.get('keyword')})});form.reset();if(projectIdRef.current===targetProjectId)await load(targetProjectId)}catch(e){setError(String(e))}finally{setBusy('')}
- }
- async function addTask(e:FormEvent<HTMLFormElement>){
-   e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const targetProjectId=projectIdRef.current;
-   try{setBusy('task');setError('');await api(`/projects/${targetProjectId}/tasks`,{method:'POST',body:JSON.stringify({title:f.get('task')})});form.reset();if(projectIdRef.current===targetProjectId)await load(targetProjectId)}catch(e){setError(String(e))}finally{setBusy('')}
- }
- async function fetchEvidence(e:FormEvent<HTMLFormElement>){
-   e.preventDefault();const form=e.currentTarget;const f=new FormData(form);const targetProjectId=projectIdRef.current;
-   try{setBusy('evidence');setError('');await api(`/projects/${targetProjectId}/research/web`,{method:'POST',body:JSON.stringify({url:f.get('url')})});form.reset();if(projectIdRef.current===targetProjectId)await load(targetProjectId)}catch(e){setError(String(e))}finally{setBusy('')}
- }
- async function reviewPage(pageId:string,verdict:'approved'|'rejected'|'needs_edit'){
-   try{
-     setError('');let reason:string|undefined;
-     if(verdict!=='approved'){
-       const input=window.prompt(verdict==='rejected'?'Why reject this page plan?':'What should be edited?');
-       if(input===null)return;
-       reason=input.trim();
-       if(!reason){setError('A reason is required for this review action.');return}
-     }
-     const targetProjectId=projectIdRef.current;
-     await api(`/projects/${targetProjectId}/pages/${pageId}/review`,{method:'POST',body:JSON.stringify({verdict,reason})});
-     if(projectIdRef.current===targetProjectId)await load(targetProjectId);
-   }catch(e){setError(String(e))}
- }
- async function reviewPolicy(policyId:string,verdict:'active'|'rejected'){
-   try{
-     setError('');let reason:string|undefined;
-     if(verdict==='rejected'){
-       const input=window.prompt('Why reject this policy candidate?');
-       if(input===null)return;
-       reason=input.trim();
-       if(!reason){setError('A reason is required to reject a policy candidate.');return}
-     }
-     const targetProjectId=projectIdRef.current;
-     await api(`/projects/${targetProjectId}/policies/${policyId}/review`,{method:'POST',body:JSON.stringify({verdict,reason})});
-     if(projectIdRef.current===targetProjectId)await load(targetProjectId);
-   }catch(e){setError(String(e))}
- }
- async function retirePolicy(policyId:string){
-   try{const input=window.prompt('Why should this active policy be retired?');if(input===null)return;const reason=input.trim();if(!reason){setError('A reason is required to retire a policy.');return}setError('');const targetProjectId=projectIdRef.current;await api(`/projects/${targetProjectId}/policies/${policyId}/retire`,{method:'POST',body:JSON.stringify({reason})});if(projectIdRef.current===targetProjectId)await load(targetProjectId)}catch(e){setError(String(e))}
- }
-
- return <div className="app"><aside><div className="brand"><span className="dot"/>KEYWORDS</div><h4>Projects</h4>{projects.map(p=><button className={p.id===projectId?'project active':'project'} onClick={()=>setProjectId(p.id)} key={p.id}><b>{p.name}</b><small>{p.domain||'no domain'}</small></button>)}<form className="stack" onSubmit={createProject}><input name="name" placeholder="New project" required/><input name="domain" placeholder="domain (optional)"/><button disabled={busy==='project'}>{busy==='project'?'Creating…':'Create project'}</button></form></aside>
- <main>{error&&<div className="error">{error}</div>}{!projectId?<section className="empty"><h1>Create a project</h1><p>The workspace state will be shared by the UI, CLI, and MCP agents.</p></section>:loading&&!snapshot?<section className="empty"><h1>Loading project…</h1><p>Refreshing the shared workspace state.</p></section>:!snapshot?<section className="empty"><h1>Project unavailable</h1><p>Check the error above and retry the project.</p></section>:<>
- <header><div><p className="eyebrow">SEO WORKSPACE</p><h1>{snapshot.project.name}</h1><p>{snapshot.project.domain||'No domain configured'}</p></div><div className="agent"><span className="pulse"/>Agent-ready</div></header>
- <section className="metrics">{Object.entries(snapshot.counts).map(([k,v])=><div className="metric" key={k}><strong>{v}</strong><span>{k.replace(/([A-Z])/g,' $1')}</span></div>)}</section>
- <div className="grid"><WorkSessions projectId={projectId} onChanged={refreshWorkspace}/><SeoOperations projectId={projectId} onChanged={refreshWorkspace}/><section className="panel policyPanel"><div className="panelHead"><div><p className="eyebrow">PROJECT POLICY MEMORY</p><h2>How this project works</h2></div><span>{policies?.active.length??0} active · {policies?.candidates.length??0} pending</span></div><div className="policyList">{policies?.active.map(p=><div className="policyRule activePolicy" key={p.id}><div><span className="sourceType">{p.scope}</span><b>{p.rule}</b>{p.rationale&&<small>{p.rationale}</small>}<small>{p.sourceDecisionIds.length} decision source{p.sourceDecisionIds.length===1?'':'s'} · active</small></div><div className="pageActions"><button onClick={()=>void retirePolicy(p.id)}>Retire</button></div></div>)}{policies?.candidates.map(p=><div className="policyRule candidatePolicy" key={p.id}><div><span className="sourceType">candidate · {p.scope}</span><b>{p.rule}</b>{p.rationale&&<small>{p.rationale}</small>}<small>{p.sourceDecisionIds.length} decision source{p.sourceDecisionIds.length===1?'':'s'} · proposed by {p.proposedBy}</small></div><div className="pageActions"><button onClick={()=>void reviewPolicy(p.id,'active')}>Activate</button><button onClick={()=>void reviewPolicy(p.id,'rejected')}>Reject</button></div></div>)}{!policies?.active.length&&!policies?.candidates.length&&<div className="hint">No durable project rules yet. Agents can propose policy candidates from repeated human decisions; only a human can activate them.</div>}</div></section>
- <section className="panel map"><div className="panelHead"><div><p className="eyebrow">CONTENT MAP</p><h2>Clusters</h2></div><span>{clusters.length} nodes</span></div><div className="clusterCanvas">{clusters.length?clusters.map((c,i)=><div className="cluster" style={{transform:`translate(${(i%3)*26}px, ${(i%2)*14}px)`}} key={c.cluster.id}><b>{c.cluster.title}</b><span>{c.keywordCount} keywords · {c.cluster.intent}</span></div>):<div className="hint">No clusters yet. An agent can create these through MCP.</div>}</div></section>
- <section className="panel"><div className="panelHead"><div><p className="eyebrow">BACKLOG</p><h2>Unclustered queries</h2></div><span>{unclustered.length}</span></div><form className="inline" onSubmit={addKeyword}><input name="keyword" placeholder="Add keyword" required/><button disabled={busy==='keyword'}>{busy==='keyword'?'…':'+'}</button></form><div className="list">{unclustered.slice(0,12).map(x=><div className="row" key={x.keyword.id}><div><b>{x.keyword.text}</b><small>{x.keyword.source}</small></div><span>{x.keyword.avgMonthly??'—'}</span></div>)}</div></section>
- <section className="panel"><div className="panelHead"><div><p className="eyebrow">CONTENT PLAN</p><h2>Page proposals</h2></div><span>{pages.filter(p=>p.status!=='archived').length} active</span></div><div className="list">{pages.slice(0,10).map(p=><div className="task" key={p.id}><span className={`status ${p.status}`}>{p.status}</span><div><b>{p.title}</b><small>/{p.slug} · {p.kind}</small>{p.rationale&&<small>{p.rationale}</small>}</div>{p.status==='proposed'&&<div className="pageActions"><button onClick={()=>void reviewPage(p.id,'approved')}>Approve</button><button onClick={()=>void reviewPage(p.id,'needs_edit')}>Edit</button><button onClick={()=>void reviewPage(p.id,'rejected')}>Reject</button></div>}</div>)}{!pages.length&&<div className="hint">No page plans yet. Agents should use page_plan after checking opportunity context and SERP intent.</div>}</div></section>
- <section className="panel decisions"><div className="panelHead"><div><p className="eyebrow">CANNIBALIZATION REVIEW</p><h2>Overlap signals</h2></div><span>{conflictCount}</span></div>{cannibalization?.exactTargetConflicts.slice(0,5).map(c=><div className="decision" key={`kw-${c.keywordId}`}><b>{c.severity} · exact target</b><span>{c.keyword}</span><p>{c.pages.map(p=>`${p.title} (${p.role})`).join(' ↔ ')}</p></div>)}{cannibalization?.sameClusterConflicts.slice(0,5).map(c=><div className="decision" key={`cluster-${c.clusterId}`}><b>{c.severity} · same cluster</b><span>{c.clusterTitle||c.clusterId}</span><p>{c.pages.map(p=>p.title).join(' ↔ ')}</p></div>)}{!conflictCount&&<div className="hint">No overlapping active page targets detected.</div>}</section>
- <section className="panel evidence"><div className="panelHead"><div><p className="eyebrow">RESEARCH EVIDENCE</p><h2>Sources</h2></div><span>{sources.length}</span></div><form className="inline wideAction" onSubmit={fetchEvidence}><input name="url" type="url" placeholder="Fetch a public URL" required/><button disabled={busy==='evidence'}>{busy==='evidence'?'Fetching…':'Fetch'}</button></form><div className="sourceList">{sources.slice(0,10).map(s=><div className="source" key={s.id}><span className="sourceType">{s.type.replaceAll('_',' ')}</span><div><b>{s.label}</b><small>{sourceHost(s.url)||'stored evidence'} · {when(s.createdAt)}</small></div></div>)}{!sources.length&&<div className="hint">No evidence yet. MCP research tools and this URL fetch will store sources here.</div>}</div></section>
- <section className="panel"><div className="panelHead"><div><p className="eyebrow">RESEARCH INTERPRETATION</p><h2>Insights</h2></div><span>{insights.filter(i=>i.status==='open').length} open</span></div><div className="insightList">{insights.slice(0,9).map(i=><div className="insight" key={i.id}><div className="insightTop"><b>{i.type}</b><span>{i.confidence===null?'—':`${Math.round(i.confidence*100)}%`}</span></div><p>{i.text}</p><small>{i.sourceId?'source-linked':'no source link'} · {when(i.createdAt)}</small></div>)}{!insights.length&&<div className="hint">Research is evidence; insights are the agent or human interpretation of that evidence.</div>}</div></section>
- <section className="panel"><div className="panelHead"><div><p className="eyebrow">SHARED QUEUE</p><h2>Tasks</h2></div><span>{tasks.filter(t=>t.status!=='done').length} open</span></div><form className="inline" onSubmit={addTask}><input name="task" placeholder="Create a task" required/><button disabled={busy==='task'}>{busy==='task'?'…':'+'}</button></form><div className="list">{tasks.slice(0,10).map(t=><div className="task" key={t.id}><span className={`status ${t.status}`}>{t.status}</span><div><b>{t.title}</b><small>{t.assigneeType} · p{t.priority}</small></div></div>)}</div></section>
- <section className="panel activity"><div className="panelHead"><div><p className="eyebrow">AGENT ACTIVITY</p><h2>Command log</h2></div></div><div className="timeline">{snapshot.recentRuns.map(r=><div className="event" key={r.id}><span className={r.status==='succeeded'?'ok':'bad'}/><div><b>{r.command}</b><small>{r.actor} · {when(r.createdAt)} · {r.durationMs??0}ms</small></div></div>)}</div></section>
- <section className="panel decisions"><div className="panelHead"><div><p className="eyebrow">FEEDBACK MEMORY</p><h2>Decisions</h2></div><span>{decisions.length}</span></div>{decisions.slice(0,8).map(d=><div className="decision" key={d.id}><b>{d.verdict}</b><span>{d.action} · {d.targetType}</span><p>{d.reason||'No reason recorded'}</p></div>)}</section></div></>}</main></div>
+function Home({snapshot,tasks,onNavigate}:{snapshot:Snapshot;tasks:Task[];onNavigate:(view:View)=>void}){
+ return <div className="productStack"><section className="homeHero"><div><p className="eyebrow">TODAY</p><h2>次に狙うテーマを、根拠付きで決める</h2><p>目的を渡すとAgentが調査し、候補の採否と企画承認だけを人間が判断します。</p></div><button className="primaryAction heroAction" onClick={()=>onNavigate('discovery')}>新しいキーワードを探す</button></section>
+  <section className="metrics productMetrics">{Object.entries(snapshot.counts).map(([k,v])=><button className="metric" key={k} onClick={()=>onNavigate(k.includes('keyword')||k==='keywords'?'keywords':k.includes('Page')?'planning':k.includes('Task')?'work':'home')}><strong>{v}</strong><span>{metricLabel(k)}</span></button>)}</section>
+  <div className="twoColumn"><section className="panel"><div className="panelHead"><div><p className="eyebrow">NEXT / ACTIVE</p><h2>未完了タスク</h2></div><span>{tasks.length}</span></div><div className="list">{tasks.slice(0,8).map(t=><div className="task" key={t.id}><span className={`status ${t.status}`}>{t.status}</span><div><b>{t.title}</b><small>{t.assigneeType} · priority {t.priority}{t.relatedType?` · ${t.relatedType}`:''}</small></div></div>)}{!tasks.length&&<div className="hint">未完了タスクはありません。新しい探索を始められます。</div>}</div></section>
+  <section className="panel"><div className="panelHead"><div><p className="eyebrow">RECENT RESULTS</p><h2>最近の変更</h2></div></div><div className="timeline">{snapshot.recentRuns.filter(r=>!['project.snapshot','work.list','review.list'].includes(r.command)).slice(0,10).map(r=><div className="event" key={r.id}><span className={r.status==='succeeded'?'ok':'bad'}/><div><b>{r.command}</b><small>{r.actor} · {when(r.createdAt)}</small></div></div>)}{!snapshot.recentRuns.length&&<div className="hint">まだ操作履歴はありません。</div>}</div></section></div>
+  <section className="flowStrip"><span>1 Project brief</span><b>→</b><span>2 Agent discovery</span><b>→</b><span>3 Candidate review</span><b>→</b><span>4 Content plan</span><b>→</b><span>5 Human review</span></section>
+ </div>;
 }
