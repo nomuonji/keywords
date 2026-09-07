@@ -1,0 +1,40 @@
+name: ci
+on:
+  push:
+  pull_request:
+concurrency:
+  group: ci-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  typecheck:
+    strategy:
+      fail-fast: false
+      matrix:
+        workspace: [domain, db, research, commands, api, cli, mcp, web]
+    runs-on: ubuntu-latest
+    name: typecheck / ${{ matrix.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+      - run: npm run typecheck -w @keywords/${{ matrix.workspace }}
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run db:init
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-migration-smoke.sqlite npx tsx scripts/migration-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-planning-smoke.sqlite npx tsx scripts/planning-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-policy-smoke.sqlite npx tsx scripts/policy-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-work-loop-smoke.sqlite npx tsx scripts/work-loop-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-review-smoke.sqlite npx tsx scripts/review-smoke.ts
+      - run: KEYWORDS_DB_PATH=/tmp/keywords-operator-smoke.sqlite npx tsx scripts/operator-smoke.ts
+      - run: npm run build -w @keywords/web

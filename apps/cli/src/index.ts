@@ -1,0 +1,80 @@
+import { Command } from 'commander';
+import { commands } from '@keywords/commands';
+import { planningCommands } from '@keywords/commands/planning';
+import { policyCommands } from '@keywords/commands/policy';
+import { workCommands } from '@keywords/commands/work';
+import { reviewCommands } from '@keywords/commands/review';
+import { siteCommands } from '@keywords/commands/site';
+import { metricsCommands } from '@keywords/commands/metrics';
+import { operatorCommands } from '@keywords/commands/operator';
+const program = new Command();
+const ctx = { actor: 'human' as const, actorId: process.env.USER ?? 'cli' };
+const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
+const csv = (value?: string) => value?.split(',').map(item => item.trim()).filter(Boolean) ?? [];
+program.name('keywords').description('Agent-native SEO workspace CLI');
+const project = program.command('project');
+project.command('list').action(async () => print(await commands.project.list(ctx)));
+project.command('create').argument('<name>').option('--domain <domain>').action(async (name: string, opts: {domain?: string}) => print(await commands.project.create(ctx, { name, domain: opts.domain })));
+project.command('snapshot').argument('<projectId>').action(async (projectId: string) => print(await commands.project.snapshot(ctx, projectId)));
+
+const operator = program.command('operator');
+operator.command('inspect').argument('<projectId>').action(async (projectId: string) => print(await operatorCommands.inspect(ctx, projectId)));
+operator.command('tick').argument('<projectId>').action(async (projectId: string) => print(await operatorCommands.tick(ctx, projectId)));
+const site = program.command('site');
+site.command('list').argument('<projectId>').action(async (projectId: string) => print(await siteCommands.list(ctx, projectId)));
+site.command('sync').argument('<projectId>').option('--sitemap <url>').action(async (projectId: string, opts: {sitemap?: string}) => print(await siteCommands.syncSitemap(ctx, { projectId, sitemapUrl: opts.sitemap })));
+const metrics = program.command('metrics');
+metrics.command('context').argument('<projectId>').option('--limit <number>', 'Maximum decline rows', '25').action(async (projectId: string, opts: {limit: string}) => print(await metricsCommands.context(ctx, projectId, Number(opts.limit))));
+metrics.command('capture').argument('<projectId>').argument('<startDate>').argument('<endDate>').option('--site <siteUrl>').option('--search-type <type>').option('--row-limit <number>').action(async (projectId: string, startDate: string, endDate: string, opts: {site?: string; searchType?: string; rowLimit?: string}) => print(await metricsCommands.capture(ctx, { projectId, siteUrl: opts.site, startDate, endDate, searchType: opts.searchType, rowLimit: opts.rowLimit ? Number(opts.rowLimit) : undefined })));
+
+const work = program.command('work');
+work.command('context').argument('<projectId>').option('--session <sessionId>').action(async (projectId: string, opts: {session?: string}) => print(await workCommands.context(ctx, { projectId, sessionId: opts.session })));
+work.command('list').argument('<projectId>').option('--limit <number>', 'Recent sessions', '20').action(async (projectId: string, opts: {limit: string}) => print(await workCommands.list(ctx, projectId, Number(opts.limit))));
+work.command('start').argument('<projectId>').option('--objective <text>').option('--criteria <csv>', 'Comma-separated completion criteria').option('--max-actions <number>', 'Action budget', '12').action(async (projectId: string, opts: {objective?: string; criteria?: string; maxActions: string}) => print(await workCommands.start(ctx, { projectId, objective: opts.objective, completionCriteria: csv(opts.criteria), maxActions: Number(opts.maxActions) })));
+work.command('resume').argument('<projectId>').argument('<sessionId>').action(async (projectId: string, sessionId: string) => print(await workCommands.resume(ctx, { projectId, sessionId })));
+work.command('checkpoint').argument('<projectId>').argument('<sessionId>').argument('<state>', 'working | awaiting_review | blocked').requiredOption('--summary <text>').option('--next <action>').action(async (projectId: string, sessionId: string, state: 'working'|'awaiting_review'|'blocked', opts: {summary: string; next?: string}) => print(await workCommands.checkpoint(ctx, { projectId, sessionId, state, summary: opts.summary, nextAction: opts.next })));
+work.command('complete').argument('<projectId>').argument('<sessionId>').requiredOption('--summary <text>').action(async (projectId: string, sessionId: string, opts: {summary: string}) => print(await workCommands.complete(ctx, { projectId, sessionId, summary: opts.summary })));
+work.command('cancel').argument('<projectId>').argument('<sessionId>').requiredOption('--reason <text>').action(async (projectId: string, sessionId: string, opts: {reason: string}) => print(await workCommands.cancel(ctx, { projectId, sessionId, reason: opts.reason })));
+const review = program.command('review');
+review.command('list').argument('<projectId>').option('--status <status>', 'open | resolved').option('--session <sessionId>').option('--limit <number>', 'Maximum requests', '50').action(async (projectId: string, opts: {status?: string; session?: string; limit: string}) => print(await reviewCommands.list(ctx, { projectId, status: opts.status, sessionId: opts.session, limit: Number(opts.limit) })));
+review.command('request').argument('<projectId>').argument('<sessionId>').argument('<targetType>').argument('<title>').option('--target <targetId>').option('--question <question>').option('--options <csv>').action(async (projectId: string, sessionId: string, targetType: string, title: string, opts: {target?: string; question?: string; options?: string}) => print(await reviewCommands.request(ctx, { projectId, sessionId, targetType, targetId: opts.target, title, question: opts.question, options: csv(opts.options) })));
+review.command('resolve').argument('<projectId>').argument('<reviewId>').argument('<resolution>').option('--reason <reason>').option('--override-conflicts').action(async (projectId: string, reviewId: string, resolution: string, opts: {reason?: string; overrideConflicts?: boolean}) => print(await reviewCommands.resolve(ctx, { projectId, reviewId, resolution, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
+const policy = program.command('policy');
+policy.command('context').argument('<projectId>').option('--decisions <number>', 'Recent decisions to include', '30').action(async (projectId: string, opts: {decisions: string}) => print(await policyCommands.context(ctx, projectId, Number(opts.decisions))));
+policy.command('list').argument('<projectId>').option('--status <status>').action(async (projectId: string, opts: {status?: string}) => print(await policyCommands.list(ctx, projectId, opts.status)));
+policy.command('propose').argument('<projectId>').argument('<rule>').requiredOption('--decisions <ids>', 'Comma-separated source decision IDs').option('--scope <scope>').option('--rationale <text>').action(async (projectId: string, rule: string, opts: {decisions: string; scope?: string; rationale?: string}) => print(await policyCommands.propose(ctx, { projectId, rule, scope: opts.scope, rationale: opts.rationale, sourceDecisionIds: csv(opts.decisions) })));
+policy.command('review').argument('<projectId>').argument('<policyId>').argument('<verdict>', 'active | rejected').option('--reason <reason>').action(async (projectId: string, policyId: string, verdict: 'active'|'rejected', opts: {reason?: string}) => print(await policyCommands.review(ctx, { projectId, policyId, verdict, reason: opts.reason })));
+policy.command('retire').argument('<projectId>').argument('<policyId>').requiredOption('--reason <reason>').action(async (projectId: string, policyId: string, opts: {reason: string}) => print(await policyCommands.retire(ctx, { projectId, policyId, reason: opts.reason })));
+const source = program.command('source');
+source.command('list').argument('<projectId>').option('--type <type>').action(async (projectId: string, opts: {type?: string}) => print(await commands.source.list(ctx, projectId, opts.type)));
+const research = program.command('research');
+research.command('context').argument('<projectId>').action(async (projectId: string) => print(await commands.research.context(ctx, projectId)));
+research.command('opportunities').argument('<projectId>').option('--limit <number>', 'Maximum rows per opportunity bucket', '25').action(async (projectId: string, opts: {limit: string}) => print(await commands.research.opportunities(ctx, projectId, Number(opts.limit))));
+research.command('web').argument('<projectId>').argument('<url>').option('--max-chars <number>').action(async (projectId: string, url: string, opts: {maxChars?: string}) => print(await commands.research.webFetch(ctx, { projectId, url, maxChars: opts.maxChars ? Number(opts.maxChars) : undefined })));
+research.command('serp').argument('<projectId>').argument('<query>').option('--country <country>').option('--language <language>').option('--location <location>').option('--num <number>').action(async (projectId: string, query: string, opts: {country?: string; language?: string; location?: string; num?: string}) => print(await commands.research.serp(ctx, { projectId, query, country: opts.country, language: opts.language, location: opts.location, num: opts.num ? Number(opts.num) : undefined })));
+research.command('ads').argument('<projectId>').argument('[seeds...]').option('--url <url>').option('--customer <customerId>').option('--language-id <id>').option('--geo <ids>').option('--no-import').action(async (projectId: string, seeds: string[] | undefined, opts: {url?: string; customer?: string; languageId?: string; geo?: string; import: boolean}) => print(await commands.research.googleAdsKeywordIdeas(ctx, { projectId, customerId: opts.customer, seedKeywords: seeds ?? [], url: opts.url, languageId: opts.languageId, geoTargetIds: csv(opts.geo), importKeywords: opts.import })));
+research.command('gsc').argument('<projectId>').argument('<startDate>').argument('<endDate>').option('--site <siteUrl>').option('--dimensions <csv>', 'Comma-separated dimensions', 'query').option('--row-limit <number>').option('--search-type <type>').option('--no-import').action(async (projectId: string, startDate: string, endDate: string, opts: {site?: string; dimensions: string; rowLimit?: string; searchType?: string; import: boolean}) => print(await commands.research.searchConsole(ctx, { projectId, siteUrl: opts.site, startDate, endDate, dimensions: csv(opts.dimensions), rowLimit: opts.rowLimit ? Number(opts.rowLimit) : undefined, searchType: opts.searchType, importQueries: opts.import })));
+const keyword = program.command('keyword');
+keyword.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.keyword.list(ctx, projectId)));
+keyword.command('add').argument('<projectId>').argument('<text>').option('--volume <number>').action(async (projectId: string, text: string, opts: {volume?: string}) => print(await commands.keyword.create(ctx, { projectId, text, avgMonthly: opts.volume ? Number(opts.volume) : undefined })));
+keyword.command('reject').argument('<projectId>').argument('<keywordId>').option('--reason <reason>').action(async (projectId: string, keywordId: string, opts: {reason?: string}) => print(await commands.keyword.reject(ctx, { projectId, keywordId, reason: opts.reason })));
+const cluster = program.command('cluster');
+cluster.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.cluster.list(ctx, projectId)));
+cluster.command('create').argument('<projectId>').argument('<title>').option('--intent <intent>').action(async (projectId: string, title: string, opts: {intent?: string}) => print(await commands.cluster.create(ctx, { projectId, title, intent: opts.intent })));
+cluster.command('assign').argument('<projectId>').argument('<clusterId>').requiredOption('--keywords <ids>', 'Comma-separated keyword IDs').action(async (projectId: string, clusterId: string, opts: {keywords: string}) => print(await planningCommands.clusterBulkAssign(ctx, { projectId, clusterId, keywordIds: csv(opts.keywords) })));
+const page = program.command('page');
+page.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.page.list(ctx, projectId)));
+page.command('plan').argument('<projectId>').argument('<title>')
+  .option('--cluster <clusterId>').option('--slug <slug>').option('--kind <kind>').option('--rationale <text>')
+  .option('--primary <keywordId>').option('--secondary <ids>', 'Comma-separated keyword IDs').option('--sources <ids>', 'Comma-separated source IDs')
+  .action(async (projectId: string, title: string, opts: {cluster?: string; slug?: string; kind?: string; rationale?: string; primary?: string; secondary?: string; sources?: string}) => print(await planningCommands.pagePlan(ctx, { projectId, title, clusterId: opts.cluster, slug: opts.slug, kind: opts.kind, rationale: opts.rationale, primaryKeywordId: opts.primary, secondaryKeywordIds: csv(opts.secondary), sourceIds: csv(opts.sources) })));
+page.command('targets').argument('<projectId>').argument('<pageId>').action(async (projectId: string, pageId: string) => print(await planningCommands.pageTargets(ctx, { projectId, pageId })));
+page.command('cannibalization').argument('<projectId>').option('--limit <number>', 'Maximum conflict groups', '50').action(async (projectId: string, opts: {limit: string}) => print(await planningCommands.pageCannibalization(ctx, { projectId, limit: Number(opts.limit) })));
+page.command('review').argument('<projectId>').argument('<pageId>').argument('<verdict>', 'approved | rejected | needs_edit')
+  .option('--reason <reason>').option('--override-conflicts')
+  .action(async (projectId: string, pageId: string, verdict: 'approved'|'rejected'|'needs_edit', opts: {reason?: string; overrideConflicts?: boolean}) => print(await planningCommands.pageReview(ctx, { projectId, pageId, verdict, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
+const task = program.command('task');
+task.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.task.list(ctx, projectId)));
+task.command('add').argument('<projectId>').argument('<title>').option('--priority <number>').action(async (projectId: string, title: string, opts: {priority?: string}) => print(await commands.task.create(ctx, { projectId, title, priority: opts.priority ? Number(opts.priority) : undefined })));
+task.command('status').argument('<projectId>').argument('<taskId>').argument('<status>', 'todo | doing | review | done').action(async (projectId: string, taskId: string, status: 'todo'|'doing'|'review'|'done') => print(await commands.task.setStatus(ctx, { projectId, taskId, status })));
+await program.parseAsync();

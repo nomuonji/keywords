@@ -1,0 +1,1 @@
+{"name":"@keywords/mcp","version":"0.1.0","private":true,"type":"module","scripts":{"start":"tsx src/index.ts","typecheck":"tsc -p tsconfig.json --noEmit"},"dependencies":{"@keywords/commands":"0.1.0","@modelcontextprotocol/sdk":"^1.17.5"},"devDependencies":{"tsx":"^4.20.5"}}

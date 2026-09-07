@@ -1,0 +1,19 @@
+{
+  "name": "@keywords/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.1",
+    "@keywords/commands": "0.1.0",
+    "hono": "^4.9.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5"
+  }
+}

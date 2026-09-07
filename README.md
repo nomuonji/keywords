@@ -1,49 +1,342 @@
-# Keywords Automation App
+# Keywords â€” Agent-native SEO Workspace
 
-React ŠÇ— UI ‚Æ Express API ‚ğ 1 ‚Â‚Ì Node.js ƒvƒƒWƒFƒNƒg‚É‚Ü‚Æ‚ß‚½\¬‚Å‚·BFirestore ‚ğƒf[ƒ^ƒXƒgƒA‚ÉAGeminiEGoogle Ads APIE“Æ©ƒXƒPƒWƒ…[ƒ‰‚ÅƒL[ƒ[ƒhƒŠƒT[ƒ`?ƒAƒEƒgƒ‰ƒCƒ“¶¬?‹L–“Še‚Ü‚Å‚ğ©“®‰»‚µ‚Ü‚·B
+`keywords` is a shared SEO operating system where humans and AI agents work on the same SQL-backed project state. Web UI, CLI, HTTP API, MCP, and the scheduled Operator all use the same command layer.
 
-## ƒfƒBƒŒƒNƒgƒŠ\¬
+The current product scope intentionally stops before article generation and publishing.
 
+## Completed scope
+
+- SQLite + Drizzle; no Firebase / Firestore
+- shared typed command boundary and `runs` audit trail
+- project, topic, keyword, cluster, page, source, insight, task, decision, policy, work-session, checkpoint, review-request models
+- Google Ads keyword ideas, Search Console, SERP, public-web research
+- deterministic opportunity context without one opaque SEO score
+- evidence-backed cluster/page planning and cannibalization review
+- human-only page approval and policy activation
+- Decision â†’ Policy project memory
+- bounded Agent Work Loop + Human Review Inbox
+- **Operator/Scheduler that deterministically selects the next justified SEO task**
+- **historical Search Console query/page snapshots and explicit decline detection**
+- **real site URL synchronization from sitemap and Search Console into the same Page model**
+- React/Vite Web UI, Hono API, CLI, and MCP server
+- external article generation / publishing intentionally out of scope
+
+## Architecture
+
+```text
+                         â”Œâ”€â”€ Search Console history
+External research â”€â”€â”€â”€â”€â”€â”¼â”€â”€ Sitemap / live URLs
+                         â””â”€â”€ Ads / SERP / Web evidence
+                                  â”‚
+                                  v
+Scheduled Operator â”€â”       @keywords/commands â”€â”€â”€â”€â”€> @keywords/db â”€â”€> SQLite
+Human Web UI â”€â”€â”€â”€â”€â”€â”€â”¤              ^       â”‚
+Human CLI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜       â”œâ”€â”€ runs / tasks / decisions
+Agent MCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜                      â”œâ”€â”€ pages / metric snapshots
+                                           â”œâ”€â”€ policy_rules
+                                           â””â”€â”€ work_sessions / review_requests
 ```
-index.html          Vite ƒGƒ“ƒgƒŠ
-src/                React + Firebase ŠÇ— UI
-server/             Express API ‚ÆƒXƒPƒWƒ…[ƒ‰AGemini/Ads/Blogger ˜AŒg
-  lib/core          ‹¤—Lƒ†[ƒeƒBƒŠƒeƒB
-  lib/gemini        Gemini ƒNƒ‰ƒCƒAƒ“ƒg
-  lib/ads           ƒL[ƒ[ƒhƒAƒCƒfƒAæ“¾ƒNƒ‰ƒCƒAƒ“ƒg
-  lib/blogger       ‹L–“ŠeƒƒWƒbƒN
-  lib/scheduler     Firestore ‚Æ˜AŒg‚·‚éƒpƒCƒvƒ‰ƒCƒ“
-api/[[...slug]].ts  Vercel Œü‚¯ƒT[ƒoƒŒƒXƒGƒ“ƒgƒŠ (Express app ‚ğƒ‰ƒbƒv)
-vercel.json         Vite o—Íæ (dist/client) ‚ğw’è
+
+Adapters do not write SQL directly.
+
+Specialized command surfaces:
+
+```text
+@keywords/commands/planning
+@keywords/commands/policy
+@keywords/commands/work
+@keywords/commands/review
+@keywords/commands/site
+@keywords/commands/metrics
+@keywords/commands/operator
 ```
 
-## ƒXƒNƒŠƒvƒg
+## Run locally
 
-| ƒRƒ}ƒ“ƒh | à–¾ |
-| --- | --- |
-| `npm install` | ˆË‘¶ŠÖŒW‚ğƒCƒ“ƒXƒg[ƒ‹ (•W€İ’è) |
-| `npm run dev` | Vite ŠJ”­ƒT[ƒo (3000) ‚Æ Express API (3001) ‚ğ“¯‹N“® |
-| `npm run build` | ƒT[ƒo (`dist/server`) ‚Æƒtƒƒ“ƒg (`dist/client`) ‚ğƒrƒ‹ƒh |
-| `npm run preview` | ƒrƒ‹ƒhÏ‚İƒtƒƒ“ƒg‚ğƒ[ƒJƒ‹‚ÅŠm”F |
-| `npm run start` | ƒrƒ‹ƒhÏ‚İ Express API ‚ğ‹N“® |
+```bash
+npm install
+cp .env.example .env
+npm run db:init
+npm run dev
+```
 
-`scripts/test-google-ads.js` ‚â `test.js` ‚Í `npm run build` Ï‚İ‚Ì¬‰Ê•¨‚ğ—Dæ‚µAƒrƒ‹ƒh‘O‚Í `ts-node` ‚ğg‚Á‚Ä TypeScript ƒ\[ƒX‚ğ“Ç‚İ‚İ‚Ü‚·B
+- Web: `http://localhost:5173`
+- API: `http://localhost:8787`
 
-## ŠJ”­è‡
+Create a project:
 
-1. `.env` ‚É FirebaseEGeminiEFirestoreEGoogle Ads ‚È‚Ç‚ÌƒT[ƒoŠÂ‹«•Ï”‚ğİ’è‚µ‚Ü‚·B
-2. `src/lib/firebase.ts` ‚ÅQÆ‚·‚é Vite —p‚Ì’l‚Í `.env.local` ‚È‚Ç‚É `VITE_FIREBASE_*`A`VITE_API_BASE_URL` (”CˆÓA–¢İ’è‚È‚ç `/api`) ‚ğ‹Lq‚µ‚Ü‚·B
-3. `npm run dev` ‚ğÀs‚·‚é‚ÆAVite (http://localhost:3000) ‚ª `/api` ‚ğ http://localhost:3001 ‚ÖƒvƒƒLƒV‚µAReact UI ‚©‚ç API ‚ğ’@‚¯‚Ü‚·B
+```bash
+npm run cli -- project create "My SEO Project" --domain example.com
+npm run cli -- project list
+```
 
-## ƒfƒvƒƒC (Vercel)
+# 1. Operator / Scheduler
 
-1. `npm install` ¨ `npm run build` ‚ªƒfƒtƒHƒ‹ƒg‚ÅÀs‚³‚êA`dist/client` ‚Éƒtƒƒ“ƒgA`dist/server` ‚É Express{ƒXƒPƒWƒ…[ƒ‰‚ªo—Í‚³‚ê‚Ü‚·B
-2. `vercel.json` ‚Ì `outputDirectory` ‚Í `dist/client` ‚Éİ’èÏ‚İ‚Å‚·B
-3. `api/[[...slug]].ts` ‚Íƒrƒ‹ƒhÏ‚İ‚Ì `dist/server/app.js` ‚ğ“Ç‚İ‚İAVercel ã‚Ì `/api/*` ƒŠƒNƒGƒXƒg‚ğ Express ‚ÉˆÏ÷‚µ‚Ü‚·Bƒrƒ‹ƒh‘O‚ÉƒfƒvƒƒC‚·‚é‚Æ 500 ‚É‚È‚é‚½‚ßA•K‚¸ `npm run build` ‚ğŠ®—¹‚³‚¹‚Ä‚­‚¾‚³‚¢B
-4. FirebaseEGeminiEGoogle AdsETavily ‚È‚Ç‚ÌŠÂ‹«•Ï”‚ğ Vercel ƒvƒƒWƒFƒNƒg‚Öİ’è‚µ‚Ü‚·B
+The Operator answers one question: **what is the most justified next SEO job right now?**
 
-## Firestore / ‹@”\
+It does not use a hidden composite SEO score. It returns ordered candidates with explicit reasons. Current priority lenses include:
 
-- ƒvƒƒWƒFƒNƒgEƒe[ƒ}Eƒm[ƒhEƒL[ƒ[ƒhEƒNƒ‰ƒXƒ^EƒŠƒ“ƒNEƒWƒ‡ƒu‚Æ‚¢‚Á‚½ƒhƒLƒ…ƒƒ“ƒg\¬‚Í]—ˆ‚Ì‚Ü‚Ü‚Å‚·B
-- React UI ‚©‚ç‚Ì‘€ì‚Í‚·‚×‚Ä `/api/projects/...` ”z‰º‚Ì Express ƒ‹[ƒg‚Ö‘—M‚³‚êAƒT[ƒo‘¤‚Å Firestore / Gemini / Ads / Blogger ƒƒWƒbƒN‚ğÀs‚µ‚Ü‚·B
-- ƒXƒPƒWƒ…[ƒ‰‚ÌƒpƒCƒvƒ‰ƒCƒ“ (ƒAƒCƒfƒAæ“¾¨ƒNƒ‰ƒXƒ^ƒŠƒ“ƒO¨ƒXƒRƒAƒŠƒ“ƒO¨ƒAƒEƒgƒ‰ƒCƒ“¨“à•”ƒŠƒ“ƒN¨ƒuƒƒO“Še) ‚à]—ˆ’Ê‚è `server/lib/scheduler` ‚É‚Ü‚Æ‚Ü‚Á‚Ä‚¢‚Ü‚·B
+1. unresolved human review
+2. unfinished work session
+3. existing agent task
+4. material query decline from the latest two GSC snapshots
+5. missing/stale sitemap inventory
+6. missing/stale GSC history
+7. high-demand unclustered keyword
+
+Inspect without mutating:
+
+```bash
+npm run cli -- operator inspect <projectId>
+```
+
+Create at most one deduplicated shared Agent task from the current top actionable candidate:
+
+```bash
+npm run cli -- operator tick <projectId>
+```
+
+The Hono API can run this automatically while it is alive:
+
+```env
+KEYWORDS_OPERATOR_INTERVAL_MINUTES=60
+KEYWORDS_OPERATOR_RUN_ON_START=1
+```
+
+`0` disables scheduling. A tick creates a task; it does **not** silently execute an SEO strategy or cross human review boundaries.
+
+HTTP:
+
+```text
+GET  /projects/:projectId/operator
+POST /projects/:projectId/operator/tick
+```
+
+MCP exposes read-only `operator_context`. The scheduler itself uses the same `operator.tick` command as the CLI/API.
+
+# 2. Search Console history
+
+Latest GSC values remain cached on keyword rows for convenient opportunity inspection, while historical observations are stored separately in:
+
+```text
+keyword_metric_snapshots
+page_metric_snapshots
+```
+
+Capture both query-level and page-level data for one period:
+
+```bash
+npm run cli -- metrics capture <projectId> 2026-08-01 2026-08-07
+npm run cli -- metrics capture <projectId> 2026-08-08 2026-08-14
+```
+
+Optional:
+
+```bash
+--site <Search Console property>
+--search-type web
+--row-limit 25000
+```
+
+Compare the latest two captured periods:
+
+```bash
+npm run cli -- metrics context <projectId>
+```
+
+The context deliberately exposes separate signals rather than one score:
+
+- `positionDrops`: average position worsened by at least 3 positions
+- `clickDrops`: query clicks fell at least 30% from a period with at least 5 clicks
+- `pageClickDrops`: page clicks fell at least 30% from a period with at least 5 clicks
+
+These signals feed `operator.inspect`, so a real decline can become the next shared Agent task.
+
+HTTP:
+
+```text
+GET  /projects/:projectId/metrics/context
+POST /projects/:projectId/metrics/capture
+```
+
+MCP:
+
+```text
+metrics_context
+metrics_capture
+```
+
+# 3. Real site synchronization
+
+Live URLs use the **same `pages` table** as content proposals. This makes existing coverage visible to page planning/cannibalization logic instead of maintaining a second site model.
+
+Live Page fields include:
+
+```text
+url
+source
+last_seen_at
+status = published
+```
+
+Sync the default `https://<project-domain>/sitemap.xml`:
+
+```bash
+npm run cli -- site sync <projectId>
+```
+
+Or specify a sitemap/index explicitly:
+
+```bash
+npm run cli -- site sync <projectId> --sitemap https://example.com/sitemap_index.xml
+```
+
+The sitemap reader:
+
+- supports sitemap indexes
+- follows a bounded number of child sitemaps
+- limits response size and total URLs
+- blocks localhost/private-network targets by default
+- updates `last_seen_at`
+- links a matching workspace proposal by slug when possible
+- reports URLs no longer seen as `stale` instead of destructively deleting them
+
+Search Console page-level metric capture also upserts observed URLs into the same Page model.
+
+HTTP:
+
+```text
+GET  /projects/:projectId/site
+POST /projects/:projectId/site/sync
+```
+
+MCP:
+
+```text
+site_list
+site_sync
+```
+
+# Agent work loop
+
+Substantial Agent work is grouped into an explicit `work_session`:
+
+```text
+operator_context
+      â†“
+work_context
+      â†“
+work_start
+      â†“
+policy / task / evidence inspection
+      â†“
+small audited commands
+      â†“
+work_checkpoint
+   â†™       â†˜
+blocked   review_request
+             â†“
+         Human Inbox
+             â†“
+          continue
+             â†“
+        work_complete
+```
+
+A work session stores objective, completion criteria, max-action budget, baseline project counts, command linkage, checkpoints, status, and final state diff. Checkpoints contain outcomes/blockers/next action, not hidden chain-of-thought.
+
+MCP automatically associates subsequent calls with the active session. External research, `site_sync`, and `metrics_capture` consume the action budget; read-only context calls do not.
+
+# Human Review Inbox
+
+When a specific human decision is required, the Agent creates a `review_request` with a target, question, and explicit resolution options. The work session moves to `awaiting_review`.
+
+Agents can request/list reviews but cannot resolve them through MCP. Human resolution can invoke the underlying page/policy review command and resume the work session when no open requests remain.
+
+# Project policy memory
+
+Human judgments are event-level `decisions`. Durable guidance is a separate `policy_rule`:
+
+```text
+Human decisions
+      â†“
+repeated pattern
+      â†“
+Agent policy candidate
+      â†“
+Human Activate / Reject
+      â†“
+future Agent context
+```
+
+Agents can propose rules with exact source Decision IDs, but only a human can activate/reject/retire them.
+
+# Research and opportunities
+
+```bash
+npm run cli -- research context <projectId>
+npm run cli -- research opportunities <projectId> --limit 25
+npm run cli -- research web <projectId> https://example.com/page
+npm run cli -- research serp <projectId> "target query" --country jp --language ja
+npm run cli -- research ads <projectId> "seed keyword"
+```
+
+Opportunity lenses:
+
+- striking distance
+- Search Console gaps
+- high-demand unclustered queries
+- low-competition demand
+
+Search Console's legacy `research gsc` command remains available for raw/ad-hoc dimensions. Use `metrics capture` when historical comparison is required.
+
+# Content planning
+
+```bash
+npm run cli -- cluster assign <projectId> <clusterId> --keywords <keywordId1,keywordId2>
+
+npm run cli -- page plan <projectId> "SEO Agent Workspace Guide" \
+  --cluster <clusterId> \
+  --primary <keywordId> \
+  --secondary <keywordId2,keywordId3> \
+  --sources <sourceId1,sourceId2> \
+  --rationale "One SERP intent; no distinct existing landing page."
+
+npm run cli -- page cannibalization <projectId>
+```
+
+Agents stop at proposal creation. Page approval is human-only, and exact target overlap blocks normal approval unless a human explicitly overrides it with a recorded reason.
+
+# Credentials
+
+Credentials are environment-only and are never intentionally persisted to SQLite.
+
+- SERP: `KEYWORDS_SERPER_API_KEY` / `SERPER_API_KEY`
+- Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
+- Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
+- shared Google OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
+- scheduler: `KEYWORDS_OPERATOR_INTERVAL_MINUTES`, `KEYWORDS_OPERATOR_RUN_ON_START`
+
+OAuth refresh/token issuance remains outside workspace persistence.
+
+# Verification
+
+GitHub Actions verifies:
+
+- typecheck: domain, db, research, commands, api, cli, mcp, web
+- SQLite initialization
+- legacy SQLite migration into work/review/live-page/GSC-history schema
+- content-planning smoke
+- policy-memory smoke
+- Agent work-loop smoke
+- Human Review smoke
+- Operator decline â†’ task smoke
+- Web production build
+
+CI cancels superseded runs on the same branch.
+
+# Current autonomy boundary
+
+The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization**. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
+
+**Article generation and external publishing are intentionally not implemented in the current scope.**
