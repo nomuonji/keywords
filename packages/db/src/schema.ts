@@ -62,6 +62,9 @@ export const pages = sqliteTable('pages', {
   status: text('status').notNull().default('proposed'),
   rationale: text('rationale'),
   evidenceJson: text('evidence_json'),
+  url: text('url'),
+  source: text('source').notNull().default('workspace'),
+  lastSeenAt: text('last_seen_at'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
@@ -71,6 +74,38 @@ export const pageKeywords = sqliteTable('page_keywords', {
   keywordId: text('keyword_id').notNull().references(() => keywords.id, { onDelete: 'cascade' }),
   role: text('role').notNull().default('secondary')
 }, (table) => [primaryKey({ columns: [table.pageId, table.keywordId] })]);
+
+export const keywordMetricSnapshots = sqliteTable('keyword_metric_snapshots', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  keywordId: text('keyword_id').references(() => keywords.id, { onDelete: 'set null' }),
+  query: text('query').notNull(),
+  siteUrl: text('site_url').notNull(),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
+  searchType: text('search_type'),
+  clicks: real('clicks').notNull(),
+  impressions: real('impressions').notNull(),
+  ctr: real('ctr').notNull(),
+  position: real('position').notNull(),
+  observedAt: text('observed_at').notNull()
+});
+
+export const pageMetricSnapshots = sqliteTable('page_metric_snapshots', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }),
+  pageId: text('page_id').references(() => pages.id, { onDelete: 'set null' }),
+  url: text('url').notNull(),
+  siteUrl: text('site_url').notNull(),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
+  searchType: text('search_type'),
+  clicks: real('clicks').notNull(),
+  impressions: real('impressions').notNull(),
+  ctr: real('ctr').notNull(),
+  position: real('position').notNull(),
+  observedAt: text('observed_at').notNull()
+});
 
 export const sources = sqliteTable('sources', {
   id: text('id').primaryKey(),
