@@ -1,0 +1,78 @@
+import { and, desc, eq } from 'drizzle-orm';
+import { getDatabase, schema } from '@keywords/db';
+import type { CommandContext } from '@keywords/domain';
+import { fetchSitemapUrls } from '@keywords/research/sitemap';
+
+const { db } = getDatabase();
+const now = () => new Date().toISOString();
+const id = () => crypto.randomUUID();
+const projectCtx = (ctx: CommandContext, projectId: string): CommandContext => ({ ...ctx, projectId });
+
+async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
+  const runId = id(); const started = Date.now(); const createdAt = now();
+  try {
+    const output = await fn();
+    await db.insert(schema.runs).values({ id: runId, projectId: ctx.projectId ?? null, workSessionId: ctx.workSessionId ?? null, actor: ctx.actor, actorId: ctx.actorId ?? null, command, status: 'succeeded', inputJson: JSON.stringify(input ?? null), outputJson: JSON.stringify(output ?? null), durationMs: Date.now() - started, createdAt });
+    return output;
+  } catch (error) {
+    await db.insert(schema.runs).values({ id: runId, projectId: ctx.projectId ?? null, workSessionId: ctx.workSessionId ?? null, actor: ctx.actor, actorId: ctx.actorId ?? null, command, status: 'failed', inputJson: JSON.stringify(input ?? null), error: error instanceof Error ? error.message : String(error), durationMs: Date.now() - started, createdAt });
+    throw error;
+  }
+}
+
+function defaultSitemap(domain: string) {
+  const raw = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`;
+  return new URL('/sitemap.xml', raw).toString();
+}
+
+function pageIdentity(input: string) {
+  const url = new URL(input);
+  const pathname = url.pathname.replace(/\/+$/, '') || '/';
+  const decoded = decodeURIComponent(pathname);
+  const title = decoded === '/' ? url.hostname : (decoded.split('/').filter(Boolean).at(-1) ?? url.hostname).replace(/[-_]+/g, ' ');
+  const slug = pathname === '/' ? '__root__' : pathname.replace(/^\/+|\/+$/g, '').replace(/\//g, '--').slice(0, 240);
+  return { url: url.toString(), title, slug };
+}
+
+async function upsertLivePage(projectId: string, inputUrl: string, seenAt: string) {
+  const identity = pageIdentity(inputUrl);
+  const existingUrl = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.url, identity.url))).get();
+  if (existingUrl) {
+    await db.update(schema.pages).set({ status: existingUrl.status === 'archived' ? 'published' : existingUrl.status, source: 'sitemap', lastSeenAt: seenAt, updatedAt: seenAt }).where(eq(schema.pages.id, existingUrl.id));
+    return { id: existingUrl.id, created: false, linkedProposal: false };
+  }
+  const sameSlug = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.slug, identity.slug))).get();
+  if (sameSlug) {
+    await db.update(schema.pages).set({ url: identity.url, source: 'sitemap', status: 'published', lastSeenAt: seenAt, updatedAt: seenAt }).where(eq(schema.pages.id, sameSlug.id));
+    return { id: sameSlug.id, created: false, linkedProposal: true };
+  }
+  const row = { id: id(), projectId, clusterId: null, title: identity.title, slug: identity.slug, kind: 'existing', status: 'published', rationale: null, evidenceJson: null, url: identity.url, source: 'sitemap', lastSeenAt: seenAt, createdAt: seenAt, updatedAt: seenAt };
+  await db.insert(schema.pages).values(row);
+  return { id: row.id, created: true, linkedProposal: false };
+}
+
+export const siteCommands = {
+  list: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'site.list', { projectId }, async () =>
+    db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.source, 'sitemap'))).orderBy(desc(schema.pages.lastSeenAt)).limit(500)
+  ),
+
+  syncSitemap: async (ctx: CommandContext, input: { projectId: string; sitemapUrl?: string }) => withRun(projectCtx(ctx, input.projectId), 'site.sync_sitemap', input, async () => {
+    const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get();
+    if (!project) throw new Error('Project not found');
+    const sitemapUrl = input.sitemapUrl?.trim() || (project.domain ? defaultSitemap(project.domain) : '');
+    if (!sitemapUrl) throw new Error('sitemapUrl is required when the project has no domain');
+    const discovery = await fetchSitemapUrls({ sitemapUrl });
+    const seenAt = now();
+    let created = 0, updated = 0, linkedProposals = 0;
+    for (const url of discovery.urls) {
+      const result = await upsertLivePage(input.projectId, url, seenAt);
+      if (result.created) created++; else updated++;
+      if (result.linkedProposal) linkedProposals++;
+    }
+    const previous = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.source, 'sitemap')));
+    const stale = previous.filter(page => page.lastSeenAt && page.lastSeenAt !== seenAt).map(page => ({ id: page.id, url: page.url, lastSeenAt: page.lastSeenAt }));
+    const source = { id: id(), projectId: input.projectId, type: 'sitemap', label: `Sitemap sync: ${discovery.urls.length} URLs`, url: discovery.sitemapUrl, metadataJson: JSON.stringify({ sitemaps: discovery.sitemaps, urlCount: discovery.urls.length, created, updated, linkedProposals, staleCount: stale.length }), createdAt: seenAt };
+    await db.insert(schema.sources).values(source);
+    return { sitemapUrl, discovered: discovery.urls.length, created, updated, linkedProposals, stale, sourceId: source.id, syncedAt: seenAt };
+  })
+};
