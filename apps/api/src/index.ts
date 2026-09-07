@@ -6,6 +6,9 @@ import { planningCommands } from '@keywords/commands/planning';
 import { policyCommands } from '@keywords/commands/policy';
 import { workCommands } from '@keywords/commands/work';
 import { reviewCommands } from '@keywords/commands/review';
+import { siteCommands } from '@keywords/commands/site';
+import { metricsCommands } from '@keywords/commands/metrics';
+import { operatorCommands } from '@keywords/commands/operator';
 
 const app = new Hono();
 app.use('*', cors());
@@ -20,6 +23,13 @@ const body = (c: any) => c.req.json();
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/projects/:projectId/snapshot', async c => c.json(await commands.project.snapshot(ctx(c), c.req.param('projectId'))));
+
+app.get('/projects/:projectId/operator', async c => c.json(await operatorCommands.inspect(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/operator/tick', async c => c.json(await operatorCommands.tick(ctx(c), c.req.param('projectId'))));
+app.get('/projects/:projectId/site', async c => c.json(await siteCommands.list(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/site/sync', async c => c.json(await siteCommands.syncSitemap(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
+app.get('/projects/:projectId/metrics/context', async c => c.json(await metricsCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 25))));
+app.post('/projects/:projectId/metrics/capture', async c => c.json(await metricsCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 
 app.get('/projects/:projectId/work/context', async c => {
   const projectId = c.req.param('projectId');
@@ -75,6 +85,22 @@ app.get('/projects/:projectId/decisions', async c => c.json(await commands.decis
 app.post('/projects/:projectId/decisions', async c => c.json(await commands.decision.record(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.get('/projects/:projectId/runs', async c => c.json(await commands.run.list(ctx(c), c.req.param('projectId'))));
 app.onError((error, c) => c.json({ error: error instanceof Error ? error.message : String(error) }, 500));
+
+const schedulerCtx = { actor: 'system' as const, actorId: 'operator-scheduler' };
+async function scheduledTick() {
+  const projects = await commands.project.list(schedulerCtx);
+  for (const project of projects) {
+    try { await operatorCommands.tick(schedulerCtx, project.id); }
+    catch (error) { console.error(`Operator tick failed for ${project.id}:`, error); }
+  }
+}
+const intervalMinutes = Math.max(0, Number(process.env.KEYWORDS_OPERATOR_INTERVAL_MINUTES ?? 0));
+if (intervalMinutes > 0) {
+  setInterval(() => void scheduledTick(), intervalMinutes * 60_000).unref();
+  if (process.env.KEYWORDS_OPERATOR_RUN_ON_START === '1') void scheduledTick();
+  console.log(`Keywords operator scheduler enabled every ${intervalMinutes} minutes`);
+}
+
 const port = Number(process.env.KEYWORDS_API_PORT ?? 8787);
 serve({ fetch: app.fetch, port });
 console.log(`Keywords API listening on http://localhost:${port}`);
