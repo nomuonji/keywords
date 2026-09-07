@@ -7,6 +7,7 @@ import { reviewCommands } from '@keywords/commands/review';
 import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
+import { registerProductCli } from './product.js';
 const program = new Command();
 const ctx = { actor: 'human' as const, actorId: process.env.USER ?? 'cli' };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
@@ -65,16 +66,15 @@ cluster.command('assign').argument('<projectId>').argument('<clusterId>').requir
 const page = program.command('page');
 page.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.page.list(ctx, projectId)));
 page.command('plan').argument('<projectId>').argument('<title>')
-  .option('--cluster <clusterId>').option('--slug <slug>').option('--kind <kind>').option('--rationale <text>')
+  .option('--cluster <clusterId>').option('--slug <slug>').option('--kind <kind>').option('--rationale <text>').option('--audience <text>').option('--question <text>').option('--intent <text>').option('--angle <text>').option('--assumptions <csv>').option('--plan-mode <mode>').option('--target-page <pageId>')
   .option('--primary <keywordId>').option('--secondary <ids>', 'Comma-separated keyword IDs').option('--sources <ids>', 'Comma-separated source IDs')
-  .action(async (projectId: string, title: string, opts: {cluster?: string; slug?: string; kind?: string; rationale?: string; primary?: string; secondary?: string; sources?: string}) => print(await planningCommands.pagePlan(ctx, { projectId, title, clusterId: opts.cluster, slug: opts.slug, kind: opts.kind, rationale: opts.rationale, primaryKeywordId: opts.primary, secondaryKeywordIds: csv(opts.secondary), sourceIds: csv(opts.sources) })));
+  .action(async (projectId: string, title: string, opts: any) => print(await planningCommands.pagePlan(ctx, { projectId, title, clusterId: opts.cluster, slug: opts.slug, kind: opts.kind, rationale: opts.rationale, audience: opts.audience, question: opts.question, searchIntent: opts.intent, uniqueAngle: opts.angle, unresolvedAssumptions: csv(opts.assumptions), planMode: opts.planMode, targetPageId: opts.targetPage, primaryKeywordId: opts.primary, secondaryKeywordIds: csv(opts.secondary), sourceIds: csv(opts.sources) })));
 page.command('targets').argument('<projectId>').argument('<pageId>').action(async (projectId: string, pageId: string) => print(await planningCommands.pageTargets(ctx, { projectId, pageId })));
 page.command('cannibalization').argument('<projectId>').option('--limit <number>', 'Maximum conflict groups', '50').action(async (projectId: string, opts: {limit: string}) => print(await planningCommands.pageCannibalization(ctx, { projectId, limit: Number(opts.limit) })));
-page.command('review').argument('<projectId>').argument('<pageId>').argument('<verdict>', 'approved | rejected | needs_edit')
-  .option('--reason <reason>').option('--override-conflicts')
-  .action(async (projectId: string, pageId: string, verdict: 'approved'|'rejected'|'needs_edit', opts: {reason?: string; overrideConflicts?: boolean}) => print(await planningCommands.pageReview(ctx, { projectId, pageId, verdict, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
+page.command('review').argument('<projectId>').argument('<pageId>').argument('<verdict>', 'approved | rejected | needs_edit').option('--reason <reason>').option('--override-conflicts').action(async (projectId: string, pageId: string, verdict: 'approved'|'rejected'|'needs_edit', opts: {reason?: string; overrideConflicts?: boolean}) => print(await planningCommands.pageReview(ctx, { projectId, pageId, verdict, reason: opts.reason, overrideConflicts: opts.overrideConflicts })));
 const task = program.command('task');
 task.command('list').argument('<projectId>').action(async (projectId: string) => print(await commands.task.list(ctx, projectId)));
 task.command('add').argument('<projectId>').argument('<title>').option('--priority <number>').action(async (projectId: string, title: string, opts: {priority?: string}) => print(await commands.task.create(ctx, { projectId, title, priority: opts.priority ? Number(opts.priority) : undefined })));
 task.command('status').argument('<projectId>').argument('<taskId>').argument('<status>', 'todo | doing | review | done').action(async (projectId: string, taskId: string, status: 'todo'|'doing'|'review'|'done') => print(await commands.task.setStatus(ctx, { projectId, taskId, status })));
+registerProductCli(program, ctx);
 await program.parseAsync();
