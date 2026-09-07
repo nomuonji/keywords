@@ -18,9 +18,11 @@ type WorkSession = {
   checkpoints: Array<{ id: string; state: string; summary: string; nextAction: string | null; createdAt: string }>;
 };
 
+type Props = { projectId: string; onChanged?: () => void | Promise<void> };
+
 const when = (value: string) => new Date(value).toLocaleString();
 
-export function WorkSessions({ projectId }: { projectId: string }) {
+export function WorkSessions({ projectId, onChanged }: Props) {
   const [sessions, setSessions] = useState<WorkSession[]>([]);
   const [error, setError] = useState('');
 
@@ -50,14 +52,14 @@ export function WorkSessions({ projectId }: { projectId: string }) {
         return <div className="workSession" key={session.id}>
           <div className="workSessionTop"><span className={`status ${session.status}`}>{session.status.replace('_',' ')}</span><small>{session.usage.actions}/{session.maxActions} actions · {session.remainingActions} left</small></div>
           <b>{session.objective}</b>
-          <div className="workMeter"><span style={{width:`${Math.min(100,pct)}%`}}/></div>
+          <div className="workMeter" aria-label={`${session.usage.actions} of ${session.maxActions} action budget used`}><span style={{width:`${Math.min(100,pct)}%`}}/></div>
           {checkpoint&&<p>{checkpoint.summary}</p>}
           {checkpoint?.nextAction&&<small>Next: {checkpoint.nextAction}</small>}
           {!checkpoint&&session.summary&&<p>{session.summary}</p>}
-          <small>{when(session.updatedAt)} · {session.usage.failed?`${session.usage.failed} failed commands`:'no command failures'}</small>
+          <small>{when(session.updatedAt)} · budget used {session.usage.actions}/{session.maxActions} · {session.usage.failed?`${session.usage.failed} failed commands`:'no command failures'}</small>
         </div>;
       })}{!sessions.length&&!error&&<div className="hint">No work sessions yet. An MCP agent can start one with work_start.</div>}</div>
     </section>
-    <ReviewInbox projectId={projectId}/>
+    <ReviewInbox projectId={projectId} onChanged={onChanged}/>
   </>;
 }
