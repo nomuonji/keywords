@@ -1,4 +1,8 @@
 export const BUDGETED_COMMANDS = new Set([
+  'operation.start',
+  'operation.candidate_triage',
+  'operation.outcome',
+  'measurement.import',
   'blog.import_context', 'blog.prepare', 'blog.export', 'blog.receipt', 'blog.capture',
   'discovery.expand', 'discovery.observe',
   'source.record',
