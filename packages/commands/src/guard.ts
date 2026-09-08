@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { isBudgetedCommand } from './budget.js';
@@ -8,7 +8,7 @@ const now = () => new Date().toISOString();
 const one = (sql: string, ...args: any[]): any => sqlite.prepare(sql).get(...args);
 const rows = (sql: string, ...args: any[]): any[] => sqlite.prepare(sql).all(...args);
 const run = (sql: string, ...args: any[]) => sqlite.prepare(sql).run(...args);
-const required = (value: unknown, message: string): asserts value => { if (!value) throw new Error(message); };
+function required(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const parse = <T>(value: string | null | undefined, fallback: T): T => { try { return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } };
 
 export type DelegationCapability =
@@ -20,6 +20,7 @@ export type DelegationCapability =
   | 'blog.prepare'
   | 'blog.transport'
   | 'outcome.record';
+export type OperationBudgetKind = 'external_request' | 'candidate_write' | 'known_cost';
 
 export interface DelegationView {
   id: string;
@@ -115,6 +116,54 @@ export function assertOperationAllowed(
   }
   if (input.capability) assertDelegated(ctx, input.projectId, input.capability);
   assertSessionBudget(ctx, input.projectId, input.command);
+}
+
+function operationForContext(ctx: CommandContext, projectId: string) {
+  if (ctx.workSessionId) {
+    const child = one(`SELECT o.* FROM operation_requests o JOIN operation_projects op ON op.operation_id=o.id
+      WHERE op.project_id=? AND op.work_session_id=? AND o.status IN ('active','awaiting_review','blocked') ORDER BY o.updated_at DESC LIMIT 1`, projectId, ctx.workSessionId);
+    if (child) return child;
+  }
+  if (ctx.actorId) {
+    const executor = one(`SELECT o.* FROM operation_executors e JOIN operation_requests o ON o.id=e.current_operation_id
+      WHERE e.id=? AND e.current_project_id=? AND e.status='busy' AND (e.lease_expires_at IS NULL OR e.lease_expires_at>?)`, ctx.actorId, projectId, now());
+    if (executor) return executor;
+  }
+  return null;
+}
+
+export function reserveOperationBudget(ctx: CommandContext, projectId: string, kind: OperationBudgetKind, reservationKey: string, amount = 1) {
+  if (ctx.actor === 'human' || ctx.actor === 'system') return null;
+  const operation = operationForContext(ctx, projectId);
+  if (!operation) throw new Error('Budgeted agent work requires an active operation/work-session or executor claim');
+  const budget = parse<Record<string, number>>(operation.budget_json, {});
+  const limitKey = kind === 'external_request' ? 'maxExternalRequests' : kind === 'candidate_write' ? 'maxCandidateWrites' : 'maxKnownCost';
+  const limit = Number(budget[limitKey] ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Budget reservation amount must be positive');
+  const transaction = sqlite.transaction(() => {
+    const existing = one('SELECT * FROM operation_budget_reservations WHERE operation_id=? AND project_id=? AND reservation_key=?', operation.id, projectId, reservationKey);
+    if (existing) return { id: existing.id as string, reused: true, status: existing.status as string, operationId: operation.id as string };
+    const used = Number(one("SELECT COALESCE(SUM(amount),0) AS n FROM operation_budget_reservations WHERE operation_id=? AND project_id=? AND kind=? AND status IN ('reserved','succeeded','failed')", operation.id, projectId, kind)?.n ?? 0);
+    if (used + amount > limit) throw new Error(`Operation ${kind} budget exhausted (${used}/${limit})`);
+    const id = randomUUID();
+    run('INSERT INTO operation_budget_reservations(id,operation_id,project_id,kind,reservation_key,amount,status,reserved_at) VALUES(?,?,?,?,?,?,?,?)', id, operation.id, projectId, kind, reservationKey, amount, 'reserved', now());
+    return { id, reused: false, status: 'reserved', operationId: operation.id as string };
+  });
+  return transaction.immediate();
+}
+
+export function settleOperationBudget(reservationId: string | null | undefined, status: 'succeeded' | 'failed', error?: unknown) {
+  if (!reservationId) return;
+  const message = error ? (error instanceof Error ? error.message : String(error)).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').slice(0, 1000) : null;
+  run('UPDATE operation_budget_reservations SET status=?,error=?,settled_at=? WHERE id=?', status, message, now(), reservationId);
+}
+
+export function operationBudgetUsage(ctx: CommandContext, projectId: string) {
+  const operation = operationForContext(ctx, projectId);
+  if (!operation) return null;
+  const budget = parse<Record<string, number>>(operation.budget_json, {});
+  const usage = Object.fromEntries(['external_request','candidate_write','known_cost'].map(kind => [kind, Number(one("SELECT COALESCE(SUM(amount),0) AS n FROM operation_budget_reservations WHERE operation_id=? AND project_id=? AND kind=? AND status IN ('reserved','succeeded','failed')", operation.id, projectId, kind)?.n ?? 0)]));
+  return { operationId: operation.id, budget, usage };
 }
 
 export function listDelegations(projectId: string) {
