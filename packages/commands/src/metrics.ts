@@ -1,7 +1,9 @@
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { searchConsoleQuery, type SearchConsoleResult } from '@keywords/research';
+import { assertOperationAllowed, fingerprint, reserveOperationBudget, settleOperationBudget } from './guard.js';
+import { measurementComparisonContext, periodDays, recordMeasurementImport, resolveMeasurementScope } from './measurement.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -39,63 +41,56 @@ async function upsertLivePage(projectId: string, inputUrl: string, observedAt: s
   await db.insert(schema.pages).values(page); return page.id;
 }
 
-async function fetchAll(input: { siteUrl?: string; startDate: string; endDate: string; dimensions: string[]; searchType: string; maxRows: number }) {
+async function fetchAll(ctx: CommandContext, input: { projectId: string; property: string; filters: Array<{groupType:string;filters:Array<{dimension:string;operator:string;expression:string}>}>; startDate: string; endDate: string; dimensions: string[]; searchType: string; maxRows: number }) {
   const pageSize = Math.min(25_000, input.maxRows); const rows: SearchConsoleResult['rows'] = []; let startRow = 0; let requests = 0; let first: SearchConsoleResult | null = null; let complete = false;
   while (rows.length < input.maxRows) {
     const take = Math.min(pageSize, input.maxRows - rows.length);
-    const result = await searchConsoleQuery({ siteUrl: input.siteUrl, startDate: input.startDate, endDate: input.endDate, dimensions: input.dimensions, rowLimit: take, startRow, searchType: input.searchType });
-    first ??= result; requests++; rows.push(...result.rows); startRow += result.rows.length;
-    if (result.rows.length < take) { complete = true; break; }
-    if (!result.rows.length) { complete = true; break; }
+    const key = `gsc:${input.dimensions.join(',')}:${input.property}:${input.startDate}:${input.endDate}:${input.searchType}:${startRow}:${take}:${fingerprint(input.filters)}`;
+    const reservation = reserveOperationBudget(ctx, input.projectId, 'external_request', key, 1);
+    try {
+      const result = await searchConsoleQuery({ dimensionFilterGroups: input.filters, siteUrl: input.property, startDate: input.startDate, endDate: input.endDate, dimensions: input.dimensions, rowLimit: take, startRow, searchType: input.searchType });
+      settleOperationBudget(reservation?.id, 'succeeded');
+      first ??= result; requests++; rows.push(...result.rows); startRow += result.rows.length;
+      if (result.rows.length < take || !result.rows.length) { complete = true; break; }
+    } catch (error) {
+      settleOperationBudget(reservation?.id, 'failed', error);
+      throw error;
+    }
   }
   if (!first) throw new Error('Search Console returned no response');
   return { ...first, rows, requests, complete };
 }
 
-const periodDays = (startDate: string, endDate: string) => Math.round((new Date(`${endDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86_400_000) + 1;
-function compatiblePairs<T extends { startDate: string; endDate: string; siteUrl: string; searchType: string | null }>(rows: T[], identity: (row: T) => string) {
-  const groups = new Map<string, T[]>();
-  for (const row of rows) {
-    const key = `${identity(row)}\u0000${row.siteUrl}\u0000${row.searchType ?? 'web'}\u0000${periodDays(row.startDate, row.endDate)}`;
-    const values = groups.get(key) ?? []; if (!values.some(item => item.startDate === row.startDate && item.endDate === row.endDate)) values.push(row); groups.set(key, values);
-  }
-  return [...groups.entries()].flatMap(([key, values]) => {
-    const sorted = values.sort((a, b) => b.endDate.localeCompare(a.endDate)); if (sorted.length < 2) return [];
-    const [latest, previous] = sorted; const latestStart = new Date(`${latest.startDate}T00:00:00Z`).getTime(); const previousEnd = new Date(`${previous.endDate}T00:00:00Z`).getTime();
-    if (latestStart <= previousEnd) return [];
-    return [{ key, id: identity(latest), latest, previous, siteUrl: latest.siteUrl, searchType: latest.searchType ?? 'web', periodDays: periodDays(latest.startDate, latest.endDate) }];
-  });
+async function materializeCompleteCapture(input: { projectId: string; observedAt: string; property: string; startDate: string; endDate: string; searchType: string; queries: Awaited<ReturnType<typeof fetchAll>>; pages: Awaited<ReturnType<typeof fetchAll>> }) {
+  await db.delete(schema.keywordMetricSnapshots).where(and(eq(schema.keywordMetricSnapshots.projectId, input.projectId), eq(schema.keywordMetricSnapshots.siteUrl, input.property), eq(schema.keywordMetricSnapshots.startDate, input.startDate), eq(schema.keywordMetricSnapshots.endDate, input.endDate), eq(schema.keywordMetricSnapshots.searchType, input.searchType)));
+  await db.delete(schema.pageMetricSnapshots).where(and(eq(schema.pageMetricSnapshots.projectId, input.projectId), eq(schema.pageMetricSnapshots.siteUrl, input.property), eq(schema.pageMetricSnapshots.startDate, input.startDate), eq(schema.pageMetricSnapshots.endDate, input.endDate), eq(schema.pageMetricSnapshots.searchType, input.searchType)));
+  for (const row of input.queries.rows) { const query = row.keys[0]; if (!query) continue; const keywordId = await upsertKeyword(input.projectId, query, row, input.observedAt); await db.insert(schema.keywordMetricSnapshots).values({ id: id(), projectId: input.projectId, keywordId, query, siteUrl: input.property, startDate: input.startDate, endDate: input.endDate, searchType: input.searchType, clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position, observedAt: input.observedAt }); }
+  for (const row of input.pages.rows) { const url = row.keys[0]; if (!url) continue; const pageId = await upsertLivePage(input.projectId, url, input.observedAt); await db.insert(schema.pageMetricSnapshots).values({ id: id(), projectId: input.projectId, pageId, url, siteUrl: input.property, startDate: input.startDate, endDate: input.endDate, searchType: input.searchType, clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position, observedAt: input.observedAt }); }
 }
 
 export const metricsCommands = {
-  capture: async (ctx: CommandContext, input: { projectId: string; siteUrl?: string; startDate: string; endDate: string; searchType?: string; rowLimit?: number }) => withRun(projectCtx(ctx, input.projectId), 'metrics.capture', input, async () => {
-    const searchType = input.searchType ?? 'web'; const observedAt = now(); const maxRows = Math.max(1, Math.min(Math.floor(input.rowLimit ?? 25_000), 100_000));
-    const [queries, pages] = await Promise.all([
-      fetchAll({ siteUrl: input.siteUrl, startDate: input.startDate, endDate: input.endDate, dimensions: ['query'], searchType, maxRows }),
-      fetchAll({ siteUrl: input.siteUrl, startDate: input.startDate, endDate: input.endDate, dimensions: ['page'], searchType, maxRows })
-    ]);
-    if (queries.siteUrl !== pages.siteUrl) throw new Error('Query/page Search Console responses used different properties');
-    await db.delete(schema.keywordMetricSnapshots).where(and(eq(schema.keywordMetricSnapshots.projectId, input.projectId), eq(schema.keywordMetricSnapshots.siteUrl, queries.siteUrl), eq(schema.keywordMetricSnapshots.startDate, input.startDate), eq(schema.keywordMetricSnapshots.endDate, input.endDate), eq(schema.keywordMetricSnapshots.searchType, searchType)));
-    await db.delete(schema.pageMetricSnapshots).where(and(eq(schema.pageMetricSnapshots.projectId, input.projectId), eq(schema.pageMetricSnapshots.siteUrl, pages.siteUrl), eq(schema.pageMetricSnapshots.startDate, input.startDate), eq(schema.pageMetricSnapshots.endDate, input.endDate), eq(schema.pageMetricSnapshots.searchType, searchType)));
-    for (const row of queries.rows) { const query = row.keys[0]; if (!query) continue; const keywordId = await upsertKeyword(input.projectId, query, row, observedAt); await db.insert(schema.keywordMetricSnapshots).values({ id: id(), projectId: input.projectId, keywordId, query, siteUrl: queries.siteUrl, startDate: input.startDate, endDate: input.endDate, searchType, clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position, observedAt }); }
-    for (const row of pages.rows) { const url = row.keys[0]; if (!url) continue; const pageId = await upsertLivePage(input.projectId, url, observedAt); await db.insert(schema.pageMetricSnapshots).values({ id: id(), projectId: input.projectId, pageId, url, siteUrl: pages.siteUrl, startDate: input.startDate, endDate: input.endDate, searchType, clicks: row.clicks, impressions: row.impressions, ctr: row.ctr, position: row.position, observedAt }); }
-    const source = { id: id(), projectId: input.projectId, type: 'gsc_snapshot', label: `GSC snapshot: ${input.startDate} → ${input.endDate}`, url: queries.siteUrl.startsWith('http') ? queries.siteUrl : null, metadataJson: JSON.stringify({ siteUrl: queries.siteUrl, startDate: input.startDate, endDate: input.endDate, searchType, maxRows, queryRows: queries.rows.length, pageRows: pages.rows.length, queryComplete: queries.complete, pageComplete: pages.complete, requests: queries.requests + pages.requests }), createdAt: observedAt };
+  capture: async (ctx: CommandContext, input: { projectId: string; siteUrl?: string; targetOrigin?: string; startDate: string; endDate: string; searchType?: string; timezone?: string; rowLimit?: number }) => withRun(projectCtx(ctx, input.projectId), 'metrics.capture', input, async () => {
+    assertOperationAllowed(ctx, { projectId: input.projectId, command: 'metrics.capture', capability: 'measurement.capture' });
+    const scope = resolveMeasurementScope({ projectId: input.projectId, property: input.siteUrl, targetOrigin: input.targetOrigin, searchType: input.searchType, timezone: input.timezone });
+    const observedAt = now(); const maxRows = Math.max(1, Math.min(Math.floor(input.rowLimit ?? 25_000), 100_000));
+    let queries: Awaited<ReturnType<typeof fetchAll>> | null = null; let pages: Awaited<ReturnType<typeof fetchAll>> | null = null;
+    try {
+      queries = await fetchAll(ctx, { projectId: input.projectId, property: scope.property, filters: scope.filters, startDate: input.startDate, endDate: input.endDate, dimensions: ['query'], searchType: scope.searchType, maxRows });
+      pages = await fetchAll(ctx, { projectId: input.projectId, property: scope.property, filters: scope.filters, startDate: input.startDate, endDate: input.endDate, dimensions: ['page'], searchType: scope.searchType, maxRows });
+    } catch (error) {
+      const failedVersion = fingerprint({ scope, startDate: input.startDate, endDate: input.endDate, observedAt, error: error instanceof Error ? error.message : String(error) });
+      recordMeasurementImport({ projectId: input.projectId, provider: 'gsc', property: scope.property, targetOrigin: scope.targetOrigin, filters: scope.filters, startDate: input.startDate, endDate: input.endDate, timezone: scope.timezone, searchType: scope.searchType, dimensions: ['query','page'], status: 'failed', completeness: 'failed', sourceLabel: `GSC failed: ${input.startDate} → ${input.endDate}`, sourceVersion: failedVersion, capturedAt: observedAt, payload: { queryRows: queries?.rows.length ?? 0, queryComplete: queries?.complete ?? false, error: error instanceof Error ? error.message : String(error) } });
+      throw error;
+    }
+    if (queries.siteUrl !== pages.siteUrl || queries.siteUrl !== scope.property) throw new Error('Query/page Search Console responses used different properties');
+    const complete = queries.complete && pages.complete;
+    const sourceVersion = fingerprint({ scope, startDate: input.startDate, endDate: input.endDate, queryFetchedAt: queries.fetchedAt, pageFetchedAt: pages.fetchedAt, queryRows: queries.rows.length, pageRows: pages.rows.length, observedAt });
+    const observation = recordMeasurementImport({ projectId: input.projectId, provider: 'gsc', property: scope.property, targetOrigin: scope.targetOrigin, filters: scope.filters, startDate: input.startDate, endDate: input.endDate, timezone: scope.timezone, searchType: scope.searchType, dimensions: ['query','page'], status: complete ? 'succeeded' : 'partial', completeness: complete ? 'complete' : 'partial', sourceLabel: `GSC snapshot: ${input.startDate} → ${input.endDate}`, sourceVersion, capturedAt: observedAt, payload: { requests: queries.requests + pages.requests, queryRows: queries.rows.length, pageRows: pages.rows.length, queryComplete: queries.complete, pageComplete: pages.complete } });
+    const source = { id: id(), projectId: input.projectId, type: 'gsc_snapshot', label: `GSC snapshot: ${input.startDate} → ${input.endDate}`, url: scope.targetOrigin, metadataJson: JSON.stringify({ measurementImportId: observation.id, sourceVersion, property: scope.property, targetOrigin: scope.targetOrigin, filters: scope.filters, timezone: scope.timezone, searchType: scope.searchType, maxRows, queryRows: queries.rows.length, pageRows: pages.rows.length, queryComplete: queries.complete, pageComplete: pages.complete, requests: queries.requests + pages.requests }), createdAt: observedAt };
     await db.insert(schema.sources).values(source);
-    return { sourceId: source.id, siteUrl: queries.siteUrl, searchType, period: { startDate: input.startDate, endDate: input.endDate, days: periodDays(input.startDate, input.endDate) }, queries: { rows: queries.rows.length, complete: queries.complete }, pages: { rows: pages.rows.length, complete: pages.complete }, requests: queries.requests + pages.requests, capturedAt: observedAt };
+    if (complete) await materializeCompleteCapture({ projectId: input.projectId, observedAt, property: scope.property, startDate: input.startDate, endDate: input.endDate, searchType: scope.searchType, queries, pages });
+    return { sourceId: source.id, measurementImportId: observation.id, sourceVersion, property: scope.property, targetOrigin: scope.targetOrigin, filters: scope.filters, searchType: scope.searchType, timezone: scope.timezone, period: { startDate: input.startDate, endDate: input.endDate, days: periodDays(input.startDate, input.endDate) }, queries: { rows: queries.rows.length, complete: queries.complete }, pages: { rows: pages.rows.length, complete: pages.complete }, requests: queries.requests + pages.requests, capturedAt: observedAt, materialized: complete, note: complete ? null : 'Partial capture retained as an observation; previous successful materialized metrics were not overwritten.' };
   }),
 
-  context: async (ctx: CommandContext, projectId: string, limit = 25) => withRun(projectCtx(ctx, projectId), 'metrics.context', { projectId, limit }, async () => {
-    const [queryTotalRow, pageTotalRow, queryRows, pageRows] = await Promise.all([
-      db.select({ value: count() }).from(schema.keywordMetricSnapshots).where(eq(schema.keywordMetricSnapshots.projectId, projectId)).get(),
-      db.select({ value: count() }).from(schema.pageMetricSnapshots).where(eq(schema.pageMetricSnapshots.projectId, projectId)).get(),
-      db.select().from(schema.keywordMetricSnapshots).where(eq(schema.keywordMetricSnapshots.projectId, projectId)).orderBy(desc(schema.keywordMetricSnapshots.endDate), desc(schema.keywordMetricSnapshots.impressions)).limit(10_000),
-      db.select().from(schema.pageMetricSnapshots).where(eq(schema.pageMetricSnapshots.projectId, projectId)).orderBy(desc(schema.pageMetricSnapshots.endDate), desc(schema.pageMetricSnapshots.impressions)).limit(10_000)
-    ]);
-    const queryPairs = compatiblePairs(queryRows, row => row.query); const pagePairs = compatiblePairs(pageRows, row => row.url);
-    const positionDrops = queryPairs.filter(({ latest, previous }) => latest.position - previous.position >= 3 && previous.impressions > 0).sort((a, b) => b.previous.impressions - a.previous.impressions).slice(0, limit).map(({ id: query, latest, previous, siteUrl, searchType, periodDays }) => ({ query, latest, previous, siteUrl, searchType, periodDays, positionDelta: latest.position - previous.position, impressionDelta: latest.impressions - previous.impressions }));
-    const clickDrops = queryPairs.filter(({ latest, previous }) => previous.clicks >= 5 && latest.clicks <= previous.clicks * 0.7).sort((a, b) => b.previous.clicks - a.previous.clicks).slice(0, limit).map(({ id: query, latest, previous, siteUrl, searchType, periodDays }) => ({ query, latest, previous, siteUrl, searchType, periodDays, clickDelta: latest.clicks - previous.clicks }));
-    const pageClickDrops = pagePairs.filter(({ latest, previous }) => previous.clicks >= 5 && latest.clicks <= previous.clicks * 0.7).sort((a, b) => b.previous.clicks - a.previous.clicks).slice(0, limit).map(({ id: url, latest, previous, siteUrl, searchType, periodDays }) => ({ url, latest, previous, siteUrl, searchType, periodDays, clickDelta: latest.clicks - previous.clicks }));
-    const queryTotal = Number(queryTotalRow?.value ?? 0); const pageTotal = Number(pageTotalRow?.value ?? 0);
-    return { generatedAt: now(), definitions: { positionDrops: 'Same Search Console property/search type/period length; non-overlapping periods; average position worsened by at least 3.', clickDrops: 'Compatible periods only; clicks fell by at least 30% from a previous period with at least 5 clicks.', pageClickDrops: 'Compatible periods only; page clicks fell by at least 30% from a previous period with at least 5 clicks.' }, positionDrops, clickDrops, pageClickDrops, querySnapshots: queryTotal, pageSnapshots: pageTotal, loadedForComparison: { queries: queryRows.length, pages: pageRows.length }, comparisonTruncated: queryTotal > queryRows.length || pageTotal > pageRows.length };
-  })
+  context: async (ctx: CommandContext, projectId: string, limit = 25) => withRun(projectCtx(ctx, projectId), 'metrics.context', { projectId, limit }, async () => measurementComparisonContext(projectId, limit))
 };
