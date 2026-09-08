@@ -95,6 +95,20 @@ CREATE TABLE IF NOT EXISTS operation_executors (
  updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS operation_executors_lease_idx ON operation_executors(status, lease_expires_at);
+CREATE TABLE IF NOT EXISTS operation_budget_reservations (
+ id TEXT PRIMARY KEY,
+ operation_id TEXT NOT NULL REFERENCES operation_requests(id) ON DELETE CASCADE,
+ project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL,
+ reservation_key TEXT NOT NULL,
+ amount REAL NOT NULL DEFAULT 1,
+ status TEXT NOT NULL DEFAULT 'reserved',
+ error TEXT,
+ reserved_at TEXT NOT NULL,
+ settled_at TEXT,
+ UNIQUE(operation_id, project_id, reservation_key)
+);
+CREATE INDEX IF NOT EXISTS operation_budget_reservations_usage_idx ON operation_budget_reservations(operation_id, project_id, kind, status);
 CREATE TABLE IF NOT EXISTS operation_events (
  id TEXT PRIMARY KEY,
  operation_id TEXT REFERENCES operation_requests(id) ON DELETE CASCADE,
@@ -149,8 +163,7 @@ CREATE TABLE IF NOT EXISTS measurement_imports (
 );
 CREATE INDEX IF NOT EXISTS measurement_imports_project_captured_idx ON measurement_imports(project_id, captured_at DESC);
 
--- Legacy snapshots remain readable, but captures are immutable/versioned by observed_at so multiple hosts
--- inside one domain property cannot overwrite each other. Scope is resolved from the linked gsc_snapshot source metadata.
+-- Legacy snapshots remain readable. New captures are tied to a versioned measurement_import by observed_at.
 DROP INDEX IF EXISTS keyword_metric_snapshots_period_idx;
 DROP INDEX IF EXISTS page_metric_snapshots_period_idx;
 CREATE UNIQUE INDEX IF NOT EXISTS keyword_metric_snapshots_capture_idx ON keyword_metric_snapshots(project_id, query, site_url, start_date, end_date, COALESCE(search_type,''), observed_at);
