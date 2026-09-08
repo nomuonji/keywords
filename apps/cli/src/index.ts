@@ -1,3 +1,4 @@
+import { portfolioCommands } from '@keywords/commands/portfolio';
 import { Command } from 'commander';
 import { commands } from '@keywords/commands';
 import { planningCommands } from '@keywords/commands/planning';
@@ -8,14 +9,17 @@ import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
 import { registerProductCli } from './product.js';
+import { registerBlogCli } from './blog.js';
 const program = new Command();
 const ctx = { actor: 'human' as const, actorId: process.env.USER ?? 'cli' };
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 const csv = (value?: string) => value?.split(',').map(item => item.trim()).filter(Boolean) ?? [];
 program.name('keywords').description('Agent-native SEO workspace CLI');
+program.command('portfolio').description('Blog群のGA4/GSCと共有作業を読む').action(async () => print(await portfolioCommands.context()));
 const project = program.command('project');
 project.command('list').action(async () => print(await commands.project.list(ctx)));
 project.command('create').argument('<name>').option('--domain <domain>').action(async (name: string, opts: {domain?: string}) => print(await commands.project.create(ctx, { name, domain: opts.domain })));
+project.command('delete').argument('<projectId>').action(async (projectId: string) => print(await commands.project.delete(ctx, projectId)));
 project.command('snapshot').argument('<projectId>').action(async (projectId: string) => print(await commands.project.snapshot(ctx, projectId)));
 
 const operator = program.command('operator');
@@ -77,4 +81,5 @@ task.command('list').argument('<projectId>').action(async (projectId: string) =>
 task.command('add').argument('<projectId>').argument('<title>').option('--priority <number>').action(async (projectId: string, title: string, opts: {priority?: string}) => print(await commands.task.create(ctx, { projectId, title, priority: opts.priority ? Number(opts.priority) : undefined })));
 task.command('status').argument('<projectId>').argument('<taskId>').argument('<status>', 'todo | doing | review | done').action(async (projectId: string, taskId: string, status: 'todo'|'doing'|'review'|'done') => print(await commands.task.setStatus(ctx, { projectId, taskId, status })));
 registerProductCli(program, ctx);
+registerBlogCli(program, ctx);
 await program.parseAsync();

@@ -1,6 +1,7 @@
-import { rmSync } from 'node:fs';
+import { rmSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
+import { basename, dirname } from 'node:path';
 
 const dbPath = process.env.KEYWORDS_DB_PATH ?? '/tmp/keywords-migration-smoke.sqlite';
 rmSync(dbPath, { force: true });
@@ -28,6 +29,8 @@ legacy.close();
 
 const { createDatabase } = await import('@keywords/db');
 const migrated = createDatabase(dbPath);
+const backups = readdirSync(dirname(dbPath)).filter(name => name.startsWith(`${basename(dbPath)}.pre-blog-`) && name.endsWith('.sqlite'));
+assert.equal(backups.length, 1, 'legacy DB migration must leave one pre-Blog backup');
 const runColumns = migrated.sqlite.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
 const runIndexes = migrated.sqlite.prepare('PRAGMA index_list(runs)').all() as Array<{ name: string }>;
 const pageColumns = migrated.sqlite.prepare('PRAGMA table_info(pages)').all() as Array<{ name: string }>;
@@ -42,4 +45,5 @@ const pageIndexes = migrated.sqlite.prepare('PRAGMA index_list(pages)').all() as
 assert.ok(pageIndexes.some(index => index.name === 'pages_project_url_idx'));
 
 migrated.sqlite.close();
+rmSync(`${dirname(dbPath)}/${backups[0]}`, { force: true });
 console.log(JSON.stringify({ ok: true, migratedColumns: ['work_session_id','pages.url','pages.source','pages.last_seen_at'], metricTables: true }));

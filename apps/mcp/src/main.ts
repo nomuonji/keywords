@@ -1,3 +1,4 @@
+import { portfolioCommands } from '@keywords/commands/portfolio';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -10,6 +11,7 @@ import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
 import { productTools, isProductTool, callProductTool } from './product.js';
+import { blogTools, isBlogTool, callBlogTool } from './blog.js';
 
 const baseCtx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
 let activeWorkSession: { id: string; projectId: string; status: string; remainingActions: number } | null = null;
@@ -20,12 +22,16 @@ const toolCtx = (projectId?: string) => ({ ...baseCtx, ...(activeWorkSession && 
 const sessionIdFor = (projectId: string, explicit?: string) => explicit ?? (activeWorkSession?.projectId === projectId ? activeWorkSession.id : undefined);
 
 const budgetedTools = new Set([
+  'blog_importContext','blog_prepare','blog_export','blog_receipt','blog_capture','blog_expand',
+  'blog_observe',
   'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate'
 ]);
 const allowedWhilePaused = new Set([
-  'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list','review_list','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
+  'blog_context','blog_get','blog_evaluate','blog_observations',
+  'blog_contract',
+  'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
   'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context'
 ]);
 function guardTool(name: string) {
@@ -81,11 +87,15 @@ const coreTools = [
   { name: 'task_set_status', description: 'Set task status.', inputSchema: s('Task status', { projectId: { type: 'string' }, taskId: { type: 'string' }, status: { type: 'string', enum: ['todo','doing','review','done'] } }, ['projectId','taskId','status']) },
   { name: 'decision_record', description: 'Record a decision for project memory.', inputSchema: s('Decision', { projectId: { type: 'string' }, action: { type: 'string' }, targetType: { type: 'string' }, targetId: { type: 'string' }, verdict: { type: 'string' }, reason: { type: 'string' } }, ['projectId','action','targetType','verdict']) }
 ];
-const tools = [...productTools, ...coreTools];
+const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   const a = (request.params.arguments ?? {}) as any; const name = request.params.name; guardTool(name); let result: unknown;
+  if (isBlogTool(name)) {
+    result = await callBlogTool(name,a,toolCtx(a.projectId)); consumeBudget(name); return text(result);
+  }
   switch (name) {
+    case 'portfolio_context': result = await portfolioCommands.context(); break;
     case 'project_list': result = await commands.project.list(baseCtx); break;
     case 'project_snapshot': result = await commands.project.snapshot(toolCtx(a.projectId), a.projectId); break;
     case 'operator_context': result = await operatorCommands.inspect(toolCtx(a.projectId), a.projectId); break;

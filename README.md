@@ -4,6 +4,8 @@
 
 The current product scope intentionally stops before article generation and publishing.
 
+Blogサイト群との連携コードを実装しました。現在の機能・起動条件・Agent手順は [Blog連携の運用手順](docs/blog-integration-operations.md) が正本です。設計判断と実装前の経緯は [Blog連携計画](docs/blog-integration-plan.md) に残しています。
+
 ## Completed scope
 
 - SQLite + Drizzle; no Firebase / Firestore
@@ -18,6 +20,7 @@ The current product scope intentionally stops before article generation and publ
 - **Operator/Scheduler that deterministically selects the next justified SEO task**
 - **historical Search Console query/page snapshots and explicit decline detection**
 - **real site URL synchronization from sitemap and Search Console into the same Page model**
+- **Blog site context, evidence brief, human-approved handoff, receipt, query×page observation, and bounded discovery bridge**
 - React/Vite Web UI, Hono API, CLI, and MCP server
 - external article generation / publishing intentionally out of scope
 
@@ -49,6 +52,7 @@ Specialized command surfaces:
 @keywords/commands/site
 @keywords/commands/metrics
 @keywords/commands/operator
+@keywords/commands/blog
 ```
 
 ## Run locally
@@ -344,3 +348,20 @@ CI cancels superseded runs on the same branch.
 The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization**. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
 
 **Article generation and external publishing are intentionally not implemented in the current scope.**
+
+## Blog配下での起動と全サイトの実績
+
+配置は `D:\youph\Blog\keywords`。Blogフォルダから `powershell -File keywords/scripts/start-local.ps1` で起動できます。Node 22以上を選び、WebとAPIを起動します。Webは http://localhost:5173 です。
+
+初期画面「サイト群の実績」は隣のanalytics-dashboardの保存データを読み、GA4セッション・GSCクリック・前期間比・共有タスク/レビューを表示します。ドメインが一致するプロジェクトの「実績・Blog連携」「作業・レビュー」へ移動できます。analytics-dashboardは引き続き独立して利用できます。
+
+- 更新はBlogルートから `py analytics-dashboard/scripts/refresh.py`、画面で「保存データを再読込」。このボタン自体はGoogle APIを呼びません。
+- DBの既定パスと相対 `KEYWORDS_DB_PATH` は起動ディレクトリによらずkeywordsルート基準です。既存の `data/keywords.sqlite` をAPI/CLI/MCPで共有します。
+- `KEYWORDS_ANALYTICS_FILE` は任意。相対値はBlogルート基準、既定値は `analytics-dashboard/data/latest.json`。CLI/MCPでも環境変数を設定して利用できます。
+- 同じ一覧を `npm run cli -- portfolio`、HTTP `GET /portfolio`、MCP `portfolio_context` から読めます。新しい状態DBは作りません。
+- 集計の保存時刻が3日超、対象期間末が7日超、または時刻不明なら更新を促します。欠損を0にせず、同日数・非重複期間のみ増減を表示します。dashboard集計を企画の効果測定やquery×pageの根拠へ自動転用しません。
+- dashboard未登録のプロジェクトも一覧に出し、検索データなしと表示します。新しいサイトの実績取得にはdashboard側の取得設定も必要です。
+
+運用は一覧で対象を選択 → 各サイトで検索履歴・既存ページを確認 → 改稿企画とレビュー → Blogの品質検証 → 公開後のquery×page比較、の順で進めます。公開や新規記事の制限は既存のBlog連携に従います。
+
+検証: `npm run test:portfolio`、`npm run test:blog`、`npm run build`。ブラウザ検証はPython Playwrightを使い `py scripts/run-portfolio-ui-smoke.py`（隔離DB・ポート18787/15173）で実行します。

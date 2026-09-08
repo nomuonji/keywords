@@ -1,3 +1,4 @@
+import { portfolioCommands } from '@keywords/commands/portfolio';
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
@@ -10,12 +11,15 @@ import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
 import { registerProductRoutes } from './product.js';
+import { registerBlogRoutes } from './blog.js';
 
 const app = new Hono();
 app.use('*', cors());
+app.get('/portfolio', async c => c.json(await portfolioCommands.context()));
 app.get('/health', c => c.json({ ok: true }));
 const ctx = (c: any) => ({ actor: (c.req.header('x-keywords-actor') === 'agent' ? 'agent' : 'human') as 'human' | 'agent', actorId: c.req.header('x-keywords-actor-id'), workSessionId: c.req.header('x-keywords-work-session-id') });
 const body = (c: any) => c.req.json();
+registerBlogRoutes(app,ctx,body);
 
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));

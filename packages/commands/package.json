@@ -6,6 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
+    "./blog": "./src/blog.ts",
     ".": "./src/index.ts",
     "./planning": "./src/planning.ts",
     "./policy": "./src/policy.ts",
@@ -17,12 +18,14 @@
     "./operator": "./src/operator.ts",
     "./workspace": "./src/workspace.ts",
     "./discovery": "./src/discovery.ts",
-    "./maintenance": "./src/maintenance.ts"
+    "./maintenance": "./src/maintenance.ts",
+    "./portfolio": "./src/portfolio.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "zod": "^4.5.4",
     "@keywords/db": "0.1.0",
     "@keywords/domain": "0.1.0",
     "@keywords/research": "0.1.0",

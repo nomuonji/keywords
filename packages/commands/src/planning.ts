@@ -135,6 +135,10 @@ export const planningCommands = {
 
   pageReview: async (ctx: CommandContext, input: { projectId: string; pageId: string; verdict: 'approved' | 'rejected' | 'needs_edit'; reason?: string; overrideConflicts?: boolean }) => withRun(projectCtx(ctx, input.projectId), 'page.review', input, async () => {
     if (ctx.actor !== 'human') throw new Error('Page review requires a human actor');
+    if (input.verdict === 'approved') {
+      const { assertBlogPlanReady } = await import('./blog.js');
+      assertBlogPlanReady(input.projectId, input.pageId);
+    }
     const page = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.id, input.pageId))).get(); if (!page) throw new Error('Page not found');
     const targets = await db.select({ keywordId: schema.pageKeywords.keywordId }).from(schema.pageKeywords).where(eq(schema.pageKeywords.pageId, page.id));
     const warnings = await targetConflictWarnings(input.projectId, targets.map(row => row.keywordId), page.clusterId, page.id, page.targetPageId);

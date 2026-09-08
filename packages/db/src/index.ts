@@ -1,10 +1,13 @@
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
+import { blogSchemaSql } from './blog-schema.js';
 
-const DEFAULT_PATH = './data/keywords.sqlite';
+const WORKSPACE_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+const DEFAULT_PATH = resolve(WORKSPACE_ROOT, 'data/keywords.sqlite');
 let singleton: ReturnType<typeof createDatabase> | undefined;
 
 const bootstrapSql = `
@@ -100,11 +103,20 @@ function ensureLegacyColumns(sqlite: Database.Database) {
 }
 
 export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PATH) {
+  if (path !== ':memory:') path = resolve(WORKSPACE_ROOT, path);
   const absolute = resolve(path);
   mkdirSync(dirname(absolute), { recursive: true });
   const sqlite = new Database(absolute);
+  // Preserve a consistent pre-integration snapshot before adding Blog tables.
+  const hasProjects = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='projects'").get();
+  const hasBlog = sqlite.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='blog_bindings'").get();
+  if (hasProjects && !hasBlog) {
+    const backup = `${absolute}.pre-blog-${Date.now()}-${process.pid}.sqlite`;
+    sqlite.prepare('VACUUM INTO ?').run(backup);
+  }
   sqlite.exec(bootstrapSql);
   ensureLegacyColumns(sqlite);
+  sqlite.exec(blogSchemaSql);
   sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS pages_project_url_idx ON pages(project_id, url) WHERE url IS NOT NULL;');
   sqlite.exec('CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);');
   sqlite.exec('CREATE INDEX IF NOT EXISTS discovery_jobs_lease_idx ON discovery_jobs(status, lease_expires_at);');

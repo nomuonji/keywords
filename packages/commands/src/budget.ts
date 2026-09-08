@@ -1,4 +1,6 @@
 export const BUDGETED_COMMANDS = new Set([
+  'blog.import_context', 'blog.prepare', 'blog.export', 'blog.receipt', 'blog.capture',
+  'discovery.expand', 'discovery.observe',
   'source.record',
   'research.web_fetch',
   'research.serp',

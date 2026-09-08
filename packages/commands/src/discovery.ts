@@ -12,6 +12,12 @@ const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, 
 const projectCtx = (ctx: CommandContext, projectId: string, workSessionId?: string): CommandContext => ({ ...ctx, projectId, workSessionId: workSessionId ?? ctx.workSessionId });
 const parseStrings = (value: string | null) => { try { const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } };
 const parseJson = (value: string | null) => { try { return value ? JSON.parse(value) : null; } catch { return null; } };
+const metadataContainsExactPhrase = (value: unknown, phrase: string): boolean => {
+  if (typeof value === 'string') return value === phrase;
+  if (Array.isArray(value)) return value.some(item => metadataContainsExactPhrase(item, phrase));
+  if (value && typeof value === 'object') return Object.values(value).some(item => metadataContainsExactPhrase(item, phrase));
+  return false;
+};
 const redactError = (error: unknown) => (error instanceof Error ? error.message : String(error)).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').slice(0, 1000);
 const leaseMs = (seconds?: number) => Math.max(30, Math.min(Math.floor(seconds ?? 120), 600)) * 1000;
 const leaseUntil = (seconds?: number) => new Date(Date.now() + leaseMs(seconds)).toISOString();
@@ -61,6 +67,12 @@ function capabilityStatus(error: unknown) {
   return 'failed' as const;
 }
 function requireExecutionLease(ctx: CommandContext, job: typeof schema.discoveryJobs.$inferSelect) {
+  if (job.workSessionId) {
+    const session = sqlite.prepare('SELECT status,max_actions FROM work_sessions WHERE id=?').get(job.workSessionId) as {status:string;max_actions:number}|undefined;
+    if (!session || session.status !== 'running') throw new Error('Discovery work session is not running');
+    const used = (sqlite.prepare("SELECT COUNT(*) AS n FROM runs WHERE work_session_id=? AND command NOT IN ('work.context','work.list','discovery.heartbeat','discovery.detail')").get(job.workSessionId) as {n:number}).n;
+    if (used >= session.max_actions) throw new Error('Discovery work session budget exhausted');
+  }
   if (job.status !== 'running') throw new Error(`Discovery job is ${job.status}; agent work is not allowed`);
   if (ctx.actor === 'system') return;
   if (!ctx.actorId || !job.executorId || ctx.actorId !== job.executorId) throw new Error('Discovery job is owned by another executor');
@@ -221,6 +233,59 @@ async function reconcileJobAfterReview(projectId: string, jobId: string) {
 }
 
 export const discoveryCommands = {
+  observe: async(ctx:CommandContext,input:{projectId:string;jobId:string;sourceId:string;rawPhrase:string;parentId?:string})=>{
+    const job=await requireJob(input.projectId,input.jobId);
+    return withRun(projectCtx(ctx,input.projectId,job.workSessionId??undefined),'discovery.observe',{projectId:input.projectId,jobId:input.jobId,sourceId:input.sourceId},async()=>{
+      requireExecutionLease(ctx,job);
+      const source=await db.select().from(schema.sources).where(and(eq(schema.sources.id,input.sourceId),eq(schema.sources.projectId,input.projectId))).get();
+      if(!source||!input.rawPhrase?.trim()||input.rawPhrase.length>300)throw new Error('Valid raw phrase and project source required');
+      if(!metadataContainsExactPhrase(parseJson(source.metadataJson),input.rawPhrase))throw new Error('Raw phrase was not found in the source payload; do not paraphrase observations');
+      const parent=input.parentId?sqlite.prepare('SELECT * FROM discovery_observations WHERE id=? AND job_id=?').get(input.parentId,job.id) as any:null;
+      if(input.parentId&&!parent)throw new Error('Parent is not in this job');
+      const depth=parent?parent.depth+1:0;if(depth>2)throw new Error('Maximum discovery depth reached');
+      const kind=['serp','search_observation'].includes(source.type)?'search_surface_observed':source.type==='google_ads'?'provider_estimated':['gsc_snapshot','search_console'].includes(source.type)?'gsc_observed':'audience_expression_only';
+      const existing=sqlite.prepare('SELECT id FROM discovery_observations WHERE job_id=? AND normalized=? AND source_id=?').get(job.id,normalize(input.rawPhrase),source.id) as any;
+      if(existing)return {observationId:existing.id,duplicate:true};
+      if((sqlite.prepare('SELECT COUNT(*) AS n FROM discovery_observations WHERE job_id=?').get(job.id) as {n:number}).n>=job.maxCandidates)throw new Error('Observation budget exhausted');
+      const result=await importCandidateRows(ctx,job,[{keyword:input.rawPhrase,sourceId:source.id,demandProvider:kind,observedAt:source.createdAt}]);
+      const observationId=id();sqlite.prepare('INSERT INTO discovery_observations(id,project_id,job_id,source_id,parent_id,raw_phrase,normalized,evidence_kind,depth,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(observationId,job.projectId,job.id,source.id,parent?.id??null,input.rawPhrase,normalize(input.rawPhrase),kind,depth,JSON.stringify({country:job.country,language:job.language,observedAt:source.createdAt}),now());
+      return {observationId,kind,result};
+    });
+  },
+  observations: async (_ctx: CommandContext, input: {projectId:string;jobId:string}) => {
+    await requireJob(input.projectId,input.jobId);
+    return sqlite.prepare('SELECT * FROM discovery_observations WHERE project_id=? AND job_id=? ORDER BY created_at').all(input.projectId,input.jobId);
+  },
+  expand: async (ctx: CommandContext, input: {projectId:string;jobId:string;seed?:string;parentId?:string;idempotencyKey?:string}) => {
+    const job=await requireJob(input.projectId,input.jobId);
+    return withRun(projectCtx(ctx,input.projectId,job.workSessionId??undefined),'discovery.expand',{projectId:input.projectId,jobId:input.jobId,parentId:input.parentId},async()=>{
+      requireExecutionLease(ctx,job);
+      const parent=input.parentId?sqlite.prepare('SELECT * FROM discovery_observations WHERE id=? AND job_id=? AND project_id=?').get(input.parentId,job.id,job.projectId) as any:null;
+      if(input.parentId&&!parent)throw new Error('Parent observation not in job');
+      const depth=parent?parent.depth+1:0;if(depth>2)throw new Error('Maximum discovery depth reached');
+      const seed=parent?.raw_phrase??input.seed;
+      if(!seed||(!parent&&!parseStrings(job.seedKeywordsJson).includes(seed)))throw new Error('Use a job seed or a persisted external observation');
+      const key=requestKey('expand',{seed,depth,country:job.country,language:job.language},input.idempotencyKey);
+      const reserved=reserveExternalRequest(ctx,job,'serp',key);
+      if(reserved.cached)return {cached:true,sourceId:reserved.reservation.source_id};
+      try {
+        const recent=await db.select().from(schema.sources).where(and(eq(schema.sources.projectId,job.projectId),eq(schema.sources.type,'search_observation'))).orderBy(desc(schema.sources.createdAt)).limit(20);
+        const last=recent.map(s=>parseJson(s.metadataJson) as any).filter(s=>s?.jobId===job.id).slice(0,2);
+        if(last.length===2&&last.every(s=>s.newPhrases===0))throw new Error('Search path saturated; review results or switch research source');
+        const result=await searchSerp({query:seed,country:job.country,language:job.language,num:10});
+        requireExecutionLease(ctx,await requireJob(job.projectId,job.id));
+        const phrases=[...new Set([...result.relatedSearches,...result.peopleAlsoAsk])].filter(p=>p.trim()&&p.length<=300);
+        const available=Math.max(0,job.maxCandidates-(sqlite.prepare('SELECT COUNT(*) AS n FROM discovery_observations WHERE job_id=?').get(job.id) as {n:number}).n);
+        const novel=phrases.filter(p=>!sqlite.prepare('SELECT id FROM discovery_observations WHERE job_id=? AND normalized=?').get(job.id,normalize(p))).slice(0,available);
+        const sourceId=id();
+        await db.insert(schema.sources).values({id:sourceId,projectId:job.projectId,type:'search_observation',label:`Search phrases: ${seed}`,url:null,metadataJson:JSON.stringify({jobId:job.id,seed,parentId:parent?.id??null,depth,newPhrases:novel.length,result}),createdAt:result.fetchedAt});
+        for(const phrase of novel)sqlite.prepare('INSERT INTO discovery_observations(id,project_id,job_id,source_id,parent_id,raw_phrase,normalized,evidence_kind,depth,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id(),job.projectId,job.id,sourceId,parent?.id??null,phrase,normalize(phrase),'search_surface_observed',depth,JSON.stringify({country:job.country,language:job.language,observedAt:result.fetchedAt,provider:'serp_related_queries',searchVolume:null}),now());
+        const imported=await importCandidateRows(ctx,job,novel.map(keyword=>({keyword,sourceId,observedAt:result.fetchedAt,demandProvider:'search_surface_observed'})));
+        settleReservation(reserved.reservation.id,'succeeded',sourceId);
+        return {sourceId,newPhrases:novel.length,depth,imported,searchVolume:null};
+      }catch(error){settleReservation(reserved.reservation.id,'failed',null,error);throw error;}
+    });
+  },
   list: async (ctx: CommandContext, projectId: string, limit = 30) => withRun(projectCtx(ctx, projectId), 'discovery.list', { projectId, limit }, async () => {
     const rows = await db.select().from(schema.discoveryJobs).where(eq(schema.discoveryJobs.projectId, projectId)).orderBy(desc(schema.discoveryJobs.createdAt)).limit(Math.max(1, Math.min(limit, 100)));
     const views = rows.map(job => ({ ...jobView(job), candidateCounts: Object.fromEntries(['discovered','shortlisted','hold','rejected','research_more','planned'].map(status => [status, 0])) }));

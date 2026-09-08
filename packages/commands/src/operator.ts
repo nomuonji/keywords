@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, ne, or } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { discoveryCommands } from './discovery.js';
+import { blogNextActions } from './blog.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -29,6 +30,7 @@ async function inspect(projectId: string) {
   ]);
 
   const candidates: Array<Record<string, unknown>> = [];
+  candidates.push(...blogNextActions(projectId));
   const leaseExpired = discovery?.status === 'running' && (!discovery.leaseExpiresAt || Date.now() >= new Date(discovery.leaseExpiresAt).getTime());
   if (review) candidates.push({ kind: 'await_review', rank: 1, title: review.title, reason: 'A human review request is open; autonomous work should not cross this boundary.', relatedType: 'review_request', relatedId: review.id });
   if (leaseExpired && discovery) candidates.push({ kind: 'recover_discovery', rank: 2, title: `Recover interrupted discovery: ${discovery.goal}`, reason: 'The discovery executor lease expired. Recover the shared job before another agent claims it.', relatedType: 'discovery_job', relatedId: discovery.id });

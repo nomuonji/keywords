@@ -316,6 +316,7 @@ export interface SearchConsoleResult {
 }
 
 export async function searchConsoleQuery(input: {
+  dimensionFilterGroups?: Array<{groupType: string; filters: Array<{dimension: string; operator: string; expression: string}>}>;
   siteUrl?: string;
   startDate: string;
   endDate: string;
@@ -336,6 +337,7 @@ export async function searchConsoleQuery(input: {
     startRow: Math.max(0, input.startRow ?? 0)
   };
   if (input.searchType) body.type = input.searchType;
+  if (input.dimensionFilterGroups) body.dimensionFilterGroups = input.dimensionFilterGroups;
   const raw = await jsonRequest<{ rows?: any[] }>(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },

@@ -43,6 +43,12 @@ export const commands = {
       await db.insert(schema.projects).values(row);
       return row;
     }),
+    delete: async (ctx: CommandContext, projectId: string) => withRun(ctx, 'project.delete', { projectId }, async () => {
+      const project = await db.select({ id: schema.projects.id, name: schema.projects.name, domain: schema.projects.domain }).from(schema.projects).where(eq(schema.projects.id, projectId)).get();
+      if (!project) throw new Error('Project not found');
+      await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+      return { deleted: true, project };
+    }),
     snapshot: async (ctx: CommandContext, projectId: string): Promise<ProjectSnapshot> => withRun(projectCtx(ctx, projectId), 'project.snapshot', { projectId }, async () => {
       const project = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
       if (!project) throw new Error('Project not found');

@@ -1,12 +1,13 @@
 import Database from 'better-sqlite3';
 import { copyFileSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const source = process.argv[2];
 const target = process.argv[3] ?? process.env.KEYWORDS_DB_PATH ?? './data/keywords.sqlite';
 if (!source) throw new Error('Usage: npx tsx scripts/db-restore.ts <backup.sqlite> [target.sqlite]');
 const from = resolve(source);
-const to = resolve(target);
+const to = process.argv[3] ? resolve(target) : resolve(fileURLToPath(new URL('../', import.meta.url)), target);
 if (!existsSync(from)) throw new Error(`Backup not found: ${from}`);
 if (from === to) throw new Error('Backup and target paths must differ');
 const sourceDb = new Database(from, { readonly: true, fileMustExist: true });

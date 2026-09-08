@@ -40,6 +40,8 @@ This repository is an agent-native SEO workspace. Do not add a second, agent-onl
 
 ## Preferred work loop
 
+For Blog-connected projects, read `docs/blog-integration-operations.md`. Use `blog_contract` to inspect the exchange schemas, attach the value/evidence brief with `blog_prepare` before human page approval, and use shared Blog commands for all imports/exports/receipts. A local snapshot is not live publication or indexation evidence. Use persisted external observations as expansion parents; never promote an AI-generated phrase or audience expression to measured search demand. Do not invoke human CLI roles from an agent to bypass binding or page approval.
+
 For a substantial user instruction such as "do today's SEO work":
 
 1. Call `operator_context` to understand why the system currently prioritizes one item over the others. If the scheduled operator already created a task, do not create a duplicate.

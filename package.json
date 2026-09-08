@@ -7,6 +7,7 @@
     "packages/*"
   ],
   "scripts": {
+    "test:blog": "tsx scripts/blog-smoke.ts",
     "dev": "concurrently -n api,web \"npm run dev -w @keywords/api\" \"npm run dev -w @keywords/web\"",
     "build": "npm run typecheck && npm run build -w @keywords/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -15,7 +16,8 @@
     "diagnostics": "npm run start -w @keywords/cli -- maintenance diagnostics",
     "db:backup": "npm run start -w @keywords/cli -- maintenance backup",
     "cli": "npm run start -w @keywords/cli --",
-    "mcp": "npm run start -w @keywords/mcp"
+    "mcp": "npm run start -w @keywords/mcp",
+    "test:portfolio": "tsx scripts/portfolio-smoke.ts"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
