@@ -16,6 +16,7 @@
     "./guard": "./src/guard.ts",
     "./operation": "./src/operation.ts",
     "./operation-discovery": "./src/operation-discovery.ts",
+    "./executor": "./src/executor.ts",
     "./measurement": "./src/measurement.ts",
     "./site": "./src/site.ts",
     "./metrics": "./src/metrics.ts",
