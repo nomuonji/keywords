@@ -15,6 +15,7 @@
     "./budget": "./src/budget.ts",
     "./guard": "./src/guard.ts",
     "./operation": "./src/operation.ts",
+    "./operation-discovery": "./src/operation-discovery.ts",
     "./measurement": "./src/measurement.ts",
     "./site": "./src/site.ts",
     "./metrics": "./src/metrics.ts",
