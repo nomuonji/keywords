@@ -1,9 +1,10 @@
 import { getDatabase, schema } from '@keywords/db';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
+import { headlessCommands } from './headless.js';
 
 export const portfolioCommands = {
   async context() {
-    const snapshot = await readPortfolio();
+    const [snapshot, articles] = await Promise.all([readPortfolio(), headlessCommands.dashboard()]);
     const { db } = getDatabase();
     const projects = await db.select().from(schema.projects);
     const tasks = await db.select().from(schema.tasks);
@@ -13,7 +14,7 @@ export const portfolioCommands = {
       const host = hostOf(project.domain);
       if (host && !sites.some(site => site.host === host)) sites.push({ name: project.name, host, error: false, gsc: { current: null, previous: null }, ga4: { current: null, previous: null } });
     }
-    return { ...snapshot, sites: sites.map(site => {
+    return { ...snapshot, articles, sites: sites.map(site => {
       const matches = projects.filter(project => hostOf(project.domain) === site.host);
       const projectIds = new Set(matches.map(project => project.id));
       const openTasks = tasks.filter(task => projectIds.has(task.projectId) && !['done', 'cancelled'].includes(task.status)).length;
