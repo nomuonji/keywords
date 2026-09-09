@@ -10,6 +10,7 @@ import { reviewCommands } from '@keywords/commands/review';
 import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
+import { operationControl } from '@keywords/commands/guard';
 import { productTools, isProductTool, callProductTool } from './product.js';
 import { blogTools, isBlogTool, callBlogTool } from './blog.js';
 
@@ -31,10 +32,19 @@ const budgetedTools = new Set([
 const allowedWhilePaused = new Set([
   'blog_context','blog_get','blog_evaluate','blog_observations',
   'blog_contract',
-  'work_context','work_resume','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
-  'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context'
+  'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
+  'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context',
+  'operation_context','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness'
 ]);
-function guardTool(name: string) {
+function guardTool(name: string, args: any) {
+  if (name === 'work_start') throw new Error('Direct agent work_start is disabled. Use operation_start, or claim a human-created legacy discovery job.');
+  const projectId = typeof args?.projectId === 'string' ? args.projectId : activeWorkSession?.projectId;
+  if (projectId && operationControl(projectId).paused && !allowedWhilePaused.has(name)) {
+    throw new Error(`Agent operations are paused for project ${projectId}. Read operation_context or wait for a human to resume it.`);
+  }
+  if (budgetedTools.has(name) && !activeWorkSession) {
+    throw new Error('Budgeted MCP research/write requires an active shared Operation or a claimed legacy discovery job. Use operation_start/operation_resume or discovery_claim first.');
+  }
   if (!activeWorkSession) return;
   if (['awaiting_review','blocked'].includes(activeWorkSession.status) && !allowedWhilePaused.has(name)) throw new Error(`Work session ${activeWorkSession.id} is ${activeWorkSession.status}. Read context or resume/finish before more writes or research.`);
   if (budgetedTools.has(name) && activeWorkSession.remainingActions <= 0) throw new Error(`Work session ${activeWorkSession.id} has exhausted its action budget. Checkpoint or complete it.`);
@@ -51,7 +61,7 @@ const coreTools = [
   { name: 'metrics_context', description: 'Compare compatible Search Console periods only.', inputSchema: s('Metrics', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'metrics_capture', description: 'Capture query/page Search Console history.', inputSchema: s('Capture metrics', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' }, searchType: { type: 'string' }, rowLimit: { type: 'number' } }, ['projectId','startDate','endDate']) },
   { name: 'work_context', description: 'Read the current work session, policies, tasks, reviews and next focus.', inputSchema: s('Work context', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId']) },
-  { name: 'work_start', description: 'Start one bounded auditable work session.', inputSchema: s('Start work', { projectId: { type: 'string' }, objective: { type: 'string' }, completionCriteria: { type: 'array', items: { type: 'string' } }, maxActions: { type: 'number' } }, ['projectId']) },
+  { name: 'work_start', description: 'Legacy direct start is disabled for MCP agents; use operation_start.', inputSchema: s('Start work', { projectId: { type: 'string' }, objective: { type: 'string' }, completionCriteria: { type: 'array', items: { type: 'string' } }, maxActions: { type: 'number' } }, ['projectId']) },
   { name: 'work_resume', description: 'Resume an eligible unfinished session.', inputSchema: s('Resume', { projectId: { type: 'string' }, sessionId: { type: 'string' } }, ['projectId','sessionId']) },
   { name: 'work_checkpoint', description: 'Persist outcome/blocker/next action, not private reasoning.', inputSchema: s('Checkpoint', { projectId: { type: 'string' }, sessionId: { type: 'string' }, state: { type: 'string', enum: ['working','awaiting_review','blocked'] }, summary: { type: 'string' }, nextAction: { type: 'string' } }, ['projectId','state','summary']) },
   { name: 'work_complete', description: 'Complete work with a concise summary.', inputSchema: s('Complete', { projectId: { type: 'string' }, sessionId: { type: 'string' }, summary: { type: 'string' } }, ['projectId','summary']) },
@@ -90,7 +100,7 @@ const coreTools = [
 const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
-  const a = (request.params.arguments ?? {}) as any; const name = request.params.name; guardTool(name); let result: unknown;
+  const a = (request.params.arguments ?? {}) as any; const name = request.params.name; guardTool(name, a); let result: unknown;
   if (isBlogTool(name)) {
     result = await callBlogTool(name,a,toolCtx(a.projectId)); consumeBudget(name); return text(result);
   }
@@ -104,7 +114,7 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'metrics_context': result = await metricsCommands.context(toolCtx(a.projectId), a.projectId, a.limit); break;
     case 'metrics_capture': result = await metricsCommands.capture(toolCtx(a.projectId), a); break;
     case 'work_context': { const sessionId = sessionIdFor(a.projectId, a.sessionId); const context = await workCommands.context(toolCtx(a.projectId), { projectId: a.projectId, sessionId }); const session = (context as any)?.session; if (session?.id) syncSession(session, a.projectId); const reviewRequests = await reviewCommands.list(toolCtx(a.projectId), { projectId: a.projectId, sessionId: session?.id, status: 'open', limit: 20 }); result = { ...(context as Record<string, unknown>), reviewRequests }; break; }
-    case 'work_start': result = await workCommands.start(baseCtx, a); syncSession(result, a.projectId); break;
+    case 'work_start': throw new Error('Direct agent work_start is disabled. Use operation_start.');
     case 'work_resume': result = await workCommands.resume(baseCtx, a); syncSession(result, a.projectId); break;
     case 'work_checkpoint': { const sessionId = sessionIdFor(a.projectId, a.sessionId); if (!sessionId) throw new Error('No active work session.'); result = await workCommands.checkpoint(toolCtx(a.projectId), { ...a, sessionId }); syncSession(result, a.projectId); break; }
     case 'work_complete': { const sessionId = sessionIdFor(a.projectId, a.sessionId); if (!sessionId) throw new Error('No active work session.'); result = await workCommands.complete(toolCtx(a.projectId), { ...a, sessionId }); activeWorkSession = null; break; }
