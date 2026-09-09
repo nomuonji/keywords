@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
+import './headless.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -35,7 +36,11 @@ function queueRevision(projectId: string, page: any, decision: any, artifact: an
   const parent = one('SELECT * FROM operation_requests WHERE id=?', artifact.operation_id);
   const child = one('SELECT * FROM operation_projects WHERE operation_id=? AND project_id=?', artifact.operation_id, projectId);
   if (!parent || !child) return { queued: false, reason: 'operation_missing' };
-  if (['active'].includes(parent.status) && ['queued','running'].includes(child.status)) return { queued: true, reused: true, operationId: artifact.operation_id, workSessionId: child.work_session_id };
+
+  // Never replace a work session while an executor still owns it.
+  const activeExecutor = one("SELECT id FROM operation_executors WHERE current_operation_id=? AND current_project_id=? AND status='busy' AND lease_expires_at>? LIMIT 1", artifact.operation_id, projectId, now());
+  if (activeExecutor) return { queued: true, reused: true, reason: 'executor_active', operationId: artifact.operation_id, workSessionId: child.work_session_id };
+
   const maxRevisions = Math.max(1, Number(process.env.KEYWORDS_MAX_ARTICLE_REVISIONS ?? 3));
   const maxNoProgress = Math.max(1, Number(process.env.KEYWORDS_MAX_NO_PROGRESS_RETRIES ?? 2));
   if (Number(artifact.revision_count ?? 0) >= maxRevisions) return openArtifactReview(projectId, artifact, `Article reached the revision limit (${artifact.revision_count}/${maxRevisions}) while the deterministic autonomy gate still requires edits.`);
@@ -44,7 +49,16 @@ function queueRevision(projectId: string, page: any, decision: any, artifact: an
   const fingerprint = String(metadata.fingerprint ?? decision.id);
   const lastQueued = one("SELECT payload_json FROM operation_events WHERE operation_id=? AND project_id=? AND kind='article_revision_queued' ORDER BY created_at DESC LIMIT 1", artifact.operation_id, projectId);
   const lastPayload = parse<any>(lastQueued?.payload_json, {});
-  const repeatedWithoutProgress = lastPayload.gateFingerprint === fingerprint && lastPayload.contentSha256 === artifact.content_sha256;
+  const currentSession = child.work_session_id ? one('SELECT * FROM work_sessions WHERE id=?', child.work_session_id) : null;
+
+  // A previously-created revision session is idempotently reused while it is still live.
+  if (lastPayload.sessionId && lastPayload.sessionId === child.work_session_id && currentSession?.status === 'running') {
+    return { queued: true, reused: true, reason: 'revision_session_active', operationId: artifact.operation_id, workSessionId: child.work_session_id, artifactId: artifact.id };
+  }
+
+  // Count no-progress only after a prior revision attempt ended without changing either
+  // the gate fingerprint or the persisted article hash.
+  const repeatedWithoutProgress = Boolean(lastQueued && lastPayload.gateFingerprint === fingerprint && lastPayload.contentSha256 === artifact.content_sha256);
   if (repeatedWithoutProgress) {
     run('UPDATE operation_artifacts SET no_progress_count=no_progress_count+1,updated_at=? WHERE id=?', now(), artifact.id);
     artifact = one('SELECT * FROM operation_artifacts WHERE id=?', artifact.id);
@@ -58,6 +72,10 @@ function queueRevision(projectId: string, page: any, decision: any, artifact: an
   const sessionId = randomUUID();
   const t = now();
   sqlite.transaction(() => {
+    if (currentSession && !['completed','cancelled'].includes(currentSession.status)) {
+      run("UPDATE work_sessions SET status='cancelled',summary=?,last_next_action=NULL,updated_at=?,completed_at=? WHERE id=?", 'Superseded by deterministic article revision session.', t, t, currentSession.id);
+      run('INSERT INTO work_checkpoints(id,session_id,state,summary,next_action,created_at) VALUES(?,?,?,?,?,?)', randomUUID(), currentSession.id, 'cancelled', 'Superseded by deterministic article revision session.', null, t);
+    }
     run(`INSERT INTO work_sessions(id,project_id,actor_id,objective,completion_criteria_json,baseline_json,status,max_actions,summary,last_next_action,started_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, sessionId, projectId, 'autopilot-revision', `Revise article ${page.title}`, JSON.stringify(['Address only the persisted autonomy/validator failures.','Write the revised article through blog_writeDraft using the same operation and article identity.','Pass blog_validateDraft and the site build before completion.']), JSON.stringify({ operationId: artifact.operation_id, pageId: page.id, artifactId: artifact.id, gateFingerprint: fingerprint, contentSha256: artifact.content_sha256 }), 'running', maxActions, summary.slice(0,2000), 'read_blog_artifact_context_and_revise', t, t);
     run('INSERT INTO work_checkpoints(id,session_id,state,summary,next_action,created_at) VALUES(?,?,?,?,?,?)', randomUUID(), sessionId, 'working', summary.slice(0,2000), 'read_blog_artifact_context_and_revise', t);
