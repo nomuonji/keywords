@@ -54,6 +54,7 @@ jobs:
             KEYWORDS_DB_PATH=/tmp/keywords-work-loop-smoke.sqlite npx tsx scripts/work-loop-smoke.ts
             KEYWORDS_DB_PATH=/tmp/keywords-review-smoke.sqlite npx tsx scripts/review-smoke.ts
             KEYWORDS_DB_PATH=/tmp/keywords-operator-smoke.sqlite npx tsx scripts/operator-smoke.ts
+            KEYWORDS_DB_PATH=/tmp/keywords-agent-operations-smoke.sqlite npx tsx scripts/agent-operations-smoke.ts
             KEYWORDS_DB_PATH=/tmp/keywords-product-smoke.sqlite npx tsx scripts/product-workflow-smoke.ts
             npx tsx scripts/blog-smoke.ts
             npm run test:portfolio
