@@ -1,8 +1,17 @@
 import { discoveryCommands } from '@keywords/commands/discovery';
 import { workspaceCommands } from '@keywords/commands/workspace';
 import { maintenanceCommands } from '@keywords/commands/maintenance';
+import { portfolioCommands } from '@keywords/commands/portfolio';
 
 export function registerProductRoutes(app: any, ctx: (c: any) => any, body: (c: any) => Promise<any>) {
+  app.get('/articles', async (c: any) => c.json(await portfolioCommands.articleIndex({
+    query: c.req.query('q'),
+    projectId: c.req.query('projectId'),
+    status: c.req.query('status'),
+    limit: Number(c.req.query('limit') ?? 50),
+    offset: Number(c.req.query('offset') ?? 0)
+  })));
+
   app.get('/projects/:projectId/brief', async (c: any) => c.json(await workspaceCommands.brief(ctx(c), c.req.param('projectId'))));
   app.patch('/projects/:projectId/brief', async (c: any) => c.json(await workspaceCommands.updateBrief(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
   app.get('/projects/:projectId/capabilities', async (c: any) => c.json(await workspaceCommands.capabilities(ctx(c), c.req.param('projectId'))));
