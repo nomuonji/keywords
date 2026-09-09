@@ -29,7 +29,24 @@ For a content plan: read blog_contract, collect real sources, create the page pl
 
 If the objective references an authorized handoff, call blog_get with that handoff ID, verify publication_authorized=true, carry the payload through the existing Blog-side agent workflow, and submit Blog receipts/outcomes back to Keywords.
 
-Never invent experience, measurements, quotes, reviews, or current facts. Never delete pages, move URLs, change DNS, rotate credentials, or activate policy rules. If a real external dependency blocks progress, use work_checkpoint with state=blocked. Otherwise finish your assigned work cleanly; the runner will close the parent Operation.`;
+Never invent experience, measurements, quotes, reviews, or current facts. Never delete pages, move URLs, change DNS, rotate credentials, or activate policy rules. If a real external dependency blocks progress, use work_checkpoint with state=blocked and a concise next action. Otherwise finish your assigned work cleanly; the runner will close the parent Operation.`;
+}
+
+async function closeFromWorkState(claim: any, opCtx: any) {
+  const current: any = await operationCommands.context(opCtx, { operationId: claim.operationId });
+  const project = current.projects?.find((item: any) => item.projectId === claim.projectId);
+  const workStatus = project?.work?.status;
+  if (workStatus === 'blocked' || workStatus === 'awaiting_review') {
+    await operationCommands.checkpoint(opCtx, {
+      operationId: claim.operationId,
+      projectId: claim.projectId,
+      state: workStatus,
+      summary: project.work.summary || `Execution agent left work in ${workStatus}.`,
+      nextAction: project.work.nextAction || 'Inspect the persisted blocker before retrying.'
+    });
+    return;
+  }
+  await operationCommands.complete(opCtx, { operationId: claim.operationId, summary: 'Persistent execution agent finished the assigned autonomous operation.' });
 }
 
 async function runAgent(claim: any, generation: number) {
@@ -41,8 +58,8 @@ async function runAgent(claim: any, generation: number) {
   const code = await new Promise<number | null>((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }).finally(() => clearInterval(heartbeat));
   const opCtx = { ...agentCtx, projectId: claim.projectId, workSessionId: claim.workSessionId ?? undefined };
   if (code === 0) {
-    try { await operationCommands.complete(opCtx, { operationId: claim.operationId, summary: 'Persistent execution agent finished the assigned autonomous operation.' }); }
-    catch (error) { console.error('Failed to close completed operation:', error); }
+    try { await closeFromWorkState(claim, opCtx); }
+    catch (error) { console.error('Failed to reconcile completed agent work:', error); }
   } else {
     try { await operationCommands.checkpoint(opCtx, { operationId: claim.operationId, projectId: claim.projectId, state: 'blocked', summary: `External agent process exited with code ${code ?? 'unknown'}.`, nextAction: 'Inspect agent stderr and retry after fixing the executor.' }); }
     catch (error) { console.error('Failed to checkpoint agent exit:', error); }
