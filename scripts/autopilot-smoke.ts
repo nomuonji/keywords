@@ -4,11 +4,16 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-process.env.KEYWORDS_DB_PATH = join(mkdtempSync(join(tmpdir(), 'keywords-autopilot-')), 'test.sqlite');
+const fixtureRoot = mkdtempSync(join(tmpdir(), 'keywords-autopilot-'));
+process.env.KEYWORDS_DB_PATH = join(fixtureRoot, 'test.sqlite');
+process.env.KEYWORDS_BLOG_ROOT = join(fixtureRoot, 'blog');
+process.env.KEYWORDS_BLOG_BUILD_COMMAND = 'node -e "process.exit(0)"';
 
 const { getDatabase, schema } = await import('@keywords/db');
 const { commands } = await import('@keywords/commands');
 const { planningCommands } = await import('@keywords/commands/planning');
+const { operationCommands } = await import('@keywords/commands/operation');
+const { headlessCommands } = await import('@keywords/commands/headless');
 const { configureAutonomy, evaluateAutonomyGate, applyAutonomyDecision, createAutonomousHandoff, autonomyPublicationUsage } = await import('@keywords/commands/autonomy');
 const { db, sqlite } = getDatabase();
 const now = new Date().toISOString();
@@ -18,7 +23,7 @@ const projectId = 'project-autopilot-smoke';
 const human = { actor: 'human' as const, actorId: 'autopilot-smoke-human' };
 
 await db.insert(schema.projects).values({ id: projectId, name: 'Autopilot smoke', domain: 'example.com', mode: 'existing_site', language: 'ja', country: 'JP', createdAt: now, updatedAt: now });
-const source = await commands.source.record(human, { projectId, type: 'web', label: 'Official product documentation', url: 'https://docs.example.com/product', metadata: { fixture: true } });
+const source = await commands.source.record(human, { projectId, type: 'web', label: 'Official product documentation', url: 'https://docs.example.com/product', metadata: { fixture: true, document: { text: 'A deterministic quality gate is required for this fixture. The gate uses independently stored evidence. Autonomous publishing must also have a verified local article artifact and a passing site build.' } } });
 const keyword = await commands.keyword.create(human, { projectId, text: 'autopilot evidence guide', source: 'fixture', avgMonthly: 100 });
 const plan = await planningCommands.pagePlan(human, { projectId, title: 'Autopilot Evidence Guide', slug: 'autopilot-evidence-guide', planMode: 'new_page', primaryKeywordId: keyword.id, sourceIds: [source.id], audience: 'Operators', question: 'How should autonomous SEO publishing be gated?', searchIntent: 'implementation', uniqueAngle: 'Deterministic evidence gate' });
 const pageId = plan.page.id;
@@ -58,6 +63,16 @@ assert.equal(gate.informationGain, 2);
 const decision = applyAutonomyDecision(projectId, pageId, gate);
 assert.equal(decision.verdict, 'approved');
 assert.equal((sqlite.prepare('SELECT status FROM pages WHERE id=?').get(pageId) as { status: string }).status, 'approved');
+assert.throws(() => createAutonomousHandoff(projectId, pageId), /verified local article artifact/i);
+
+const articleOperation = await operationCommands.start(human, { requestText: 'Create the approved article artifact', objective: 'Create the approved article artifact', projectIds: [projectId], requestKey: 'autopilot-smoke-article', constraints: { requiresArtifact: true, pageId } });
+const article = `---\ntitle: Autopilot Evidence Guide\n---\n# Autopilot Evidence Guide\n\nHow should autonomous SEO publishing be gated? A deterministic quality gate is required for this fixture. The gate uses independently stored evidence. Autonomous publishing must also require a verified local article artifact and a passing site build before delivery.`;
+await headlessCommands.writeDraft(human, { operationId: articleOperation.operation.id, projectId, pageId, content: article, sourceIds: [source.id] });
+const verified = await headlessCommands.validateDraft(human, { operationId: articleOperation.operation.id, projectId });
+assert.equal(verified.validatorStatus, 'passed');
+assert.equal(verified.buildStatus, 'passed');
+await operationCommands.complete(human, { operationId: articleOperation.operation.id, summary: 'local artifact verified' });
+
 const handoff = createAutonomousHandoff(projectId, pageId);
 assert.equal(handoff.reused, false);
 assert.equal((handoff.payload as any).publication_authorized, true);
@@ -76,4 +91,4 @@ applyAutonomyDecision(projectId, badPlan.page.id, badGate);
 assert.equal((sqlite.prepare('SELECT status FROM pages WHERE id=?').get(badPlan.page.id) as { status: string }).status, 'archived');
 
 sqlite.close();
-console.log(JSON.stringify({ ok: true, pageId, handoffId: (handoff.payload as any).handoff_id, gateScore: gate.score, rejectedPageId: badPlan.page.id }));
+console.log(JSON.stringify({ ok: true, pageId, handoffId: (handoff.payload as any).handoff_id, gateScore: gate.score, artifactVerified: true, rejectedPageId: badPlan.page.id }));
