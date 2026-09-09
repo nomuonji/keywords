@@ -9,6 +9,7 @@
   "scripts": {
     "test:blog": "tsx scripts/blog-smoke.ts",
     "test:autopilot": "tsx scripts/autopilot-smoke.ts",
+    "test:headless": "tsx scripts/headless-generation-smoke.ts",
     "dev": "concurrently -n api,web \"npm run dev -w @keywords/api\" \"npm run dev -w @keywords/web\"",
     "build": "npm run typecheck && npm run build -w @keywords/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
