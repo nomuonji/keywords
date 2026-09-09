@@ -10,7 +10,7 @@ const one = (sql: string, ...args: any[]): any => sqlite.prepare(sql).get(...arg
 const rows = (sql: string, ...args: any[]): any[] => sqlite.prepare(sql).all(...args);
 const run = (sql: string, ...args: any[]) => sqlite.prepare(sql).run(...args);
 const parse = <T>(value: string | null | undefined, fallback: T): T => { try { return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } };
-const required = (value: unknown, message: string): asserts value => { if (!value) throw new Error(message); };
+function required(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 const normalizeText = (value: string) => value.trim().replace(/\s+/g, ' ');
 const leaseUntil = (seconds?: number) => new Date(Date.now() + Math.max(60, Math.min(Math.floor(seconds ?? 300), 3600)) * 1000).toISOString();
 
