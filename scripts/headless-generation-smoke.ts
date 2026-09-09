@@ -8,7 +8,6 @@ process.env.KEYWORDS_DB_PATH = join(root, 'test.sqlite');
 process.env.KEYWORDS_BLOG_ROOT = join(root, 'blog');
 process.env.KEYWORDS_BLOG_ARTICLE_DIR = 'content';
 process.env.KEYWORDS_BLOG_BUILD_COMMAND = 'node -e "process.exit(0)"';
-process.env.KEYWORDS_AUTOPILOT_SCHEDULER_OWNER = 'worker';
 
 const { commands } = await import('@keywords/commands');
 const { configureAutonomy } = await import('@keywords/commands/autonomy');
@@ -94,6 +93,5 @@ const tickResults = await Promise.all([
 ]);
 assert.equal(tickResults.filter((item:any) => item?.skipped && item.reason === 'tick_locked').length, 1);
 
-assert.equal(process.env.KEYWORDS_AUTOPILOT_SCHEDULER, '0');
 getDatabase().sqlite.close();
 console.log(JSON.stringify({ ok: true, operationId, artifactId: artifact.id, cachedValidation: true, cooldown: true, blockerIsolation: true, tickLease: true }));
