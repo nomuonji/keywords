@@ -3,6 +3,7 @@ import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { activeDelegation, assertOperationAllowed } from './guard.js';
 import { autonomyAllows } from './autonomy.js';
+import { headlessCommands } from './headless.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -13,7 +14,25 @@ function required(value: unknown, message: string): asserts value { if (!value) 
 const leaseUntil = (seconds?: number) => new Date(Date.now() + Math.max(60, Math.min(Math.floor(seconds ?? 300), 3600)) * 1000).toISOString();
 
 function executor(id: string) { return one('SELECT * FROM operation_executors WHERE id=?', id); }
-function view(row: any) { return row ? { id: row.id, status: row.status, capabilities: JSON.parse(row.capabilities_json || '[]'), generation: Number(row.generation), currentOperationId: row.current_operation_id, currentProjectId: row.current_project_id, lastSeenAt: row.last_seen_at, leaseExpiresAt: row.lease_expires_at } : null; }
+function view(row: any) {
+  if (!row) return null;
+  const health = headlessCommands.executorHealth(String(row.id));
+  return {
+    id: row.id,
+    status: health?.status ?? row.status,
+    runnable: health?.runnable ?? false,
+    capabilities: JSON.parse(row.capabilities_json || '[]'),
+    generation: Number(row.generation),
+    currentOperationId: row.current_operation_id,
+    currentProjectId: row.current_project_id,
+    lastSeenAt: row.last_seen_at,
+    leaseExpiresAt: row.lease_expires_at,
+    failureClass: health?.failureClass ?? null,
+    failureCount: health?.failureCount ?? 0,
+    cooldownUntil: health?.cooldownUntil ?? null,
+    lastError: health?.lastError ?? null
+  };
+}
 
 function candidate(ctx: CommandContext, projectId?: string) {
   const params: any[] = [now(), now()];
@@ -38,7 +57,8 @@ function candidate(ctx: CommandContext, projectId?: string) {
         WHERE dj.project_id=op.project_id AND dj.status='running' AND dj.lease_expires_at>?
       )
       ${projectFilter}
-    ORDER BY COALESCE(t.priority,50) DESC,o.created_at ASC`, ...params).find(item =>
+    ORDER BY CASE WHEN op.blocker_class IN ('quality_revision_required','artifact_missing') THEN 0 ELSE 1 END,
+      COALESCE(t.priority,50) DESC,o.created_at ASC`, ...params).find(item =>
       ctx.actor === 'system' || autonomyAllows(item.project_id, 'operation.start') || activeDelegation(item.project_id, 'operation.start'));
 }
 
@@ -48,16 +68,20 @@ export const executorCommands = {
     const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required');
     const row = executor(executorId); required(row, 'Register executor before claiming work');
     if (Number(row.generation) !== Number(input.generation)) throw new Error('Executor generation changed; re-register before claiming');
-    const item = candidate(ctx, input.projectId); if (!item) return { claimed: false, executor: view(row), reason: 'no_eligible_operation' };
+    await headlessCommands.clearExecutorFailureIfDue(executorId);
+    const health = headlessCommands.executorHealth(executorId);
+    if (!health?.runnable) return { claimed: false, executor: view(executor(executorId)), reason: health?.status === 'cooldown' ? 'executor_cooldown' : 'executor_unavailable', retryAfter: health?.cooldownUntil ?? null };
+    const item = candidate(ctx, input.projectId); if (!item) return { claimed: false, executor: view(executor(executorId)), reason: 'no_eligible_operation' };
     assertOperationAllowed(ctx, { projectId: item.project_id, command: 'operation.executor_claim', capability: 'operation.start' });
     const expires = leaseUntil(input.leaseSeconds); const t = now();
     const result = sqlite.transaction(() => {
       const liveOther = one(`SELECT id FROM operation_executors WHERE id<>? AND current_operation_id=? AND current_project_id=? AND status='busy' AND lease_expires_at>? LIMIT 1`, executorId, item.operation_id, item.project_id, t);
       if (liveOther) throw new Error('Another executor already owns this operation project');
       const claimed = run(`UPDATE operation_executors SET status='busy',current_operation_id=?,current_project_id=?,last_seen_at=?,lease_expires_at=?,updated_at=?
-        WHERE id=? AND generation=? AND (current_operation_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=? OR (current_operation_id=? AND current_project_id=?))`,
-        item.operation_id, item.project_id, t, expires, t, executorId, input.generation, t, item.operation_id, item.project_id);
-      if (!claimed.changes) throw new Error('Executor claim lost a generation/ownership race');
+        WHERE id=? AND generation=? AND (cooldown_until IS NULL OR cooldown_until<=?) AND status!='unavailable'
+          AND (current_operation_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=? OR (current_operation_id=? AND current_project_id=?))`,
+        item.operation_id, item.project_id, t, expires, t, executorId, input.generation, t, t, item.operation_id, item.project_id);
+      if (!claimed.changes) throw new Error('Executor claim lost a generation/ownership/health race');
       if (item.work_session_id) {
         const session = one('SELECT * FROM work_sessions WHERE id=? AND project_id=?', item.work_session_id, item.project_id); required(session, 'Operation work session is missing');
         if (session.status === 'running') run('UPDATE work_sessions SET actor_id=?,updated_at=? WHERE id=?', executorId, t, session.id);
