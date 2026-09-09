@@ -22,7 +22,7 @@
     "./metrics": "./src/metrics.ts",
     "./operator": "./src/operator.ts",
     "./autonomy": "./src/autonomy.ts",
-    "./autopilot": "./src/autopilot.ts",
+    "./autopilot": "./src/autopilot-locked.ts",
     "./headless": "./src/headless.ts",
     "./revision": "./src/revision.ts",
     "./workspace": "./src/workspace.ts",
