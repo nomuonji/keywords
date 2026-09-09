@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { executorCommands } from '@keywords/commands/executor';
 import { operationCommands } from '@keywords/commands/operation';
 import { headlessCommands } from '@keywords/commands/headless';
+import { revisionCommands } from '@keywords/commands/revision';
 
 const command = process.env.KEYWORDS_AGENT_COMMAND?.trim();
 if (!command) throw new Error('KEYWORDS_AGENT_COMMAND is required. Configure a persistent agent CLI before starting npm run autopilot.');
@@ -104,7 +105,10 @@ async function runAgent(claim: any, generation: number) {
     getDatabase().sqlite.prepare('UPDATE operation_projects SET runtime_consumed_ms=runtime_consumed_ms+?,updated_at=? WHERE operation_id=? AND project_id=?').run(elapsedMs, new Date().toISOString(), claim.operationId, claim.projectId);
   } catch (error) { console.error('Failed to record executor active runtime:', error); }
   await operationCommands.executorRelease(agentCtx, { executorId, generation, operationId: claim.operationId, projectId: claim.projectId }).catch(error => console.error('Executor release failed:', error));
-  if (!stopping) await headlessCommands.runAutopilotTick(systemCtx, claim.projectId, { force: true }).catch(error => console.error('Post-operation autopilot tick failed:', error));
+  if (!stopping) {
+    await headlessCommands.runAutopilotTick(systemCtx, claim.projectId, { force: true }).catch(error => console.error('Post-operation autopilot tick failed:', error));
+    await revisionCommands.reconcile(claim.projectId).catch(error => console.error('Article revision reconciliation failed:', error));
+  }
 }
 
 function requestShutdown(signal: string) {
@@ -124,6 +128,7 @@ while (!stopping) {
   try {
     const health = await headlessCommands.clearExecutorFailureIfDue(executorId);
     if (health?.status !== 'cooldown') {
+      await revisionCommands.reconcile();
       await headlessCommands.resumeEligibleOperations();
       await operationCommands.executorHeartbeat(agentCtx, { executorId, generation: registration.generation, leaseSeconds });
       const dueProjects = await headlessCommands.dueProjects();
@@ -131,6 +136,7 @@ while (!stopping) {
         if (stopping) break;
         await headlessCommands.runAutopilotTick(systemCtx, projectId).catch(error => console.error(`Autopilot tick failed for ${projectId}:`, error));
       }
+      await revisionCommands.reconcile();
       if (!stopping) {
         const claim = await executorCommands.claimNext(agentCtx, { executorId, generation: registration.generation, leaseSeconds });
         if (claim.claimed) await runAgent(claim, registration.generation);
