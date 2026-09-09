@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
+import { isVerifiedDemand } from './discovery-policy.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -87,7 +88,13 @@ export const planningCommands = {
     const primary = input.primaryKeywordId ? [input.primaryKeywordId] : [];
     const secondary = (input.secondaryKeywordIds ?? []).filter(keywordId => keywordId !== input.primaryKeywordId);
     const keywordIds = [...new Set([...primary, ...secondary])];
-    const keywords = await requireKeywords(input.projectId, keywordIds); const sourceIds = await requireSources(input.projectId, input.sourceIds ?? []);
+    const keywords = await requireKeywords(input.projectId, keywordIds);
+    if (keywords.length) {
+      const discovered = await db.select({ keyword: schema.discoveryCandidates.keyword, demandStatus: schema.discoveryCandidates.demandStatus, demandValue: schema.discoveryCandidates.demandValue }).from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.projectId, input.projectId), inArray(schema.discoveryCandidates.keywordId, keywords.map(keyword => keyword.id))));
+      const unverified = discovered.filter(row => !isVerifiedDemand(row.demandStatus, row.demandValue));
+      if (unverified.length) throw new Error(`Discovered keywords require verified demand before planning: ${unverified.map(row => row.keyword).join(', ')}`);
+    }
+    const sourceIds = await requireSources(input.projectId, input.sourceIds ?? []);
     const warnings = await targetConflictWarnings(input.projectId, keywordIds, input.clusterId, undefined, targetPage?.id ?? null);
     const t = now();
     const page = {

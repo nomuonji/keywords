@@ -1,6 +1,8 @@
 export type ActorType = 'human' | 'agent' | 'system';
 export type KeywordStatus = 'active' | 'rejected';
 export type CandidateStatus = 'discovered' | 'shortlisted' | 'hold' | 'rejected' | 'research_more' | 'planned';
+export type DemandStatus = 'gsc_observed' | 'provider_estimated' | 'search_surface_observed' | 'audience_expression_only' | 'unverified';
+export type DiscoveryDemandPolicy = 'required' | 'surface_only';
 export type DiscoveryJobStatus = 'waiting_for_agent' | 'running' | 'awaiting_review' | 'blocked' | 'completed' | 'failed' | 'cancelled';
 export type CapabilityStatus = 'not_configured' | 'checking' | 'available' | 'expired' | 'rate_limited' | 'failed';
 export type ProjectMode = 'existing_site' | 'topic_only';

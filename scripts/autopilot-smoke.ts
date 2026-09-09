@@ -24,7 +24,7 @@ const human = { actor: 'human' as const, actorId: 'autopilot-smoke-human' };
 
 await db.insert(schema.projects).values({ id: projectId, name: 'Autopilot smoke', domain: 'example.com', mode: 'existing_site', language: 'ja', country: 'JP', createdAt: now, updatedAt: now });
 const source = await commands.source.record(human, { projectId, type: 'web', label: 'Official product documentation', url: 'https://docs.example.com/product', metadata: { fixture: true, document: { text: 'A deterministic quality gate is required for this fixture. The gate uses independently stored evidence. Autonomous publishing must also have a verified local article artifact and a passing site build.' } } });
-const keyword = await commands.keyword.create(human, { projectId, text: 'autopilot evidence guide', source: 'fixture', avgMonthly: 100 });
+const keyword = await commands.keyword.create(human, { projectId, text: 'autopilot evidence guide', source: 'google_ads', avgMonthly: 100, competition: 0.2 });
 const plan = await planningCommands.pagePlan(human, { projectId, title: 'Autopilot Evidence Guide', slug: 'autopilot-evidence-guide', planMode: 'new_page', primaryKeywordId: keyword.id, sourceIds: [source.id], audience: 'Operators', question: 'How should autonomous SEO publishing be gated?', searchIntent: 'implementation', uniqueAngle: 'Deterministic evidence gate' });
 const pageId = plan.page.id;
 

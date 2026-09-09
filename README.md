@@ -326,7 +326,7 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
-The API loads the repository `.env` on startup. Google Ads uses the direct API when valid credentials are available and falls back to the configured keyword-volume proxy for seed-keyword research when direct OAuth or customer access is unavailable. Credentials remain environment-only.
+The API loads the repository `.env` on startup. Google Ads uses the direct API when valid credentials are available and falls back to the configured keyword-volume proxy for seed-keyword research when direct OAuth or customer access is unavailable. Operation-driven discovery requires one of those demand providers; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
 
 # Verification
 

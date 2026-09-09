@@ -24,7 +24,10 @@ const project = await commands.project.create(human, { name: 'Revision fixture',
 await configureAutonomy(human, { projectId: project.id, enabled: true });
 const source = await commands.source.record(human, { projectId: project.id, type: 'web', label: 'Revision evidence', metadata: { document: { text: 'A persisted article should be revised only when the content or failed quality conditions require it.' } } });
 const page = await commands.page.propose(human, { projectId: project.id, title: 'Revision State Machine', slug: 'revision-state-machine' });
-sqlite.prepare("UPDATE pages SET source='workspace' WHERE id=?").run(page.id);
+const keyword = await commands.keyword.create(human, { projectId: project.id, text: 'revision state machine', source: 'google_ads', avgMonthly: 100, competition: 0.2 });
+sqlite.prepare('INSERT INTO page_keywords(page_id,keyword_id,role) VALUES(?,?,?)').run(page.id, keyword.id, 'primary');
+sqlite.prepare("UPDATE pages SET source='workspace',rationale=? WHERE id=?").run('Verified demand and evidence support this article target.', page.id);
+sqlite.prepare('INSERT INTO blog_briefs(page_id,project_id,packet_json,packet_hash,created_at) VALUES(?,?,?,?,?)').run(page.id, project.id, JSON.stringify({ demand_source_ids: [source.id], research: { score_rationale: 'Verified demand and evidence support this article target.' } }), 'fixture-research', t());
 const started = await operationCommands.start(human, { requestText: 'Write revision state article', projectIds: [project.id], requestKey: 'revision-state-operation', constraints: { requiresArtifact: true, pageId: page.id } });
 const operationId = started.operation.id as string;
 const originalSessionId = started.children[0].workSessionId as string;

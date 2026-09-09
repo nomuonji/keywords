@@ -3,8 +3,10 @@ import { backupDatabase, databaseDiagnostics, getDatabase, schema } from '@keywo
 import type { CommandContext } from '@keywords/domain';
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { loadResearchEnvironment } from '@keywords/research';
 
 const { db, sqlite, path: databasePath } = getDatabase();
+loadResearchEnvironment();
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const googleAdsConfigured = () => Boolean(

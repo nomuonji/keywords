@@ -9,6 +9,9 @@ export function registerProductRoutes(app: any, ctx: (c: any) => any, body: (c: 
     limit: Number(c.req.query('limit') ?? 50),
     offset: Number(c.req.query('offset') ?? 0)
   })));
+  app.get('/articles/:articleId/content', async (c: any) => c.json(await portfolioCommands.articleContent(c.req.param('articleId'))));
+  app.post('/articles/:articleId/delete', async (c: any) => c.json(await portfolioCommands.deleteArticle(ctx(c), { ...(await body(c)), articleId: c.req.param('articleId') })));
+  app.post('/articles/:articleId/reject', async (c: any) => c.json(await portfolioCommands.deleteArticle(ctx(c), { ...(await body(c)), articleId: c.req.param('articleId') })));
   app.get('/maintenance/diagnostics', async (c: any) => c.json(await maintenanceCommands.diagnostics(ctx(c))));
   app.post('/maintenance/backup', async (c: any) => c.json(await maintenanceCommands.backup(ctx(c), await body(c))));
 }

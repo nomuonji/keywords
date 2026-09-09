@@ -6,6 +6,27 @@ import { isIP } from 'node:net';
 const MAX_WEB_BYTES = 1_000_000;
 const REQUEST_TIMEOUT_MS = 20_000;
 
+let dotenvLoaded = false;
+/** Load repository-local research configuration without persisting or logging secrets. */
+export function loadResearchEnvironment() {
+  if (dotenvLoaded) return;
+  dotenvLoaded = true;
+  try {
+    const contents = readFileSync(new URL('../../../.env', import.meta.url), 'utf8');
+    for (const line of contents.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
+      if (!match || match[1] in process.env) continue;
+      let value = match[2];
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) value = value.slice(1, -1);
+      process.env[match[1]] = value;
+    }
+  } catch {
+    // Environment-only deployments may not have a repository .env file.
+  }
+}
+
+loadResearchEnvironment();
+
 function env(name: string, fallbackName?: string) {
   const value = process.env[name] ?? (fallbackName ? process.env[fallbackName] : undefined);
   if (!value) throw new Error(`Missing required environment variable: ${name}${fallbackName ? ` (or ${fallbackName})` : ''}`);

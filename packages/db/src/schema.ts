@@ -86,6 +86,7 @@ export const discoveryJobs = sqliteTable('discovery_jobs', {
   country: text('country').notNull(),
   region: text('region'),
   excludedTermsJson: text('excluded_terms_json'),
+  demandPolicy: text('demand_policy').notNull().default('surface_only'),
   maxCandidates: integer('max_candidates').notNull().default(50),
   candidateWritesUsed: integer('candidate_writes_used').notNull().default(0),
   maxExternalRequests: integer('max_external_requests').notNull().default(8),
@@ -117,7 +118,7 @@ export const discoveryRequestReservations = sqliteTable('discovery_request_reser
 });
 
 export const discoveryCandidates = sqliteTable('discovery_candidates', {
-  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), jobId: text('job_id').notNull().references(() => discoveryJobs.id, { onDelete: 'cascade' }), keywordId: text('keyword_id').references(() => keywords.id, { onDelete: 'set null' }), keyword: text('keyword').notNull(), normalized: text('normalized').notNull(), status: text('status').notNull().default('discovered'), demandValue: integer('demand_value'), demandProvider: text('demand_provider'), demandObservedAt: text('demand_observed_at'), adCompetition: real('ad_competition'), searchIntent: text('search_intent'), existingPageOverlapJson: text('existing_page_overlap_json'), serpStatus: text('serp_status').notNull().default('not_researched'), unresolvedQuestionsJson: text('unresolved_questions_json'), evidenceCount: integer('evidence_count').notNull().default(0), language: text('language').notNull(), country: text('country').notNull(), region: text('region'), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull()
+  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), jobId: text('job_id').notNull().references(() => discoveryJobs.id, { onDelete: 'cascade' }), keywordId: text('keyword_id').references(() => keywords.id, { onDelete: 'set null' }), keyword: text('keyword').notNull(), normalized: text('normalized').notNull(), status: text('status').notNull().default('discovered'), demandValue: integer('demand_value'), demandProvider: text('demand_provider'), demandStatus: text('demand_status').notNull().default('unverified'), demandObservedAt: text('demand_observed_at'), adCompetition: real('ad_competition'), noveltyScore: integer('novelty_score').notNull().default(0), searchIntent: text('search_intent'), existingPageOverlapJson: text('existing_page_overlap_json'), serpStatus: text('serp_status').notNull().default('not_researched'), unresolvedQuestionsJson: text('unresolved_questions_json'), evidenceCount: integer('evidence_count').notNull().default(0), language: text('language').notNull(), country: text('country').notNull(), region: text('region'), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull()
 });
 
 export const providerCapabilities = sqliteTable('provider_capabilities', {

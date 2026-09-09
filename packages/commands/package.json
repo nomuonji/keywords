@@ -27,6 +27,7 @@
     "./revision": "./src/revision.ts",
     "./workspace": "./src/workspace.ts",
     "./discovery": "./src/discovery.ts",
+    "./discovery-policy": "./src/discovery-policy.ts",
     "./maintenance": "./src/maintenance.ts",
     "./portfolio": "./src/portfolio.ts"
   },

@@ -5,9 +5,9 @@ type AutoProject={id:string;name:string;domain?:string|null;control:{enabled:boo
 type AutoPortfolio={totals:{projects:number;enabled:number;executing:number;queued:number;attention:number;activeOperations:number;connectedAgents:number};projects:AutoProject[]};
 type KeywordChoice={id:string;projectId:string;projectName:string;keyword:string;verdict:string;reason?:string|null;demand?:number|null;searchIntent?:string|null;createdAt:string};
 type Article={id:string;projectName:string;title:string;validatorStatus:string;buildStatus:string;verifiedAt?:string|null;updatedAt:string};
-type Portfolio={keywordChoices:KeywordChoice[];articles:{complete:Article[];inProgress:Article[]}};
+type Portfolio={keywordChoices?:KeywordChoice[];articles?:{complete?:Article[];inProgress?:Article[]}};
 type Outcome={id:string;projectId:string;status:string;targetUrl?:string|null;hypothesis?:string|null;publishedAt?:string|null;evaluationDueAt?:string|null;metrics?:Record<string,unknown>;nextAction?:string|null;updatedAt:string};
-type Operations={outcomes:Outcome[]};
+type Operations={outcomes?:Outcome[]};
 
 const when=(value?:string|null)=>value?new Date(value).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
 const stageLabel:Record<string,string>={planning:'選定中',queued_for_agent:'Agent待ち',executing:'実行中',quality_gate:'検証中',delivery_ready:'公開待ち',observing:'評価中',decision_wait:'判断待ち',blocked:'停止',attention:'要対応',idle:'待機'};
@@ -18,10 +18,10 @@ export function OperationsOverview({onOpenArticles}:{onOpenArticles:()=>void}){
   const [auto,setAuto]=useState<AutoPortfolio|null>(null),[portfolio,setPortfolio]=useState<Portfolio|null>(null),[ops,setOps]=useState<Operations|null>(null),[query,setQuery]=useState(''),[error,setError]=useState('');
   const load=async()=>{try{const [a,p,o]=await Promise.all([api<AutoPortfolio>('/autopilot/portfolio'),api<Portfolio>('/portfolio'),api<Operations>('/operations/context')]);setAuto(a);setPortfolio(p);setOps(o);setError('')}catch(e){setError(String(e))}};
   useEffect(()=>{void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load()},10000);return()=>clearInterval(timer)},[]);
-  const active=useMemo(()=>auto?.projects.filter(p=>p.activeOperation||p.executor?.connected||['attention','blocked','running'].includes(p.state.status)).filter(p=>`${p.name} ${p.domain??''} ${p.activeOperation?.objective??''}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>Number(Boolean(b.executor?.connected))-Number(Boolean(a.executor?.connected))||Date.parse(b.activeOperation?.updatedAt||b.state.lastTickAt||'')-Date.parse(a.activeOperation?.updatedAt||a.state.lastTickAt||'')).slice(0,12)??[],[auto,query]);
-  const choices=useMemo(()=>portfolio?.keywordChoices.filter(x=>`${x.projectName} ${x.keyword} ${x.reason??''}`.toLowerCase().includes(query.toLowerCase())).slice(0,12)??[],[portfolio,query]);
-  const recentArticles=useMemo(()=>[...(portfolio?.articles.inProgress??[]),...(portfolio?.articles.complete??[])].sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).filter(x=>`${x.projectName} ${x.title}`.toLowerCase().includes(query.toLowerCase())).slice(0,10),[portfolio,query]);
-  const outcomes=useMemo(()=>ops?.outcomes.filter(x=>`${x.status} ${x.targetUrl??''} ${x.hypothesis??''}`.toLowerCase().includes(query.toLowerCase())).slice(0,10)??[],[ops,query]);
+  const active=useMemo(()=>(auto?.projects??[]).filter(p=>p.activeOperation||p.executor?.connected||['attention','blocked','running'].includes(p.state.status)).filter(p=>`${p.name} ${p.domain??''} ${p.activeOperation?.objective??''}`.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>Number(Boolean(b.executor?.connected))-Number(Boolean(a.executor?.connected))||Date.parse(b.activeOperation?.updatedAt||b.state.lastTickAt||'')-Date.parse(a.activeOperation?.updatedAt||a.state.lastTickAt||'')).slice(0,12),[auto,query]);
+  const choices=useMemo(()=>(portfolio?.keywordChoices??[]).filter(x=>`${x.projectName} ${x.keyword} ${x.reason??''}`.toLowerCase().includes(query.toLowerCase())).slice(0,12),[portfolio,query]);
+  const recentArticles=useMemo(()=>[...(portfolio?.articles?.inProgress??[]),...(portfolio?.articles?.complete??[])].sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).filter(x=>`${x.projectName} ${x.title}`.toLowerCase().includes(query.toLowerCase())).slice(0,10),[portfolio,query]);
+  const outcomes=useMemo(()=>(ops?.outcomes??[]).filter(x=>`${x.status} ${x.targetUrl??''} ${x.hypothesis??''}`.toLowerCase().includes(query.toLowerCase())).slice(0,10),[ops,query]);
   return <div className="corePage">
     <div className="coreTitleRow"><div><p className="coreEyebrow">OPERATIONS</p><h1>運用</h1><p>Agentの判断から公開後評価まで、必要な流れだけを追います。</p></div><div className="coreLive"><span/>10秒更新</div></div>
     {error&&<div className="coreError">{error}<button onClick={()=>void load()}>再試行</button></div>}

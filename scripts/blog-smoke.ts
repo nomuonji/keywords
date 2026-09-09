@@ -61,7 +61,7 @@ globalThis.fetch=async()=>new Response('failed',{status:403});
 await assert.rejects(()=>blogCommands.capture(agent,{projectId:p.id,startDate:'2025-01-01',endDate:'2025-01-28',siteUrl:'sc-domain:example.com'}));
 assert.ok(sqlite.prepare('SELECT id FROM blog_query_page_captures WHERE id=?').get(before.captureId));
 globalThis.fetch=async()=>new Response(JSON.stringify({relatedSearches:[{query:'Unknown external wording'}],peopleAlsoAsk:[{question:'A new unexpected question?'}],organic:[]}),{status:200});
-const {job}=await discoveryCommands.start(human,{projectId:p.id,seedKeywords:['original seed'],goal:'Fixture external discovery',maxExternalRequests:5,maxCandidates:3});
+const {job}=await discoveryCommands.start(human,{projectId:p.id,seedKeywords:['original seed'],goal:'Fixture external discovery',demandPolicy:'surface_only',maxExternalRequests:5,maxCandidates:3});
 const claim=await discoveryCommands.claim(agent,{projectId:p.id,jobId:job.id});
 const discovered=await discoveryCommands.expand(agent,{projectId:p.id,jobId:job.id,seed:'original seed'});assert.equal(discovered.newPhrases,2);
 const observations=await discoveryCommands.observations(agent,{projectId:p.id,jobId:job.id}) as any[];

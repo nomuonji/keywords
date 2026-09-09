@@ -56,9 +56,14 @@ await operationCommands.setPause(human, { projectId, paused: true, reason: 'smok
 await assert.rejects(() => operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery' }), /paused/);
 await operationCommands.setPause(human, { projectId, paused: false });
 
-const discovery = await operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery', maxCandidates: 3, maxExternalRequests: 2 });
+const demandEnvKeys = ['GOOGLE_ADS_ACCESS_TOKEN','GOOGLE_OAUTH_ACCESS_TOKEN','GOOGLE_ADS_DEVELOPER_TOKEN','ADS_DEVELOPER_TOKEN','GOOGLE_ADS_CUSTOMER_ID','ADS_CUSTOMER_ID','GOOGLE_ADS_REFRESH_TOKEN','ADS_REFRESH_TOKEN','GOOGLE_ADS_CLIENT_ID','ADS_CLIENT_ID','GOOGLE_ADS_CLIENT_SECRET','ADS_CLIENT_SECRET','GOOGLE_ADS_KEYWORD_VOLUME_API_URL','KEYWORD_VOLUME_API_URL'];
+const savedDemandEnv = new Map(demandEnvKeys.map(key => [key, process.env[key]]));
+for (const key of demandEnvKeys) delete process.env[key];
+await assert.rejects(() => operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'volume-gated discovery', demandPolicy: 'required' }), /Search-volume discovery requires/);
+for (const [key, value] of savedDemandEnv) if (value === undefined) delete process.env[key]; else process.env[key] = value;
+const discovery = await operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery', demandPolicy: 'surface_only', maxCandidates: 3, maxExternalRequests: 2 });
 assert.equal(discovery.status, 'running'); assert.equal(discovery.workSessionId, child.workSessionId);
-const discoveryAgain = await operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery', maxCandidates: 3, maxExternalRequests: 2 });
+const discoveryAgain = await operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery', demandPolicy: 'surface_only', maxCandidates: 3, maxExternalRequests: 2 });
 assert.equal(discoveryAgain.jobId, discovery.jobId);
 
 const candidateId = 'candidate-agent-operations';

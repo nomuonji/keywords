@@ -2,6 +2,7 @@ import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { fetchWebDocument, googleAdsKeywordIdeas, searchConsoleQuery, searchSerp } from '@keywords/research';
+import { providerSeedKeywords } from './discovery-policy.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -147,8 +148,9 @@ export const researchCommands = {
     return { source, result };
   }),
   googleAdsKeywordIdeas: async (ctx: CommandContext, input: { projectId: string; customerId?: string; seedKeywords?: string[]; url?: string; languageId?: string; geoTargetIds?: string[]; network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS'; importKeywords?: boolean }) => withRun(projectCtx(ctx, input.projectId), 'research.google_ads_keyword_ideas', input, async () => {
-    const result = await googleAdsKeywordIdeas(input);
-    const source = await saveSource({ projectId: input.projectId, type: 'google_ads', label: `Google Ads keyword ideas: ${(input.seedKeywords ?? []).join(', ') || input.url || 'seed'}`, url: input.url ?? null, metadata: { request: { seedKeywords: input.seedKeywords ?? [], url: input.url ?? null, languageId: input.languageId ?? null, geoTargetIds: input.geoTargetIds ?? [] }, result } });
+    const providerSeeds = providerSeedKeywords(input.seedKeywords ?? []);
+    const result = await googleAdsKeywordIdeas({ ...input, seedKeywords: providerSeeds });
+    const source = await saveSource({ projectId: input.projectId, type: 'google_ads', label: `Google Ads keyword ideas: ${(input.seedKeywords ?? []).join(', ') || input.url || 'seed'}`, url: input.url ?? null, metadata: { request: { seedKeywords: input.seedKeywords ?? [], providerSeeds, url: input.url ?? null, languageId: input.languageId ?? null, geoTargetIds: input.geoTargetIds ?? [] }, result } });
     let created = 0;
     let updated = 0;
     if (input.importKeywords !== false) {

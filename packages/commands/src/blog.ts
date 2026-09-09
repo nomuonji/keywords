@@ -4,6 +4,7 @@ import type { CommandContext } from '@keywords/domain';
 import { searchConsoleQuery } from '@keywords/research';
 import { blogContract, briefSchema, receiptSchema, snapshotSchema, type BlogSnapshot } from './blog-contract.js';
 import { isBudgetedCommand } from './budget.js';
+import { autonomyControl } from './autonomy.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -110,7 +111,8 @@ export const blogCommands = {
   for(const comparison of brief.serp_comparison) required(['serp','web'].includes(source(comparison.source_id,input.projectId).type),'SERP comparison needs SERP/page evidence');
   run('INSERT INTO blog_briefs(page_id,project_id,packet_json,packet_hash,created_at) VALUES(?,?,?,?,?) ON CONFLICT(page_id) DO UPDATE SET packet_json=excluded.packet_json,packet_hash=excluded.packet_hash,created_at=excluded.created_at',p.id,input.projectId,JSON.stringify(brief),fingerprint(brief),now());
   run("UPDATE pages SET status='proposed',updated_at=? WHERE id=?",now(),p.id);
-  return {pageId:p.id,status:'proposed',requiresHumanReview:true};
+  const autonomy = autonomyControl(input.projectId);
+  return {pageId:p.id,status:'proposed',requiresHumanReview:!(autonomy.enabled && autonomy.autoApprove),next:autonomy.enabled && autonomy.autoApprove?'autonomy_gate':'human_page_review'};
  }).immediate()),
  export: async(ctx:CommandContext,input:{projectId:string;pageId:string})=>audited(ctx,input.projectId,'blog.export',()=>sqlite.transaction(()=>{
   const b=binding(input.projectId); fresh(b.observed_at); const snap:BlogSnapshot=parse(b.snapshot_json);

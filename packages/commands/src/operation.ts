@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
-import type { CommandContext } from '@keywords/domain';
+import type { CommandContext, DiscoveryDemandPolicy } from '@keywords/domain';
 import { blogCommands } from './blog.js';
 import { assertHuman, assertOperationAllowed, fingerprint, listDelegations, operationControl, projectExists, setOperationPause } from './guard.js';
 import { headlessCommands } from './headless.js';
+import { googleAdsConfigured } from './workspace.js';
+import { isVerifiedDemand } from './discovery-policy.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -226,23 +228,30 @@ export const operationCommands = {
     return operationView(input.operationId);
   },
 
-  startDiscovery: async (ctx: CommandContext, input: { operationId: string; projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number }) => {
+  startDiscovery: async (ctx: CommandContext, input: { operationId: string; projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; demandPolicy?: DiscoveryDemandPolicy }) => {
     assertOperationAllowed(ctx, { projectId: input.projectId, command: 'discovery.start', capability: 'discovery.start' });
     const child = one('SELECT * FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId); required(child, 'Project is not part of this operation');
     const project = projectExists(input.projectId); const seeds = [...new Set((input.seedKeywords ?? []).map(normalizeText).filter(Boolean))]; const targetUrl = input.targetUrl?.trim() || null; required(seeds.length || targetUrl, 'At least one seed keyword or target URL is required');
+    const demandPolicy = input.demandPolicy ?? 'required';
+    if (demandPolicy === 'required' && !googleAdsConfigured()) throw new Error('Search-volume discovery requires Google Ads Keyword Planner credentials or GOOGLE_ADS_KEYWORD_VOLUME_API_URL/KEYWORD_VOLUME_API_URL. SERP observations alone are not enough.');
     const active = one("SELECT * FROM discovery_jobs WHERE project_id=? AND status IN ('waiting_for_agent','running','awaiting_review','blocked') ORDER BY updated_at DESC LIMIT 1", input.projectId); if (active) return { reused: true, jobId: active.id, status: active.status, taskId: active.task_id };
     const jobId = randomUUID(), taskId = randomUUID(), t = now(); const maxCandidates = Math.max(1, Math.min(Math.floor(input.maxCandidates ?? 50), 500)); const maxExternal = Math.max(1, Math.min(Math.floor(input.maxExternalRequests ?? 8), 50));
     sqlite.transaction(() => {
       run('INSERT INTO tasks(id,project_id,title,description,status,priority,assignee_type,related_type,related_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)', taskId, input.projectId, `キーワード探索: ${normalizeText(input.goal)}`, `Discovery job ${jobId}; operation ${input.operationId}`, 'todo', 80, 'agent', 'discovery_job', jobId, t, t);
-      run(`INSERT INTO discovery_jobs(id,project_id,seed_keywords_json,target_url,goal,language,country,region,excluded_terms_json,max_candidates,candidate_writes_used,max_external_requests,external_requests_used,status,task_id,work_session_id,executor_id,heartbeat_at,lease_expires_at,started_at,completed_at,error,created_at,updated_at)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, jobId, input.projectId, JSON.stringify(seeds), targetUrl, normalizeText(input.goal), (input.language ?? project.language ?? 'ja').toLowerCase(), (input.country ?? project.country ?? 'jp').toLowerCase(), input.region ?? project.region ?? null, JSON.stringify(input.excludedTerms ?? []), maxCandidates, 0, maxExternal, 0, 'waiting_for_agent', taskId, child.work_session_id ?? null, null, null, null, null, null, null, t, t);
+      run(`INSERT INTO discovery_jobs(id,project_id,seed_keywords_json,target_url,goal,language,country,region,excluded_terms_json,demand_policy,max_candidates,candidate_writes_used,max_external_requests,external_requests_used,status,task_id,work_session_id,executor_id,heartbeat_at,lease_expires_at,started_at,completed_at,error,created_at,updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, jobId, input.projectId, JSON.stringify(seeds), targetUrl, normalizeText(input.goal), (input.language ?? project.language ?? 'ja').toLowerCase(), (input.country ?? project.country ?? 'jp').toLowerCase(), input.region ?? project.region ?? null, JSON.stringify(input.excludedTerms ?? []), demandPolicy, maxCandidates, 0, maxExternal, 0, 'waiting_for_agent', taskId, child.work_session_id ?? null, null, null, null, null, null, null, t, t);
     }).immediate();
     emitEvent({ operationId: input.operationId, projectId: input.projectId, kind: 'discovery_queued', key: `operation:${input.operationId}:discovery:${jobId}`, payload: { jobId, goal: input.goal } }); return { reused: false, jobId, taskId, status: 'waiting_for_agent' };
   },
 
   triageCandidates: async (ctx: CommandContext, input: { operationId: string; projectId: string; jobId: string; candidateIds: string[]; status: 'shortlisted' | 'hold' | 'rejected' | 'research_more'; reason: string }) => {
     assertOperationAllowed(ctx, { projectId: input.projectId, command: 'operation.candidate_triage', capability: 'candidate.triage' }); required(one('SELECT 1 FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId), 'Project is not part of this operation');
-    const ids = [...new Set(input.candidateIds)].slice(0, 200); required(ids.length, 'No candidate IDs supplied'); let changed = 0; const t = now();
+    const ids = [...new Set(input.candidateIds)].slice(0, 200); required(ids.length, 'No candidate IDs supplied');
+    if (input.status === 'shortlisted') {
+      const unverified = ids.map(candidateId => one('SELECT keyword,demand_status,demand_value FROM discovery_candidates WHERE id=? AND job_id=? AND project_id=?', candidateId, input.jobId, input.projectId)).filter(row => row && !isVerifiedDemand(row.demand_status, row.demand_value));
+      if (unverified.length) throw new Error(`Candidates cannot be shortlisted without verified demand: ${unverified.map(row => row.keyword).join(', ')}`);
+    }
+    let changed = 0; const t = now();
     sqlite.transaction(() => { for (const candidateId of ids) { const result = run('UPDATE discovery_candidates SET status=?,updated_at=? WHERE id=? AND job_id=? AND project_id=?', input.status, t, candidateId, input.jobId, input.projectId); if (result.changes) { changed++; run('INSERT INTO decisions(id,project_id,actor,action,target_type,target_id,verdict,reason,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)', randomUUID(), input.projectId, ctx.actor, 'operation.candidate_triage', 'discovery_candidate', candidateId, input.status, normalizeText(input.reason).slice(0, 1000), JSON.stringify({ operationId: input.operationId, jobId: input.jobId }), t); } } }).immediate(); return { changed, status: input.status };
   },
 

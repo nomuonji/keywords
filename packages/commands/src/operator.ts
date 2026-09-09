@@ -5,6 +5,7 @@ import { discoveryCommands } from './discovery.js';
 import { blogNextActions } from './blog.js';
 import { measurementComparisonContext } from './measurement.js';
 import { operationControl } from './guard.js';
+import { googleAdsConfigured } from './workspace.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -19,7 +20,7 @@ async function withRun<T>(ctx: CommandContext, command: string, input: unknown, 
 
 async function inspect(projectId: string) {
   const project = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get(); if (!project) throw new Error('Project not found');
-  const [review, discovery, session, openTask, livePage, latestSnapshot, latestSitemap, unclustered] = await Promise.all([
+  const [review, discovery, session, openTask, livePage, latestSnapshot, latestSitemap, unclustered, adsCapability] = await Promise.all([
     db.select().from(schema.reviewRequests).where(and(eq(schema.reviewRequests.projectId, projectId), eq(schema.reviewRequests.status, 'open'))).orderBy(desc(schema.reviewRequests.createdAt)).get(),
     db.select().from(schema.discoveryJobs).where(and(eq(schema.discoveryJobs.projectId, projectId), or(eq(schema.discoveryJobs.status, 'waiting_for_agent'), eq(schema.discoveryJobs.status, 'running'), eq(schema.discoveryJobs.status, 'awaiting_review'), eq(schema.discoveryJobs.status, 'blocked')))).orderBy(desc(schema.discoveryJobs.updatedAt)).get(),
     db.select().from(schema.workSessions).where(and(eq(schema.workSessions.projectId, projectId), or(eq(schema.workSessions.status, 'running'), eq(schema.workSessions.status, 'awaiting_review'), eq(schema.workSessions.status, 'blocked')))).orderBy(desc(schema.workSessions.updatedAt)).get(),
@@ -27,7 +28,8 @@ async function inspect(projectId: string) {
     db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), ne(schema.pages.url, ''))).orderBy(desc(schema.pages.lastSeenAt)).get(),
     db.select().from(schema.sources).where(and(eq(schema.sources.projectId, projectId), eq(schema.sources.type, 'gsc_snapshot'))).orderBy(desc(schema.sources.createdAt)).get(),
     db.select().from(schema.sources).where(and(eq(schema.sources.projectId, projectId), eq(schema.sources.type, 'sitemap'))).orderBy(desc(schema.sources.createdAt)).get(),
-    db.select({ id: schema.keywords.id, text: schema.keywords.text, avgMonthly: schema.keywords.avgMonthly }).from(schema.keywords).leftJoin(schema.clusterKeywords, eq(schema.keywords.id, schema.clusterKeywords.keywordId)).where(and(eq(schema.keywords.projectId, projectId), ne(schema.keywords.status, 'rejected'), isNull(schema.clusterKeywords.keywordId))).orderBy(desc(schema.keywords.avgMonthly)).limit(10)
+    db.select({ id: schema.keywords.id, text: schema.keywords.text, avgMonthly: schema.keywords.avgMonthly }).from(schema.keywords).leftJoin(schema.clusterKeywords, eq(schema.keywords.id, schema.clusterKeywords.keywordId)).where(and(eq(schema.keywords.projectId, projectId), ne(schema.keywords.status, 'rejected'), isNull(schema.clusterKeywords.keywordId))).orderBy(desc(schema.keywords.avgMonthly)).limit(10),
+    db.select().from(schema.providerCapabilities).where(and(eq(schema.providerCapabilities.projectId, projectId), eq(schema.providerCapabilities.provider, 'google_ads'))).get()
   ]);
 
   const candidates: Array<Record<string, unknown>> = [];
@@ -61,7 +63,11 @@ async function inspect(projectId: string) {
   if (project.mode === 'existing_site' && gscConfigured && (!latestSnapshot || Date.now() - new Date(latestSnapshot.createdAt).getTime() > staleMs)) candidates.push({ kind: 'capture_metrics', rank: 7, title: 'Capture fresh scoped Search Console metrics', reason: latestSnapshot ? 'The latest GSC observation is older than 7 days.' : 'No scoped historical GSC observation has been captured yet.', relatedType: 'metrics', relatedId: projectId });
   if (unclustered[0]?.avgMonthly) candidates.push({ kind: 'structure_demand', rank: 8, title: `Resolve unclustered demand: ${unclustered[0].text}`, reason: `${unclustered[0].avgMonthly} average monthly searches are recorded with no cluster assignment.`, relatedType: 'keyword', relatedId: unclustered[0].id });
   const dueAt = project.lastDiscoveryAt ? new Date(new Date(project.lastDiscoveryAt).getTime() + project.discoveryCadenceDays * 86_400_000) : null;
-  if (!discovery && (!dueAt || Date.now() >= dueAt.getTime()) && (project.topic || project.domain)) candidates.push({ kind: 'discovery_due', rank: 9, title: 'Keyword discovery is due', reason: dueAt ? `The ${project.discoveryCadenceDays}-day discovery interval has elapsed.` : 'No completed discovery run has been recorded yet.', relatedType: 'project', relatedId: projectId });
+  if (!discovery && (!dueAt || Date.now() >= dueAt.getTime()) && (project.topic || project.domain)) {
+    const providerHealthy = !adsCapability || adsCapability.status === 'available';
+    if (googleAdsConfigured() && providerHealthy) candidates.push({ kind: 'discovery_due', rank: 9, title: 'Keyword discovery is due', reason: dueAt ? `The ${project.discoveryCadenceDays}-day discovery interval has elapsed.` : 'No completed discovery run has been recorded yet.', relatedType: 'project', relatedId: projectId });
+    else candidates.push({ kind: 'await_demand_provider', rank: 9, title: 'Search-volume provider configuration is required', reason: !googleAdsConfigured() ? 'New keyword discovery is paused because Google Ads Keyword Planner credentials or the keyword-volume proxy are not configured. SERP related searches are observations, not search-volume evidence.' : `New keyword discovery is paused because the last Google Ads demand request is ${adsCapability?.status ?? 'unhealthy'}: ${adsCapability?.lastErrorMessage ?? 'repair the provider before retrying.'}`, relatedType: 'provider_capability', relatedId: `${projectId}:google_ads` });
+  }
   candidates.sort((a, b) => Number(a.rank) - Number(b.rank));
   return { generatedAt: now(), project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode }, control, measurement: { ignoredUnknownScope: comparisons.ignoredUnknownScope }, candidates, next: candidates[0] ?? { kind: 'no_action', reason: 'No operator action is currently justified.' } };
 }
@@ -74,7 +80,7 @@ export const operatorCommands = {
       const recovery = await discoveryCommands.recoverExpired({ actor: 'system', actorId: 'operator', projectId }, { projectId, jobId: String(next.relatedId) });
       return { ...(await inspect(projectId)), createdTask: null, recovery };
     }
-    if (['no_action','operation_paused','await_review','review_discovery','claim_discovery','resume_discovery','resume_session','existing_task'].includes(kind)) return { ...state, createdTask: null };
+    if (['no_action','operation_paused','await_review','await_demand_provider','review_discovery','claim_discovery','resume_discovery','resume_session','existing_task'].includes(kind)) return { ...state, createdTask: null };
     const relatedType = String(next.relatedType ?? kind); const relatedId = next.relatedId ? String(next.relatedId) : null;
     const duplicate = await db.select().from(schema.tasks).where(and(eq(schema.tasks.projectId, projectId), eq(schema.tasks.assigneeType, 'agent'), ne(schema.tasks.status, 'done'), eq(schema.tasks.relatedType, relatedType), relatedId ? eq(schema.tasks.relatedId, relatedId) : isNull(schema.tasks.relatedId))).get();
     if (duplicate) return { ...state, createdTask: null, existingTaskId: duplicate.id };

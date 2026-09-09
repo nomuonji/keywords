@@ -1,9 +1,10 @@
-import { rmSync, readdirSync } from 'node:fs';
+import { rmSync, readdirSync, mkdtempSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-const dbPath = process.env.KEYWORDS_DB_PATH ?? '/tmp/keywords-migration-smoke.sqlite';
+const dbPath = process.env.KEYWORDS_DB_PATH ?? join(mkdtempSync(join(tmpdir(), 'keywords-migration-')), 'test.sqlite');
 rmSync(dbPath, { force: true });
 
 const legacy = new Database(dbPath);

@@ -1,19 +1,23 @@
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CapabilityStatus, CommandContext, ProjectMode } from '@keywords/domain';
+import { loadResearchEnvironment } from '@keywords/research';
 
 const { db } = getDatabase();
+loadResearchEnvironment();
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const projectCtx = (ctx: CommandContext, projectId: string): CommandContext => ({ ...ctx, projectId });
 const parseStrings = (value: string | null) => { try { const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } };
 const parseArray = (value: string | null) => { try { const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? parsed : []; } catch { return []; } };
-const googleAdsConfigured = () => Boolean(
-  (process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL ?? process.env.KEYWORD_VOLUME_API_URL)
-  || ((process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || (process.env.GOOGLE_ADS_REFRESH_TOKEN || process.env.ADS_REFRESH_TOKEN) && (process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID) && (process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET))
-    && (process.env.GOOGLE_ADS_DEVELOPER_TOKEN || process.env.ADS_DEVELOPER_TOKEN)
-    && (process.env.GOOGLE_ADS_CUSTOMER_ID || process.env.ADS_CUSTOMER_ID))
-);
+export const googleAdsConfigured = () => {
+  const value = (name: string) => Boolean(process.env[name]?.trim());
+  const proxy = value('GOOGLE_ADS_KEYWORD_VOLUME_API_URL') || value('KEYWORD_VOLUME_API_URL');
+  const access = value('GOOGLE_ADS_ACCESS_TOKEN') || value('GOOGLE_OAUTH_ACCESS_TOKEN');
+  const refresh = (value('GOOGLE_ADS_REFRESH_TOKEN') || value('ADS_REFRESH_TOKEN')) && (value('GOOGLE_ADS_CLIENT_ID') || value('ADS_CLIENT_ID')) && (value('GOOGLE_ADS_CLIENT_SECRET') || value('ADS_CLIENT_SECRET'));
+  const direct = (access || refresh) && (value('GOOGLE_ADS_DEVELOPER_TOKEN') || value('ADS_DEVELOPER_TOKEN')) && (value('GOOGLE_ADS_CUSTOMER_ID') || value('ADS_CUSTOMER_ID'));
+  return proxy || direct;
+};
 
 async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
   const runId = id(); const started = Date.now(); const createdAt = now();
@@ -146,7 +150,7 @@ export const workspaceCommands = {
       default: filtered = filtered.sort((a, b) => (b.keyword.avgMonthly ?? -1) - (a.keyword.avgMonthly ?? -1) || a.keyword.text.localeCompare(b.keyword.text));
     }
     const offset = Math.max(0, Math.floor(input.offset ?? 0)); const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 50), 200));
-    const items = filtered.slice(offset, offset + limit).map(row => { const candidate = latestCandidate.get(row.keyword.id); return { ...row, existingPageCount: pageCounts.get(row.keyword.id) ?? 0, candidate: candidate ? { id: candidate.id, jobId: candidate.jobId, status: candidate.status, searchIntent: candidate.searchIntent, serpStatus: candidate.serpStatus, evidenceCount: candidate.evidenceCount, demandValue: candidate.demandValue, demandProvider: candidate.demandProvider, demandObservedAt: candidate.demandObservedAt, existingPageOverlap: parseArray(candidate.existingPageOverlapJson) } : null }; });
+    const items = filtered.slice(offset, offset + limit).map(row => { const candidate = latestCandidate.get(row.keyword.id); return { ...row, existingPageCount: pageCounts.get(row.keyword.id) ?? 0, candidate: candidate ? { id: candidate.id, jobId: candidate.jobId, status: candidate.status, searchIntent: candidate.searchIntent, serpStatus: candidate.serpStatus, evidenceCount: candidate.evidenceCount, demandValue: candidate.demandValue, demandProvider: candidate.demandProvider, demandStatus: candidate.demandStatus, demandObservedAt: candidate.demandObservedAt, noveltyScore: candidate.noveltyScore, existingPageOverlap: parseArray(candidate.existingPageOverlapJson) } : null }; });
     const providers = [...new Set(allKeywords.map(row => latestCandidate.get(row.keyword.id)?.demandProvider ?? row.keyword.source).filter(Boolean))].sort();
     const clusters = [...new Map(allKeywords.filter(row => row.clusterId).map(row => [row.clusterId!, { id: row.clusterId!, title: row.clusterTitle ?? row.clusterId! }])).values()].sort((a, b) => a.title.localeCompare(b.title));
     return { total: filtered.length, offset, limit, sort: input.sort ?? 'demand_desc', facets: { providers, clusters }, items };

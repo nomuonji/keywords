@@ -15,6 +15,7 @@ const { operationCommands } = await import('@keywords/commands/operation');
 const { executorCommands } = await import('@keywords/commands/executor');
 const { headlessCommands } = await import('@keywords/commands/headless');
 const { getDatabase } = await import('@keywords/db');
+const { sqlite } = getDatabase();
 const human = { actor: 'human' as const, actorId: 'headless-smoke-human' };
 const agent = { actor: 'agent' as const, actorId: 'headless-smoke-agent' };
 
@@ -28,10 +29,12 @@ const source = await commands.source.record(human, {
   metadata: { document: { text: 'A verified article artifact is required before an autonomous content operation may be completed. The article must be validated and the site build must pass.' } }
 });
 const page = await commands.page.propose(human, { projectId: project.id, title: 'Verified Article Artifact', slug: 'verified-article-artifact' });
-getDatabase().sqlite.prepare("UPDATE pages SET source='workspace',question=? WHERE id=?").run('When can an autonomous content operation be completed?', page.id);
+const keyword = await commands.keyword.create(human, { projectId: project.id, text: 'verified article artifact', source: 'google_ads', avgMonthly: 100, competition: 0.2 });
+sqlite.prepare('INSERT INTO page_keywords(page_id,keyword_id,role) VALUES(?,?,?)').run(page.id, keyword.id, 'primary');
+sqlite.prepare("UPDATE pages SET source='workspace',question=?,rationale=? WHERE id=?").run('When can an autonomous content operation be completed?', 'Verified demand and evidence support this article target.', page.id);
 const brief = {
   reader_task: 'When can an autonomous content operation be completed?',
-  value_source_ids: [source.id], demand_source_ids: [], claim_source_map: [{ claim: 'A verified article artifact is required before an autonomous content operation may be completed.', source_id: source.id }],
+  value_source_ids: [source.id], demand_source_ids: [source.id], claim_source_map: [{ claim: 'A verified article artifact is required before an autonomous content operation may be completed.', source_id: source.id }],
   autonomy: {
     source_packet: { official_source_ids: [source.id], first_party_source_ids: [], research_source_ids: [source.id], competitor_gap_source_ids: [], reader_question_source_ids: [] },
     fact_ledger: [{ claim: 'A verified article artifact is required before an autonomous content operation may be completed.', source_id: source.id, checked_at: new Date().toISOString().slice(0,10), confidence: 'high' }]

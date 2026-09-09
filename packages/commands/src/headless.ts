@@ -50,11 +50,15 @@ CREATE TABLE IF NOT EXISTS operation_artifacts (
  generated_at TEXT NOT NULL,
  verified_at TEXT,
  updated_at TEXT NOT NULL,
+ deleted_at TEXT,
+ deleted_by TEXT,
  UNIQUE(operation_id, project_id, article_id)
 );
 CREATE INDEX IF NOT EXISTS operation_artifacts_project_status_idx ON operation_artifacts(project_id, validator_status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS operation_artifacts_page_idx ON operation_artifacts(project_id, page_id, updated_at DESC);
 `);
+  ensureColumn('operation_artifacts', 'deleted_at', 'deleted_at TEXT');
+  ensureColumn('operation_artifacts', 'deleted_by', 'deleted_by TEXT');
   ensureColumn('operation_projects', 'blocker_class', 'blocker_class TEXT');
   ensureColumn('operation_projects', 'last_progress_at', 'last_progress_at TEXT');
   ensureColumn('operation_projects', 'runtime_consumed_ms', 'runtime_consumed_ms INTEGER NOT NULL DEFAULT 0');
@@ -75,7 +79,7 @@ BEGIN
   SELECT CASE WHEN NOT EXISTS (
     SELECT 1 FROM operation_artifacts a
     WHERE a.project_id=NEW.project_id AND a.page_id=NEW.page_id
-      AND a.validator_status='passed' AND a.build_status='passed' AND a.verified_at IS NOT NULL
+      AND COALESCE(a.deleted_at,'')='' AND a.validator_status='passed' AND a.build_status='passed' AND a.verified_at IS NOT NULL
   ) THEN RAISE(ABORT, 'Autonomous publication requires a verified local article artifact') END;
 END;
 `);
@@ -112,6 +116,78 @@ function pageSourceIds(projectId: string, pageId: string) {
     for (const row of rows("SELECT source_id FROM source_links WHERE project_id=? AND target_type='page' AND target_id=?", projectId, pageId)) ids.add(String(row.source_id));
   }
   return [...ids];
+}
+
+/**
+ * The minimum persisted search evidence required before a new article can be
+ * written.  Search-surface phrases are intentionally not treated as volume.
+ * This is also used by the portfolio read model so the UI shows exactly why a
+ * local article is or is not ready for production.
+ */
+export function articleKeywordResearchEvidence(projectId: string, pageId: string | null) {
+  if (!pageId) return { required: true, ready: false, keyword: null, missing: ['primary_keyword'], estimatedMonthlyTraffic: null, estimatedTrafficBasis: null };
+  const page = one('SELECT id,plan_mode,rationale FROM pages WHERE id=? AND project_id=?', pageId, projectId);
+  if (!page) return { required: true, ready: false, keyword: null, missing: ['page'], estimatedMonthlyTraffic: null, estimatedTrafficBasis: null };
+  const target = one(`SELECT k.*,pk.role FROM page_keywords pk JOIN keywords k ON k.id=pk.keyword_id
+    WHERE pk.page_id=? ORDER BY CASE pk.role WHEN 'primary' THEN 0 ELSE 1 END,k.id LIMIT 1`, pageId);
+  const candidate = target ? one(`SELECT * FROM discovery_candidates WHERE project_id=? AND keyword_id=?
+    ORDER BY updated_at DESC LIMIT 1`, projectId, target.id) : null;
+  const decision = candidate ? one(`SELECT id,verdict,reason,created_at FROM decisions
+    WHERE project_id=? AND target_type='discovery_candidate' AND target_id=?
+      AND verdict IN ('shortlisted','planned') ORDER BY created_at DESC,rowid DESC LIMIT 1`, projectId, candidate.id) : null;
+  const brief = one('SELECT packet_json FROM blog_briefs WHERE project_id=? AND page_id=?', projectId, pageId);
+  const packet = parse<any>(brief?.packet_json, {});
+  const research = packet.research ?? {};
+  const volume = target ? (target.avg_monthly ?? candidate?.demand_value ?? null) : null;
+  const competition = target?.competition ?? candidate?.ad_competition ?? null;
+  const hasVolume = typeof volume === 'number' && Number.isFinite(volume) && volume > 0;
+  const hasCompetition = typeof competition === 'number' && Number.isFinite(competition);
+  const demandSources = Array.isArray(packet.demand_source_ids) ? packet.demand_source_ids.filter(Boolean) : [];
+  const sourceDemandStatus = target?.source === 'google_ads' ? 'provider_estimated'
+    : ['gsc','search_console','gsc_snapshot'].includes(String(target?.source)) ? 'gsc_observed'
+    : target?.source === 'search_surface_observed' ? 'search_surface_observed' : null;
+  const demandObserved = Boolean(candidate && ['provider_estimated','gsc_observed'].includes(candidate.demand_status) &&
+    typeof candidate.demand_value === 'number' && Number.isFinite(candidate.demand_value));
+  const providerSource = target && ['google_ads','gsc','search_console','gsc_snapshot'].includes(String(target.source));
+  const hasSelectionReason = Boolean(String(decision?.reason ?? page.rationale ?? research.score_rationale ?? '').trim());
+  const missing: string[] = [];
+  if (!target || target.role !== 'primary') missing.push('primary_keyword');
+  if (!hasVolume) missing.push('search_volume');
+  if (!hasCompetition) missing.push('competition');
+  if (!hasSelectionReason) missing.push('selection_reason');
+  if (!demandSources.length) missing.push('demand_source');
+  if (candidate && !demandObserved && !providerSource) missing.push('verified_demand');
+  const estimatedMonthlyTraffic = target?.gsc_clicks != null ? Number(target.gsc_clicks)
+    : target?.gsc_ctr != null && hasVolume ? Math.round(Number(volume) * Number(target.gsc_ctr)) : null;
+  const estimatedTrafficBasis = target?.gsc_clicks != null ? 'gsc_observed_clicks'
+    : estimatedMonthlyTraffic != null ? 'search_volume_x_gsc_ctr' : null;
+  return {
+    required: page.plan_mode === 'new_page',
+    ready: page.plan_mode !== 'new_page' || missing.length === 0,
+    keyword: target ? {
+      id: target.id, text: target.text, role: target.role, avgMonthly: target.avg_monthly ?? null,
+      competition: target.competition ?? null, cpcMicros: target.cpc_micros ?? null,
+      clicks: target.gsc_clicks ?? null, impressions: target.gsc_impressions ?? null,
+      ctr: target.gsc_ctr ?? null, position: target.gsc_position ?? null,
+      demandValue: candidate?.demand_value ?? null, demandProvider: candidate?.demand_provider ?? target.source ?? null,
+      demandStatus: candidate?.demand_status ?? sourceDemandStatus, demandObservedAt: candidate?.demand_observed_at ?? null,
+      adCompetition: candidate?.ad_competition ?? null, serpStatus: candidate?.serp_status ?? null,
+      evidenceCount: Number(candidate?.evidence_count ?? 0), selectionDecisionId: decision?.id ?? null,
+      selectionVerdict: decision?.verdict ?? null, selectionReason: decision?.reason ?? page.rationale ?? research.score_rationale ?? null
+    } : null,
+    missing, estimatedMonthlyTraffic, estimatedTrafficBasis
+  };
+}
+
+function assertArticleKeywordResearch(projectId: string, pageId: string, operationId: string) {
+  const evidence = articleKeywordResearchEvidence(projectId, pageId);
+  // Revisions inherit the research gate that allowed the first artifact. The
+  // mandatory check applies when a new article artifact is first created.
+  if (one("SELECT id FROM operation_artifacts WHERE operation_id=? AND project_id=? AND page_id=? AND deleted_at IS NULL LIMIT 1", operationId, projectId, pageId)) return evidence;
+  if (evidence.required && !evidence.ready) {
+    throw new Error(`New article requires persisted keyword research before writing: ${evidence.missing.join(', ')}`);
+  }
+  return evidence;
 }
 
 function validateSources(projectId: string, sourceIds: string[]) {
@@ -172,7 +248,22 @@ function artifactView(row: any) {
     validatorStatus: row.validator_status, validatorResultHash: row.validator_result_hash, validatorResult: parse(row.validator_result_json, null),
     buildCommand: row.build_command, buildStatus: row.build_status, buildResultHash: row.build_result_hash, beforeHash: row.before_hash, afterHash: row.after_hash,
     revisionKey: row.revision_key, revisionCount: Number(row.revision_count ?? 0), validationAttempts: Number(row.validation_attempts ?? 0), noProgressCount: Number(row.no_progress_count ?? 0),
-    generatedAt: row.generated_at, verifiedAt: row.verified_at, updatedAt: row.updated_at, manifest: parse(row.manifest_json, {})
+    generatedAt: row.generated_at, verifiedAt: row.verified_at, updatedAt: row.updated_at, deletedAt: row.deleted_at ?? null, deletedBy: row.deleted_by ?? null, manifest: parse(row.manifest_json, {})
+  };
+}
+
+function artifactContent(row: any) {
+  if (!row) return null;
+  const path = safeArtifactPath(row.artifact_path);
+  const exists = existsSync(path.absolute);
+  const content = exists ? readFileSync(path.absolute, 'utf8') : null;
+  return {
+    artifact: artifactView(row),
+    path: path.ref,
+    exists,
+    content,
+    actualSha256: content === null ? null : hashText(content),
+    contentMatches: content !== null && hashText(content) === row.content_sha256
   };
 }
 
@@ -208,7 +299,7 @@ function buildManifest(row: any, extra: Record<string, unknown> = {}) {
 function contentOperationRequired(op: any, child: any) {
   const constraints = parse<Record<string, unknown>>(op.constraints_json, {});
   if (constraints.requiresArtifact === true) return true;
-  if (one('SELECT id FROM operation_artifacts WHERE operation_id=? AND project_id=? LIMIT 1', op.id, child.project_id)) return true;
+  if (one("SELECT id FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL LIMIT 1", op.id, child.project_id)) return true;
   if (!child.work_session_id) return false;
   return Boolean(one("SELECT id FROM runs WHERE work_session_id=? AND command IN ('page.plan','blog.prepare','artifact.write_draft','artifact.validate') LIMIT 1", child.work_session_id));
 }
@@ -218,7 +309,7 @@ function completionStatus(operationId: string) {
   const children = rows('SELECT * FROM operation_projects WHERE operation_id=?', operationId);
   const projects = children.map(child => {
     const required = contentOperationRequired(op, child);
-    const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? ORDER BY updated_at DESC LIMIT 1', operationId, child.project_id);
+    const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', operationId, child.project_id);
     let fileMatches = false;
     if (artifact) {
       try { const p = safeArtifactPath(artifact.artifact_path); fileMatches = existsSync(p.absolute) && hashText(readFileSync(p.absolute, 'utf8')) === artifact.content_sha256; } catch { fileMatches = false; }
@@ -314,6 +405,12 @@ export const headlessCommands = {
     const child = one('SELECT * FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId); if (!child) throw new Error('Project is not part of this operation');
     const page = one('SELECT * FROM pages WHERE id=? AND project_id=?', input.pageId, input.projectId); if (!page) throw new Error('Page not found in project');
     const content = input.content; if (!content?.trim()) throw new Error('Article content is required');
+    try {
+      assertArticleKeywordResearch(input.projectId, input.pageId, input.operationId);
+    } catch (error) {
+      recordRun(ctx, input.projectId, 'artifact.write_draft', { operationId: input.operationId, pageId: input.pageId, articleId: input.articleId ?? null }, null, error);
+      throw error;
+    }
     const ref = input.artifactPath?.trim() || defaultArtifactRef(input.projectId, page);
     const path = safeArtifactPath(ref);
     const beforeHash = existsSync(path.absolute) ? hashText(readFileSync(path.absolute, 'utf8')) : null;
@@ -329,7 +426,7 @@ export const headlessCommands = {
     const manifest = buildManifest(provisional);
     run(`INSERT INTO operation_artifacts(id,operation_id,project_id,page_id,article_id,artifact_path,content_sha256,source_ids_json,validator_version,validator_status,validator_result_hash,validator_result_json,build_command,build_status,build_result_hash,before_hash,after_hash,manifest_json,revision_key,revision_count,validation_attempts,no_progress_count,generated_at,verified_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(operation_id,project_id,article_id) DO UPDATE SET page_id=excluded.page_id,artifact_path=excluded.artifact_path,content_sha256=excluded.content_sha256,source_ids_json=excluded.source_ids_json,validator_version=excluded.validator_version,validator_status='pending',validator_result_hash=NULL,validator_result_json=NULL,build_command=excluded.build_command,build_status='pending',build_result_hash=NULL,before_hash=excluded.before_hash,after_hash=excluded.after_hash,manifest_json=excluded.manifest_json,revision_key=NULL,revision_count=excluded.revision_count,no_progress_count=CASE WHEN operation_artifacts.content_sha256=excluded.content_sha256 THEN operation_artifacts.no_progress_count ELSE 0 END,generated_at=excluded.generated_at,verified_at=NULL,updated_at=excluded.updated_at`,
+      ON CONFLICT(operation_id,project_id,article_id) DO UPDATE SET page_id=excluded.page_id,artifact_path=excluded.artifact_path,content_sha256=excluded.content_sha256,source_ids_json=excluded.source_ids_json,validator_version=excluded.validator_version,validator_status='pending',validator_result_hash=NULL,validator_result_json=NULL,build_command=excluded.build_command,build_status='pending',build_result_hash=NULL,before_hash=excluded.before_hash,after_hash=excluded.after_hash,manifest_json=excluded.manifest_json,revision_key=NULL,revision_count=excluded.revision_count,no_progress_count=CASE WHEN operation_artifacts.content_sha256=excluded.content_sha256 THEN operation_artifacts.no_progress_count ELSE 0 END,generated_at=excluded.generated_at,verified_at=NULL,deleted_at=NULL,deleted_by=NULL,updated_at=excluded.updated_at`,
       id,input.operationId,input.projectId,input.pageId,articleId,path.ref,afterHash,JSON.stringify(sourceIds),VALIDATOR_VERSION,'pending',null,null,provisional.build_command,'pending',null,beforeHash,afterHash,JSON.stringify(manifest),null,revisionCount,Number(old?.validation_attempts ?? 0),old?.content_sha256===afterHash?Number(old?.no_progress_count??0):0,t,null,t);
     run("UPDATE operation_projects SET last_progress_at=?,blocker=NULL,blocker_class=NULL,updated_at=? WHERE operation_id=? AND project_id=?", t, t, input.operationId, input.projectId);
     const result = artifactView(one('SELECT * FROM operation_artifacts WHERE id=?', id)); recordRun(ctx, input.projectId, 'artifact.write_draft', { operationId: input.operationId, pageId: input.pageId, artifactPath: path.ref, sourceIds }, { artifactId: id, contentSha256: afterHash });
@@ -340,7 +437,7 @@ export const headlessCommands = {
     assertOperationAllowed(ctx, { projectId: input.projectId, command: 'artifact.validate', capability: 'blog.prepare', allowWhilePaused: true });
     reserveArtifactAction(ctx, input.projectId);
     const articleId = input.articleId?.trim();
-    const artifact = articleId ? one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND article_id=?', input.operationId, input.projectId, articleId) : one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? ORDER BY updated_at DESC LIMIT 1', input.operationId, input.projectId);
+    const artifact = articleId ? one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND article_id=? AND deleted_at IS NULL', input.operationId, input.projectId, articleId) : one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', input.operationId, input.projectId);
     if (!artifact) throw new Error('No article artifact has been written for this operation');
     const path = safeArtifactPath(artifact.artifact_path); const exists = existsSync(path.absolute); const content = exists ? readFileSync(path.absolute, 'utf8') : '';
     const page = artifact.page_id ? one('SELECT * FROM pages WHERE id=? AND project_id=?', artifact.page_id, input.projectId) : null;
@@ -368,7 +465,7 @@ export const headlessCommands = {
     checks.push({ key: 'source_backed_claims', ok: facts.length > 0 && factResults.every((item: any) => item.ok), detail: factResults });
     const question = String(page?.question ?? brief?.reader_task ?? ''); checks.push({ key: 'reader_question_coverage', ok: !question || similarity(content, question) >= 0.08, detail: question });
     let maxDuplicate = 0;
-    for (const other of rows("SELECT * FROM operation_artifacts WHERE project_id=? AND id<>? AND validator_status='passed' ORDER BY updated_at DESC LIMIT 20", input.projectId, artifact.id)) {
+    for (const other of rows("SELECT * FROM operation_artifacts WHERE project_id=? AND id<>? AND deleted_at IS NULL AND validator_status='passed' ORDER BY updated_at DESC LIMIT 20", input.projectId, artifact.id)) {
       try { const otherPath = safeArtifactPath(other.artifact_path); if (existsSync(otherPath.absolute)) maxDuplicate = Math.max(maxDuplicate, similarity(content, readFileSync(otherPath.absolute, 'utf8'))); } catch {}
     }
     checks.push({ key: 'duplicate_content', ok: maxDuplicate < 0.88, detail: maxDuplicate });
@@ -398,10 +495,16 @@ export const headlessCommands = {
   },
 
   context: async (input: { operationId?: string; projectId?: string; pageId?: string }) => {
-    if (input.operationId) return rows('SELECT * FROM operation_artifacts WHERE operation_id=? ORDER BY updated_at DESC', input.operationId).map(artifactView);
-    if (input.pageId && input.projectId) return rows('SELECT * FROM operation_artifacts WHERE project_id=? AND page_id=? ORDER BY updated_at DESC', input.projectId, input.pageId).map(artifactView);
-    if (input.projectId) return rows('SELECT * FROM operation_artifacts WHERE project_id=? ORDER BY updated_at DESC LIMIT 100', input.projectId).map(artifactView);
-    return rows('SELECT * FROM operation_artifacts ORDER BY updated_at DESC LIMIT 100').map(artifactView);
+    if (input.operationId) return rows('SELECT * FROM operation_artifacts WHERE operation_id=? AND deleted_at IS NULL ORDER BY updated_at DESC', input.operationId).map(artifactView);
+    if (input.pageId && input.projectId) return rows('SELECT * FROM operation_artifacts WHERE project_id=? AND page_id=? AND deleted_at IS NULL ORDER BY updated_at DESC', input.projectId, input.pageId).map(artifactView);
+    if (input.projectId) return rows('SELECT * FROM operation_artifacts WHERE project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100', input.projectId).map(artifactView);
+    return rows('SELECT * FROM operation_artifacts WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 100').map(artifactView);
+  },
+
+  content: async (artifactId: string) => {
+    const artifact = one('SELECT * FROM operation_artifacts WHERE id=? AND deleted_at IS NULL', artifactId);
+    if (!artifact) throw new Error('Article artifact not found');
+    return artifactContent(artifact);
   },
 
   completionStatus: async (operationId: string) => completionStatus(operationId),
@@ -415,7 +518,7 @@ export const headlessCommands = {
     let resumed = 0;
     for (const child of eligible) {
       const openReview = child.work_session_id ? one("SELECT id FROM review_requests WHERE work_session_id=? AND status='open' LIMIT 1", child.work_session_id) : null; if (openReview) continue;
-      const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? ORDER BY updated_at DESC LIMIT 1', child.operation_id, child.project_id);
+      const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', child.operation_id, child.project_id);
       const maxNoProgress = Math.max(1, Number(process.env.KEYWORDS_MAX_NO_PROGRESS_RETRIES ?? 2));
       if (artifact && Number(artifact.no_progress_count ?? 0) >= maxNoProgress) { ensureHumanBoundary(child.operation_id, child.project_id, artifact, 'Article execution made no artifact progress across repeated retries.'); continue; }
       if (child.work_session_id) run("UPDATE work_sessions SET status='running',last_next_action='resume_article_revision',updated_at=? WHERE id=?", now(), child.work_session_id);
@@ -426,7 +529,7 @@ export const headlessCommands = {
   },
 
   noteIncomplete: async (operationId: string, projectId: string, blockerClass: 'quality_revision_required'|'artifact_missing', summary: string) => {
-    const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? ORDER BY updated_at DESC LIMIT 1', operationId, projectId);
+    const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', operationId, projectId);
     if (artifact) run('UPDATE operation_artifacts SET no_progress_count=no_progress_count+1,updated_at=? WHERE id=?', now(), artifact.id);
     const child = one('SELECT * FROM operation_projects WHERE operation_id=? AND project_id=?', operationId, projectId); if (!child) throw new Error('Operation project not found');
     if (child.work_session_id) run("UPDATE work_sessions SET status='blocked',summary=?,last_next_action='resume_article_revision',updated_at=? WHERE id=?", summary.slice(0, 2000), now(), child.work_session_id);
@@ -437,7 +540,7 @@ export const headlessCommands = {
 
   dashboard: async () => {
     const artifacts = rows(`SELECT a.*,p.title,p.slug,p.status AS page_status,pr.name AS project_name
-      FROM operation_artifacts a LEFT JOIN pages p ON p.id=a.page_id JOIN projects pr ON pr.id=a.project_id ORDER BY a.updated_at DESC LIMIT 100`).map(row => ({ ...artifactView(row), title: row.title ?? row.article_id, slug: row.slug ?? null, pageStatus: row.page_status ?? null, projectName: row.project_name }));
+      FROM operation_artifacts a LEFT JOIN pages p ON p.id=a.page_id JOIN projects pr ON pr.id=a.project_id WHERE a.deleted_at IS NULL ORDER BY a.updated_at DESC LIMIT 100`).map(row => ({ ...artifactView(row), title: row.title ?? row.article_id, slug: row.slug ?? null, pageStatus: row.page_status ?? null, projectName: row.project_name }));
     const attention = rows(`SELECT op.operation_id,op.project_id,op.status,op.blocker,op.blocker_class,op.updated_at,p.name AS project_name,o.objective
       FROM operation_projects op JOIN projects p ON p.id=op.project_id JOIN operation_requests o ON o.id=op.operation_id
       WHERE op.status IN ('blocked','awaiting_review') ORDER BY op.updated_at DESC LIMIT 50`).map(row => ({ operationId: row.operation_id, projectId: row.project_id, projectName: row.project_name, status: row.status, blocker: row.blocker, blockerClass: row.blocker_class, objective: row.objective, updatedAt: row.updated_at }));

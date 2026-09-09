@@ -1,9 +1,10 @@
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
-import type { CandidateStatus, CommandContext, DiscoveryJobStatus } from '@keywords/domain';
+import type { CandidateStatus, CommandContext, DiscoveryJobStatus, DiscoveryDemandPolicy } from '@keywords/domain';
 import { fetchWebDocument, googleAdsKeywordIdeas, searchSerp } from '@keywords/research';
 import { workCommands } from './work.js';
-import { recordProviderCapability } from './workspace.js';
+import { googleAdsConfigured, recordProviderCapability } from './workspace.js';
+import { classifyDemandStatus, isVerifiedDemand, noveltyScore, providerSeedKeywords } from './discovery-policy.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -153,41 +154,57 @@ async function recordRuleReject(projectId: string, jobId: string, keyword: strin
 async function importCandidateRows(ctx: CommandContext, job: typeof schema.discoveryJobs.$inferSelect, rows: Array<{ keyword: string; demandValue?: number | null; adCompetition?: number | null; demandProvider?: string | null; observedAt?: string | null; sourceId?: string | null }>) {
   requireExecutionLease(ctx, job);
   const excluded = parseStrings(job.excludedTermsJson).map(normalize);
-  let created = 0; let updated = 0; let rejectedByRule = 0; let alreadyKnown = 0; let newlyDiscovered = 0; let capped = false;
+  const seeds = parseStrings(job.seedKeywordsJson).map(normalize);
+  let created = 0; let updated = 0; let rejectedByRule = 0; let demandRejected = 0; let alreadyKnown = 0; let newlyDiscovered = 0; let capped = false;
   const candidateIds: string[] = [];
   for (const input of rows) {
     const normalized = normalize(input.keyword); if (!normalized) continue;
+    if (input.demandValue !== undefined && input.demandValue !== null && (!Number.isFinite(input.demandValue) || input.demandValue < 0)) throw new Error(`Demand value must be a non-negative number: ${input.keyword}`);
+    if (input.demandValue !== undefined && input.demandValue !== null && !input.sourceId) throw new Error(`Measured demand requires a persisted source: ${input.keyword}`);
+    if (input.sourceId) {
+      const source = await db.select({ id: schema.sources.id, type: schema.sources.type }).from(schema.sources).where(and(eq(schema.sources.id, input.sourceId), eq(schema.sources.projectId, job.projectId))).get();
+      if (!source) throw new Error(`Demand source does not belong to project ${job.projectId}`);
+      if (input.demandValue !== undefined && input.demandValue !== null) {
+        const allowedTypes = input.demandProvider === 'google_ads' ? ['google_ads'] : ['gsc', 'gsc_snapshot', 'search_console'];
+        if (!allowedTypes.includes(source.type)) throw new Error(`Measured demand source type ${source.type} is incompatible with provider ${input.demandProvider ?? 'unknown'}`);
+      }
+    }
+    const score = noveltyScore(normalized, seeds);
+    if (seeds.length && score === 0) { rejectedByRule++; await recordRuleReject(job.projectId, job.id, input.keyword.trim(), 'Seed duplicate: discovery must add a new modifier or phrase'); continue; }
     const blockedBy = excluded.find(term => term && normalized.includes(term));
     if (blockedBy) { rejectedByRule++; await recordRuleReject(job.projectId, job.id, input.keyword.trim(), `Excluded term: ${blockedBy}`); continue; }
+    const provider = input.demandProvider?.trim() || null;
+    const status = classifyDemandStatus(provider, input.demandValue);
+    if (job.demandPolicy === 'required' && !isVerifiedDemand(status, input.demandValue)) { demandRejected++; await recordRuleReject(job.projectId, job.id, input.keyword.trim(), 'Demand required: candidate was observed without a verified search-demand value'); continue; }
     let current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
     if (current) {
-      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: provider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
       const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
       const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
-      await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
+      await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: provider ?? current.demandProvider, demandStatus: input.demandValue !== undefined || input.demandProvider !== undefined ? classifyDemandStatus(provider ?? current.demandProvider, input.demandValue ?? current.demandValue) : current.demandStatus, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, noveltyScore: Math.max(current.noveltyScore, score), existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
       candidateIds.push(current.id); updated++; continue;
     }
     if (!reserveCandidateSlot(job.id)) {
       current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
       if (!current) { capped = true; break; }
-      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: provider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
       const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
       const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
-      await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
+      await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: provider ?? current.demandProvider, demandStatus: input.demandValue !== undefined || input.demandProvider !== undefined ? classifyDemandStatus(provider ?? current.demandProvider, input.demandValue ?? current.demandValue) : current.demandStatus, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, noveltyScore: Math.max(current.noveltyScore, score), existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
       candidateIds.push(current.id); updated++; continue;
     }
     let keepReservedSlot = false;
     try {
-      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: input.demandProvider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
+      const keyword = await upsertKeyword(job.projectId, { text: input.keyword, source: provider ?? 'discovery', avgMonthly: input.demandValue ?? null, competition: input.adCompetition ?? null });
       const overlap = await overlapsForKeyword(job.projectId, keyword.id); const t = now();
-      const row = { id: id(), projectId: job.projectId, jobId: job.id, keywordId: keyword.id, keyword: input.keyword.trim(), normalized, status: 'discovered', demandValue: input.demandValue ?? null, demandProvider: input.demandProvider ?? null, demandObservedAt: input.observedAt ?? null, adCompetition: input.adCompetition ?? null, searchIntent: null, existingPageOverlapJson: JSON.stringify(overlap), serpStatus: 'not_researched', unresolvedQuestionsJson: null, evidenceCount: input.sourceId ? 1 : 0, language: job.language, country: job.country, region: job.region, createdAt: t, updatedAt: t };
+      const row = { id: id(), projectId: job.projectId, jobId: job.id, keywordId: keyword.id, keyword: input.keyword.trim(), normalized, status: 'discovered', demandValue: input.demandValue ?? null, demandProvider: provider, demandStatus: status, demandObservedAt: input.observedAt ?? null, adCompetition: input.adCompetition ?? null, noveltyScore: score, searchIntent: null, existingPageOverlapJson: JSON.stringify(overlap), serpStatus: 'not_researched', unresolvedQuestionsJson: null, evidenceCount: input.sourceId ? 1 : 0, language: job.language, country: job.country, region: job.region, createdAt: t, updatedAt: t };
       await db.insert(schema.discoveryCandidates).values(row).onConflictDoNothing();
       current = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.jobId, job.id), eq(schema.discoveryCandidates.normalized, normalized))).get();
       if (!current) throw new Error('Candidate insert failed');
       keepReservedSlot = current.id === row.id;
       if (!keepReservedSlot) {
         const linked = input.sourceId ? await linkSource(job.projectId, input.sourceId, 'discovery_candidate', current.id, 'demand') : false;
-        await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: input.demandProvider ?? current.demandProvider, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
+        await db.update(schema.discoveryCandidates).set({ keywordId: keyword.id, demandValue: input.demandValue ?? current.demandValue, demandProvider: provider ?? current.demandProvider, demandStatus: input.demandValue !== undefined || input.demandProvider !== undefined ? classifyDemandStatus(provider ?? current.demandProvider, input.demandValue ?? current.demandValue) : current.demandStatus, demandObservedAt: input.observedAt ?? current.demandObservedAt, adCompetition: input.adCompetition ?? current.adCompetition, noveltyScore: Math.max(current.noveltyScore, score), existingPageOverlapJson: JSON.stringify(overlap), evidenceCount: current.evidenceCount + (linked ? 1 : 0), updatedAt: t }).where(eq(schema.discoveryCandidates.id, current.id));
         updated++;
       } else {
         if (input.sourceId) await linkSource(job.projectId, input.sourceId, 'discovery_candidate', row.id, 'demand');
@@ -200,7 +217,7 @@ async function importCandidateRows(ctx: CommandContext, job: typeof schema.disco
       if (!keepReservedSlot) releaseCandidateSlot(job.id);
     }
   }
-  return { created, updated, candidateIds, capped, rejectedByRule, alreadyKnown, newlyDiscovered };
+  return { created, updated, candidateIds, capped, rejectedByRule, demandRejected, alreadyKnown, newlyDiscovered };
 }
 
 async function progressSummary(job: typeof schema.discoveryJobs.$inferSelect, candidates: Array<typeof schema.discoveryCandidates.$inferSelect>) {
@@ -282,7 +299,7 @@ export const discoveryCommands = {
         for(const phrase of novel)sqlite.prepare('INSERT INTO discovery_observations(id,project_id,job_id,source_id,parent_id,raw_phrase,normalized,evidence_kind,depth,payload_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id(),job.projectId,job.id,sourceId,parent?.id??null,phrase,normalize(phrase),'search_surface_observed',depth,JSON.stringify({country:job.country,language:job.language,observedAt:result.fetchedAt,provider:'serp_related_queries',searchVolume:null}),now());
         const imported=await importCandidateRows(ctx,job,novel.map(keyword=>({keyword,sourceId,observedAt:result.fetchedAt,demandProvider:'search_surface_observed'})));
         settleReservation(reserved.reservation.id,'succeeded',sourceId);
-        return {sourceId,newPhrases:novel.length,depth,imported,searchVolume:null};
+        return {sourceId,newPhrases:novel.length,depth,imported,demandStatus:'search_surface_observed',searchVolume:null};
       }catch(error){settleReservation(reserved.reservation.id,'failed',null,error);throw error;}
     });
   },
@@ -299,15 +316,17 @@ export const discoveryCommands = {
     return { job: jobView(job), candidates: candidates.map(candidateView), progress: await progressSummary(job, candidates) };
   }),
 
-  start: async (ctx: CommandContext, input: { projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number }) => withRun(projectCtx(ctx, input.projectId), 'discovery.start', input, async () => {
+  start: async (ctx: CommandContext, input: { projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; demandPolicy?: DiscoveryDemandPolicy }) => withRun(projectCtx(ctx, input.projectId), 'discovery.start', input, async () => {
     if (ctx.actor !== 'human') throw new Error('Starting a discovery job requires a human actor');
     const project = await requireProject(input.projectId); const seeds = [...new Set((input.seedKeywords ?? []).map(x => x.trim()).filter(Boolean))]; const targetUrl = input.targetUrl?.trim() || null;
     if (!seeds.length && !targetUrl) throw new Error('At least one seed keyword or target URL is required'); const goal = input.goal.trim(); if (!goal) throw new Error('Discovery goal is required');
     const active = await db.select().from(schema.discoveryJobs).where(and(eq(schema.discoveryJobs.projectId, input.projectId), inArray(schema.discoveryJobs.status, ['waiting_for_agent','running','awaiting_review','blocked']))).orderBy(desc(schema.discoveryJobs.updatedAt)).get();
     if (active) throw new Error(`An unfinished discovery job already exists: ${active.id} (${active.status})`);
+    const demandPolicy = input.demandPolicy ?? 'required';
+    if (demandPolicy === 'required' && !googleAdsConfigured()) throw new Error('Search-volume discovery requires Google Ads Keyword Planner credentials or a keyword-volume proxy. Use demandPolicy=surface_only only for an explicitly observation-only run.');
     const t = now(); const jobId = id(); const task = { id: id(), projectId: input.projectId, title: `キーワード探索: ${goal}`, description: `Discovery job ${jobId}`, status: 'todo', priority: 80, assigneeType: 'agent', relatedType: 'discovery_job', relatedId: jobId, createdAt: t, updatedAt: t };
     await db.insert(schema.tasks).values(task);
-    const row = { id: jobId, projectId: input.projectId, seedKeywordsJson: JSON.stringify(seeds), targetUrl, goal, language: (input.language ?? project.language).trim().toLowerCase(), country: (input.country ?? project.country).trim().toLowerCase(), region: input.region?.trim() || project.region, excludedTermsJson: JSON.stringify(input.excludedTerms ?? parseStrings(project.excludedTermsJson)), maxCandidates: Math.max(1, Math.min(Math.floor(input.maxCandidates ?? project.discoveryMaxCandidates), 500)), candidateWritesUsed: 0, maxExternalRequests: Math.max(1, Math.min(Math.floor(input.maxExternalRequests ?? project.discoveryMaxExternalRequests), 50)), externalRequestsUsed: 0, status: 'waiting_for_agent', taskId: task.id, workSessionId: null, executorId: null, heartbeatAt: null, leaseExpiresAt: null, startedAt: null, completedAt: null, error: null, createdAt: t, updatedAt: t };
+    const row = { id: jobId, projectId: input.projectId, seedKeywordsJson: JSON.stringify(seeds), targetUrl, goal, language: (input.language ?? project.language).trim().toLowerCase(), country: (input.country ?? project.country).trim().toLowerCase(), region: input.region?.trim() || project.region, excludedTermsJson: JSON.stringify(input.excludedTerms ?? parseStrings(project.excludedTermsJson)), demandPolicy, maxCandidates: Math.max(1, Math.min(Math.floor(input.maxCandidates ?? project.discoveryMaxCandidates), 500)), candidateWritesUsed: 0, maxExternalRequests: Math.max(1, Math.min(Math.floor(input.maxExternalRequests ?? project.discoveryMaxExternalRequests), 50)), externalRequestsUsed: 0, status: 'waiting_for_agent', taskId: task.id, workSessionId: null, executorId: null, heartbeatAt: null, leaseExpiresAt: null, startedAt: null, completedAt: null, error: null, createdAt: t, updatedAt: t };
     await db.insert(schema.discoveryJobs).values(row); return { job: jobView(row), task };
   }),
 
@@ -350,12 +369,15 @@ export const discoveryCommands = {
 
   adsIdeas: async (ctx: CommandContext, input: { projectId: string; jobId: string; seedKeywords?: string[]; url?: string; languageId?: string; geoTargetIds?: string[]; idempotencyKey?: string }) => withRun(projectCtx(ctx, input.projectId), 'discovery.ads_ideas', input, async () => {
     if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('External discovery research is an agent operation'); const job = await requireJob(input.projectId, input.jobId);
-    const key = requestKey('ads', { seeds: input.seedKeywords ?? parseStrings(job.seedKeywordsJson), url: input.url ?? job.targetUrl, languageId: input.languageId, geo: input.geoTargetIds ?? [] }, input.idempotencyKey); const reserved = reserveExternalRequest(ctx, job, 'google_ads', key);
+    const requestedSeeds = input.seedKeywords?.length ? input.seedKeywords : parseStrings(job.seedKeywordsJson);
+    const providerSeeds = providerSeedKeywords(requestedSeeds);
+    const key = requestKey('ads', { seeds: providerSeeds, url: input.url ?? job.targetUrl, languageId: input.languageId, geo: input.geoTargetIds ?? [] }, input.idempotencyKey); const reserved = reserveExternalRequest(ctx, job, 'google_ads', key);
     if (reserved.cached) { const cached = await cachedSource(reserved.reservation.source_id); return { sourceId: reserved.reservation.source_id, cached: true, result: cached?.metadata?.result ?? null, imported: null }; }
     try {
-      const result = await googleAdsKeywordIdeas({ seedKeywords: input.seedKeywords?.length ? input.seedKeywords : parseStrings(job.seedKeywordsJson), url: input.url ?? job.targetUrl ?? undefined, languageId: input.languageId, geoTargetIds: input.geoTargetIds });
-      await recordProviderCapability(job.projectId, 'google_ads', 'available'); const source = { id: id(), projectId: job.projectId, type: 'google_ads', label: `Google Ads ideas: ${job.goal}`, url: job.targetUrl, metadataJson: JSON.stringify({ jobId: job.id, requestKey: key, request: { seeds: input.seedKeywords ?? parseStrings(job.seedKeywordsJson), language: job.language, country: job.country, region: job.region }, result }), createdAt: result.fetchedAt };
-      await db.insert(schema.sources).values(source); await linkSource(job.projectId, source.id, 'discovery_job', job.id, 'provider_result'); const refreshedJob = await requireJob(job.projectId, job.id); const imported = await importCandidateRows(ctx, refreshedJob, result.ideas.map(idea => ({ keyword: idea.text, demandValue: idea.avgMonthly, demandProvider: 'google_ads', observedAt: result.fetchedAt, adCompetition: idea.competitionIndex === null ? null : idea.competitionIndex / 100, sourceId: source.id }))); settleReservation(reserved.reservation.id, 'succeeded', source.id); return { sourceId: source.id, cached: false, fetched: result.ideas.length, imported };
+      const result = await googleAdsKeywordIdeas({ seedKeywords: providerSeeds, url: input.url ?? job.targetUrl ?? undefined, languageId: input.languageId, geoTargetIds: input.geoTargetIds });
+      if (job.demandPolicy === 'required' && !result.ideas.some(idea => isVerifiedDemand(classifyDemandStatus('google_ads', idea.avgMonthly), idea.avgMonthly))) throw new Error('Google Ads returned no usable monthly search-volume values; no demand-free candidates were created.');
+      await recordProviderCapability(job.projectId, 'google_ads', 'available'); const source = { id: id(), projectId: job.projectId, type: 'google_ads', label: `Google Ads ideas: ${job.goal}`, url: job.targetUrl, metadataJson: JSON.stringify({ jobId: job.id, requestKey: key, request: { seeds: requestedSeeds, providerSeeds, language: job.language, country: job.country, region: job.region }, result }), createdAt: result.fetchedAt };
+      await db.insert(schema.sources).values(source); await linkSource(job.projectId, source.id, 'discovery_job', job.id, 'provider_result'); const refreshedJob = await requireJob(job.projectId, job.id); const normalizedSeeds = requestedSeeds.map(normalize); const ideas = [...result.ideas].sort((a, b) => noveltyScore(normalize(b.text), normalizedSeeds) - noveltyScore(normalize(a.text), normalizedSeeds) || (b.avgMonthly ?? -1) - (a.avgMonthly ?? -1)); const imported = await importCandidateRows(ctx, refreshedJob, ideas.map(idea => ({ keyword: idea.text, demandValue: idea.avgMonthly, demandProvider: 'google_ads', observedAt: result.fetchedAt, adCompetition: idea.competitionIndex === null ? null : idea.competitionIndex / 100, sourceId: source.id }))); settleReservation(reserved.reservation.id, 'succeeded', source.id); return { sourceId: source.id, cached: false, fetched: result.ideas.length, imported };
     } catch (error) { settleReservation(reserved.reservation.id, 'failed', null, error); await recordProviderCapability(job.projectId, 'google_ads', capabilityStatus(error), error); throw error; }
   }),
 
@@ -389,13 +411,14 @@ export const discoveryCommands = {
   }),
 
   reviewCandidate: async (ctx: CommandContext, input: { projectId: string; jobId: string; candidateId: string; status: CandidateStatus; reason?: string }) => withRun(projectCtx(ctx, input.projectId), 'discovery.review_candidate', input, async () => {
-    if (ctx.actor !== 'human') throw new Error('Candidate review requires a human actor'); const job = await requireJob(input.projectId, input.jobId); const candidate = await requireCandidate(input.projectId, input.jobId, input.candidateId); if (!['awaiting_review','completed','waiting_for_agent'].includes(job.status)) throw new Error(`Candidates cannot be reviewed while job is ${job.status}`); const allowed: CandidateStatus[] = ['shortlisted','hold','rejected','research_more']; if (!allowed.includes(input.status)) throw new Error('Invalid human candidate status'); const t = now(); await db.update(schema.discoveryCandidates).set({ status: input.status, updatedAt: t }).where(eq(schema.discoveryCandidates.id, candidate.id)); await db.insert(schema.decisions).values({ id: id(), projectId: input.projectId, actor: 'human', action: 'discovery.candidate_review', targetType: 'discovery_candidate', targetId: candidate.id, verdict: input.status, reason: input.reason?.trim() || null, metadataJson: JSON.stringify({ jobId: job.id, keyword: candidate.keyword }), createdAt: t }); const jobStatus = await reconcileJobAfterReview(input.projectId, job.id); return { candidateId: candidate.id, status: input.status, jobStatus };
+    if (ctx.actor !== 'human') throw new Error('Candidate review requires a human actor'); const job = await requireJob(input.projectId, input.jobId); const candidate = await requireCandidate(input.projectId, input.jobId, input.candidateId); if (!['awaiting_review','completed','waiting_for_agent'].includes(job.status)) throw new Error(`Candidates cannot be reviewed while job is ${job.status}`); const allowed: CandidateStatus[] = ['shortlisted','hold','rejected','research_more']; if (!allowed.includes(input.status)) throw new Error('Invalid human candidate status'); if (input.status === 'shortlisted' && !isVerifiedDemand(candidate.demandStatus, candidate.demandValue)) throw new Error(`Candidate ${candidate.keyword} cannot be shortlisted until search demand is verified by Google Ads or Search Console.`); const t = now(); await db.update(schema.discoveryCandidates).set({ status: input.status, updatedAt: t }).where(eq(schema.discoveryCandidates.id, candidate.id)); await db.insert(schema.decisions).values({ id: id(), projectId: input.projectId, actor: 'human', action: 'discovery.candidate_review', targetType: 'discovery_candidate', targetId: candidate.id, verdict: input.status, reason: input.reason?.trim() || null, metadataJson: JSON.stringify({ jobId: job.id, keyword: candidate.keyword, demandStatus: candidate.demandStatus, demandValue: candidate.demandValue }), createdAt: t }); const jobStatus = await reconcileJobAfterReview(input.projectId, job.id); return { candidateId: candidate.id, status: input.status, jobStatus };
   }),
 
   bulkReviewCandidates: async (ctx: CommandContext, input: { projectId: string; candidateIds: string[]; status: 'shortlisted' | 'hold' | 'rejected'; reason?: string }) => withRun(projectCtx(ctx, input.projectId), 'discovery.bulk_review_candidates', input, async () => {
     if (ctx.actor !== 'human') throw new Error('Bulk candidate review requires a human actor'); const ids = [...new Set(input.candidateIds.filter(Boolean))].slice(0, 500); if (!ids.length) return { updated: 0, jobStatuses: {} };
     const rows = await db.select().from(schema.discoveryCandidates).where(and(eq(schema.discoveryCandidates.projectId, input.projectId), inArray(schema.discoveryCandidates.id, ids))); if (rows.length !== ids.length) throw new Error('One or more candidates do not belong to the project'); const jobs = [...new Set(rows.map(row => row.jobId))];
     for (const jobId of jobs) { const job = await requireJob(input.projectId, jobId); if (!['awaiting_review','completed','waiting_for_agent'].includes(job.status)) throw new Error(`Candidates for job ${jobId} cannot be reviewed while it is ${job.status}`); }
+    if (input.status === 'shortlisted') { const unverified = rows.filter(row => !isVerifiedDemand(row.demandStatus, row.demandValue)); if (unverified.length) throw new Error(`Candidates cannot be shortlisted without verified demand: ${unverified.map(row => row.keyword).join(', ')}`); }
     const t = now(); for (const row of rows) { await db.update(schema.discoveryCandidates).set({ status: input.status, updatedAt: t }).where(eq(schema.discoveryCandidates.id, row.id)); await db.insert(schema.decisions).values({ id: id(), projectId: input.projectId, actor: 'human', action: 'discovery.candidate_review', targetType: 'discovery_candidate', targetId: row.id, verdict: input.status, reason: input.reason?.trim() || null, metadataJson: JSON.stringify({ jobId: row.jobId, keyword: row.keyword, bulk: true }), createdAt: t }); }
     const jobStatuses: Record<string, string> = {}; for (const jobId of jobs) jobStatuses[jobId] = await reconcileJobAfterReview(input.projectId, jobId); return { updated: rows.length, jobStatuses };
   }),

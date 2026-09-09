@@ -1,10 +1,77 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs';
+import { basename, extname, relative, resolve } from 'node:path';
 import { getDatabase, schema } from '@keywords/db';
+import type { CommandContext } from '@keywords/domain';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
-import { headlessCommands } from './headless.js';
+import { articleKeywordResearchEvidence, headlessCommands } from './headless.js';
 
 const { db, sqlite } = getDatabase();
 const hasTable = (name: string) => Boolean(sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
 const parse = <T>(value: string | null | undefined, fallback: T): T => { try { return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } };
+const hashText = (value: string) => createHash('sha256').update(value).digest('hex');
+const now = () => new Date().toISOString();
+
+function frontmatterValue(frontmatter: string, key: string) {
+  return frontmatter.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'))?.[1]?.trim().replace(/^['"]|['"]$/g, '') ?? null;
+}
+
+function localBlogArticles(projectId: string, artifactPaths: Set<string>) {
+  const configured = process.env.KEYWORDS_BLOG_ROOT?.trim() || process.env.KEYWORDS_ARTIFACT_ROOT?.trim();
+  if (!configured) return [];
+  const root = resolve(configured);
+  const scanRef = (process.env.KEYWORDS_BLOG_ARTICLE_SCAN_DIR?.trim() || 'content/posts').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+|\/+$/g, '');
+  const scanDir = resolve(root, scanRef);
+  const scanRelative = relative(root, scanDir);
+  if (!scanRelative || scanRelative === '..' || scanRelative.startsWith('..\\') || scanRelative.startsWith('../')) return [];
+  if (!existsSync(scanDir)) return [];
+  const projects = sqlite.prepare('SELECT id,name,domain FROM projects').all() as any[];
+  const pages = sqlite.prepare(`SELECT p.id,p.project_id,p.title,p.slug,p.url,pr.name AS project_name,pr.domain AS project_domain
+    FROM pages p JOIN projects pr ON pr.id=p.project_id`).all() as any[];
+  let rootHost: string | null = null;
+  try {
+    const site = parse(readFileSync(resolve(root, 'content/site.json'), 'utf8'), {} as any);
+    rootHost = site.url ? new URL(String(site.url)).hostname : null;
+  } catch {}
+  const rootProjects = rootHost ? projects.filter(project => hostOf(project.domain) === rootHost) : [];
+  const files: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const absolute = resolve(directory, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isFile() && ['.md', '.mdx'].includes(extname(entry.name).toLowerCase())) files.push(absolute);
+    }
+  };
+  try { visit(scanDir); } catch { return []; }
+  return files.flatMap(absolute => {
+    try {
+      const path = relative(root, absolute).replaceAll('\\', '/');
+      if (artifactPaths.has(path)) return [];
+      const content = readFileSync(absolute, 'utf8');
+      const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/);
+      const frontmatter = match?.[1] ?? '';
+      const filename = basename(path, extname(path));
+      const stem = filename.replace(/^\d{4}-\d{2}-\d{2}-/, '');
+      const page = pages.find(item => {
+        try {
+          const pageStem = item.url ? new URL(item.url).pathname.replace(/\/+$/, '').split('/').pop() : null;
+          return pageStem === stem || (frontmatterValue(frontmatter, 'title') && item.title === frontmatterValue(frontmatter, 'title'));
+        } catch { return false; }
+      });
+      const project = page ? projects.find(item => item.id === page.project_id) : rootProjects.length === 1 ? rootProjects[0] : null;
+      if (!project || (projectId && project.id !== projectId)) return [];
+      const id = `local-file-${hashText(path).slice(0, 32)}`;
+      const stat = statSync(absolute);
+      const research = articleKeywordResearchEvidence(project.id, page?.id ?? null);
+      return [{
+        id, recordType: 'local_file', operationId: null, projectId: project.id, projectName: project.name, projectDomain: project.domain,
+        pageId: page?.id ?? null, articleId: page?.id ?? id, title: frontmatterValue(frontmatter, 'title') ?? stem, slug: stem,
+        url: page?.url ?? null, path, contentSha256: hashText(content), validatorStatus: 'not_registered', buildStatus: 'not_recorded', verifiedAt: null,
+        revisionCount: 0, failedChecks: [], updatedAt: stat.mtime.toISOString(), keyword: research.keyword, keywordResearch: research, outcome: null, content
+      }];
+    } catch { return []; }
+  });
+}
 
 function outcomeFor(operationId: string, projectId: string) {
   if (!hasTable('operation_outcomes')) return null;
@@ -27,7 +94,7 @@ export const portfolioCommands = {
     const status = input.status?.trim() ?? 'all';
     const limit = Math.max(1, Math.min(Math.floor(input.limit ?? 50), 200));
     const offset = Math.max(0, Math.floor(input.offset ?? 0));
-    const clauses: string[] = [];
+    const clauses: string[] = ["COALESCE(a.deleted_at,'')=''"];
     const args: unknown[] = [];
     if (projectId) { clauses.push('a.project_id=?'); args.push(projectId); }
     if (query) {
@@ -41,14 +108,15 @@ export const portfolioCommands = {
       LEFT JOIN pages p ON p.id=a.page_id
       JOIN projects pr ON pr.id=a.project_id
       LEFT JOIN keywords k ON k.id=(SELECT pk.keyword_id FROM page_keywords pk WHERE pk.page_id=a.page_id ORDER BY CASE pk.role WHEN 'primary' THEN 0 ELSE 1 END LIMIT 1)`;
-    const total = Number((sqlite.prepare(`SELECT COUNT(*) AS n ${base} ${where}`).get(...args) as any)?.n ?? 0);
     const rows = sqlite.prepare(`SELECT a.*,p.title,p.slug,p.status AS page_status,p.url,k.id AS keyword_id,k.text AS keyword_text,k.avg_monthly,k.gsc_clicks,k.gsc_impressions,k.gsc_position,pr.name AS project_name,pr.domain AS project_domain,
       (SELECT d.reason FROM decisions d JOIN discovery_candidates dc ON dc.id=d.target_id WHERE d.target_type='discovery_candidate' AND d.action='operation.candidate_triage' AND d.verdict='shortlisted' AND dc.keyword_id=k.id ORDER BY d.created_at DESC LIMIT 1) AS selection_reason
-      ${base} ${where} ORDER BY a.updated_at DESC LIMIT ? OFFSET ?`).all(...args, limit, offset) as any[];
-    const items = rows.map(row => {
+      ${base} ${where} ORDER BY a.updated_at DESC`).all(...args) as any[];
+    const artifactItems = rows.map(row => {
       const validatorResult = parse<any>(row.validator_result_json, null);
+      const keywordResearch = articleKeywordResearchEvidence(row.project_id, row.page_id ?? null);
       return {
         id: row.id,
+        recordType: 'artifact',
         operationId: row.operation_id,
         projectId: row.project_id,
         projectName: row.project_name,
@@ -66,11 +134,65 @@ export const portfolioCommands = {
         revisionCount: Number(row.revision_count ?? 0),
         failedChecks: validatorResult?.failedChecks ?? [],
         updatedAt: row.updated_at,
-        keyword: row.keyword_id ? { id: row.keyword_id, text: row.keyword_text, avgMonthly: row.avg_monthly, clicks: row.gsc_clicks, impressions: row.gsc_impressions, position: row.gsc_position, selectionReason: row.selection_reason ?? null } : null,
+        keyword: keywordResearch.keyword ?? (row.keyword_id ? { id: row.keyword_id, text: row.keyword_text, avgMonthly: row.avg_monthly, clicks: row.gsc_clicks, impressions: row.gsc_impressions, position: row.gsc_position, selectionReason: row.selection_reason ?? null } : null),
+        keywordResearch,
         outcome: outcomeFor(row.operation_id, row.project_id)
       };
     });
-    return { generatedAt: new Date().toISOString(), total, limit, offset, items };
+    const artifactPaths = new Set(artifactItems.map(item => item.path));
+    const localItems = localBlogArticles(projectId, artifactPaths).filter(item => {
+      if (status === 'complete') return false;
+      if (query) return `${item.title} ${item.projectName} ${item.path} ${item.slug}`.toLowerCase().includes(query);
+      return true;
+    }).map(({ content: _content, ...item }) => item);
+    const items = [...artifactItems, ...localItems].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    return { generatedAt: new Date().toISOString(), total: items.length, limit, offset, items: items.slice(offset, offset + limit) };
+  },
+
+  async articleContent(articleId: string) {
+    const artifact = sqlite.prepare("SELECT id FROM operation_artifacts WHERE id=? AND deleted_at IS NULL").get(articleId) as any;
+    if (artifact) return headlessCommands.content(articleId);
+    const local = localBlogArticles('', new Set()).find(item => item.id === articleId);
+    if (!local) throw new Error('Article not found');
+    return { artifact: null, path: local.path, exists: true, content: local.content, actualSha256: local.contentSha256, contentMatches: true };
+  },
+
+  async deleteArticle(ctx: CommandContext, input: { projectId: string; articleId: string; reason?: string }) {
+    if (ctx.actor !== 'human') throw new Error('Article deletion requires a human actor');
+    const runId = randomUUID();
+    const runInput = { projectId: input.projectId, articleId: input.articleId, reason: input.reason ?? null };
+    try {
+      const configured = process.env.KEYWORDS_BLOG_ROOT?.trim() || process.env.KEYWORDS_ARTIFACT_ROOT?.trim();
+      if (!configured) throw new Error('KEYWORDS_BLOG_ROOT is required for article deletion');
+      const root = resolve(configured);
+      const local = localBlogArticles(input.projectId, new Set()).find(item => item.id === input.articleId);
+      const artifact = sqlite.prepare("SELECT * FROM operation_artifacts WHERE id=? AND project_id=? AND deleted_at IS NULL").get(input.articleId, input.projectId) as any;
+      if (!local && !artifact) throw new Error('Article not found or already deleted');
+      const path = local?.path ?? artifact.artifact_path;
+      const title = local?.title ?? (sqlite.prepare('SELECT title FROM pages WHERE id=? AND project_id=?').get(artifact.page_id, input.projectId) as any)?.title ?? artifact.article_id;
+      const absolute = resolve(root, path);
+      const relativePath = relative(root, absolute);
+      if (!relativePath || relativePath === '..' || relativePath.startsWith('..\\') || relativePath.startsWith('../') || absolute === root) throw new Error('Article path escapes KEYWORDS_BLOG_ROOT');
+      if (!existsSync(absolute)) throw new Error('Local article file no longer exists');
+      unlinkSync(absolute);
+      const reason = input.reason?.trim() || 'Deleted from the Articles UI after human confirmation.';
+      const decisionId = randomUUID();
+      sqlite.prepare('INSERT INTO decisions(id,project_id,actor,action,target_type,target_id,verdict,reason,metadata_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(decisionId, input.projectId, ctx.actor, 'article.delete', local ? 'local_file' : 'operation_artifact', input.articleId, 'deleted', reason, JSON.stringify({ path, title, recordType: local ? 'local_file' : 'artifact', verified: Boolean(artifact?.verified_at), deleted: true }), now());
+      if (artifact) sqlite.prepare("UPDATE operation_artifacts SET deleted_at=?,deleted_by=?,validator_status='deleted',build_status='deleted',verified_at=NULL,updated_at=? WHERE id=?").run(now(), ctx.actorId ?? ctx.actor, now(), artifact.id);
+      const output = { articleId: input.articleId, status: 'deleted', deleted: true, path, recordType: local ? 'local_file' : 'artifact', decisionId };
+      sqlite.prepare('INSERT INTO runs(id,project_id,work_session_id,actor,actor_id,command,status,input_json,output_json,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(runId, input.projectId, ctx.workSessionId ?? null, ctx.actor, ctx.actorId ?? null, 'article.delete', 'succeeded', JSON.stringify(runInput), JSON.stringify(output), now());
+      return output;
+    } catch (error) {
+      sqlite.prepare('INSERT INTO runs(id,project_id,work_session_id,actor,actor_id,command,status,input_json,error,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+        .run(runId, input.projectId, ctx.workSessionId ?? null, ctx.actor, ctx.actorId ?? null, 'article.delete', 'failed', JSON.stringify(runInput), error instanceof Error ? error.message : String(error), now());
+      throw error;
+    }
+  },
+
+  async rejectArticle(ctx: CommandContext, input: { projectId: string; articleId: string; reason?: string }) {
+    return portfolioCommands.deleteArticle(ctx, input);
   },
 
   async context() {

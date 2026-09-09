@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
-import type { CommandContext } from '@keywords/domain';
+import type { CommandContext, DiscoveryDemandPolicy } from '@keywords/domain';
 import { assertOperationAllowed } from './guard.js';
 import { operationCommands } from './operation.js';
 
@@ -14,7 +14,7 @@ const leaseUntil = (seconds?: number) => new Date(Date.now() + Math.max(60, Math
 export const operationDiscoveryCommands = {
   startAndClaim: async (ctx: CommandContext, input: {
     operationId: string; projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string;
-    excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; leaseSeconds?: number;
+    excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; leaseSeconds?: number; demandPolicy?: DiscoveryDemandPolicy;
   }) => {
     if (ctx.actor !== 'agent' && ctx.actor !== 'system') return operationCommands.startDiscovery(ctx, input);
     assertOperationAllowed(ctx, { projectId: input.projectId, command: 'discovery.start', capability: 'discovery.start' });
