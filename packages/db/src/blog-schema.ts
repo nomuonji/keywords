@@ -139,6 +139,38 @@ CREATE TABLE IF NOT EXISTS operation_outcomes (
 );
 CREATE INDEX IF NOT EXISTS operation_outcomes_project_status_idx ON operation_outcomes(project_id, outcome_status, updated_at DESC);
 
+-- Autonomous content operations are opt-in per project. The Agent never writes this control plane.
+CREATE TABLE IF NOT EXISTS autopilot_controls (
+ project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+ enabled INTEGER NOT NULL DEFAULT 0,
+ auto_approve INTEGER NOT NULL DEFAULT 1,
+ auto_publish INTEGER NOT NULL DEFAULT 1,
+ cadence_minutes INTEGER NOT NULL DEFAULT 15,
+ max_daily_new_articles INTEGER NOT NULL DEFAULT 2,
+ max_daily_updates INTEGER NOT NULL DEFAULT 4,
+ min_evidence_score INTEGER NOT NULL DEFAULT 50,
+ max_commodity_risk INTEGER NOT NULL DEFAULT 3,
+ min_information_gain INTEGER NOT NULL DEFAULT 2,
+ min_publication_score INTEGER NOT NULL DEFAULT 80,
+ updated_by TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS autopilot_state (
+ project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'idle',
+ stage TEXT NOT NULL DEFAULT 'idle',
+ operation_id TEXT REFERENCES operation_requests(id) ON DELETE SET NULL,
+ target_type TEXT,
+ target_id TEXT,
+ summary TEXT,
+ decision_json TEXT,
+ last_tick_at TEXT,
+ next_tick_at TEXT,
+ last_error TEXT,
+ updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS autopilot_state_status_idx ON autopilot_state(status, updated_at DESC);
+
 -- Versioned collector/import contract used by Keywords and other dashboards.
 CREATE TABLE IF NOT EXISTS measurement_imports (
  id TEXT PRIMARY KEY,
