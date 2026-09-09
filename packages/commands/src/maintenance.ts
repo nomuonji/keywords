@@ -90,7 +90,7 @@ export const maintenanceCommands = {
       providers: {
         serpConfigured: Boolean(process.env.KEYWORDS_SERPER_API_KEY || process.env.SERPER_API_KEY),
         googleAdsConfigured: googleAdsConfigured(),
-        searchConsoleConfigured: Boolean((process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN) && process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL)
+        searchConsoleConfigured: Boolean((process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || process.env.GOOGLE_APPLICATION_CREDENTIALS || (process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN || process.env.GOOGLE_OAUTH_REFRESH_TOKEN) && (process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID) && (process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET)) && process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL)
       },
       counts: { projects: Number(projects?.value ?? 0), keywords: Number(keywords?.value ?? 0), discoveryJobs: Number(jobs?.value ?? 0), sources: Number(sources?.value ?? 0) }
     };

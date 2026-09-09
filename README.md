@@ -320,6 +320,7 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 - Google Ads OAuth refresh: `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`
 - Google Ads proxy fallback: `GOOGLE_ADS_KEYWORD_VOLUME_API_URL` (or existing `KEYWORD_VOLUME_API_URL`)
 - Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
+- Search Console service account: `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
 - shared Google OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
 - scheduler: `KEYWORDS_OPERATOR_INTERVAL_MINUTES`, `KEYWORDS_OPERATOR_RUN_ON_START`
 

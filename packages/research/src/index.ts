@@ -1,4 +1,6 @@
 import { lookup } from 'node:dns/promises';
+import { createSign } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
 
 const MAX_WEB_BYTES = 1_000_000;
@@ -325,7 +327,7 @@ export async function searchConsoleQuery(input: {
   startRow?: number;
   searchType?: string;
 }): Promise<SearchConsoleResult> {
-  const accessToken = env('GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN', 'GOOGLE_OAUTH_ACCESS_TOKEN');
+  const accessToken = await searchConsoleAccessToken();
   const siteUrl = input.siteUrl ?? process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL;
   if (!siteUrl) throw new Error('Search Console site URL is required (input.siteUrl or GOOGLE_SEARCH_CONSOLE_SITE_URL)');
   const dimensions = input.dimensions?.length ? input.dimensions : ['query'];
@@ -351,4 +353,52 @@ export async function searchConsoleQuery(input: {
     position: Number(row.position ?? 0)
   }));
   return { siteUrl, startDate: input.startDate, endDate: input.endDate, dimensions, rows, fetchedAt: new Date().toISOString() };
+}
+
+function searchConsoleRefreshCredentials() {
+  const refreshToken = process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN ?? process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID ?? process.env.GOOGLE_OAUTH_CLIENT_ID ?? process.env.GOOGLE_ADS_CLIENT_ID ?? process.env.ADS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET ?? process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? process.env.GOOGLE_ADS_CLIENT_SECRET ?? process.env.ADS_CLIENT_SECRET;
+  return refreshToken && clientId && clientSecret ? { refreshToken, clientId, clientSecret } : null;
+}
+
+async function serviceAccountAccessToken() {
+  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+  if (!credentialsPath) return null;
+  const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8')) as { client_email?: string; private_key?: string };
+  if (!credentials.client_email || !credentials.private_key) throw new Error('Google service account JSON is missing client_email or private_key');
+  const now = Math.floor(Date.now() / 1000);
+  const encode = (value: string) => Buffer.from(value).toString('base64url');
+  const header = encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claim = encode(JSON.stringify({ iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/webmasters.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const signer = createSign('RSA-SHA256');
+  signer.update(`${header}.${claim}`);
+  const assertion = `${header}.${claim}.${signer.sign(credentials.private_key, 'base64url')}`;
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
+  if (!response.ok || !body.access_token) throw new Error(`Google service account token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
+  return body.access_token;
+}
+
+async function searchConsoleAccessToken() {
+  const configured = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN ?? process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+  if (configured) return configured;
+  const serviceAccountToken = await serviceAccountAccessToken();
+  if (serviceAccountToken) return serviceAccountToken;
+  const credentials = searchConsoleRefreshCredentials();
+  if (!credentials) throw new Error('Search Console OAuth credentials are required (GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN or GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN plus client credentials)');
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: credentials.clientId, client_secret: credentials.clientSecret, refresh_token: credentials.refreshToken, grant_type: 'refresh_token' }),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
+  if (!response.ok || !body.access_token) throw new Error(`Search Console OAuth token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
+  return body.access_token;
 }
