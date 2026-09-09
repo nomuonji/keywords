@@ -55,6 +55,21 @@ settleOperationBudget(r1?.id, 'succeeded');
 settleOperationBudget(r2?.id, 'failed', new Error('fixture failure'));
 await assert.rejects(async () => reserveOperationBudget(agentWork, projectId, 'external_request', 'smoke:3', 1), /budget exhausted/);
 
+// A missing HTTP work-session header must not bypass an open human review.
+await operationCommands.checkpoint(agentWork, { operationId, projectId, state: 'awaiting_review', summary: 'Need a human decision', nextAction: 'review' });
+const reviewId = 'review-agent-operations';
+sqlite.prepare(`INSERT INTO review_requests(id,project_id,work_session_id,target_type,target_id,title,question,options_json,status,resolution,reason,requested_by,created_at,resolved_at)
+  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(reviewId, projectId, child.workSessionId, 'operation', operationId, 'Smoke review', 'Continue?', JSON.stringify(['continue','stop']), 'open', null, null, 'smoke-agent', t, null);
+await operationCommands.resume(agent, { operationId, projectId });
+assert.equal((sqlite.prepare('SELECT status FROM work_sessions WHERE id=?').get(child.workSessionId) as { status: string }).status, 'awaiting_review');
+await assert.rejects(
+  () => operationDiscoveryCommands.startAndClaim(agent, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery' }),
+  /review|awaiting_review/
+);
+sqlite.prepare("UPDATE review_requests SET status='resolved',resolution='continue',resolved_at=? WHERE id=?").run(new Date().toISOString(), reviewId);
+await operationCommands.resume(agent, { operationId, projectId });
+assert.equal((sqlite.prepare('SELECT status FROM work_sessions WHERE id=?').get(child.workSessionId) as { status: string }).status, 'running');
+
 await operationCommands.setPause(human, { projectId, paused: true, reason: 'smoke pause' });
 await assert.rejects(
   () => operationDiscoveryCommands.startAndClaim(agentWork, { operationId, projectId, seedKeywords: ['agent seo'], goal: 'smoke discovery' }),
