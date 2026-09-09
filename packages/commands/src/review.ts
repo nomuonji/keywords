@@ -3,6 +3,7 @@ import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { planningCommands } from './planning.js';
 import { policyCommands } from './policy.js';
+import './headless.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
