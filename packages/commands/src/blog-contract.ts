@@ -13,6 +13,38 @@ export const snapshotSchema = z.object({
  coverage: z.object({source_count: z.number().int(), local_build_page_count: z.number().int(), unmapped_build_pages: z.number().int(), sources_absent_from_build: z.number().int(), duplicate_expected_urls: z.array(url), complete_site_coverage: z.boolean()}),
  warnings: z.array(z.string()).max(100)
 });
+
+const score20 = z.number().int().min(0).max(20);
+const score15 = z.number().int().min(0).max(15);
+const score10 = z.number().int().min(0).max(10);
+export const autonomyEvidenceSchema = z.object({
+ page_type: z.enum(['reference','troubleshooting','experience','comparison','analysis','field_note']),
+ evidence_score: z.number().int().min(0).max(100),
+ commodity_risk: z.number().int().min(0).max(5),
+ information_gain: z.array(z.string().trim().min(1).max(500)).min(1).max(8),
+ source_packet: z.object({
+   official_source_ids: z.array(text).max(20),
+   first_party_source_ids: z.array(text).max(20),
+   research_source_ids: z.array(text).max(30),
+   competitor_gap_source_ids: z.array(text).max(20),
+   reader_question_source_ids: z.array(text).max(20)
+ }),
+ fact_ledger: z.array(z.object({
+   claim: text,
+   source_id: text,
+   checked_at: z.iso.date(),
+   confidence: z.enum(['high','medium','low'])
+ })).min(1).max(80),
+ publication_gate: z.object({
+   source_quality: score20,
+   evidence: score20,
+   originality: score20,
+   intent_match: score15,
+   accuracy: score15,
+   editorial_quality: score10
+ })
+});
+
 export const briefSchema = z.object({
  reader_task: text, direct_answer: text, unique_value: text, editorial_owner: text, maintenance_owner: text,
  review_due_at: z.iso.date(), value_source_ids: z.array(text).min(1).max(30),
@@ -25,7 +57,8 @@ export const briefSchema = z.object({
  research: z.object({skills_used: z.array(text).min(1), score_rationale: text,
    demand: z.number().int().min(0).max(100), serp_opportunity: z.number().int().min(0).max(100),
    site_fit: z.number().int().min(0).max(100), business_value: z.number().int().min(0).max(100),
-   freshness: z.number().int().min(0).max(100), effort: z.number().int().min(1).max(100)})
+   freshness: z.number().int().min(0).max(100), effort: z.number().int().min(1).max(100)}),
+ autonomy: autonomyEvidenceSchema.optional()
 });
 export type BlogSnapshot = z.infer<typeof snapshotSchema>;
 export type BlogBrief = z.infer<typeof briefSchema>;
@@ -41,5 +74,11 @@ export const receiptSchema = z.object({
 export const blogContract = {
  schema_version:1,
  snapshot:z.toJSONSchema(snapshotSchema), brief:z.toJSONSchema(briefSchema), receipt:z.toJSONSchema(receiptSchema),
- semantics:['Local snapshots are not publication evidence.','Page approval includes the prepared brief and is human-only.','Search-surface phrases are not search-volume measurements.','Failed, missing and zero observations are distinct.']
+ semantics:[
+   'Local snapshots are not publication evidence.',
+   'Page approval is human-reviewed in manual mode or decided by the deterministic autonomy gate when project autopilot is enabled.',
+   'Autonomous publication requires Source Packet, Fact Ledger, information gain, evidence/commodity scores and the publication gate.',
+   'Search-surface phrases are not search-volume measurements.',
+   'Failed, missing and zero observations are distinct.'
+ ]
 };

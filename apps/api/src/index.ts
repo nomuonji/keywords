@@ -14,6 +14,7 @@ import { operationCommands } from '@keywords/commands/operation';
 import { operationDiscoveryCommands } from '@keywords/commands/operation-discovery';
 import { executorCommands } from '@keywords/commands/executor';
 import { operatorCommands } from '@keywords/commands/operator';
+import { autopilotCommands } from '@keywords/commands/autopilot';
 import { registerProductRoutes } from './product.js';
 import { registerBlogRoutes } from './blog.js';
 
@@ -28,10 +29,7 @@ if (!loopback && !authConfigured) throw new Error('Remote API binding requires K
 const allowedOrigins = (process.env.KEYWORDS_ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map(value => value.trim()).filter(Boolean);
 app.use('*', cors({ origin: allowedOrigins, allowHeaders: ['Content-Type','Authorization','X-Keywords-Work-Session-Id'], allowMethods: ['GET','HEAD','OPTIONS','POST','PATCH','DELETE'] }));
 
-function bearer(c: any) {
-  const header = c.req.header('authorization') ?? '';
-  return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : '';
-}
+function bearer(c: any) { const header = c.req.header('authorization') ?? ''; return header.toLowerCase().startsWith('bearer ') ? header.slice(7).trim() : ''; }
 function actorContext(c: any) {
   if (!authConfigured) return { actor: 'human' as const, actorId: process.env.KEYWORDS_API_HUMAN_ID ?? 'http-local', workSessionId: c.req.header('x-keywords-work-session-id') };
   const token = bearer(c);
@@ -41,21 +39,14 @@ function actorContext(c: any) {
 }
 app.use('*', async (c, next) => {
   if (c.req.path === '/health' || c.req.method === 'OPTIONS') return next();
-  const actor = actorContext(c);
-  if (!actor) return c.json({ error: 'Unauthorized' }, 401);
+  const actor = actorContext(c); if (!actor) return c.json({ error: 'Unauthorized' }, 401);
   const isWrite = !['GET','HEAD','OPTIONS'].includes(c.req.method.toUpperCase());
-  if (actor.actor === 'agent' && isWrite && !c.req.path.startsWith('/operations')) {
-    return c.json({ error: 'Agent HTTP writes must use the delegated /operations API.' }, 403);
-  }
+  if (actor.actor === 'agent' && isWrite && !c.req.path.startsWith('/operations')) return c.json({ error: 'Agent HTTP writes must use the delegated /operations API.' }, 403);
   return next();
 });
 
 app.get('/health', c => c.json({ ok: true, mode: loopback ? 'local' : 'remote', authConfigured }));
-const ctx = (c: any) => {
-  const actor = actorContext(c);
-  if (!actor) throw new Error('Unauthorized');
-  return actor;
-};
+const ctx = (c: any) => { const actor = actorContext(c); if (!actor) throw new Error('Unauthorized'); return actor; };
 const body = (c: any) => c.req.json();
 registerBlogRoutes(app,ctx,body);
 
@@ -94,6 +85,9 @@ app.get('/operations/projects/:projectId/measurements/context', async c => c.jso
 app.post('/operations/projects/:projectId/measurements/capture', async c => c.json(await metricsCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/operations/projects/:projectId/site/sync', async c => c.json(await siteCommands.syncSitemap(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
 
+app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));
+app.post('/projects/:projectId/autopilot/configure', async c => c.json(await autopilotCommands.configure(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
+app.post('/projects/:projectId/autopilot/tick', async c => c.json(await autopilotCommands.tick(ctx(c), c.req.param('projectId'))));
 app.get('/projects/:projectId/operator', async c => c.json(await operatorCommands.inspect(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/operator/tick', async c => c.json(await operatorCommands.tick(ctx(c), c.req.param('projectId'))));
 app.get('/projects/:projectId/site', async c => c.json(await siteCommands.list(ctx(c), c.req.param('projectId'))));
@@ -156,6 +150,11 @@ const schedulerCtx = { actor: 'system' as const, actorId: 'operator-scheduler' }
 async function scheduledTick() { const projects = await commands.project.list(schedulerCtx); for (const project of projects) { try { await operatorCommands.tick(schedulerCtx, project.id); } catch (error) { console.error(`Operator tick failed for ${project.id}:`, error); } } }
 const intervalMinutes = Math.max(0, Number(process.env.KEYWORDS_OPERATOR_INTERVAL_MINUTES ?? 0));
 if (intervalMinutes > 0) { setInterval(() => void scheduledTick(), intervalMinutes * 60_000).unref(); if (process.env.KEYWORDS_OPERATOR_RUN_ON_START === '1') void scheduledTick(); console.log(`Keywords operator scheduler enabled every ${intervalMinutes} minutes`); }
+
+const autopilotSchedulerCtx = { actor: 'system' as const, actorId: 'autopilot' };
+async function scheduledAutopilotTick() { const projectIds = await autopilotCommands.enabledProjects(); for (const projectId of projectIds) { try { await autopilotCommands.tick(autopilotSchedulerCtx, projectId); } catch (error) { console.error(`Autopilot tick failed for ${projectId}:`, error); } } }
+const autopilotIntervalMinutes = Math.max(1, Number(process.env.KEYWORDS_AUTOPILOT_INTERVAL_MINUTES ?? 5));
+if (process.env.KEYWORDS_AUTOPILOT_SCHEDULER !== '0') { setInterval(() => void scheduledAutopilotTick(), autopilotIntervalMinutes * 60_000).unref(); if (process.env.KEYWORDS_AUTOPILOT_RUN_ON_START !== '0') void scheduledAutopilotTick(); console.log(`Keywords autopilot scheduler enabled every ${autopilotIntervalMinutes} minutes`); }
 
 const port = Number(process.env.KEYWORDS_API_PORT ?? 8787);
 serve({ fetch: app.fetch, port, hostname: host });
