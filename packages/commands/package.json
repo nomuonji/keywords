@@ -24,6 +24,7 @@
     "./autonomy": "./src/autonomy.ts",
     "./autopilot": "./src/autopilot.ts",
     "./headless": "./src/headless.ts",
+    "./revision": "./src/revision.ts",
     "./workspace": "./src/workspace.ts",
     "./discovery": "./src/discovery.ts",
     "./maintenance": "./src/maintenance.ts",
