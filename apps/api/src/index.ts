@@ -85,6 +85,8 @@ app.get('/operations/projects/:projectId/measurements/context', async c => c.jso
 app.post('/operations/projects/:projectId/measurements/capture', async c => c.json(await metricsCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/operations/projects/:projectId/site/sync', async c => c.json(await siteCommands.syncSitemap(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
 
+app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
+app.post('/autopilot/portfolio/configure', async c => c.json(await autopilotCommands.configurePortfolio(ctx(c), await body(c))));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/autopilot/configure', async c => c.json(await autopilotCommands.configure(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
 app.post('/projects/:projectId/autopilot/tick', async c => c.json(await autopilotCommands.tick(ctx(c), c.req.param('projectId'))));

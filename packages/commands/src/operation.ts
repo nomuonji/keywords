@@ -340,7 +340,7 @@ export const operationCommands = {
     const t = now(); const expires = leaseUntil(input.leaseSeconds); const existing = one('SELECT * FROM operation_executors WHERE id=?', executorId);
     const generation = Number(existing?.generation ?? 0) + 1;
     run(`INSERT INTO operation_executors(id,kind,status,capabilities_json,current_operation_id,current_project_id,generation,last_seen_at,lease_expires_at,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='online',capabilities_json=excluded.capabilities_json,generation=excluded.generation,last_seen_at=excluded.last_seen_at,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at`,
+      VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status='online',capabilities_json=excluded.capabilities_json,current_operation_id=NULL,current_project_id=NULL,generation=excluded.generation,last_seen_at=excluded.last_seen_at,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at`,
       executorId, 'agent', 'online', JSON.stringify(input.capabilities ?? []), null, null, generation, t, expires, existing?.created_at ?? t, t);
     return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId));
   },
@@ -348,7 +348,7 @@ export const operationCommands = {
     if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Executor heartbeat requires an agent or system actor');
     const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required');
     const t = now(); const expires = leaseUntil(input.leaseSeconds);
-    const result = run("UPDATE operation_executors SET status='online',last_seen_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND generation=?", t, expires, t, executorId, input.generation);
+    const result = run("UPDATE operation_executors SET status=CASE WHEN current_operation_id IS NOT NULL THEN 'busy' ELSE 'online' END,last_seen_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND generation=?", t, expires, t, executorId, input.generation);
     if (!result.changes) throw new Error('Executor generation changed; register again before continuing');
     return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId));
   },

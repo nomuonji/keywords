@@ -37,7 +37,10 @@ async function closeFromWorkState(claim: any, opCtx: any) {
   const project = current.projects?.find((item: any) => item.projectId === claim.projectId);
   const workStatus = project?.work?.status;
   if (workStatus === 'blocked' || workStatus === 'awaiting_review') {
-    await operationCommands.checkpoint(opCtx, {
+    // A blocked/awaiting-review session rejects further session-scoped writes.
+    // The parent operation still needs its state synchronized, so checkpoint
+    // it through the executor context without the paused session id.
+    await operationCommands.checkpoint({ ...opCtx, workSessionId: undefined }, {
       operationId: claim.operationId,
       projectId: claim.projectId,
       state: workStatus,
@@ -46,7 +49,10 @@ async function closeFromWorkState(claim: any, opCtx: any) {
     });
     return;
   }
-  await operationCommands.complete(opCtx, { operationId: claim.operationId, summary: 'Persistent execution agent finished the assigned autonomous operation.' });
+  // The agent may have completed its work session itself. Completion of the
+  // parent operation is still a control-plane action and must not inherit a
+  // completed session id, because completed sessions intentionally reject writes.
+  await operationCommands.complete({ ...opCtx, workSessionId: undefined }, { operationId: claim.operationId, summary: 'Persistent execution agent finished the assigned autonomous operation.' });
 }
 
 async function runAgent(claim: any, generation: number) {

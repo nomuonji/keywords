@@ -40,8 +40,30 @@ function pipeline(projectId:string){const scalar=(sql:string,...args:any[])=>Num
 function pendingAuthorizedHandoff(projectId:string){for(const row of rows("SELECT id,page_id,status,payload_json,created_at FROM blog_handoffs WHERE project_id=? AND status IN ('exported','accepted','local_verified') ORDER BY created_at",projectId)){const payload=parse<Record<string,unknown>>(row.payload_json,{});if(payload.publication_authorized===true)return{...row,payload};}return null;}
 function deliveryAttempts(projectId:string,handoffId:string){return Number(one("SELECT COUNT(*) AS n FROM operation_requests WHERE request_key LIKE ?",`autopilot:${projectId}:delivery:${handoffId}:%`)?.n??0);}
 
+function portfolioStatus(){
+ const scalar=(sql:string,...args:any[])=>Number(one(sql,...args)?.n??0);
+ const projects=rows('SELECT id,name,domain,mode FROM projects ORDER BY name').map(project=>{
+  const control=autonomyControl(project.id), current=state(project.id);
+  const active=one("SELECT o.id,o.status,o.objective,o.constraints_json,o.updated_at,op.work_session_id,op.blocker,ws.summary AS work_summary,ws.last_next_action,t.title AS task_title FROM operation_requests o JOIN operation_projects op ON op.operation_id=o.id LEFT JOIN work_sessions ws ON ws.id=op.work_session_id LEFT JOIN tasks t ON t.id=op.task_id WHERE op.project_id=? AND o.status IN ('active','awaiting_review','blocked') ORDER BY o.updated_at DESC LIMIT 1",project.id);
+  const executor=active?one("SELECT id,status,current_operation_id,last_seen_at FROM operation_executors WHERE current_operation_id=? AND current_project_id=? ORDER BY last_seen_at DESC LIMIT 1",active.id,project.id):null;
+  const executorConnected=Boolean(executor&&Date.now()-Date.parse(executor.last_seen_at)<600000);
+  const reportedStage=active?.status==='blocked'?'blocked':active?.status==='awaiting_review'?'decision_wait':current.stage==='executing'&&active&&!executorConnected?'queued_for_agent':!active&&current.stage==='executing'?'idle':current.stage;
+  const lastEvent=one('SELECT kind,severity,created_at FROM operation_events WHERE project_id=? ORDER BY created_at DESC LIMIT 1',project.id);
+  const operationConstraints=active?parse<Record<string,unknown>>(active.constraints_json,{}):{};
+  return {id:project.id,name:project.name,domain:project.domain,mode:project.mode,control:{enabled:control.enabled,autoApprove:control.autoApprove,autoPublish:control.autoPublish,cadenceMinutes:control.cadenceMinutes},state:{status:current.status,stage:reportedStage,summary:current.summary,lastTickAt:current.lastTickAt,nextTickAt:current.nextTickAt,lastError:current.lastError},activeOperation:active?{id:active.id,status:active.status,objective:active.objective,operatorKind:typeof operationConstraints.operatorKind==='string'?operationConstraints.operatorKind:null,taskTitle:active.task_title||null,workSummary:active.work_summary||null,blocker:active.blocker||null,nextAction:active.last_next_action||null,updatedAt:active.updated_at}:null,executor:executor?{id:executor.id,status:executor.status,connected:executorConnected,lastSeenAt:executor.last_seen_at}:null,openReviews:scalar("SELECT COUNT(*) AS n FROM review_requests WHERE project_id=? AND status='open'",project.id),qualityQueue:scalar("SELECT COUNT(*) AS n FROM pages p JOIN blog_briefs b ON b.page_id=p.id WHERE p.project_id=? AND p.source='workspace' AND p.status='proposed'",project.id),lastEvent:lastEvent?{kind:lastEvent.kind,severity:lastEvent.severity,createdAt:lastEvent.created_at}:null};
+ });
+ return {generatedAt:now(),scheduler:{enabled:process.env.KEYWORDS_AUTOPILOT_SCHEDULER!=='0',intervalMinutes:Math.max(1,Number(process.env.KEYWORDS_AUTOPILOT_INTERVAL_MINUTES??5)),runOnStart:process.env.KEYWORDS_AUTOPILOT_RUN_ON_START!=='0'},totals:{projects:projects.length,enabled:projects.filter(p=>p.control.enabled).length,running:projects.filter(p=>p.state.status==='running').length,executing:projects.filter(p=>p.activeOperation?.status==='active'&&p.executor?.connected).length,queued:projects.filter(p=>p.activeOperation?.status==='active'&&!p.executor?.connected).length,attention:projects.filter(p=>['attention','blocked','error'].includes(p.state.status)||p.activeOperation?.status==='awaiting_review').length,activeOperations:projects.filter(p=>p.activeOperation).length,connectedAgents:projects.filter(p=>p.executor?.connected).length},projects};
+}
+
+function configurePortfolio(ctx:CommandContext,input:{enabled:boolean}){
+ if(ctx.actor!=='human')throw new Error('Portfolio Autopilot configuration requires an authenticated human actor');
+ const projects=rows('SELECT id FROM projects');
+ for(const project of projects)configureAutonomy(ctx,{projectId:project.id,enabled:Boolean(input.enabled)});
+ return {enabled:Boolean(input.enabled),changedProjects:projects.length};
+}
+
 export const autopilotCommands={
- configure:async(ctx:CommandContext,input:Parameters<typeof configureAutonomy>[1])=>configureAutonomy(ctx,input), enabledProjects:async()=>autonomyStatusRows(),
+ configure:async(ctx:CommandContext,input:Parameters<typeof configureAutonomy>[1])=>configureAutonomy(ctx,input), configurePortfolio:async(ctx:CommandContext,input:{enabled:boolean})=>configurePortfolio(ctx,input), portfolio:async()=>portfolioStatus(), enabledProjects:async()=>autonomyStatusRows(),
  status:async(_ctx:CommandContext,projectId:string)=>{
   const project=one('SELECT id,name,domain,mode FROM projects WHERE id=?',projectId);if(!project)throw new Error('Project not found');const control=autonomyControl(projectId),opControl=operationControl(projectId);
   const active=one("SELECT o.id FROM operation_requests o JOIN operation_projects op ON op.operation_id=o.id WHERE op.project_id=? AND o.status IN ('active','awaiting_review','blocked') ORDER BY o.updated_at DESC LIMIT 1",projectId);

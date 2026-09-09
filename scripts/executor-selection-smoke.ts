@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.KEYWORDS_DB_PATH = join(mkdtempSync(join(tmpdir(), 'keywords-executor-')), 'test.sqlite');
+const { commands } = await import('@keywords/commands');
+const { configureAutonomy } = await import('@keywords/commands/autonomy');
+const { operationCommands } = await import('@keywords/commands/operation');
+const { executorCommands } = await import('@keywords/commands/executor');
+const { getDatabase } = await import('@keywords/db');
+const human = { actor: 'human' as const, actorId: 'fixture' };
+const agent = { actor: 'agent' as const, actorId: 'fixture-worker' };
+const off = await commands.project.create(human, { name: 'Disabled first' });
+await operationCommands.start(human, { requestText: 'Disabled work', projectIds: [off.id] });
+const paused = await commands.project.create(human, { name: 'Blocked session' });
+await configureAutonomy(human, { projectId: paused.id, enabled: true });
+const pausedOp = await operationCommands.start(human, { requestText: 'Paused work', projectIds: [paused.id] });
+// Model interruption between child checkpoint and parent reconciliation.
+getDatabase().sqlite.prepare("UPDATE work_sessions SET status='blocked' WHERE id=?").run(pausedOp.children![0].workSessionId);
+const ready = await commands.project.create(human, { name: 'Runnable third' });
+await configureAutonomy(human, { projectId: ready.id, enabled: true });
+await operationCommands.start(human, { requestText: 'Ready work', projectIds: [ready.id] });
+const registration = await operationCommands.executorRegister(agent, { executorId: agent.actorId });
+const claim = await executorCommands.claimNext(agent, { generation: registration.generation });
+assert.equal((claim as any).projectId, ready.id);
+assert.equal((await executorCommands.claimNext(agent, { generation: registration.generation, projectId: off.id })).claimed, false);
+assert.equal((await executorCommands.claimNext(agent, { generation: registration.generation, projectId: paused.id })).claimed, false);
+getDatabase().sqlite.close();
+console.log('PASS: disabled candidate and blocked child do not prevent eligible work');

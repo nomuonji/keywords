@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const dbPath = process.env.KEYWORDS_DB_PATH ?? '/tmp/keywords-autopilot-smoke.sqlite';
-rmSync(dbPath, { force: true });
+process.env.KEYWORDS_DB_PATH = join(mkdtempSync(join(tmpdir(), 'keywords-autopilot-')), 'test.sqlite');
 
 const { getDatabase, schema } = await import('@keywords/db');
 const { commands } = await import('@keywords/commands');

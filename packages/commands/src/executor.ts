@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
-import { assertOperationAllowed } from './guard.js';
+import { activeDelegation, assertOperationAllowed } from './guard.js';
+import { autonomyAllows } from './autonomy.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -14,17 +15,18 @@ const leaseUntil = (seconds?: number) => new Date(Date.now() + Math.max(60, Math
 function executor(id: string) { return one('SELECT * FROM operation_executors WHERE id=?', id); }
 function view(row: any) { return row ? { id: row.id, status: row.status, capabilities: JSON.parse(row.capabilities_json || '[]'), generation: Number(row.generation), currentOperationId: row.current_operation_id, currentProjectId: row.current_project_id, lastSeenAt: row.last_seen_at, leaseExpiresAt: row.lease_expires_at } : null; }
 
-function candidate(projectId?: string) {
+function candidate(ctx: CommandContext, projectId?: string) {
   const params: any[] = [now(), now()];
   let projectFilter = '';
   if (projectId) { projectFilter = ' AND op.project_id=?'; params.push(projectId); }
-  return one(`SELECT op.*,o.objective,o.created_at AS operation_created_at,o.status AS operation_status,t.priority AS task_priority
+  return rows(`SELECT op.*,o.objective,o.created_at AS operation_created_at,o.status AS operation_status,t.priority AS task_priority
     FROM operation_projects op
     JOIN operation_requests o ON o.id=op.operation_id
     LEFT JOIN tasks t ON t.id=op.task_id
     LEFT JOIN operation_controls c ON c.project_id=op.project_id
     WHERE o.status='active' AND op.status IN ('queued','running')
       AND COALESCE(c.paused,0)=0
+      AND (op.work_session_id IS NULL OR EXISTS (SELECT 1 FROM work_sessions ws WHERE ws.id=op.work_session_id AND ws.status='running'))
       AND NOT EXISTS (SELECT 1 FROM review_requests rr WHERE rr.project_id=op.project_id AND rr.status='open')
       AND NOT EXISTS (
         SELECT 1 FROM operation_executors e
@@ -36,7 +38,8 @@ function candidate(projectId?: string) {
         WHERE dj.project_id=op.project_id AND dj.status='running' AND dj.lease_expires_at>?
       )
       ${projectFilter}
-    ORDER BY COALESCE(t.priority,50) DESC,o.created_at ASC LIMIT 1`, ...params);
+    ORDER BY COALESCE(t.priority,50) DESC,o.created_at ASC`, ...params).find(item =>
+      ctx.actor === 'system' || autonomyAllows(item.project_id, 'operation.start') || activeDelegation(item.project_id, 'operation.start'));
 }
 
 export const executorCommands = {
@@ -45,7 +48,7 @@ export const executorCommands = {
     const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required');
     const row = executor(executorId); required(row, 'Register executor before claiming work');
     if (Number(row.generation) !== Number(input.generation)) throw new Error('Executor generation changed; re-register before claiming');
-    const item = candidate(input.projectId); if (!item) return { claimed: false, executor: view(row), reason: 'no_eligible_operation' };
+    const item = candidate(ctx, input.projectId); if (!item) return { claimed: false, executor: view(row), reason: 'no_eligible_operation' };
     assertOperationAllowed(ctx, { projectId: item.project_id, command: 'operation.executor_claim', capability: 'operation.start' });
     const expires = leaseUntil(input.leaseSeconds); const t = now();
     const result = sqlite.transaction(() => {
