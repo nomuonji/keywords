@@ -1,548 +1,317 @@
-# Keywordsを日々の運用に使うための改善書
+# Keywordsを日々の運用に使うための改善書 — 実装完了記録
 
-作成日: 2026-09-09
-状態: **提案・未実装**
-対象: `D:\youph\Blog\keywords`、analytics-dashboard、Blog連携
-関連文書: [Blog群の公開・デプロイ体制の改善提案](../../BLOG_PUBLISHING_OPERATIONS_PROPOSAL.md)
+作成日: 2026-09-09  
+最終更新: 2026-09-09  
+状態: **実装済み**
 
-この文書は、ユーザーがほとんどフォームを操作せず、主にエージェントとの会話で運用することを前提にした次期改善案である。今回は現状調査と文書作成だけを行った。実装、データ同期、調査ジョブ作成、スケジュール登録、公開設定の変更は行っていない。
+対象: Keywords / analytics-dashboard連携 / Blog連携 / Agent実行基盤
 
-既存の [product-improvement-proposal.md](product-improvement-proposal.md) は前回の実装完了記録として残す。本書はその機能を作り直す提案ではなく、実運用で仕事が進むように、入口・権限・実行・観測・表示をつなぎ直す提案である。
+詳細な現在状態:
 
-## 1. 推奨方針
+- [Agent-driven Operations Implementation Status](agent-driven-operations-implementation-status.md)
+- [記事制作を中心にした自律実行監査](core-autonomy-audit.md)
+- [ヘッドレス記事生成 改善仕様](headless-generation-improvement.md)
 
-**Keywordsを「SEOの各機能を操作する画面」から、「エージェントに任せた仕事と、その根拠・判断・成果が集まる場所」へ変える。**
+## 1. 結論
 
-ユーザーの主な操作は、普段のCodexの会話で目的を伝えること、必要な判断に答えること、結果を確認することとする。Keywords内に新しいチャット製品を丸ごと作る必要はない。まず既存の会話とMCPを入口にし、Webを確認・比較・決裁の画面にする。
+この文書で提案した「ユーザーがSEO工程のフォームを順番に操作する」のではなく、自然文の依頼を共有Operationへ変換し、Agentが調査・計画・実行・検証・再開を進め、Webは確認と例外判断を中心にする構成は実装した。
 
-最優先は次の4点。
+さらに実装過程で、自律記事生成を本当に成立させるためのH1〜H8を追加実装した。
 
-1. 自然文の依頼を、対象・予算・許可範囲付きの共有作業へ変換し、実際にエージェントへ渡す。
-2. サイト・計測・承認の整合性を直し、自動化しても別サイトの数値や古い許可で進まないようにする。
-3. トップ画面を「判断してほしいこと」「進行中の仕事」「確認できた結果」に絞る。
-4. 1サイトの既存ページ改善を、調査から公開後の観測まで通して運用し、そこで詰まった箇所から改善する。
-
-記事数やツール呼び出し数が増えることは、本提案の成功条件にしない。ユーザーの手作業が減り、妥当な改善が実行され、その結果を次の判断に使えることを評価する。
-
-## 2. 現状の確認結果
-
-### 2.1 調査の範囲と限界
-
-ローカルコード、設定、既存文書、SQLiteを読み取りで確認した。外部の計測APIを再取得したり、クラウド管理画面で契約・権限・常駐状態を確認したりはしていない。以下の件数は調査時点のローカルDBに限る。別環境や過去のファイルに活動記録が存在しない、という意味ではない。
-
-| 項目 | 確認結果 | 運用上の意味 |
-|---|---|---|
-| プロジェクト / Blog binding | 19 / 19 | 接続の入口はできている |
-| pages | 5,438件、すべて `local` | ローカル内容は見えるが、この状態だけでは公開・index済みと判断できない |
-| keywords / sources | 0 / 0 | 本DBには需要・調査の根拠がまだ蓄積していない |
-| tasks / work_sessions / discovery_jobs | いずれも0 | 作業を継続する仕組みはあるが、実運用の仕事がまだ載っていない |
-| review_requests / policy_rules | いずれも0 | 人の判断と運用ルールの学習は、これから実証する段階 |
-| query / page metric snapshots | いずれも0 | Keywords内の履歴比較は、まだ実データで回っていない |
-| Blog brief / handoff / receipt / query×page capture | いずれも0 | 連携コードの存在と、日常運用の成立を分けて評価する必要がある |
-| dashboardのローカル保存データ | 16サイト、2026-09-04取得 | 一覧には使えるが、最新の判断材料とは限らない |
-
-ここから得られる判断は「さらに機能を大量追加する」ではない。まず、接続されたサイトを対象に仕事を開始し、調査・判断・結果が共有DBに残る状態を作ることが先である。
-
-### 2.2 すでにあるものは活かす
-
-- Web / API / CLI / MCPを共通commandsへ接続する構成。
-- 調査job、候補と証拠、lease・heartbeat・再開・予算。
-- work session、review request、decision、policy。
-- GSC履歴、実URLとの照合、既存ページと新規企画の共通モデル。
-- Blogの版付きhandoff、receipt、品質検証、公開後のquery×page評価。
-- analytics-dashboardとKeywordsの横断一覧。
-
-これらを新しい「Agent専用DB」「別のタスク管理サービス」「別の企画管理画面」に複製しない。
-
-### 2.3 分かりづらさ・運用上の詰まり
-
-| ID | 現状の具体例 | 改善が必要な理由 |
-|---|---|---|
-| F01 | プロジェクト作成、探索、企画、計測、設定が別々の入力画面 | ユーザーがSEO工程と内部モデルを理解しないと進めにくい |
-| F02 | サイトのホームは「新しいキーワードを探す」が主な入口 | 計測不足や既存改善が先のサイトでも、新規探索へ誘導する |
-| F03 | `discovery.start` はhumanのみ許可 | エージェントが必要性を判断しても、正規の経路では探索を開始できない |
-| F04 | Operatorは次の仕事を選び、taskを作るところまで | taskが作られても、実行担当が接続・取得しなければ仕事は進まない |
-| F05 | API内のタイマーがSchedulerを兼ねる | API停止中は進まず、常時運用の保証や停止理由が見えにくい |
-| F06 | サイト現状JSONの選択、handoffのダウンロードをWebに表示 | 日常の搬送作業までユーザーの仕事になっている |
-| F07 | Briefの証拠をIDで表示し、原典の確認は別画面へ案内 | 判断に必要な内容をユーザーが探し直す必要がある |
-| F08 | 全サイト一覧は集計と作業件数が中心 | 「今どれを進めるとよいか」「任せた仕事の結果」が十分に分からない |
-| F09 | dashboardのクラウド更新先はBlob、Keywordsの参照先はローカルJSON | クラウド側で更新しても、ローカルKeywordsの鮮度は自動では上がらない |
-| F10 | 通常の`metrics.capture`ではsiteUrlを指定するが、取得呼び出しにhost条件を渡していない | 複数サブドメインを持つdomain propertyでは、対象外サイトを混ぜる可能性がある。現在の空DBで混入を確認したわけではない |
-| F11 | `metrics.ts`と`operator.ts`で比較期間の選び方が別実装 | 履歴画面と「次にやること」の理由が食い違う可能性がある |
-| F12 | APIのactorはヘッダー由来で、未指定時human。CORSは広く許可 | 人とAgentを分ける内部ルールを、そのまま外部接続時の認証・認可には使えない |
-| F13 | 予算・pauseの検査がMCP、discovery、Blogなどに分散 | 新しい入口や再接続で制限が同じように効くか、共通の検証が必要 |
-| F14 | 実装完了の文書がある一方、運用DBの活動履歴は空 | 「機能の完成」と「仕事を任せて成果を検証できる状態」を分ける必要がある |
-
-F10〜F13は、自律性を増す前に扱う。見た目だけを簡単にすると、分かりにくい内部動作が見えなくなるだけになりかねない。
-
-## 3. ユーザーが使うときの完成像
-
-### 3.1 通常の依頼
-
-ユーザーはCodexで、例えば次のように伝える。
-
-> Blog群を見て、今週いちばん改善する価値がある既存ページを選んで進めて。新規記事は増やさず、公開前に見せて。
-
-エージェントはサイト一覧・既存ルール・前回の仕事・計測状態を読み、許可された範囲で開始する。サイトID、GSC property、言語、既存ページのURL、各種予算をユーザーに再入力させない。
-
-最初の返答は、採用した前提と実行範囲を短く示す。
-
-> 計測できるサイトから既存改善を1件選びます。古い計測を更新し、比較できなければ計測整備まで進めます。公開前に、変更理由とプレビューを返します。
-
-この返答は、すでに許可された作業を始めるための説明である。毎回「この計画でよいですか」と止めない。未知の有料契約、対象の同定不能、許可されていない公開など、進行に不可欠な未解決事項だけを確認する。
-
-### 3.2 状況確認
-
-> あの改稿どうなった？
-
-返答とWebの作業詳細が同じ仕事を指し、次の項目が一致する。
-
-- 何を改善する仕事か。
-- 何が済み、何を実行中か。
-- 実行担当が接続しているか。
-- 誰の何を待っているか。
-- ユーザーが今行う必要のあること。
-- 次に報告する条件。
-
-「taskはtodoだがjobはrunning」「Agent未接続なのに進行中」などを、ユーザー自身に読み解かせない。
-
-### 3.3 判断の依頼
-
-> このページに比較表と実測条件を追加する案です。既存内容との違い、原典、プレビューをまとめました。新しいURLは増えません。この版で進めるか、比較対象を変えるかを選べます。
-
-同じ判断画面に、提案・根拠・変更範囲・不確実性・選択肢を揃える。内部IDの転記や理由文の必須入力を標準にしない。修正の指示は自然文で受け取り、同じ仕事へ戻す。
-
-### 3.4 結果の報告
-
-> 変更は公開確認済みです。比較対象の28日間がまだ揃わないため、検索効果は未判定です。次の観測は○日です。今のところ追加の操作は不要です。
-
-「書いた」「ビルドできた」「公開された」「改善した」を混同しない。未判定も有効な結果として記録する。
-
-## 4. 役割の分担
-
-| 役割 | 担うこと | 日常操作の例 |
-|---|---|---|
-| ユーザー | 目的、例外判断、予算拡大、必要な承認 | 「既存記事を優先」「この案で」「今回は保留」 |
-| 対話エージェント | 意図の解釈、既存状態の確認、作業への変換、説明 | 自然文の依頼を対象・終了条件付きにする |
-| 実行エージェント | 調査、編集案、許可範囲のローカル変更、検証 | leaseを取得し、証拠とチェックポイントを残す |
-| Keywords | 共有状態、方針、企画、判断、予算、結果、次の仕事 | commandsを通じて全入口が同じ状態を扱う |
-| Blog | 記事と生成元、品質検証、ビルド | 既存profile・remediation・batch-verifyに従う |
-| 公開実行系 | 対象版の公開と配信確認、復旧 | 別紙で提案。Keywordsが直接万能shellを持たない |
-| Web画面 | 仕事の可視化、根拠の比較、決裁、結果の確認 | Agentが用意したものを見る |
-
-対話エージェントと実行エージェントは、初期段階では同じCodexの実行でもよい。役割を分けるためだけに、多数のAgentや外部サービスを増やさない。
-
-## 5. 情報設計を仕事中心に変える
-
-### 5.1 主な画面は4つ
-
-| 画面 | 最初に答える質問 | 主な内容 |
-|---|---|---|
-| 今日の運用 | 今、私が判断することはあるか | 判断待ち、進行中、重要な変化、次の推奨 |
-| 仕事 | 何を任せて、どこまで進んだか | 依頼単位の状態、成果物、履歴、担当、再開 |
-| サイトと成果 | どのサイト・施策に時間を使うべきか | 比較可能な実績、改善履歴、観測待ち、計測不足 |
-| 運用設定 | どこまで任せているか | 方針、権限、予算、接続、停止条件 |
-
-キーワード一覧、クラスタ、企画一覧、raw metrics、runsは残す。通常導線の主役から「調査資料」「詳細」「診断」へ移す。詳しく確認したいときには、1〜2段階で到達できるようにする。
-
-### 5.2 今日の運用の構成案
+現在の通常フロー:
 
 ```text
-今日の運用                     実行担当: 接続中 / 最終応答 2分前
-
-判断してほしいこと  1件
-  比較表を追加する改稿案        変更プレビュー・根拠・選択肢
-
-進んでいる仕事  2件
-  Whisky JPの既存改善           原典確認中 / 次は改稿案
-  計測の更新                   16 / 19サイト確認、3サイトは設定確認待ち
-
-確認できた結果
-  前回の変更                   公開済み、効果は観測中
-
-次に進める候補
-  ○○の記事                     選んだ理由・必要な材料・実施条件
-
-すべてのサイト / 仕事の履歴 / 詳細な調査資料
+自然文の依頼
+  -> Operation / shared work session
+  -> executor claim / lease
+  -> research / evidence
+  -> page plan / brief
+  -> actual article file
+  -> independent validator
+  -> site build
+  -> verified artifact manifest
+  -> local complete
+  -> publication boundary
+  -> authorized Blog handoff (許可時のみ)
+  -> idempotent receipt
+  -> measurement / outcome
 ```
 
-この例の件数・対象は架空の表示例であり、現在の実績ではない。
+記事制作では、企画作成、Agent process exit 0、page approvalだけではOperationをcompleteできない。
 
-最上段にカードを大量に並べない。重要項目は各領域3件程度とし、残りは展開する。通知がない状態には「確認が必要なことはありません。○○を実行中」と書く。
+## 2. ユーザーが使うときの完成像
 
-### 5.3 フォームと専門用語を減らす
+通常はCodex/MCPから目的を伝える。
 
-| 現状の操作・表示 | 通常の利用での置き換え |
-|---|---|
-| プロジェクトを作成 | Agentが既存Blog台帳から対応案を提示。未接続だけ確認 |
-| seed、国、言語、上限、目的をフォーム入力 | 会話の目的＋既存サイト設定から補完。変更が必要な項目だけ確認 |
-| サイト現状ファイルを選択 | Agentがexportと検証を実行して同期。初回binding確認は別途維持 |
-| 承認済み企画をダウンロード | Agentが版を照合してBlogへ搬送。ファイルは証拠として残す |
-| keyword / cluster / brief / handoff | 検索語 / 記事のまとまり / 改善案 / Blogへの作業依頼 |
-| lease / executor / heartbeat | 実行担当 / 最終応答 / 再開が必要 |
-| Evidence ID一覧 | 原典名、取得日、主張との対応、該当箇所へのリンク |
-| raw run一覧 | 何を調べ、何を決め、何が変わったか |
-| 「完了」だけ | 調査完了 / 検証済み / 公開確認済み / 効果を確認済み |
+例:
 
-技術的な診断情報は削除せず、詳細表示へ移す。ボタン名と状態名の日本語を全画面で揃え、英語の内部状態をそのまま出さない。
+> 今週いちばん改善する価値があるページを選んで進めて。公開は設定済みの範囲だけ。
 
-### 5.4 画面品質の受け入れ条件
+Agent側が共有状態から対象、過去の作業、計測、方針、予算、既存artifactを読み、許可範囲内で開始する。
 
-- 10秒程度で「自分の判断が必要か」「仕事が動いているか」が分かる。
-- 仕事のURLを開き直しても、同じ案件・選択中の対象へ戻れる。
-- 更新中、取得失敗、データなし、古い成功データをそれぞれ表示する。
-- キーボード、フォーカス、ラベル、色以外の状態表現を確認する。
-- スマートフォンでは判断カードとプレビューの確認を優先し、大きな管理表を標準表示にしない。
-- 読み取り画面の再取得で、未送信の判断や修正指示が消えない。
-- 画面を開いているだけの操作を「最近の成果」に積み上げない。
+ユーザーが日常的に入力し直す必要がないもの:
 
-## 6. 会話から実行までをつなぐ
+- project ID
+- site ID
+- language / country
+- work session ID
+- handoff ID
+- executor ID
+- source ID
+- internal lease state
 
-### 6.1 「運用依頼」を既存の共有状態に結び付ける
+人の操作を残すもの:
 
-自然文を受け取ったら、エージェントは以下を整理する。ユーザーが全項目を入力する仕様にはしない。
+- 新しい方針の有効化
+- 明示pause
+- 許可外の公開・削除・大きなURL変更
+- revision/no-progress上限に達した例外判断
+- credentialや外部契約など、Agentだけでは解消できない境界
 
-| 項目 | 決め方 |
-|---|---|
-| 目的・終了条件 | 会話から抽出。「3記事」より「1件の改善と観測計画」など、目的に合わせる |
-| 対象サイト・ページ | 明示対象を優先。未指定なら計測・既存作業・制約から選ぶ |
-| 許可範囲 | 今回の明示指示＋有効な既存方針。公開や支出を暗黙に広げない |
-| 予算 | 保存済みの上限を利用。未設定なら小さな初期上限を提案し、許可範囲で開始 |
-| 採用した前提 | 取得可能データ、対象外サイト、未確定事項を短く記録 |
-| 対話との対応 | 依頼IDと会話参照。会話全文や秘密を無制限保存しない |
+## 3. 実装状態 K01〜K20
 
-単一サイトでは既存work sessionとtaskを利用する。複数サイトの依頼を束ねる親IDが必要なら、同じSQL内に最小限の親レコードと関連を追加する。別DBやJSONに第二の進行状態を持たせない。親の進捗は、子のwork session・Blog receiptから導出する。
-
-同じ依頼の再送、言い直し、続きの指示は、既存の未完了仕事を照合して扱う。「続けて」で新しい同内容のjobを作らない。
-
-### 6.2 Agent向け入口を仕事単位にまとめる
-
-次は新しいコマンド名の候補であり、現時点で呼び出せる仕様ではない。
-
-| 候補 | 目的 | 既存機能との関係 |
+| ID | 状態 | 実装結果 |
 |---|---|---|
-| `operation_context` | 対象、優先理由、既存作業、許可、鮮度、次の操作を小さく返す | portfolio / operator / work / policy / Blogの要約 |
-| `operation_start` | 許可範囲の依頼を既存仕事へ割り当てる | work_start / task / discoveryへ接続 |
-| `operation_resume` | 中断地点を照合して再開する | work_context / lease / receiptの照合 |
-| `operation_checkpoint` | 成果物と次の行動を記録する | 既存checkpointを拡張 |
-| `operation_result` | 実施内容・効果・未判定・次回条件を返す | work_completeと観測結果の投影 |
+| K01 | ✅ | actor、delegation、pause、budgetをshared commandsで検査。Agentのhuman偽装を正規経路にしない。 |
+| K02 | ✅ | GSC/measurementの対象origin、scope、期間、completenessを共通化。compatible periodだけ比較。 |
+| K03 | ✅ | 自然文依頼をOperationへ変換。request key/conversation refで再送を照合。 |
+| K04 | ✅ | Agentが委任/autonomy範囲内でdiscoveryを正規開始可能。 |
+| K05 | ✅ | executor register/heartbeat/generation/claim/lease/stale recovery。 |
+| K06 | ✅ | 既存改善をresearch→plan→Blog→outcomeまでOperationへ接続。 |
+| K07 | ✅ | Operations UIと記事成果物中心のArticles UI。 |
+| K08 | ✅ | review/decision/source/briefを同じworkへ関連付け。 |
+| K09 | ✅ | site/Blog bindingのorigin照合とsilent rebind拒否。 |
+| K10 | ✅ | measurement import/captureの共通契約。partial/failedをsuccessと分離。 |
+| K11 | ✅ | Operatorと表示で共通measurement比較を使用。 |
+| K12 | ✅ | versioned Blog handoff/receiptを自動搬送laneへ接続。 |
+| K13 | ✅ | hypothesis、implemented/published/evaluation、metrics、attribution、next actionをoutcomeへ保存。 |
+| K14 | ✅ | diagnostics/remote-readinessでDB/API/auth/executor/provider状態を確認。 |
+| K15 | ✅ | meaningful eventをdedupe保存。 |
+| K16 | ✅ | persistent executor runner。再起動後もSQL/lease/artifactから再開。 |
+| K17 | ✅ | candidate triageを独立delegation capability化。 |
+| K18 | ✅ | improved/regressed/inconclusive/unmeasurableを実測と保存。 |
+| K19 | ✅ | API/MCP/CLI/UIを共有commands/Operationへ接続。 |
+| K20 | ✅ | remote host移行前のreadiness boundaryを実装。 |
 
-高水準コマンドが一つの巨大なLLM処理になる設計は避ける。各段階は既存commandsへ分解し、再試行・中断・検証ができるようにする。低水準ツールは調査や例外対応用として残す。
+## 4. Headless article generation H1〜H8
 
-contextには、要約・関連ID・根拠参照・不足情報・推奨操作を返す。5,438ページや全runを毎回渡さない。期間・ページ・更新差分で追加取得する。
+K01〜K20だけでは「Agentが仕事を動かせる」までで、実記事成果物の完成保証が弱かったため追加した。
 
-### 6.3 探索開始のhuman制限を正規に設計変更する
-
-現在のhuman専用`discovery.start`を、Agentがhumanを名乗ることで解決してはいけない。次期仕様では、ユーザーが許可した運用依頼や有効な委任方針をcommandsが確認し、その範囲でAgent開始を許可する。
-
-同様に、候補の仕分けを毎件ユーザーに要求しない案を設計する。明確な重複、方針で除外済みの語、資料の有無による保留などは、承認済みの方針の範囲で処理できるようにする。方針自体の新規有効化は人の判断を残す。
-
-最初の実装では、企画承認と公開承認の既存境界を維持する。会話での承認を使うなら、人の回答元を認証した決裁経路が必要である。Agentが任意に`actor=human`を指定する実装では代替できない。
-
-## 7. 実行担当が本当に動く仕組み
-
-### 7.1 初期は既存Codex、常時実行は後から
-
-| 段階 | 方式 | 利点 / 条件 |
+| ID | 状態 | 実装結果 |
 |---|---|---|
-| 最初 | 会話中のCodexがMCPから仕事を取得・実行 | 新しい常駐基盤を作らず、仕事の流れを実証できる |
-| 次 | 既存の実行環境に接続するローカル常駐executor | PC稼働中の定期運用。プロセス監視・再接続・資格情報の扱いが必要 |
-| 必要になった段階 | 常時稼働ホストへexecutor/APIを移す | PC停止中も必要な場合。永続DB・認証・バックアップ・費用の設計が前提 |
+| H1 | ✅ | scheduler single owner。workerを既定ownerにし、manual/API tickも同じSQL lease。 |
+| H2 | ✅ | executor health/cooldown。provider/runtime共通障害をsite blockerと分離。 |
+| H3 | ✅ | article artifact manifestとOperation completion guard。 |
+| H4 | ✅ | Blog working treeへのatomic draft writer。 |
+| H5 | ✅ | sourceと本文を使うindependent validator + site build。 |
+| H6 | ✅ | revision state machine、resume allowlist、no-progress/human boundary。 |
+| H7 | ✅ | verified local artifact後だけauthorized Blog handoff可能。receiptは冪等。 |
+| H8 | ✅ | 完成記事・制作中・要判断・executor状態を主画面に表示。 |
 
-定期的にtaskを作るだけでは自動運用にならない。実行担当の登録、接続状態、claim、lease、heartbeat、終了・中断の記録を一続きにする。
+## 5. Schedulerと実行担当
 
-### 7.2 実行の条件
+標準設定:
 
-- 最初は同時に1件の編集作業から始める。サイトやファイルが重なる仕事は直列化する。
-- 読み取り調査を並列化する場合も、共有APIの上限を一つの予算として予約する。
-- ブラウザを閉じることと、仕事を止めることを分ける。
-- 対象のGit作業ツリーに無関係の変更がある場合は、別worktreeや対象差分の固定で保護する。
-- lease期限切れだけで、旧executorが終了したと決めつけない。書き込み時に所有者と世代を再確認する。
-- 外部公開や課金操作は再送で重複する可能性を前提に、結果照合から再開する。
-- 復帰時は保存された仕事を確認し、同じフェーズを最初からやり直さない。
-
-### 7.3 通知
-
-通知するのは、判断が必要、作業完了、重大な失敗、観測上の意味のある変化のとき。状態が変わらない定期報告は標準では送らない。軽微な再試行や通常のログは仕事の履歴へ保存する。
-
-「実行担当未接続」「API停止」「次回実行待ち」「計測待ち」は別表示にする。任意の完了予定時刻を生成せず、分かる範囲の次回確認条件を示す。
-
-## 8. 許可・予算・停止を共通commandsへ集める
-
-### 8.1 委任の範囲
-
-| 操作 | 推奨する扱い |
-|---|---|
-| 既存状態の閲覧、根拠の整理 | 通常の運用依頼の範囲で実行 |
-| 外部調査・計測取得 | 保存された対象と予算内で実行。追加費用が不明なら確認 |
-| 候補整理、調査メモ、改稿案 | 有効な方針と依頼範囲で実行 |
-| 許可されたローカル編集・ビルド | 依頼範囲内で実行。既存Blog品質ゲートを通す |
-| 新しい運用方針の有効化、予算拡大 | 人の判断 |
-| 記事削除・URL移動・大きな内容統合 | 具体的な対象と影響を提示して判断 |
-| push・本番公開・DNS変更 | 別紙の公開権限と対象版の承認に従う |
-
-### 8.2 実装上の必要事項
-
-認証された本人情報からactorと権限を決める。HTTPの任意ヘッダーやAgentの自己申告を認証の代わりにしない。ローカル利用でも、接続先・Origin・呼び出し元を制限する設計を確認する。
-
-予算・pause・所属project・所有者・対象版の検査はcommands側の共通経路で行う。UI・CLI・MCPで同じ契約テストを通し、一つの入口だけで止まる設計にしない。
-
-予算は少なくとも、外部リクエスト、候補書き込み、実行時間、分かる範囲の費用に分ける。画面の閲覧を調査予算に数えるかなど、現状の分散した数え方を統一する。上限は外部通信前に予約し、並行実行でも超過しないようにする。
-
-承認待ちは対象の仕事を止める。関連しないサイトの読み取りまで一律停止する必要はないが、依存関係を持つ次工程は開始させない。承認の対象版・有効期限・取り消しを明示し、版が変わったら再照合する。
-
-## 9. 計測を一つの契約に揃える
-
-### 9.1 「同じデータを見る」ための契約
-
-1観測に、provider、property、対象origin、フィルター、日付範囲、タイムゾーン、search type、dimension、取得時刻、対象データの終端、完全性、エラー状態を付ける。
-
-- GSCのquery、page、query×pageを別粒度として保存する。
-- GA4の全セッションと自然検索セッション、コンバージョンを混ぜない。
-- CTRの比率と百分率を明示する。
-- 0、未計測、取得失敗、小標本、古い成功値を区別する。
-- 同一host・property・条件・同じ日数・非重複期間が揃うものだけを通常比較する。
-- 途中まで取得したデータや匿名化による欠損を完全な母集団と扱わない。
-
-通常の`metrics.capture`、Blogのquery×page、Operator、一覧が同じ比較判定を使う。共通のdomain propertyに複数サイトがある場合、query単独の取得にも対象ページ範囲を指定し、他hostの語が入らないことをfixtureで検証する。
-
-### 9.2 dashboardは残し、更新経路を共通化する
-
-推奨順序は次の通り。
-
-1. まず、既存collectorの出力を「取得条件・状態付きの観測」として受け取る共有import経路を設計する。
-2. ローカルとクラウドのどちらのcollectorが各観測を担当するかを決め、同一期間の二重取得を抑える。
-3. Keywordsは受領した観測の要約を表示し、analytics-dashboardも同じ観測版を参照する。
-4. 将来の保存先は、ローカルなら既存SQLと版付きexport、遠隔運用なら認証付きの観測取得経路とする。
-
-クラウドBlobを読む案でも、最新データに見えるfallbackを無言で使わない。保存元と取得時点を表示する。公開URLに秘密や詳細な内部作業を載せない。現時点のローカルJSON読み取りを、クラウド更新の自動同期と表現しない。
-
-GSCが成功しGA4が失敗したときは、GSCの成功を保持し、GA4だけを再試行する。失敗した今回値で前回の有効値を消さず、画面では「前回成功値」と明示する。
-
-### 9.3 機会を選ぶ前の整備
-
-19サイトを一律に毎日重く取得しない。APIで読めるサイト、計測未設定、ローカル内容しかないサイトを分類する。更新頻度は必要性で変える。
-
-最初は少数サイトで、比較可能な2期間と、実際に公開されているページの対応を確立する。5438件を一括で「公開済み」に変更して空白を埋めることはしない。
-
-## 10. 「何をすべきか」の精度を上げる
-
-### 10.1 優先する仕事の種類を増やす
-
-検索語探索だけでなく、計測不備、canonicalや内部リンク、既存ページの不足回答、タイトルと検索意図の不一致、情報更新、重複統合の提案、公開後観測も候補にする。
-
-候補を比較するときは、以下を個別に示す。
-
-- 何が困っているのか、どの観測に基づくか。
-- 読者とサイトにどの価値があるか。
-- 既存ページで対応できるか。
-- 必要な一次材料が入手できるか。
-- 想定作業量、保守負担、取り消しやすさ。
-- 計測できるか、結果が出るまで何を待つか。
-- 他の候補を今選ばなかった理由。
-
-不透明な総合点ひとつで順位を決めない。推奨の根拠と、判断を変える条件が分かることを優先する。
-
-### 10.2 初期の実践シナリオ
-
-| シナリオ | Agentが行うこと | 人に返すもの |
-|---|---|---|
-| 計測が足りない | 権限と対象を照合し、比較可能なデータを取得 | 接続できた範囲と、必要な設定だけ |
-| 既存ページの改善 | query×page、既存回答、原典を確認し、改稿案を作る | 変更差分、材料、期待する変化、プレビュー |
-| 検索流入の低下 | 条件・季節性・URL変更・計測不備を先に調べる | 低下の事実、原因候補、確認できない点 |
-| 新規企画 | 需要と不足回答、独自材料、既存重複、許可範囲を確認 | 少数の採用候補と不採用理由 |
-| 公開後の確認 | 公開版を特定し、観測条件を揃える | 改善・悪化・未判定と次の行動 |
-
-現在のremediation状態では、新規許可はchonmage-en/jaに限定されている。これは今回の調査時点の状態であり、着手時に正本を再確認する。他サイトの計測整備・既存改善を進める余地と、新規記事の許可を分ける。
-
-## 11. 判断画面を成果物の確認場所にする
-
-### 11.1 1件の判断に必要な情報
-
-判断画面は、タイトル、目的、対象URL、変更前後、根拠、期待する価値、未確認事項、取り消し方、選択肢を持つ。技術的なIDは補助情報にする。
-
-原典を開けるだけでは不十分である。「この主張を支えるのは原典のどこか」を短く示す。自動生成された説明と、取得した観測・原文は区別する。
-
-### 11.2 判断の手間を減らす
-
-- Agentが推奨案と代替案を準備する。
-- 定型的な理由は選択肢から記録でき、追加の自然文は任意とする。
-- 同じ原稿の同じ版について、複数画面で同じ確認を求めない。
-- 複数案の一括判断は、対象と共通条件を明示し、個別に除外できる場合に限る。
-- 「この方向で、例を変えて」のような指示は、元の仕事と版へ結び付ける。
-- 新しい価値判断を一般方針へ昇格する場合は、提案として示し、人が有効化する。
-
-企画承認と公開承認は意味が異なる。将来、同じ確認体験の中で扱う場合も、どの権限をどの版に与えたかを別々に記録する。
-
-## 12. Blogとの搬送をユーザーの手作業から外す
-
-既存のJSON契約は残し、通常はAgentまたはbridgeが生成・検証・搬送する。ユーザーにJSONを編集させることを前提にしない。
-
-```mermaid
-flowchart LR
-  A[会話で運用を依頼] --> B[Keywordsの共有作業]
-  B --> C[調査と改善案]
-  C --> D[必要な人の判断]
-  D --> E[版付きBlog依頼]
-  E --> F[Blogで編集と品質検証]
-  F --> G[公開系で対象版を配信]
-  G --> H[Keywordsで観測と次の判断]
+```text
+KEYWORDS_AUTOPILOT_SCHEDULER_OWNER=worker
+KEYWORDS_AUTOPILOT_SCHEDULER=0
 ```
 
-この図は通常例であり、全依頼を固定順序で強制するものではない。計測整備だけの仕事や、改稿不要と判断した仕事は、その地点で成果を返す。
+`npm run autopilot` のpersistent workerが通常のscheduler ownerになる。
 
-失敗時には「同期をやり直してください」だけではなく、版不一致、元ファイルの変更、許可不足、品質未通過、返信未到着を区別する。再送は同じhandoffに対して行う。品質ゲートを短縮したり、既存autopilotの完了数を手編集したりしない。
+API標準起動は `apps/api/src/entry.ts` を通り、ownerが`api`でない場合はAPI内部schedulerを停止する。
 
-公開との具体的な接続は別紙に委ねる。Keywordsは公開状態と承認・結果を参照できるが、記事生成と公開を一つの無制限なコマンドにまとめない。
+外部から呼ぶ `@keywords/commands/autopilot` はleased wrapperをexportするため、manual/API tickもworkerと同じproject leaseを取得する。
 
-## 13. 結果が次の運用へ戻る仕組み
+同じprojectへ同時tickしてもDB leaseにより一方だけが実行される。
 
-仕事には、仮説、実施日、公開確認日、対象版、比較対象、評価可能日、観測結果、次の行動を残す。既存のquery×page評価を土台にする。
+## 6. Executor failure boundary
 
-結果は、改善、悪化、未判定に加え、計測できない理由を持つ。小標本を成功扱いしない。単純な前後差を施策の因果効果と断定せず、季節性・他の改修・流入元変化も記録する。
+次はproject/siteの失敗にしない。
 
-同じURLへ複数の施策を連続投入すると比較が難しくなるため、観測中の変更は関連付ける。悪化した場合も、新記事を増やすのではなく、原因確認・戻す判断・観測延長を候補にする。
+- provider rate limit / usage limit
+- provider auth failure
+- provider outage
+- executable missing
+- MCP bootstrap failure
+- runtime mismatch
+- executor-wide network failure
 
-収益を追う場合は、クリック数だけでなく、設定済みの問い合わせ・購入・外部送客などの到達点と計測方法を先に定義する。計測できない売上を推計で埋めない。最初の運用評価は、成果確認までの手戻りと人の作業時間を中心に始める。
+executor自身にfailure class/count/cooldown until/last errorを保存し、cooldown中は新規claimしない。
 
-## 14. 運用基盤・品質・保守の改善
+site-specificなDNS/origin、Blog binding、site build等だけproject blockerへ送る。
 
-| 領域 | 必要な改善 |
-|---|---|
-| 起動 | 一つの起動手順、実DBパスの表示、Nodeとnative addonの整合、ポート競合の説明 |
-| 再配置 | サイトIDとローカルパスを分離し、絶対パス・workspaceリンクを診断。無言で空DBを作らない |
-| 障害 | 原因別エラー、再試行可能性、次の対処、前回成功データを表示 |
-| データ整合 | 関連レコード作成と監査記録を可能な範囲で同一transactionにし、中途半端なjobを残さない |
-| バックアップ | 稼働中SQLiteに適した整合バックアップ、別保存先、定期的な復元確認、schema版の管理 |
-| 観測ログ | request / session / job / handoff / releaseの関連IDで追跡。秘密と全文の過剰保存を避ける |
-| 大きなデータ | server-side絞り込み、pagination、差分同期、contextの上限。全件の画面・Agent転送を避ける |
-| API / MCP | schema・権限・エラー分類の共通化、ツール説明と実装の差分検査、後方互換性 |
-| 文書 | 現行手順、履歴、未実装提案を区別。古いパス・古い「完了」の読み違いを防ぐ |
-| フロントエンド | 状態管理とルーティングを整理。大きな圧縮1行コンポーネントを保守できる単位へ分ける |
-| テスト | isolated DB、実際のAgent経路、承認版変更、再起動、二重claim、失敗時再送を検証 |
+## 7. 記事成果物契約
 
-テスト数を増やすこと自体は目的にしない。画面上の文字があるだけの確認より、「同じ依頼を再送しても増えない」「別hostの数値が混ざらない」「承認待ちを別入口から越えられない」を優先する。
+記事制作Operationは、次が揃わなければlocal completeにならない。
 
-## 15. 優先順位付きの改善バックログ
+- article/page ID
+- actual article path
+- content SHA-256
+- source IDs
+- validator version/status/result hash
+- site build command/status/result
+- before/after hash
+- generated/verified timestamps
 
-規模は相対目安。Sは既存機能の限定修正、Mは複数層の接続、Lは実行基盤または契約の変更を含む。工数の確約ではない。
+記事fileはtemp fileへwriteし、fsync後にrenameする。
 
-| ID | 優先 | 改善 | 規模 | 主な依存 | 受け入れ条件 |
-|---|---|---|---|---|---|
-| K01 | P0 | 全入口の認証・権限・予算・pauseの統一 | L | なし | Agentがhumanを指定しても昇格できず、上限・停止が全入口で一致 |
-| K02 | P0 | GSC対象範囲と比較条件の共通化 | M | なし | 2サブドメイン・異期間・不完全取得で誤った改善候補を出さない |
-| K03 | P0 | 自然文依頼と共有仕事の接続 | M | K01 | 日常の依頼をフォームなしで開始し、同じ依頼の再送を照合 |
-| K04 | P0 | Agentによる正規の探索開始 | M | K01,K03 | 有効な委任内だけ開始し、許可外は具体的理由で停止 |
-| K05 | P0 | 実行担当の接続・claim・再開 | M | K03 | 未接続を実行中と表示せず、中断後も既存jobへ復帰 |
-| K06 | P0 | 既存改善1件の運用実証 | M | K01〜K05 | 調査、企画判断、Blog検証、公開待ちまで共有状態で到達 |
-| K07 | P1 | 今日の運用・仕事単位の画面 | M | K03,K05 | 判断・進行・結果を最初の画面で確認できる |
-| K08 | P1 | 原典と差分が揃う判断画面 | M | K07 | 別画面のID検索や必須長文入力なしで判断できる |
-| K09 | P1 | サイト台帳の照合と通常同期の自動化 | M | K01 | 再入力せず更新でき、別サイトへの付け替えを防ぐ |
-| K10 | P1 | collector出力とクラウド/ローカル同期の統一 | L | K02 | 同じ観測版を両画面が表示し、部分失敗を保持 |
-| K11 | P1 | Operatorの理由と計測判定の統一 | M | K02,K10 | 画面とAgentで次の推奨理由が一致する |
-| K12 | P1 | Blogの搬送・receipt照合の自動化 | M | K06,K09 | ファイルの手動搬送なし、再送で二重作業なし |
-| K13 | P1 | 効果観測と次回行動の接続 | M | K10,K12,別紙D04〜D06 | 公開された版に比較が紐付き、未判定も次回へ繋がる |
-| K14 | P1 | 起動・再配置・バックアップの診断 | M | なし | 空DBや別DBへの誤接続を検出し、復元を確認できる |
-| K15 | P1 | 必要時だけの通知 | S | K05,K07 | 変化のない定期実行で通知を重ねない |
-| K16 | P2 | 常駐executorと計画的な再試行 | L | K01,K05,K06 | 再起動後に再開し、二重担当・無限再試行を起こさない |
-| K17 | P2 | 候補仕分けの方針委任 | M | K01,K08,実運用の判断記録 | 人が有効化した範囲だけ自動化し、例外を判断依頼にする |
-| K18 | P2 | 施策・送客・収益到達点の評価 | M | K13 | 未計測を明示し、手作業時間と実測成果を比較できる |
-| K19 | P2 | 文書・用語・詳細画面・コード構造の整理 | M | K07 | 通常の利用で内部ID・専門用語を要求しない |
-| K20 | P2 | 遠隔常時運用の判断 | L | K14,K16,別紙 | PC停止中の必要性と費用を実測してから方式を選ぶ |
+`operation.complete` はrequired artifactを照合する。Agent processが正常終了しても、artifactがなければ`artifact_missing`、validator/build未通過なら`quality_revision_required`として再開対象にする。
 
-P0は「自動運用を広げる前に必要」、P1は「日常の使いやすさと成果の循環」、P2は「運用実績を見て広げるもの」。P2まで一括で実装する計画にしない。
+## 8. Independent validator
 
-## 16. 導入の順序と検証方法
+Agentの自己採点だけをpublication authorityにしない。
 
-### 段階A: 安全に仕事が始まる
+独立チェック:
 
-K01〜K05を小さなfixtureと既存commandsで検証する。既存データを移し替える大きなmigrationから始めない。人専用の入口をAgentに偽装させる暫定対応は採らない。
+- file exists / non-empty
+- frontmatter
+- page/article identity
+- source-backed claims
+- numeric/entity consistency
+- reader-question coverage
+- duplicate/cannibalization
+- prohibited fabrication patterns
+- links
+- site build
 
-### 段階B: 1件を通す
+validator resultはcontent hash/source packet/validator versionから作るrevision keyでcacheする。
 
-Whisky JPなど、既存コンテキストがあり計測可能なサイトを候補にする。ただし対象は着手時のデータ・許可で選び、固定しない。最初は既存ページ1件に限定する。
+## 9. Revision / pause / human boundary
 
-自然文で依頼 → 調査 → 根拠付き改善案 → 必要な判断 → Blogでローカル検証 → 公開待ち、を一度通す。公開許可が別途得られた場合のみ公開・観測へ進む。許可がないことを理由に、ローカル検証済みを公開済みにしない。
+blocker class:
 
-### 段階C: 日常画面と同期を整える
+- `quality_revision_required`
+- `artifact_missing`
+- `site_dependency_failed`
+- `executor_unavailable`
+- `human_decision_required`
+- `explicit_pause`
+- `budget_exhausted`
 
-K07〜K15を、段階Bで実際に必要だった情報と操作に沿って作る。ダッシュボードのカード数ではなく、ユーザーが迷った箇所を減らす。
+自動resumeするのはquality/artifactの2種類だけ。
 
-### 段階D: 継続運用を増やす
+revisionは同じOperation/article identityを維持する。
 
-複数回の中断・復帰と観測を確認してからK16以降へ進む。常駐化やサイト追加より、未完了・承認待ち・観測待ちが積み上がらないことを優先する。
+- running revision sessionがあれば再利用
+- executorがlive ownership中なら置換しない
+- 終了したrevisionでcontent hashとgate fingerprintが同じならno-progressを増加
+- revision/no-progress上限でhuman reviewへ移行
+- explicit pauseを自動解除しない
 
-### 受け入れシナリオ
+## 10. Blog publication boundary
 
-1. 通常の依頼を会話から始め、フォーム操作0回で調査が開始する。
-2. Agentが接続していなければ、開始待ちと次の対応が正しく見える。
-3. 再送・再接続で同じtask/job/handoffを二重作成しない。
-4. 予算超過・承認待ちをCLIやHTTPへ入口を変えても越えられない。
-5. 2サブドメインのGSC値、0と失敗、前回成功値を正しく扱う。
-6. 企画の版変更で古い承認を使わず、ユーザーに具体的な差分を示す。
-7. 公開許可がなければ公開待ちで止まり、それまでの成果は失わない。
-8. 公開後、同一版・同条件の比較と未判定理由を元の仕事から確認できる。
-9. ユーザーの修正指示が新しい無関係な仕事にならず、同じ依頼に反映される。
-10. 元のAPI/CLI/MCPと既存Blog連携の契約テストが維持される。
+local completeとpublication completeを分離する。
 
-## 17. 成功を測る指標
+`publication_authorized=true` のBlog handoffにはverified article artifactが必要。
 
-数値は初期の目標案であり、効果の実績ではない。最初の5〜10件の通常依頼で基準値を取る。
+DB triggerでもvalidator/build未通過artifactしかない場合のauthorized handoff INSERTを拒否する。
 
-| 指標 | 初期目標・扱い |
-|---|---|
-| 日常依頼でのフォーム入力回数 | 中央値0回 |
-| 同じ情報の再入力 | サイトID・言語・property・handoff IDの手入力0回 |
-| ユーザーが次の行動を理解するまで | 主要画面で10秒程度を目安に操作確認 |
-| 人の確認に必要な資料の探し直し | 判断画面から離れずに完結する割合を測る |
-| 通常依頼の人の作業時間 | 現状を測り、半減を最初の仮説にする |
-| 重複job・誤サイト更新・無許可公開 | 0件を必須条件 |
-| 中断後の再開 | fixtureで全件、実運用でも再開不能を記録して是正 |
-| 計測の鮮度と欠損 | 取得対象ごとに把握。全体平均だけで隠さない |
-| 施策の評価到達率 | 公開済みのうち、評価または明確な未判定理由がある割合 |
-| SEO・事業成果 | 同条件の実測値で追う。候補数・記事数・build数を代用しない |
+Blog receipt:
 
-## 18. 今は採らない案
+- event IDで冪等
+- 同じevent再送はduplicate
+- 同じevent IDの内容変更はcollisionとして拒否
+- published transitionにはHTTP/canonical evidenceが必要
 
-- ユーザーに新しい大型フォームやSEO工程の選択ウィザードを覚えてもらう。
-- Keywords内に、共有状態へ接続しない独立したチャット履歴を作る。
-- Agent専用の別DB・別キューを追加し、Webと整合させる仕事を増やす。
-- 人の判断を減らすために、Agentのhuman偽装や承認の自動有効化を使う。
-- 全サイトで新規記事を増やし、自律運用の成功例にする。
-- 先にSQLiteを別DBへ移し、運用上の詰まりを後回しにする。
-- 全機能の作り直し、全サイトの同時公開、最初から多数Agentの常駐。
+応答喪失時に同じreceiptを再送しても二重publish transitionを作らない。
 
-## 19. 設計上の未確定事項
+## 11. UI
 
-以下は実装着手時に解消する。今回、ユーザーへの追加フォーム入力を要求するものではない。
+通常の主画面は内部工程ではなく成果物を中心にする。
 
-| 項目 | 推奨する初期値 | 確認が必要になる条件 |
-|---|---|---|
-| 操作の入口 | Codex会話＋MCP、Webは確認 | 別端末からも依頼したい場合 |
-| 常時稼働 | まず会話中の実行 | PC停止中の実行が実際に必要な場合 |
-| 最初の対象 | 計測可能な既存サイト1つ | 対象の材料・計測・許可が揃わない場合 |
-| Agent同時数 | 編集1件 | 待ち時間や負荷の実測が出た場合 |
-| 公開権限 | 既存の明示承認を維持 | 継続的な公開委任をユーザーが希望した場合 |
-| 観測の保存先 | 既存SQL＋版付き交換 | 遠隔の実行・複数端末が必要になった場合 |
+表示:
 
-## 20. 根拠となる現行ファイル
+- 完成記事
+- 制作中記事
+- validator failed checks
+- revision count
+- 要判断/blocker class
+- executor status/cooldown/retry condition
 
-| 根拠 | 確認内容 |
-|---|---|
-| [AGENTS.md](../AGENTS.md) | 共有commands、human専用判断、停止と予算、公開の境界 |
-| [App.tsx](../apps/web/src/App.tsx) | ナビゲーション、作成フォーム、新規探索中心のサイトホーム |
-| [DiscoveryWorkspace.tsx](../apps/web/src/DiscoveryWorkspace.tsx) | 探索入力、候補ごとの判断、実行状態の表示 |
-| [BlogWorkspace.tsx](../apps/web/src/BlogWorkspace.tsx) | JSON選択・ダウンロード、Briefと証拠IDの表示 |
-| [PortfolioWorkspace.tsx](../apps/web/src/PortfolioWorkspace.tsx) | 集計一覧とローカル更新の案内 |
-| [discovery.ts](../packages/commands/src/discovery.ts) | human専用start、claim・lease・予算 |
-| [operator.ts](../packages/commands/src/operator.ts) | 優先候補の選定、task作成、独自の期間選定 |
-| [metrics.ts](../packages/commands/src/metrics.ts) | 通常GSC取得、比較条件、取得メタデータ |
-| [research/index.ts](../packages/research/src/index.ts) | GSCフィルター入力への対応 |
-| [blog.ts](../packages/commands/src/blog.ts) | サイトbinding、予算検査、版と承認、query×page |
-| [API入口](../apps/api/src/index.ts) / [MCP入口](../apps/mcp/src/main.ts) | actor決定、Scheduler、Agentのpause検査 |
-| [portfolio adapter](../packages/research/src/portfolio.ts) | ローカル保存データの参照 |
-| [dashboard data API](../../analytics-dashboard/api/data.js) / [refresh](../../analytics-dashboard/api/refresh.js) | Blob参照、fallback、クラウド計測の更新 |
-| [Blog連携運用手順](blog-integration-operations.md) | 現行の人確認・handoff・receipt・観測手順 |
-| [remediation正本](../../.seo-autopilot/remediation-status.json) | 調査時点の新規許可対象 |
+keyword/cluster/run/lease等の詳細は必要時に見る。
 
-DBの件数は `keywords/data/keywords.sqlite` を読み取りで確認した集計である。DB自体や秘密情報を本書にコピーしていない。本書の提案仕様は、これら現行ファイルの権限や動作を変更するものではない。
+## 12. CI acceptance
+
+2026-09-09 CI run #441 で以下がgreen。
+
+workspace typecheck:
+
+- domain
+- db
+- research
+- commands
+- api
+- cli
+- mcp
+- web
+
+runtime acceptance:
+
+- migration
+- planning
+- policy
+- work loop
+- review
+- operator
+- agent operations
+- executor selection
+- autopilot artifact requirement
+- headless article file/validator/build
+- validator cache
+- executor cooldown
+- scheduler tick lease
+- revision session idempotency
+- no-progress escalation
+- explicit pause preservation
+- product workflow
+- Blog lifecycle/receipt idempotency
+- portfolio
+- DB backup/restore
+- web production build
+
+## 13. 受け入れシナリオの最終状態
+
+1. 会話からOperationを開始できる — ✅
+2. Agent未接続/実行不能を実行中と誤表示しない — ✅
+3. 再送・再接続で同じOperation/job/handoffを重複作成しない — ✅
+4. pause/budget/reviewを別入口から越えない — ✅
+5. measurement scopeを別hostへ混ぜない — ✅
+6. 古いapproval/versionをそのまま利用しない — ✅
+7. 公開許可やverified artifactがなければpublication境界で停止 — ✅
+8. receipt/outcome/measurementを元の仕事へ接続 — ✅
+9. revision指示を同じOperationへ戻す — ✅
+10. API/CLI/MCP/Blog既存契約をCIで維持 — ✅
+
+## 14. Manual modeとの互換性
+
+Autopilot OFF projectは従来のhuman boundaryを維持する。
+
+- human-only page review
+- legacy Blog exportのhuman approval
+- publication authorizationなしのmanual handoff
+
+Autopilot実装のためにmanual workflowを削除していない。
+
+## 15. 本番環境でのみ確認できる項目
+
+以下は今回のコード実装の未完ではなく、対象site/credentialを必要とするdeployment verificationである。
+
+- 実Blog repositoryを`KEYWORDS_BLOG_ROOT`へ接続した生成
+- 本番site build
+- autoPublish許可siteへの実公開
+- 実公開URLのHTTP/canonical確認
+- 実provider rate limitでの長時間cooldown復旧
+- 公開後SEO成果
+
+本番作用を伴うため、この実装作業では実行していない。
+
+## 16. 最終状態
+
+**K01〜K20: 実装済み。**
+
+**H1〜H8: 実装済み。**
+
+**CIで再現可能な日常Agent運用とheadless記事生成: green。**
+
+今後は新しい基盤実装ではなく、実サイトごとのdeployment verificationと運用データを使った改善が中心になる。
