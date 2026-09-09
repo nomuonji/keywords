@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { isBudgetedCommand } from './budget.js';
+import { autonomyAllows } from './autonomy.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -87,8 +88,24 @@ export function activeDelegation(projectId: string, capability: string): Delegat
 export function assertDelegated(ctx: CommandContext, projectId: string, capability: DelegationCapability | string) {
   if (ctx.actor === 'human' || ctx.actor === 'system') return null;
   const delegation = activeDelegation(projectId, capability);
-  if (!delegation) throw new Error(`Agent operation is not delegated: ${capability}`);
-  return delegation;
+  if (delegation) return delegation;
+  if (autonomyAllows(projectId, capability)) {
+    return {
+      id: `autopilot:${projectId}:${capability}`,
+      projectId,
+      capability,
+      limits: { source: 'autopilot_control_plane' },
+      versionHash: 'autopilot-safe-capability-v1',
+      approvedBy: 'autopilot_control_plane',
+      approvedAt: autonomyControlTimestamp(projectId),
+      expiresAt: null
+    } satisfies DelegationView;
+  }
+  throw new Error(`Agent operation is not delegated: ${capability}`);
+}
+
+function autonomyControlTimestamp(projectId: string) {
+  return String(one('SELECT updated_at FROM autopilot_controls WHERE project_id=?', projectId)?.updated_at ?? now());
 }
 
 export function assertSessionBudget(ctx: CommandContext, projectId: string, command: string) {
