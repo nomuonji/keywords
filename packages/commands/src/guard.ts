@@ -103,21 +103,6 @@ export function assertSessionBudget(ctx: CommandContext, projectId: string, comm
   if (used >= Number(session.max_actions)) throw new Error(`Work session ${session.id} has exhausted its action budget`);
 }
 
-export function assertOperationAllowed(
-  ctx: CommandContext,
-  input: { projectId: string; command: string; capability?: DelegationCapability | string; allowWhilePaused?: boolean }
-) {
-  projectExists(input.projectId);
-  const control = operationControl(input.projectId);
-  const globallyPaused = process.env.KEYWORDS_PAUSED === '1' || process.env.KEYWORDS_AGENT_PAUSED === '1';
-  if (ctx.actor !== 'human' && !input.allowWhilePaused && (globallyPaused || control.paused)) {
-    const reason = control.reason ? `: ${control.reason}` : '';
-    throw new Error(`Agent operations are paused${reason}`);
-  }
-  if (input.capability) assertDelegated(ctx, input.projectId, input.capability);
-  assertSessionBudget(ctx, input.projectId, input.command);
-}
-
 function operationForContext(ctx: CommandContext, projectId: string) {
   if (ctx.workSessionId) {
     const child = one(`SELECT o.* FROM operation_requests o JOIN operation_projects op ON op.operation_id=o.id
@@ -130,6 +115,30 @@ function operationForContext(ctx: CommandContext, projectId: string) {
     if (executor) return executor;
   }
   return null;
+}
+
+export function assertOperationAllowed(
+  ctx: CommandContext,
+  input: { projectId: string; command: string; capability?: DelegationCapability | string; allowWhilePaused?: boolean }
+) {
+  projectExists(input.projectId);
+  const control = operationControl(input.projectId);
+  const globallyPaused = process.env.KEYWORDS_PAUSED === '1' || process.env.KEYWORDS_AGENT_PAUSED === '1';
+  if (ctx.actor !== 'human' && !input.allowWhilePaused && (globallyPaused || control.paused)) {
+    const reason = control.reason ? `: ${control.reason}` : '';
+    throw new Error(`Agent operations are paused${reason}`);
+  }
+  const delegation = input.capability ? assertDelegated(ctx, input.projectId, input.capability) : null;
+  const operation = ctx.actor === 'agent' ? operationForContext(ctx, input.projectId) : null;
+  if (operation && !input.allowWhilePaused) {
+    const budget = parse<Record<string, number>>(operation.budget_json, {});
+    const maxRuntimeMinutes = Number(budget.maxRuntimeMinutes ?? 0);
+    if (maxRuntimeMinutes > 0 && Date.now() > Date.parse(operation.created_at) + maxRuntimeMinutes * 60_000) {
+      throw new Error(`Operation runtime budget exhausted (${maxRuntimeMinutes} minutes)`);
+    }
+  }
+  assertSessionBudget(ctx, input.projectId, input.command);
+  return delegation;
 }
 
 export function reserveOperationBudget(ctx: CommandContext, projectId: string, kind: OperationBudgetKind, reservationKey: string, amount = 1) {
