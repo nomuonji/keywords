@@ -4,6 +4,7 @@ import { workspaceCommands } from '@keywords/commands/workspace';
 import { workCommands } from '@keywords/commands/work';
 import { operationCommands } from '@keywords/commands/operation';
 import { operationDiscoveryCommands } from '@keywords/commands/operation-discovery';
+import { executorCommands } from '@keywords/commands/executor';
 import { measurementCommands } from '@keywords/commands/measurement';
 import { metricsCommands } from '@keywords/commands/metrics';
 
@@ -23,7 +24,10 @@ export const productTools = [
   { name: 'executor_register', description: 'Register or restart this persistent executor and obtain a new generation-fenced lease.', inputSchema: s('Executor register', { executorId: { type: 'string' }, capabilities: { type: 'array', items: { type: 'string' } }, leaseSeconds: { type: 'number' } }) },
   { name: 'executor_heartbeat', description: 'Renew a persistent executor lease using the current generation.', inputSchema: s('Executor heartbeat', { executorId: { type: 'string' }, generation: { type: 'number' }, leaseSeconds: { type: 'number' } }, ['generation']) },
   { name: 'executor_claim', description: 'Generation-fenced claim of one project in an operation by this executor.', inputSchema: s('Executor claim', { executorId: { type: 'string' }, generation: { type: 'number' }, operationId: { type: 'string' }, projectId: { type: 'string' }, leaseSeconds: { type: 'number' } }, ['generation','operationId','projectId']) },
+  { name: 'executor_claim_next', description: 'Claim the highest-priority eligible operation project without creating a duplicate job.', inputSchema: s('Executor claim next', { executorId: { type: 'string' }, generation: { type: 'number' }, projectId: { type: 'string' }, leaseSeconds: { type: 'number' } }, ['generation']) },
   { name: 'executor_release', description: 'Release a claimed operation project only if executor generation and ownership still match.', inputSchema: s('Executor release', { executorId: { type: 'string' }, generation: { type: 'number' }, operationId: { type: 'string' }, projectId: { type: 'string' } }, ['generation','operationId','projectId']) },
+  { name: 'executor_list', description: 'List executor connection, generation and lease state.', inputSchema: s('Executor list', {}) },
+  { name: 'executor_recover_stale', description: 'Recover expired executor claims. Intended for a system actor; human recovery is available through CLI/HTTP.', inputSchema: s('Recover stale executors', { before: { type: 'string' } }) },
   { name: 'measurement_context', description: 'Read only comparable complete observations under the shared provider/property/origin/filter/timezone contract.', inputSchema: s('Measurement context', { projectId: { type: 'string' }, limit: { type: 'number' } }, ['projectId']) },
   { name: 'measurement_capture', description: 'Capture scoped Search Console query/page observations. Partial/failed observations never overwrite the last complete materialization.', inputSchema: s('Measurement capture', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, targetOrigin: { type: 'string' }, startDate: { type: 'string' }, endDate: { type: 'string' }, searchType: { type: 'string' }, timezone: { type: 'string' }, rowLimit: { type: 'number' } }, ['projectId','startDate','endDate']) },
   { name: 'measurement_import', description: 'Import a versioned collector observation into the same measurement contract used by Keywords.', inputSchema: s('Measurement import', { projectId: { type: 'string' }, provider: { type: 'string' }, property: { type: 'string' }, targetOrigin: { type: 'string' }, filters: { type: 'array', items: { type: 'object', additionalProperties: true } }, startDate: { type: 'string' }, endDate: { type: 'string' }, timezone: { type: 'string' }, searchType: { type: 'string' }, dimensions: { type: 'array', items: { type: 'string' } }, status: { type: 'string', enum: ['succeeded','partial','failed'] }, completeness: { type: 'string', enum: ['complete','partial','unknown','failed'] }, sourceLabel: { type: 'string' }, sourceVersion: { type: 'string' }, capturedAt: { type: 'string' }, payload: { type: 'object', additionalProperties: true } }, ['projectId','provider','property','startDate','endDate','dimensions','status','completeness','sourceLabel','sourceVersion','capturedAt']) },
@@ -81,7 +85,10 @@ export async function callProductTool(name: string, a: any, ctx: CommandContext)
     case 'executor_register': return operationCommands.executorRegister(ctx, a);
     case 'executor_heartbeat': return operationCommands.executorHeartbeat(ctx, a);
     case 'executor_claim': return operationCommands.executorClaim(ctx, a);
+    case 'executor_claim_next': return executorCommands.claimNext(ctx, a);
     case 'executor_release': return operationCommands.executorRelease(ctx, a);
+    case 'executor_list': return executorCommands.list(ctx);
+    case 'executor_recover_stale': return executorCommands.recoverStale(ctx, a);
     case 'measurement_context': return measurementCommands.context(ctx, a.projectId, a.limit);
     case 'measurement_capture': return metricsCommands.capture(ctx, a);
     case 'measurement_import': return measurementCommands.import(ctx, a);
