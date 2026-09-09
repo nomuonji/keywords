@@ -70,10 +70,7 @@ export const portfolioCommands = {
         outcome: outcomeFor(row.operation_id, row.project_id)
       };
     });
-    const filtered = ['published','improved','regressed','pending'].includes(status)
-      ? items.filter(item => status === 'published' ? Boolean(item.outcome?.publishedAt) : item.outcome?.status === status)
-      : items;
-    return { generatedAt: new Date().toISOString(), total: ['published','improved','regressed','pending'].includes(status) ? filtered.length : total, limit, offset, items: filtered };
+    return { generatedAt: new Date().toISOString(), total, limit, offset, items };
   },
 
   async context() {
