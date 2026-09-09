@@ -1,134 +1,197 @@
 # Agent-driven Operations Implementation Status
 
-この文書は [`agent-driven-operations-improvement-plan.md`](./agent-driven-operations-improvement-plan.md) の実装状態を示す正本です。計画書は設計意図と背景を残し、この文書は「現在コードとして何が動くか」を記録します。
+この文書は [`agent-driven-operations-improvement-plan.md`](./agent-driven-operations-improvement-plan.md) の実装状態を示す正本です。Autopilotの詳細は [`autonomous-seo-autopilot.md`](./autonomous-seo-autopilot.md) を参照してください。
 
 最終更新: 2026-09-09
 
 ## 結論
 
-K01〜K20で要求されたソフトウェア上の基盤は実装済みです。公開・削除・DNS変更・新しい方針の有効化など、人の明示承認を要求していた境界は自動化していません。また、K20の「遠隔常時運用」は遠隔ホストへの移行そのものを自動実行する項目ではなく、ローカル運用の実測後に安全に判断するための readiness 判定までを実装しています。
+K01〜K20で要求されたAgent-native運用基盤に加え、通常の記事制作・更新については **人間が毎回承認しなくても回るAutopilot lane** を実装しています。
 
-実装は既存SQLite、`work_sessions`、`tasks`、`review_requests`、`discovery_jobs`、Blog handoffを利用します。Agent専用の第二DB・第二キューは作っていません。
+現在の運用は二本立てです。
+
+- **Manual mode**: 従来どおりhuman review / human page approvalを使う。
+- **Autopilot mode**: AgentがEvidenceを集め、独立したdeterministic quality gateが `publish / revise / reject` を決定し、通過した版だけにpublication authorizationを与える。
+
+記事削除、URL移動、DNS、credential、policy有効化などの破壊的・高権限操作はAutopilotに委任しません。
+
+実装は既存SQLite、`work_sessions`、`tasks`、`review_requests`、`discovery_jobs`、Blog handoffを利用します。Agent専用の第二DB・第二キューは作っていません。Autopilotのcontrol/stateも同じDBに保存します。
 
 ## K01〜K20
 
 | ID | 状態 | 実装内容 |
 |---|---|---|
-| K01 | 実装済み | HTTP actorをBearer tokenから確定。任意headerでhumanへ昇格不可。project pause、delegation、work-session action budget、operation external/candidate/cost budgetを共通guardへ集約。HTTP Agent writeは`/operations`配下へ限定し、MCP低水準writeはactive Operationまたはclaim済みlegacy discoveryを必須化。 |
-| K02 | 実装済み | GSC観測にprovider/property/target origin/page filter/timezone/search type/dimensions/completeness/source versionを付与。domain propertyでは対象origin filterを生成し、別hostを比較しない。complete・同scope・同日数・非重複期間だけ比較。 |
-| K03 | 実装済み | `operation_start`で自然文依頼をOperationへ変換。request keyとconversation refで再送・「続き」を既存Operationへ戻し、既存work session/taskへ接続。 |
-| K04 | 実装済み | Agentは`discovery.start` delegationが有効なOperation内だけ探索開始可能。human偽装不要。HTTP/MCPではstartとclaimを同じ高水準経路で接続。 |
-| K05 | 実装済み | executor register/heartbeat/claim/claim-next/release、generation fencing、lease、stale recoveryを実装。未接続とrunningを区別。 |
-| K06 | 実装済み | 既存ページ改善をOperation→調査→判断→Blog handoff→公開待ち→outcomeへ流せる。実サイトへの公開は既存の明示承認境界を維持するため、ソフトウェア導入時に自動実行しない。 |
-| K07 | 実装済み | Web Homeを「今日の運用」に変更。自然文依頼、判断待ち、進行中、executor状態、結果、次候補、delegationを1画面に集約。 |
-| K08 | 実装済み | 既存Review/Planning/Blogの根拠・差分・版情報を共有work/Operationへ接続。Operation画面から判断待ちを確認可能。 |
-| K09 | 実装済み | 既存site bindingとproject domain/origin照合を維持し、別サイトへのsilent rebindを拒否。サイト同期はOperation経路から利用可能。 |
-| K10 | 実装済み | `measurement_imports`をcollector共通契約として追加。partial/failedを版付きで保存し、最後のcomplete materializationを消さない。 |
-| K11 | 実装済み | Operatorが独自snapshot比較をやめ、共通measurement comparisonを使用。画面/Agentで比較条件を統一。 |
-| K12 | 実装済み | 承認済みBlog handoffを`operation_blog_handoff`のstructured payloadとして直接搬送。version hash/idempotencyを維持し、`publication_authorized:false`を保持。 |
-| K13 | 実装済み | `operation_outcomes`に仮説、実施/公開/評価予定、状態、metrics、attribution notes、next actionを保存。due outcomeをOperator候補へ戻す。 |
-| K14 | 実装済み | maintenance diagnosticsに実DB path、quick check、runtime、provider、auth、executor lease、operation/measurement件数を追加。既存SQLite backup/restore smokeを維持。 |
-| K15 | 実装済み | `operation_events`は判断待ち、完了、重大blocker、meaningful outcome等をdedupeして保存。通常heartbeatや変化なしtickを通知イベントにしない。 |
-| K16 | 実装済み | 常駐executor用のclaim-next、generation/lease、heartbeat、release、stale recoveryをAPI/MCPから利用可能。無限retryを前提にせずremote readinessにretry上限を表示。 |
-| K17 | 実装済み | `candidate.triage`を独立delegationとして追加。Agentがhumanを名乗らずに、明示委任された仕分けだけdecision記録付きで実行可能。 |
-| K18 | 実装済み | outcomeに実測metricsと`unmeasurable`/`inconclusive`を保存でき、未計測を成功値で埋めない。 |
-| K19 | 実装済み | Web通常導線をOperation中心に整理し、旧keyword-first Homeを削除。高水準API/MCP/CLI名を`operation_*`、`measurement_*`、`executor_*`へ整理し、低水準toolは調査・legacy互換用途として残す。 |
-| K20 | 実装済み（判断ゲート） | `remote_readiness`でDB、API auth、allowed origins、persistent executor条件を検査。ローカルSQLiteを複数remote writerへ無条件展開せず、`KEYWORDS_REMOTE_DB_READY=1`等を明示した場合だけremote-host eligibleと判定。 |
+| K01 | 実装済み | HTTP actorをBearer tokenから確定。project pause、delegation、work-session action budget、operation budgetを共通guardへ集約。Autopilot ON時は安全なcontent capabilityだけをcontrol planeから自動委任。 |
+| K02 | 実装済み | GSC観測にprovider/property/target origin/page filter/timezone/search type/dimensions/completeness/source versionを付与し、compatible observationだけ比較。 |
+| K03 | 実装済み | `operation_start`で自然文依頼をOperationへ変換。request key / conversation refで重複を防止。Autopilotも同じOperationを生成する。 |
+| K04 | 実装済み | discoveryはOperationに接続し、Agentがhumanを偽装せず開始・claim可能。 |
+| K05 | 実装済み | executor register/heartbeat/claim/claim-next/release、generation fencing、lease、stale recovery。 |
+| K06 | 実装済み | 既存ページ改善をOperation→調査→quality gate→Blog handoff→publication receipt→outcomeへ接続。 |
+| K07 | 実装済み | Operations Homeをmonitor-first UIへ変更。Autopilot状態、pipeline、現在Operation、executor、quality gate、delivery、observation、event streamを1画面に集約。 |
+| K08 | 実装済み | Review/Planning/Blogの根拠・差分・版情報を共有work/Operationへ接続。Autopilotではpage content判断をdeterministic gateで解決。 |
+| K09 | 実装済み | site bindingとproject domain/origin照合を維持し、別サイトへのsilent rebindを拒否。 |
+| K10 | 実装済み | `measurement_imports`をcollector共通契約として追加。partial/failedを区別。 |
+| K11 | 実装済み | OperatorとUIで共通measurement comparisonを利用。 |
+| K12 | 実装済み | Manual handoffは従来どおりauthorizationなし。Autopilot handoffはdeterministic gate通過版だけ `publication_authorized:true` を持ち、version hash/idempotencyを維持。 |
+| K13 | 実装済み | `operation_outcomes`に仮説、実施/公開/評価予定、状態、metrics、attribution notes、next actionを保存。 |
+| K14 | 実装済み | diagnosticsにDB path、runtime、provider、auth、executor lease、operation/measurement件数を追加。 |
+| K15 | 実装済み | `operation_events`へ開始・品質判定・delivery attempt・重大blocker・outcome等をdedupe保存。 |
+| K16 | 実装済み | 常駐executorとpersistent runnerを実装。runnerはOperationをclaimし、Agent CLIを起動してheartbeat・close・release・次tickまで行う。 |
+| K17 | 実装済み | `candidate.triage`を独立capabilityとして実装。Autopilot ONではsafe capability setに含める。 |
+| K18 | 実装済み | outcomeに実測metricsと`unmeasurable`/`inconclusive`を保存し、未計測を成功値で埋めない。 |
+| K19 | 実装済み | UI/API/MCP/CLIをOperation中心に整理し、低水準toolは調査・互換用途として残す。 |
+| K20 | 実装済み（判断ゲート） | `remote_readiness`でDB、API auth、origins、persistent executor条件を検査。SQLite複数remote writerを既定にしない。 |
 
-## 主要な新しい入口
+## Autopilotで追加したControl Plane
 
-### MCP
+### project controls
 
-- `operation_context`
-- `operation_start`
-- `operation_resume`
-- `operation_checkpoint`
-- `operation_complete`
-- `operation_discovery_start`
-- `operation_candidate_triage`
-- `operation_blog_handoff`
-- `operation_outcome_record`
-- `executor_register` / `executor_heartbeat` / `executor_claim` / `executor_claim_next` / `executor_release`
-- `measurement_context` / `measurement_capture` / `measurement_import`
-- `remote_readiness`
+`autopilot_controls`:
 
-MCP Agentは、active Operationまたは人が作成したlegacy discoveryをclaimする前に、低水準のresearch/write toolを直接実行できません。`work_start`による独立session作成もMCP Agentでは無効です。
+- enabled
+- auto approve
+- auto publish
+- cadence
+- rolling 24h new-article limit
+- rolling 24h update limit
+- minimum Evidence Score
+- maximum Commodity Risk
+- minimum Information Gain
+- minimum Publication Gate score
+
+`autopilot_state`:
+
+- status / stage
+- current Operation / target
+- human-readable summary
+- latest decision
+- last tick / next tick
+- last error
+
+### Evidence / publication gate
+
+Autopilot対象のBlog briefは以下を追加で要求します。
+
+- page type
+- Evidence Score
+- Commodity Risk
+- Information Gain
+- Source Packet
+- Fact Ledger
+- six-part Publication Gate
+
+既定:
+
+```text
+Evidence >= 50
+Commodity Risk <= 3
+Information Gain >= 2
+Publication Gate >= 80
+Fact Ledger >= 1
+missing source = 0
+future fact = 0
+unresolved question = 0
+exact keyword target conflict = 0
+```
+
+重大な品質問題はreject、不足はrevise、全条件通過だけpublishです。
+
+## Persistent Agent
+
+`npm run autopilot` で常駐runnerを起動します。runnerは `KEYWORDS_AGENT_COMMAND` の外部Agent CLIを使います。
+
+ループ:
+
+1. executor register
+2. enabled projectをcontrol-plane tick
+3. claim-next
+4. Agent CLIへOperation promptを渡す
+5. heartbeat
+6. Agent終了時にOperation complete/block
+7. executor release
+8. Autopilotを再tick
+9. 次のOperationへ
+
+quality gate通過後のauthorized handoffには専用delivery Operationを自動生成します。handoffが進まない場合のdelivery attemptは3回までに制限し、それでも進まない場合だけSafety Boundaryに上げます。
+
+## 主要な入口
 
 ### HTTP
 
-remote bindではBearer tokenが必要です。Human tokenとAgent tokenは同一値にできません。Agent writeは`/operations`配下だけ許可されます。
+- `GET /projects/:projectId/autopilot`
+- `POST /projects/:projectId/autopilot/configure`
+- `POST /projects/:projectId/autopilot/tick`
+- 既存 `/operations/*`
+- 既存 measurement/site/executor routes
 
-主要route:
+### Web
 
-- `POST /operations`
-- `GET /operations/context`
-- `POST /operations/:operationId/resume`
-- `POST /operations/:operationId/projects/:projectId/discovery`
-- `POST /operations/:operationId/projects/:projectId/candidates/triage`
-- `POST /operations/:operationId/projects/:projectId/blog/handoff`
-- `POST /operations/:operationId/projects/:projectId/outcomes`
-- `POST /operations/projects/:projectId/pause`
-- `POST /operations/projects/:projectId/delegations`
-- `POST /operations/executors/:executorId/claim-next`
-- `POST /operations/projects/:projectId/measurements/capture`
+Operations Homeで以下を監視できます。
 
-### CLI
+- Autopilot live state
+- Agent ONLINE/OFFLINE
+- pipeline counts
+- current Operation/work session
+- quality gate values / reasons
+- authorized handoffs / publication / observation
+- 24h publication throttle
+- event stream
+- manual Safety Boundary
 
-人間がローカル管理・診断する入口として`operation`と`measurement` subcommandを追加しています。legacy `discovery` commandsも維持しています。
+通常操作はAutopilot ON/OFF、Emergency Stop、例外確認に限定します。
 
 ## 認証・承認境界
 
-次は自動委任の対象外です。
+### Autopilot内で自動化する
 
-- page/content planの人間承認
+- content research
+- keyword / search-surface discovery
+- content planning
+- Source Packet / Fact Ledger作成
+- page content quality decision
+- evidence-backed page approval/revise/reject
+- authorized Blog handoff
+- Blog delivery attempt
+- measurement / outcome loop
+
+### 自動化しない
+
+- 記事削除
+- URL移動 / redirect設計の破壊的変更
+- DNS変更
+- credential / secret変更
 - policy candidateの有効化
-- review requestの人間resolution
-- push / 本番公開 / DNS変更
-- 記事削除、URL移動、大規模統合
-- budget/delegationの拡大・新規有効化
+- initial Blog bindingのsilent変更
+- 大規模構造変更など、content quality scoreでは安全性を判定できない操作
 
-Blog handoffは承認済み版しかexportできず、handoff自体は公開許可を付与しません。
+## Manual modeとの互換性
 
-## 計測契約
+Autopilotを有効化しない既存projectは従来どおり動きます。
 
-GSC比較は次を全部満たす観測だけを通常比較します。
+- manual `page.review` はhuman-only
+- legacy `blog.export` はhuman approvalを要求
+- legacy handoffは `publication_authorized:false`
 
-1. providerが同じ
-2. propertyが同じ
-3. target originが同じ
-4. page filterが同じ
-5. timezoneが同じ
-6. search typeが同じ
-7. dimension粒度が対応している
-8. 期間日数が同じ
-9. 期間が重複しない
-10. 両方`complete`
-
-`partial`、`failed`、scope不明のlegacy snapshotは保存・表示対象にはできますが、通常の改善/悪化判定には使用しません。
-
-## Executor
-
-Executorは`id + generation`でfencingされます。再registerするとgenerationが増え、古いprocessのheartbeat/claim/releaseは拒否されます。claimにはleaseがあり、期限切れはstale recoveryの対象です。`claim-next`は既存Operation childを取得するだけで、新しい同内容task/jobを生成しません。
+Autopilotは別経路としてsystem decisionとauthorized handoffを生成するため、既存のhuman boundaryを弱めずに追加されています。
 
 ## テスト
 
-CIでは既存smoke群に加え、`scripts/agent-operations-smoke.ts`で次を検証します。
+CIでは既存smoke群に加えて `scripts/autopilot-smoke.ts` を実行します。
 
-- delegationなしAgent startの拒否
-- 同じrequest/conversationの再送でOperation/taskが増えない
-- pause中のAgent探索拒否
-- Operation external-request budgetの原子的予約と上限
-- delegated discovery start + claim + 再送idempotency
-- candidate triageのdelegation境界
-- executor再register後の旧generation拒否
-- 同じdomain property内の2 hostが異なるfilterになること
-- scope違い/partial観測が比較に混ざらないこと
-- Operation完了が共有work/taskへ反映されること
+検証内容:
 
-既存migration/planning/policy/work/review/operator/product/Blog/portfolio/backup/restore/build smokeもCIで継続します。
+- Autopilot OFFではautonomous publicationを拒否
+- Source Packet / Fact Ledger / scoringを持つ強い候補がpublish判定になる
+- system `page.autopilot_review` でapprovedへ遷移
+- authorized handoffが `publication_authorized:true` になる
+- handoff生成がidempotent
+- 24h publication usageを計数
+- Commodity Riskが高くEvidenceが弱い候補をreject/archive
 
-## 遠隔常時運用について
+既存migration/planning/policy/work/review/operator/agent-operations/product/Blog/portfolio/backup/restore/web buildもCIで継続します。
 
-ローカルPC停止中にも継続実行する必要が実測で確認されるまでは、既定はローカルexecutorです。これは未実装ではなく、計画書K20の「必要性と費用を実測してから方式を選ぶ」という停止条件をコード化したものです。
+## 遠隔常時運用
 
-遠隔化する場合も、単にSQLiteファイルを共有ホストへ置いて複数writerを起動する構成はreadyと扱いません。永続DB、認証、backup/recovery、executor leaseの運用条件を満たしたうえで`remote_readiness`を通します。
+ローカルPC停止中にも回す場合、API schedulerとpersistent runnerを常時稼働するホストへ置く必要があります。ただし、SQLiteを複数remote writerで共有する構成をreadyとは扱いません。
+
+既存 `remote_readiness` の永続DB、認証、backup/recovery、executor lease条件を満たしたうえで移行します。単一ホストでAPIとrunnerが同じSQLiteを使うローカル/小規模運用は既存設計の範囲です。
