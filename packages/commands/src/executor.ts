@@ -5,6 +5,10 @@ import { activeDelegation, assertOperationAllowed } from './guard.js';
 import { autonomyAllows } from './autonomy.js';
 import { headlessCommands } from './headless.js';
 
+// The persistent worker is the default Autopilot scheduler owner. The API's
+// legacy interval remains available only as an explicit fallback owner.
+if (process.env.KEYWORDS_AUTOPILOT_SCHEDULER_OWNER !== 'api') process.env.KEYWORDS_AUTOPILOT_SCHEDULER = '0';
+
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
 const one = (sql: string, ...args: any[]): any => sqlite.prepare(sql).get(...args);
