@@ -11,6 +11,11 @@ const { operationCommands } = await import('@keywords/commands/operation');
 const { databaseDiagnostics, getDatabase } = await import('@keywords/db');
 const human = { actor: 'human' as const };
 const project = await commands.project.create(human, { name: 'Portfolio fixture', domain: 'fixture.example' });
+assert.equal(project.domain, 'fixture.example');
+assert.equal(project.environment, 'production');
+await assert.rejects(() => commands.project.create(human, { name: 'Duplicate fixture', domain: 'HTTPS://FIXTURE.EXAMPLE/' }), /already exists/);
+await assert.rejects(() => commands.project.create(human, { name: 'Invalid fixture', domain: 'fixture.example/path' }), /hostname without/);
+assert.equal((await commands.project.create(human, { name: 'Planning fixture' })).environment, 'planning');
 await commands.project.create(human, { name: 'Other subdomain', domain: 'other.fixture.example' });
 await commands.task.create(human, { projectId: project.id, title: 'Existing work' });
 const end = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
@@ -46,6 +51,8 @@ assert.equal(index.total, 1); assert.equal(index.limit, 1); assert.equal(index.i
 assert.equal(index.items[0].keyword?.text, 'scalable article index');
 assert.equal(index.items[0].keyword?.selectionReason, 'Strong demand with no overlapping article.');
 assert.equal(index.items[0].projectName, 'Portfolio fixture');
+assert.equal((await portfolioCommands.articleIndex({ projectId: project.id, status: 'managed' })).total, 1);
+assert.equal((await portfolioCommands.articleIndex({ projectId: project.id, status: 'in_progress' })).total, 0);
 
 fixture.period.previousEnd = end; save(); result = await portfolioCommands.context();
 assert.equal(result.comparable, false); assert.equal(result.sites[0].clickChange, null);

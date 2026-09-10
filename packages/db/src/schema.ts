@@ -5,6 +5,7 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   domain: text('domain'),
   mode: text('mode').notNull().default('topic_only'),
+  environment: text('environment').notNull().default('production'),
   topic: text('topic'),
   audience: text('audience'),
   language: text('language').notNull().default('ja'),

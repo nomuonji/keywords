@@ -1,9 +1,14 @@
-import { commands } from '@keywords/commands';
-import { workspaceCommands } from '@keywords/commands/workspace';
-import { discoveryCommands } from '@keywords/commands/discovery';
-import { planningCommands } from '@keywords/commands/planning';
-import { providerSeedKeywords } from '@keywords/commands/discovery-policy';
-import { databaseDiagnostics, getDatabase } from '@keywords/db';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+process.env.KEYWORDS_DB_PATH = join(mkdtempSync(join(tmpdir(), 'keywords-product-workflow-')), 'test.sqlite');
+const { commands } = await import('@keywords/commands');
+const { workspaceCommands } = await import('@keywords/commands/workspace');
+const { discoveryCommands } = await import('@keywords/commands/discovery');
+const { planningCommands } = await import('@keywords/commands/planning');
+const { providerSeedKeywords } = await import('@keywords/commands/discovery-policy');
+const { databaseDiagnostics, getDatabase } = await import('@keywords/db');
 
 const human = { actor: 'human' as const, actorId: 'product-smoke-human' };
 const agent = { actor: 'agent' as const, actorId: 'product-smoke-agent' };

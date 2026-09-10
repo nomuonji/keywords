@@ -4,7 +4,8 @@ import Database from 'better-sqlite3';
 import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const dbPath = process.env.KEYWORDS_DB_PATH ?? join(mkdtempSync(join(tmpdir(), 'keywords-migration-')), 'test.sqlite');
+const dbPath = join(mkdtempSync(join(tmpdir(), 'keywords-migration-')), 'test.sqlite');
+process.env.KEYWORDS_DB_PATH = dbPath;
 rmSync(dbPath, { force: true });
 
 const legacy = new Database(dbPath);
@@ -35,8 +36,12 @@ assert.equal(backups.length, 1, 'legacy DB migration must leave one pre-Blog bac
 const runColumns = migrated.sqlite.prepare('PRAGMA table_info(runs)').all() as Array<{ name: string }>;
 const runIndexes = migrated.sqlite.prepare('PRAGMA index_list(runs)').all() as Array<{ name: string }>;
 const pageColumns = migrated.sqlite.prepare('PRAGMA table_info(pages)').all() as Array<{ name: string }>;
+const projectColumns = migrated.sqlite.prepare('PRAGMA table_info(projects)').all() as Array<{ name: string }>;
+const projectIndexes = migrated.sqlite.prepare('PRAGMA index_list(projects)').all() as Array<{ name: string }>;
 
 assert.ok(runColumns.some(column => column.name === 'work_session_id'));
+assert.ok(projectColumns.some(column => column.name === 'environment'));
+assert.ok(projectIndexes.some(index => index.name === 'projects_domain_normalized_idx'));
 assert.ok(runIndexes.some(index => index.name === 'runs_work_session_created_idx'));
 for (const name of ['url','source','last_seen_at']) assert.ok(pageColumns.some(column => column.name === name), `missing pages.${name}`);
 for (const table of ['work_sessions','work_checkpoints','review_requests','keyword_metric_snapshots','page_metric_snapshots']) {
@@ -47,4 +52,4 @@ assert.ok(pageIndexes.some(index => index.name === 'pages_project_url_idx'));
 
 migrated.sqlite.close();
 rmSync(`${dirname(dbPath)}/${backups[0]}`, { force: true });
-console.log(JSON.stringify({ ok: true, migratedColumns: ['work_session_id','pages.url','pages.source','pages.last_seen_at'], metricTables: true }));
+console.log(JSON.stringify({ ok: true, migratedColumns: ['projects.environment','work_session_id','pages.url','pages.source','pages.last_seen_at'], metricTables: true }));

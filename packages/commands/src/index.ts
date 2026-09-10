@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext, ProjectSnapshot, TaskStatus } from '@keywords/domain';
 import { researchCommands, sourceCommands } from './research.js';
@@ -10,6 +10,13 @@ const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 const slugify = (value: string) => normalize(value).replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]+/g, '-').replace(/^-|-$/g, '');
+function normalizeDomain(value?: string) {
+  const raw = value?.trim(); if (!raw) return null;
+  let parsed: URL;
+  try { parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`); } catch { throw new Error('Domain must be a valid hostname'); }
+  if (!parsed.hostname || (parsed.pathname !== '/' && parsed.pathname !== '') || parsed.search || parsed.hash || parsed.username || parsed.password || parsed.port) throw new Error('Domain must be a hostname without a path, port, query, or credentials');
+  return parsed.hostname.toLowerCase().replace(/\.$/, '');
+}
 
 async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
   const runId = id();
@@ -39,10 +46,14 @@ function projectCtx(ctx: CommandContext, projectId: string): CommandContext { re
 export const commands = {
   project: {
     list: async (ctx: CommandContext) => withRun(ctx, 'project.list', {}, async () => db.select().from(schema.projects).orderBy(desc(schema.projects.updatedAt))),
-    create: async (ctx: CommandContext, input: { name: string; domain?: string }) => withRun(ctx, 'project.create', input, async () => {
+    create: async (ctx: CommandContext, input: { name: string; domain?: string; environment?: 'production' | 'planning' | 'test' }) => withRun(ctx, 'project.create', input, async () => {
       const createdAt = now();
-      const row = { id: id(), name: input.name.trim(), domain: input.domain?.trim() || null, createdAt, updatedAt: createdAt };
+      const domain = normalizeDomain(input.domain);
+      const environment = input.environment ?? (domain ? 'production' : 'planning');
+      if (!['production','planning','test'].includes(environment)) throw new Error('Project environment must be production, planning, or test');
+      const row = { id: id(), name: input.name.trim(), domain, environment, createdAt, updatedAt: createdAt };
       if (!row.name) throw new Error('Project name is required');
+      if (domain) { const existing = await db.select({ id: schema.projects.id }).from(schema.projects).where(sql`lower(trim(${schema.projects.domain})) = ${domain}`).get(); if (existing) throw new Error(`A project already exists for ${domain}`); }
       await db.insert(schema.projects).values(row);
       return row;
     }),

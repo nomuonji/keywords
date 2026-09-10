@@ -13,6 +13,7 @@ import { executorCommands } from '@keywords/commands/executor';
 import { autopilotCommands } from '@keywords/commands/autopilot';
 import { registerProductRoutes } from './product.js';
 import { registerBlogRoutes } from './blog.js';
+import { dashboardCommands } from '@keywords/commands/dashboard';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
@@ -50,6 +51,7 @@ registerBlogRoutes(app, ctx, body);
 
 // Human-facing observability and minimal site management.
 app.get('/portfolio', async c => c.json(await portfolioCommands.context()));
+app.get('/dashboard', async c => c.json(await dashboardCommands.context(ctx(c))));
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));

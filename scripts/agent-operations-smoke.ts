@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const dbPath = process.env.KEYWORDS_DB_PATH ?? '/tmp/keywords-agent-operations-smoke.sqlite';
-rmSync(dbPath, { force: true });
+const dbPath = join(mkdtempSync(join(tmpdir(), 'keywords-agent-operations-')), 'test.sqlite');
+process.env.KEYWORDS_DB_PATH = dbPath;
 
 const { getDatabase, schema } = await import('@keywords/db');
 const { operationCommands } = await import('@keywords/commands/operation');

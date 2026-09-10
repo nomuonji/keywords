@@ -1,8 +1,10 @@
-import { rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import assert from 'node:assert/strict';
 
-const dbPath = process.env.KEYWORDS_DB_PATH ?? '/tmp/keywords-review-smoke.sqlite';
-rmSync(dbPath, { force: true });
+const dbPath = join(mkdtempSync(join(tmpdir(), 'keywords-review-')), 'test.sqlite');
+process.env.KEYWORDS_DB_PATH = dbPath;
 
 const { commands } = await import('@keywords/commands');
 const { planningCommands } = await import('@keywords/commands/planning');

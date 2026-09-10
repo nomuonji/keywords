@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api';
 
-type Project = { id: string; name: string; domain?: string | null };
+type Project = { id: string; name: string; domain?: string | null; mode?: string; environment?: 'production' | 'planning' | 'test' };
 type Outcome = { status: string; publishedAt?: string | null; evaluationDueAt?: string | null; metrics?: Record<string, unknown>; nextAction?: string | null; updatedAt: string } | null;
 type KeywordResearch = { required: boolean; ready: boolean; missing: string[]; estimatedMonthlyTraffic?: number | null; estimatedTrafficBasis?: string | null };
 type Article = {
@@ -15,19 +15,23 @@ type Result = { generatedAt: string; total: number; limit: number; offset: numbe
 type ArticleContent = { artifact?: Article | null; path: string; exists: boolean; content: string | null; actualSha256: string | null; contentMatches: boolean };
 type ContentState = { status: 'loading' | 'ready' | 'error'; data?: ArticleContent; error?: string };
 
-const pageSize = 50;
+const pageSize = 25;
 const when = (value?: string | null) => value ? new Date(value).toLocaleString('ja-JP', { year: 'numeric', month: 'numeric', day: 'numeric' }) : '—';
 const outcomeLabel: Record<string, string> = { pending: '評価待ち', improved: '改善', regressed: '悪化', inconclusive: '未判定', unmeasurable: '計測不能' };
 const demandLabel: Record<string, string> = { provider_estimated: 'Provider推定', gsc_observed: 'GSC実績', search_surface_observed: '検索面観測', unverified: '未検証' };
 const number = (value?: number | null) => value == null ? '—' : Number(value).toLocaleString('ja-JP');
 const competition = (value?: number | null) => value == null ? '—' : `${(value <= 1 ? value * 100 : value).toFixed(0)}%`;
+const isOperationalSite = (project: Project) => project.environment ? project.environment === 'production' : project.mode === 'existing_site' && Boolean(project.domain) && !/(^|\.)example\.(com|org|net)$/i.test(project.domain ?? '');
 
-export function ArticlesOverview() {
+const listLabel: Record<string, string> = { managed: '管理対象', in_progress: '要検証', complete: '検証済み', regressed: '悪化', local: '未登録ファイル' };
+
+export function ArticlesOverview({focusedProjectId,onFocusProject,onOpenOperations}:{focusedProjectId:string;onFocusProject:(id:string)=>void;onOpenOperations:(id?:string)=>void}) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [data, setData] = useState<Result | null>(null);
   const [query, setQuery] = useState('');
-  const [projectId, setProjectId] = useState('');
-  const [status, setStatus] = useState('all');
+  const [projectId, setProjectId] = useState(focusedProjectId);
+  const [status, setStatus] = useState('managed');
+  const [showPlanning, setShowPlanning] = useState(false);
   const [page, setPage] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -63,6 +67,8 @@ export function ArticlesOverview() {
   };
 
   useEffect(() => { api<Project[]>('/projects').then(setProjects).catch(e => setError(String(e))); }, []);
+  useEffect(() => setProjectId(focusedProjectId), [focusedProjectId]);
+  useEffect(() => { if (!projectId && status === 'local') setStatus('managed'); }, [projectId, status]);
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -71,7 +77,7 @@ export function ArticlesOverview() {
         const params = new URLSearchParams({ limit: String(pageSize), offset: String(page * pageSize) });
         if (query.trim()) params.set('q', query.trim());
         if (projectId) params.set('projectId', projectId);
-        if (status !== 'all') params.set('status', status);
+        params.set('status', status);
         setData(await api<Result>(`/articles?${params}`, { signal: controller.signal }));
         setError('');
       } catch (e) {
@@ -85,20 +91,15 @@ export function ArticlesOverview() {
   useEffect(() => setPage(0), [query, projectId, status]);
 
   const pages = Math.max(1, Math.ceil((data?.total ?? 0) / pageSize));
-  const summary = useMemo(() => ({
-    verified: data?.items.filter(a => a.recordType === 'artifact' && a.verifiedAt).length ?? 0,
-    working: data?.items.filter(a => a.recordType === 'artifact' && !a.verifiedAt).length ?? 0,
-    local: data?.items.filter(a => a.recordType === 'local_file').length ?? 0,
-    published: data?.items.filter(a => a.outcome?.publishedAt).length ?? 0,
-    regressed: data?.items.filter(a => a.outcome?.status === 'regressed').length ?? 0
-  }), [data]);
-
+  const selectedProject = projects.find(project => project.id === projectId);
+  const includePlanning = showPlanning || Boolean(selectedProject && !isOperationalSite(selectedProject));
+  const projectOptions = projects.filter(project => includePlanning || isOperationalSite(project));
   return <div className="corePage">
-    <div className="coreTitleRow"><div><p className="coreEyebrow">ARTICLE INDEX</p><h1>記事</h1><p>大量の記事を検索・絞り込みし、必要な行だけ詳細を開きます。</p></div><span className="countBadge">{data?.total ?? 0} articles</span></div>
+    <div className="coreTitleRow"><div><p className="coreEyebrow">ARTICLE WORKSPACE</p><h1>記事管理</h1><p>管理対象とBlog上の未登録ファイルを分け、必要な集合だけ読み込みます。</p></div><span className="countBadge">{data?.total ?? 0} {listLabel[status]}</span></div>
     {error && <div className="coreError">{error}</div>}
-    <div className="articleSummary"><span><b>{summary.verified}</b> 検証済み</span><span><b>{summary.working}</b> 制作中</span><span><b>{summary.local}</b> 未登録ファイル</span><span><b>{summary.published}</b> 公開記録あり</span><span className={summary.regressed ? 'dangerMetric' : ''}><b>{summary.regressed}</b> 悪化</span></div>
-    <section className="articleLifecycleGuide" aria-label="記事の段階と削除の説明"><div className="articleLifecycleSteps"><span><i>1</i><b>Blogにファイル</b><small>本文が存在</small></span><span><i>2</i><b>Keywordsに登録</b><small>成果物として管理</small></span><span><i>3</i><b>検証済み</b><small>品質チェック完了</small></span><span><i>4</i><b>公開記録</b><small>公開後の評価対象</small></span></div><p><strong>削除について</strong> どの段階でも、確認後にBlog作業フォルダの本文ファイルを削除できます。削除した記事はこの一覧から消え、監査記録だけ残ります。公開中サイトの公開停止やURL削除は、この操作では行いません。</p></section>
-    <div className="coreToolbar articleToolbar"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="記事名・キーワード・サイトを検索" /><select value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">すべてのサイト</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><div className="segmented"><button className={status === 'all' ? 'active' : ''} onClick={() => setStatus('all')}>すべて</button><button className={status === 'in_progress' ? 'active' : ''} onClick={() => setStatus('in_progress')}>制作中</button><button className={status === 'complete' ? 'active' : ''} onClick={() => setStatus('complete')}>検証済み</button></div></div>
+    <details className="articleLifecycleGuide" aria-label="記事の段階と削除の説明"><summary>記事の段階と削除範囲を確認</summary><div className="articleLifecycleSteps"><span><i>1</i><b>Blogにファイル</b><small>本文が存在</small></span><span><i>2</i><b>Keywordsに登録</b><small>成果物として管理</small></span><span><i>3</i><b>検証済み</b><small>品質チェック完了</small></span><span><i>4</i><b>公開記録</b><small>公開後の評価対象</small></span></div><p><strong>削除について</strong> Blog作業フォルダの本文ファイルを削除し、監査記録を残します。公開中サイトの停止やURL削除は行いません。</p></details>
+    {status==='local'&&<aside className="scopeNotice"><strong>未登録ファイルだけを表示しています</strong><span>Blogフォルダを走査するため、管理対象より読み込みに時間がかかります。</span></aside>}
+    <div className="coreToolbar articleToolbar"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="記事名・キーワード・サイトを検索" aria-label="記事を検索"/><select value={projectId} onChange={e => {setProjectId(e.target.value);onFocusProject(e.target.value)}}><option value="">実サイトすべて</option>{projectOptions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select><button className="scopeToggle" aria-pressed={includePlanning} onClick={()=>{if(includePlanning){setShowPlanning(false);if(selectedProject&&!isOperationalSite(selectedProject)){setProjectId('');onFocusProject('')}}else setShowPlanning(true)}}>{includePlanning?'実サイトだけ表示':'企画・テストも表示'}</button><div className="segmented articleSegments"><button className={status === 'managed' ? 'active' : ''} onClick={() => setStatus('managed')}>管理対象</button><button className={status === 'in_progress' ? 'active' : ''} onClick={() => setStatus('in_progress')}>要検証</button><button className={status === 'complete' ? 'active' : ''} onClick={() => setStatus('complete')}>検証済み</button><button className={status === 'regressed' ? 'active' : ''} onClick={() => setStatus('regressed')}>悪化</button><button disabled={!projectId} title={projectId?'Blog上の未登録ファイルを表示':'先にサイトを選んでください'} className={status === 'local' ? 'active' : ''} onClick={() => setStatus('local')}>未登録ファイル</button></div>{projectId&&<button className="textButton contextReturn" onClick={()=>onOpenOperations(projectId)}>次の一手へ</button>}</div>
     <div className="articleTableWrap"><table className="articleTable"><thead><tr><th>記事</th><th>サイト</th><th>キーワード</th><th>状態</th><th>公開後</th><th>更新</th></tr></thead><tbody>
       {!loading && data?.items.map(article => {
         const contentState = contentById[article.id];

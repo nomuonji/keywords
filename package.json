@@ -20,7 +20,8 @@
     "cli": "npm run start -w @keywords/cli --",
     "mcp": "npm run start -w @keywords/mcp",
     "autopilot": "tsx scripts/autopilot-runner.ts",
-    "test:portfolio": "tsx scripts/portfolio-smoke.ts"
+    "test:portfolio": "tsx scripts/portfolio-smoke.ts",
+    "test:web-ui": "python scripts/web-ui-smoke.py"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

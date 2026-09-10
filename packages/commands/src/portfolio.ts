@@ -111,12 +111,13 @@ export const portfolioCommands = {
     }
     if (status === 'complete') clauses.push("a.validator_status='passed' AND a.build_status='passed' AND a.verified_at IS NOT NULL");
     if (status === 'in_progress') clauses.push("NOT (a.validator_status='passed' AND a.build_status='passed' AND a.verified_at IS NOT NULL)");
+    if (status === 'regressed') clauses.push("EXISTS (SELECT 1 FROM operation_outcomes oo WHERE oo.operation_id=a.operation_id AND oo.project_id=a.project_id AND oo.outcome_status='regressed')");
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const base = `FROM operation_artifacts a
       LEFT JOIN pages p ON p.id=a.page_id
       JOIN projects pr ON pr.id=a.project_id
       LEFT JOIN keywords k ON k.id=(SELECT pk.keyword_id FROM page_keywords pk WHERE pk.page_id=a.page_id ORDER BY CASE pk.role WHEN 'primary' THEN 0 ELSE 1 END LIMIT 1)`;
-    const rows = sqlite.prepare(`SELECT a.*,p.title,p.slug,p.status AS page_status,p.url,k.id AS keyword_id,k.text AS keyword_text,k.avg_monthly,k.gsc_clicks,k.gsc_impressions,k.gsc_position,pr.name AS project_name,pr.domain AS project_domain,
+    const rows = status === 'local' ? [] : sqlite.prepare(`SELECT a.*,p.title,p.slug,p.status AS page_status,p.url,k.id AS keyword_id,k.text AS keyword_text,k.avg_monthly,k.gsc_clicks,k.gsc_impressions,k.gsc_position,pr.name AS project_name,pr.domain AS project_domain,
       (SELECT d.reason FROM decisions d JOIN discovery_candidates dc ON dc.id=d.target_id WHERE d.target_type='discovery_candidate' AND d.action='operation.candidate_triage' AND d.verdict='shortlisted' AND dc.keyword_id=k.id ORDER BY d.created_at DESC LIMIT 1) AS selection_reason
       ${base} ${where} ORDER BY a.updated_at DESC`).all(...args) as any[];
     const artifactItems = rows.map(row => {
@@ -148,11 +149,10 @@ export const portfolioCommands = {
       };
     });
     const artifactPaths = new Set(artifactItems.map(item => `${item.projectId}:${item.path}`));
-    const localItems = localBlogArticles(projectId, artifactPaths).filter(item => {
-      if (status === 'complete') return false;
+    const localItems = ['all','local'].includes(status) ? localBlogArticles(projectId, artifactPaths).filter(item => {
       if (query) return `${item.title} ${item.projectName} ${item.path} ${item.slug}`.toLowerCase().includes(query);
       return true;
-    }).map(({ content: _content, ...item }) => item);
+    }).map(({ content: _content, ...item }) => item) : [];
     const items = [...artifactItems, ...localItems].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
     return { generatedAt: new Date().toISOString(), total: items.length, limit, offset, items: items.slice(offset, offset + limit) };
   },
