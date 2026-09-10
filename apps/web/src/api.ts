@@ -1,4 +1,5 @@
-const BASE = import.meta.env.VITE_API_BASE_URL ?? `${window.location.protocol}//${window.location.hostname}:8787`;
+const localApiHost = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '127.0.0.1' : window.location.hostname;
+const BASE = import.meta.env.VITE_API_BASE_URL ?? `${window.location.protocol}//${localApiHost}:8787`;
 let mutationTail = Promise.resolve();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
