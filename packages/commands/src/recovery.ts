@@ -14,6 +14,7 @@ const now = () => new Date().toISOString();
 
 function errorCode(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
+  if (/budget exhausted|external_request budget/i.test(message)) return 'budget_exhausted';
   if (/budget|paused|belongs to another|generation|lease/i.test(message)) return 'execution_boundary';
   const http = message.match(/HTTP\s+(\d{3})/);
   if (http) return `http_${http[1]}`;

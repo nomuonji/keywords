@@ -94,5 +94,16 @@ assert.equal(pairs.length, 1); assert.equal(pairs[0].latest.startDate, '2026-08-
 
 await operationCommands.complete(agentWork, { operationId, summary: 'Acceptance smoke completed without publication.' });
 assert.equal((await operationCommands.context(human, { operationId })).status, 'completed');
+const cancellation = await operationCommands.start(human, { requestText: 'Cancel stale operation', projectIds: [projectId], requestKey: 'cancel-operation-smoke' });
+const cancellationId = cancellation.operation.id as string;
+const cancellationChild = cancellation.children[0];
+const cancellationExecutor = await operationCommands.executorRegister(agent, { executorId: 'cancel-executor', capabilities: ['operation'] });
+await operationCommands.executorClaim(agent, { executorId: 'cancel-executor', generation: cancellationExecutor.generation, operationId: cancellationId, projectId });
+await operationCommands.cancel(human, { operationId: cancellationId, reason: 'stale operation fixture' });
+assert.equal((await operationCommands.context(human, { operationId: cancellationId })).status, 'cancelled');
+assert.equal((sqlite.prepare('SELECT status FROM work_sessions WHERE id=?').get(cancellationChild.workSessionId) as { status: string }).status, 'cancelled');
+assert.equal((sqlite.prepare('SELECT status FROM tasks WHERE id=?').get(cancellationChild.taskId) as { status: string }).status, 'done');
+assert.equal((sqlite.prepare('SELECT current_operation_id FROM operation_executors WHERE id=?').get('cancel-executor') as { current_operation_id: string | null }).current_operation_id, null);
+assert.ok((sqlite.prepare("SELECT COUNT(*) AS n FROM runs WHERE command='operation.cancel' AND status='succeeded'").get() as { n: number }).n >= 1);
 sqlite.close();
-console.log(JSON.stringify({ ok: true, operationId, discoveryJobId: discovery.jobId, scopedHosts: [scopeA.targetOrigin, scopeB.targetOrigin] }));
+console.log(JSON.stringify({ ok: true, operationId, cancellationId, discoveryJobId: discovery.jobId, scopedHosts: [scopeA.targetOrigin, scopeB.targetOrigin] }));

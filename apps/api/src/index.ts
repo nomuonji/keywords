@@ -63,6 +63,7 @@ app.post('/autopilot/run-today', async c => c.json(await autopilotCommands.runTo
 app.get('/operations/context', async c => c.json(await operationCommands.context(ctx(c), { projectId: c.req.query('projectId'), operationId: c.req.query('operationId') })));
 app.post('/operations', async c => c.json(await operationCommands.start(ctx(c), await body(c)), 201));
 app.post('/operations/:operationId/resume', async c => c.json(await operationCommands.resume(ctx(c), { ...(await body(c)), operationId: c.req.param('operationId') })));
+app.post('/operations/:operationId/cancel', async c => c.json(await operationCommands.cancel(ctx(c), { ...(await body(c)), operationId: c.req.param('operationId') })));
 app.post('/operations/:operationId/checkpoint', async c => c.json(await operationCommands.checkpoint(ctx(c), { ...(await body(c)), operationId: c.req.param('operationId') })));
 app.post('/operations/:operationId/complete', async c => c.json(await operationCommands.complete(ctx(c), { ...(await body(c)), operationId: c.req.param('operationId') })));
 app.post('/operations/:operationId/projects/:projectId/discovery', async c => c.json(await operationDiscoveryCommands.startAndClaim(ctx(c), { ...(await body(c)), operationId: c.req.param('operationId'), projectId: c.req.param('projectId') }), 201));

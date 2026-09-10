@@ -36,7 +36,7 @@ const allowedWhilePaused = new Set([
   'blog_contract',
   'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
   'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context',
-  'operation_context','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness'
+  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness'
 ]);
 function guardTool(name: string, args: any) {
   if (name === 'work_start') throw new Error('Direct agent work_start is disabled. Use operation_start, or claim a human-created legacy discovery job.');

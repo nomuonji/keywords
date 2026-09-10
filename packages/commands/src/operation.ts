@@ -134,6 +134,26 @@ function statusForProject(projectId: string) {
   return { review: review ?? null, work: work ? { id: work.id, objective: work.objective, status: work.status, summary: work.summary, nextAction: work.last_next_action, updatedAt: work.updated_at } : null, executor: executorView(executor), latestOutcome: latestOutcome ? outcomeView(latestOutcome) : null, control: operationControl(projectId) };
 }
 
+function releaseExecutorClaims(operationId: string) {
+  let released = 0;
+  const claims = rows(`SELECT e.id,e.current_project_id,op.runtime_started_at,e.lease_expires_at
+    FROM operation_executors e LEFT JOIN operation_projects op ON op.operation_id=e.current_operation_id AND op.project_id=e.current_project_id
+    WHERE e.current_operation_id=?`, operationId);
+  for (const claim of claims) {
+    const started = claim.runtime_started_at ? Date.parse(claim.runtime_started_at) : NaN;
+    const leaseEnd = claim.lease_expires_at ? Math.min(Date.now(), Date.parse(claim.lease_expires_at)) : Date.now();
+    const elapsed = Number.isFinite(started) && Number.isFinite(leaseEnd) ? Math.max(0, leaseEnd - started) : 0;
+    if (elapsed > 0 && claim.current_project_id) run('UPDATE operation_projects SET runtime_consumed_ms=runtime_consumed_ms+?,runtime_started_at=NULL WHERE operation_id=? AND project_id=?', elapsed, operationId, claim.current_project_id);
+    const result = run("UPDATE operation_executors SET current_operation_id=NULL,current_project_id=NULL,status=CASE WHEN cooldown_until>? THEN 'cooldown' ELSE 'online' END,lease_expires_at=NULL,updated_at=? WHERE id=? AND current_operation_id=?", now(), now(), claim.id, operationId);
+    released += Number(result.changes ?? 0);
+  }
+  return released;
+}
+
+function clearAutopilotState(operationId: string, summary: string) {
+  run("UPDATE autopilot_state SET status='idle',stage='idle',operation_id=NULL,target_type=NULL,target_id=NULL,summary=?,decision_json=NULL,last_error=NULL,updated_at=? WHERE operation_id=?", summary.slice(0, 2000), now(), operationId);
+}
+
 export const operationCommands = {
   recordRuntime: async (ctx: CommandContext, input: { executorId: string; generation: number; operationId: string; projectId: string }) => {
     if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Runtime recording requires an executor');
@@ -228,7 +248,11 @@ export const operationCommands = {
 
   complete: async (ctx: CommandContext, input: { operationId: string; summary: string }) => {
     const op = operationRow(input.operationId); required(op, 'Operation not found');
-    if (op.status === 'completed') return operationView(input.operationId);
+    if (op.status === 'completed') {
+      const released = releaseExecutorClaims(input.operationId);
+      if (released) audit(ctx, 'operation.executor_cleanup', null, null, { operationId: input.operationId }, { operationId: input.operationId, released });
+      return operationView(input.operationId);
+    }
     const pending = one(`SELECT rr.id FROM review_requests rr JOIN operation_projects child ON child.work_session_id=rr.work_session_id WHERE child.operation_id=? AND rr.status='open' LIMIT 1`, input.operationId);
     if (pending || op.status === 'awaiting_review' || op.status === 'blocked') throw new Error('Resume the operation after resolving its boundary before completing it');
     headlessCommands.assertCompletion(input.operationId);
@@ -244,10 +268,66 @@ export const operationCommands = {
       if (child.task_id) run("UPDATE tasks SET status='done',updated_at=? WHERE id=?", now(), child.task_id);
       run("UPDATE operation_projects SET status='completed',blocker=NULL,blocker_class=NULL,last_progress_at=?,updated_at=? WHERE operation_id=? AND project_id=?", now(), now(), input.operationId, child.project_id);
     }
+    releaseExecutorClaims(input.operationId);
     run("UPDATE operation_requests SET status='completed',updated_at=?,completed_at=? WHERE id=?", now(), now(), input.operationId);
     emitEvent({ operationId: input.operationId, kind: 'operation_completed', key: `operation:${input.operationId}:completed`, payload: { summary: normalizeText(input.summary) } });
     audit(ctx, 'operation.complete', children[0]?.project_id ?? null, children[0]?.work_session_id ?? null, input, { operationId: input.operationId, completed: true });
     return operationView(input.operationId);
+  },
+
+  cancel: async (ctx: CommandContext, input: { operationId: string; reason: string }) => {
+    assertHuman(ctx, 'Cancelling an operation');
+    const op = operationRow(input.operationId); required(op, 'Operation not found');
+    if (op.status === 'cancelled') {
+      const child = one('SELECT project_id,work_session_id FROM operation_projects WHERE operation_id=? ORDER BY project_id LIMIT 1', input.operationId);
+      clearAutopilotState(input.operationId, '古いOperationは整理済みです。次回のAutopilot判定を待っています。');
+      emitEvent({ operationId: input.operationId, projectId: child?.project_id ?? null, kind: 'operation_cancelled', key: `operation:${input.operationId}:cancelled:project`, payload: { reason: 'Operation was already cancelled.' } });
+      audit(ctx, 'operation.cancel', child?.project_id ?? null, child?.work_session_id ?? null, input, { operationId: input.operationId, cancelled: false, alreadyCancelled: true });
+      return operationView(input.operationId);
+    }
+    if (op.status === 'completed') throw new Error('Completed operation cannot be cancelled');
+    const reason = normalizeText(input.reason); required(reason, 'Cancellation reason is required');
+    const children = rows('SELECT * FROM operation_projects WHERE operation_id=?', input.operationId);
+    const result = sqlite.transaction(() => {
+      let sessionsCancelled = 0, tasksClosed = 0, reviewsClosed = 0, discoveryJobsCancelled = 0, executorsReleased = 0;
+      const claims = rows(`SELECT e.id,e.current_project_id,op.runtime_started_at,op.runtime_consumed_ms,e.lease_expires_at
+        FROM operation_executors e LEFT JOIN operation_projects op ON op.operation_id=e.current_operation_id AND op.project_id=e.current_project_id
+        WHERE e.current_operation_id=?`, input.operationId);
+      for (const child of children) {
+        if (child.work_session_id) {
+          const session = one('SELECT * FROM work_sessions WHERE id=?', child.work_session_id);
+          if (session && !['completed', 'cancelled'].includes(session.status)) {
+            run('INSERT INTO work_checkpoints(id,session_id,state,summary,next_action,created_at) VALUES(?,?,?,?,?,?)', randomUUID(), session.id, 'blocked', `Cancelled: ${reason}`.slice(0, 2000), null, now());
+            run("UPDATE work_sessions SET status='cancelled',summary=?,last_next_action=NULL,updated_at=?,completed_at=? WHERE id=?", reason.slice(0, 3000), now(), now(), session.id);
+            sessionsCancelled++;
+          }
+          const reviews = run("UPDATE review_requests SET status='resolved',resolution='cancelled',reason=?,resolved_at=? WHERE work_session_id=? AND status='open'", reason.slice(0, 1000), now(), session.id);
+          reviewsClosed += Number(reviews.changes ?? 0);
+          const jobs = run("UPDATE discovery_jobs SET status='cancelled',completed_at=?,executor_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,error=?,updated_at=? WHERE work_session_id=? AND status NOT IN ('completed','failed','cancelled')", now(), reason.slice(0, 1000), now(), session.id);
+          discoveryJobsCancelled += Number(jobs.changes ?? 0);
+        }
+        if (child.task_id) {
+          const task = run("UPDATE tasks SET status='done',updated_at=? WHERE id=? AND status!='done'", now(), child.task_id);
+          tasksClosed += Number(task.changes ?? 0);
+        }
+        run("UPDATE operation_projects SET status='cancelled',blocker=NULL,blocker_class=NULL,runtime_started_at=NULL,updated_at=? WHERE operation_id=? AND project_id=?", now(), input.operationId, child.project_id);
+      }
+      for (const claim of claims) {
+        const started = claim.runtime_started_at ? Date.parse(claim.runtime_started_at) : NaN;
+        const leaseEnd = claim.lease_expires_at ? Math.min(Date.now(), Date.parse(claim.lease_expires_at)) : Date.now();
+        const elapsed = Number.isFinite(started) && Number.isFinite(leaseEnd) ? Math.max(0, leaseEnd - started) : 0;
+        if (elapsed > 0 && claim.current_project_id) run('UPDATE operation_projects SET runtime_consumed_ms=runtime_consumed_ms+? WHERE operation_id=? AND project_id=?', elapsed, input.operationId, claim.current_project_id);
+        const released = run("UPDATE operation_executors SET current_operation_id=NULL,current_project_id=NULL,status=CASE WHEN cooldown_until>? THEN 'cooldown' ELSE 'online' END,lease_expires_at=NULL,updated_at=? WHERE id=? AND current_operation_id=?", now(), now(), claim.id, input.operationId);
+        executorsReleased += Number(released.changes ?? 0);
+      }
+      run("UPDATE operation_requests SET status='cancelled',updated_at=?,completed_at=? WHERE id=?", now(), now(), input.operationId);
+      clearAutopilotState(input.operationId, '古いOperationを整理しました。次回のAutopilot判定を待っています。');
+      emitEvent({ operationId: input.operationId, projectId: children[0]?.project_id ?? null, kind: 'operation_cancelled', key: `operation:${input.operationId}:cancelled:project`, payload: { reason, sessionsCancelled, tasksClosed, reviewsClosed, discoveryJobsCancelled, executorsReleased } });
+      const output = { operationId: input.operationId, cancelled: true, reason, sessionsCancelled, tasksClosed, reviewsClosed, discoveryJobsCancelled, executorsReleased };
+      audit(ctx, 'operation.cancel', children[0]?.project_id ?? null, children[0]?.work_session_id ?? null, input, output);
+      return output;
+    }).immediate();
+    return { ...(operationView(input.operationId)), cancellation: result };
   },
 
   startDiscovery: async (ctx: CommandContext, input: { operationId: string; projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; demandPolicy?: DiscoveryDemandPolicy }) => {
