@@ -4,6 +4,7 @@ import type { CommandContext } from '@keywords/domain';
 import { searchConsoleQuery, type SearchConsoleResult } from '@keywords/research';
 import { assertOperationAllowed, fingerprint, reserveOperationBudget, settleOperationBudget } from './guard.js';
 import { measurementComparisonContext, periodDays, recordMeasurementImport, resolveMeasurementScope } from './measurement.js';
+import { resolveGscProperty } from './gsc-property.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -71,7 +72,8 @@ async function materializeCompleteCapture(input: { projectId: string; observedAt
 export const metricsCommands = {
   capture: async (ctx: CommandContext, input: { projectId: string; siteUrl?: string; targetOrigin?: string; startDate: string; endDate: string; searchType?: string; timezone?: string; rowLimit?: number }) => withRun(projectCtx(ctx, input.projectId), 'metrics.capture', input, async () => {
     assertOperationAllowed(ctx, { projectId: input.projectId, command: 'metrics.capture', capability: 'measurement.capture' });
-    const scope = resolveMeasurementScope({ projectId: input.projectId, property: input.siteUrl, targetOrigin: input.targetOrigin, searchType: input.searchType, timezone: input.timezone });
+    const property = await resolveGscProperty(ctx, input.projectId, input.siteUrl);
+    const scope = resolveMeasurementScope({ projectId: input.projectId, property, targetOrigin: input.targetOrigin, searchType: input.searchType, timezone: input.timezone });
     const observedAt = now(); const maxRows = Math.max(1, Math.min(Math.floor(input.rowLimit ?? 25_000), 100_000));
     let queries: Awaited<ReturnType<typeof fetchAll>> | null = null; let pages: Awaited<ReturnType<typeof fetchAll>> | null = null;
     try {

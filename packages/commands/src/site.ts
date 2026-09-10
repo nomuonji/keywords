@@ -3,8 +3,9 @@ import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { fetchSitemapUrls } from '@keywords/research/sitemap';
 import { recordProviderCapability } from './workspace.js';
+import { assertOperationAllowed, reserveOperationBudget, settleOperationBudget } from './guard.js';
 
-const { db } = getDatabase();
+const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
 const id = () => crypto.randomUUID();
 const projectCtx = (ctx: CommandContext, projectId: string): CommandContext => ({ ...ctx, projectId });
@@ -35,17 +36,27 @@ export const siteCommands = {
   list: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'site.list', { projectId }, async () => db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), isNotNull(schema.pages.url))).orderBy(desc(schema.pages.lastSeenAt)).limit(2000)),
 
   syncSitemap: async (ctx: CommandContext, input: { projectId: string; sitemapUrl?: string }) => withRun(projectCtx(ctx, input.projectId), 'site.sync_sitemap', input, async () => {
+    assertOperationAllowed(ctx, { projectId: input.projectId, command: 'site.sync_sitemap', capability: 'site.sync' });
     const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get(); if (!project) throw new Error('Project not found');
-    const sitemapUrl = input.sitemapUrl?.trim() || (project.domain ? defaultSitemap(project.domain) : ''); if (!sitemapUrl) throw new Error('sitemapUrl is required when the project has no domain');
+    const previous = sqlite.prepare("SELECT url FROM sources WHERE project_id=? AND type='sitemap' ORDER BY created_at DESC LIMIT 1").get(input.projectId) as any;
+    const sitemapUrl = input.sitemapUrl?.trim() || previous?.url || (project.domain ? defaultSitemap(project.domain) : ''); if (!sitemapUrl) throw new Error('sitemapUrl is required when the project has no domain');
+    const targetOrigin = project.domain ? new URL(defaultSitemap(project.domain)).origin : new URL(sitemapUrl).origin;
+    const reservations: string[] = [], requestId = id();
     try {
-      const discovery = await fetchSitemapUrls({ sitemapUrl }); const seenAt = now(); let created = 0, updated = 0;
+      const discovery = await fetchSitemapUrls({ sitemapUrl, targetOrigin, discover: !input.sitemapUrl, onRequest: async () => {
+        assertOperationAllowed(ctx, { projectId: input.projectId, command: 'site.request', capability: 'site.sync' });
+        const reservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `sitemap:${requestId}:${reservations.length}`);
+        if (reservation) reservations.push(reservation.id);
+      } });
+      for (const reservation of reservations) settleOperationBudget(reservation, 'succeeded');
+      const seenAt = now(); let created = 0, updated = 0;
       const before = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, input.projectId), eq(schema.pages.source, 'sitemap')));
       for (const url of discovery.urls) { const result = await upsertLivePage(input.projectId, url, seenAt); if (result.created) created++; else updated++; }
-      const stale = before.filter(page => page.lastSeenAt && page.lastSeenAt !== seenAt && page.url && !discovery.urls.includes(page.url)).map(page => ({ id: page.id, url: page.url, lastSeenAt: page.lastSeenAt }));
+      const stale = discovery.complete ? before.filter(page => page.lastSeenAt && page.lastSeenAt !== seenAt && page.url && !discovery.urls.includes(page.url)).map(page => ({ id: page.id, url: page.url, lastSeenAt: page.lastSeenAt })) : [];
       for (const page of stale) await db.update(schema.pages).set({ status: 'stale', updatedAt: seenAt }).where(eq(schema.pages.id, page.id));
-      const source = { id: id(), projectId: input.projectId, type: 'sitemap', label: `Sitemap sync: ${discovery.urls.length} URLs`, url: discovery.sitemapUrl, metadataJson: JSON.stringify({ sitemaps: discovery.sitemaps, urlCount: discovery.urls.length, created, updated, staleCount: stale.length, staleMeans: 'not observed in this sitemap sync; not proven deleted' }), createdAt: seenAt };
+      const source = { id: id(), projectId: input.projectId, type: 'sitemap', label: `Sitemap sync: ${discovery.urls.length} URLs`, url: discovery.sitemapUrl, metadataJson: JSON.stringify({ sitemaps: discovery.sitemaps, urlCount: discovery.urls.length, complete: discovery.complete, rejectedUrls: discovery.rejectedUrls, created, updated, staleCount: stale.length, staleMeans: 'not observed in this complete sitemap sync; not proven deleted' }), createdAt: seenAt };
       await db.insert(schema.sources).values(source); await recordProviderCapability(input.projectId, 'sitemap', 'available');
-      return { sitemapUrl, discovered: discovery.urls.length, created, updated, stale, sourceId: source.id, syncedAt: seenAt };
-    } catch (error) { await recordProviderCapability(input.projectId, 'sitemap', 'failed', error); throw error; }
+      return { sitemapUrl: discovery.sitemapUrl, complete: discovery.complete, discovered: discovery.urls.length, created, updated, stale, sourceId: source.id, syncedAt: seenAt };
+    } catch (error) { for (const reservation of reservations) settleOperationBudget(reservation, 'failed', 'Sitemap request failed'); await recordProviderCapability(input.projectId, 'sitemap', 'failed', error); throw error; }
   })
 };

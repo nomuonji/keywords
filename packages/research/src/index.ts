@@ -1,6 +1,6 @@
 import { lookup } from 'node:dns/promises';
 import { createSign } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { isIP } from 'node:net';
 
 const MAX_WEB_BYTES = 1_000_000;
@@ -347,6 +347,7 @@ export async function searchConsoleQuery(input: {
   rowLimit?: number;
   startRow?: number;
   searchType?: string;
+  dataState?: 'final' | 'all';
 }): Promise<SearchConsoleResult> {
   const accessToken = await searchConsoleAccessToken();
   const siteUrl = input.siteUrl ?? process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL;
@@ -360,6 +361,7 @@ export async function searchConsoleQuery(input: {
     startRow: Math.max(0, input.startRow ?? 0)
   };
   if (input.searchType) body.type = input.searchType;
+  body.dataState = input.dataState ?? 'final';
   if (input.dimensionFilterGroups) body.dimensionFilterGroups = input.dimensionFilterGroups;
   const raw = await jsonRequest<{ rows?: any[] }>(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
     method: 'POST',
@@ -376,6 +378,54 @@ export async function searchConsoleQuery(input: {
   return { siteUrl, startDate: input.startDate, endDate: input.endDate, dimensions, rows, fetchedAt: new Date().toISOString() };
 }
 
+/** An external observation of Google's stored index, not a live-page test. */
+export interface UrlIndexObservation {
+  url: string;
+  siteUrl: string;
+  observedAt: string;
+  verdict: string;
+  coverageState: string | null;
+  robotsTxtState: string | null;
+  indexingState: string | null;
+  pageFetchState: string | null;
+  lastCrawlTime: string | null;
+  googleCanonical: string | null;
+  userCanonical: string | null;
+}
+
+export async function searchConsoleSites(): Promise<Array<{ siteUrl: string; permissionLevel: string }>> {
+  const accessToken = await searchConsoleAccessToken();
+  const result = await jsonRequest<{ siteEntry?: Array<{ siteUrl: string; permissionLevel: string }> }>(
+    'https://www.googleapis.com/webmasters/v3/sites', { headers: { authorization: `Bearer ${accessToken}` } });
+  return (result.siteEntry ?? []).filter(row => typeof row.siteUrl === 'string' && row.permissionLevel !== 'siteUnverifiedUser')
+    .map(row => ({ siteUrl: row.siteUrl, permissionLevel: row.permissionLevel }));
+}
+
+export async function searchConsoleInspect(input: { url: string; siteUrl: string }): Promise<UrlIndexObservation> {
+  const url = new URL(input.url);
+  if (url.username || url.password || url.hash) throw new Error('Inspection requires a public URL without credentials or fragment');
+  await assertSafePublicUrl(url);
+  if (input.siteUrl.startsWith('sc-domain:')) {
+    const host = input.siteUrl.slice('sc-domain:'.length).toLowerCase();
+    if (url.hostname !== host && !url.hostname.endsWith(`.${host}`)) throw new Error('Inspection URL is outside the Search Console property');
+  } else {
+    const property = new URL(input.siteUrl);
+    if (property.origin !== url.origin || !url.pathname.startsWith(property.pathname)) throw new Error('Inspection URL is outside the Search Console property');
+  }
+  const accessToken = await searchConsoleAccessToken();
+  const raw = await jsonRequest<{ inspectionResult?: { indexStatusResult?: Record<string, unknown> } }>(
+    'https://searchconsole.googleapis.com/v1/urlInspection/index:inspect', {
+      method: 'POST', headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ inspectionUrl: url.toString(), siteUrl: input.siteUrl, languageCode: 'en-US' })
+    });
+  const status = raw.inspectionResult?.indexStatusResult;
+  if (!status || typeof status.verdict !== 'string') throw new Error('Search Console returned no index verdict');
+  const field = (key: string) => typeof status[key] === 'string' ? String(status[key]).slice(0, 2000) : null;
+  return { url: url.toString(), siteUrl: input.siteUrl, observedAt: new Date().toISOString(), verdict: status.verdict,
+    coverageState: field('coverageState'), robotsTxtState: field('robotsTxtState'), indexingState: field('indexingState'),
+    pageFetchState: field('pageFetchState'), lastCrawlTime: field('lastCrawlTime'), googleCanonical: field('googleCanonical'), userCanonical: field('userCanonical') };
+}
+
 function searchConsoleRefreshCredentials() {
   const refreshToken = process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN ?? process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
   const clientId = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID ?? process.env.GOOGLE_OAUTH_CLIENT_ID ?? process.env.GOOGLE_ADS_CLIENT_ID ?? process.env.ADS_CLIENT_ID;
@@ -383,9 +433,12 @@ function searchConsoleRefreshCredentials() {
   return refreshToken && clientId && clientSecret ? { refreshToken, clientId, clientSecret } : null;
 }
 
+let serviceAccountCache: { path: string; modifiedAt: number; token: string; expiresAt: number } | null = null;
 async function serviceAccountAccessToken() {
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
   if (!credentialsPath) return null;
+  const modifiedAt = statSync(credentialsPath).mtimeMs;
+  if (serviceAccountCache?.path === credentialsPath && serviceAccountCache.modifiedAt === modifiedAt && serviceAccountCache.expiresAt > Date.now()) return serviceAccountCache.token;
   const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8')) as { client_email?: string; private_key?: string };
   if (!credentials.client_email || !credentials.private_key) throw new Error('Google service account JSON is missing client_email or private_key');
   const now = Math.floor(Date.now() / 1000);
@@ -403,6 +456,7 @@ async function serviceAccountAccessToken() {
   });
   const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
   if (!response.ok || !body.access_token) throw new Error(`Google service account token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
+  serviceAccountCache = { path: credentialsPath, modifiedAt, token: body.access_token, expiresAt: Date.now() + 50 * 60_000 };
   return body.access_token;
 }
 

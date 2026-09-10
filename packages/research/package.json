@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./sitemap": "./src/sitemap.ts",
+    "./blog-runtime": "./src/blog-runtime.ts",
     "./portfolio": "./src/portfolio.ts"
   },
   "scripts": {

@@ -56,7 +56,7 @@ async function requireProject(projectId: string) {
   return project;
 }
 
-async function snapshotCounts(projectId: string) {
+export async function snapshotCounts(projectId: string) {
   const [keywords, unclusteredKeywords, clusters, proposedPages, approvedPages, openTasks, openInsights, activePolicies] = await Promise.all([
     db.select({ value: count() }).from(schema.keywords).where(and(eq(schema.keywords.projectId, projectId), ne(schema.keywords.status, 'rejected'))).get(),
     db.select({ value: count() }).from(schema.keywords).leftJoin(schema.clusterKeywords, eq(schema.keywords.id, schema.clusterKeywords.keywordId)).where(and(eq(schema.keywords.projectId, projectId), ne(schema.keywords.status, 'rejected'), isNull(schema.clusterKeywords.keywordId))).get(),
@@ -278,7 +278,8 @@ export const workCommands = {
     if (summary.length > 3000) throw new Error('Completion summary is too long');
     const current = await snapshotCounts(input.projectId);
     const baseline = parseRecord(session.baselineJson);
-    const diff = diffCounts(baseline, current);
+    const baselineAvailable = Object.values(baseline).length > 0 && Object.values(baseline).every(value => typeof value === 'number' && Number.isFinite(value));
+    const diff = baselineAvailable ? diffCounts(baseline, current) : null;
     const t = now();
     await db.insert(schema.workCheckpoints).values({ id: id(), sessionId: session.id, state: 'completed', summary, nextAction: null, createdAt: t });
     await db.update(schema.workSessions).set({ status: 'completed', summary, lastNextAction: null, updatedAt: t, completedAt: t }).where(eq(schema.workSessions.id, session.id));

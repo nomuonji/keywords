@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { assertOperationAllowed, operationControl } from './guard.js';
+import { assertRecoveryAllowsExpansion } from './recovery-context.js';
+import { readBlogRuntime, newBlogArticleTarget } from '@keywords/research/blog-runtime';
+import { isBudgetedCommand } from './budget.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -17,88 +20,30 @@ const hashJson = (value: unknown) => hashText(JSON.stringify(value));
 const VALIDATOR_VERSION = 'article-validator-v1';
 const AUTO_RESUME_BLOCKERS = new Set(['quality_revision_required', 'artifact_missing']);
 
-function ensureColumn(table: string, name: string, definition: string) {
-  const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  if (!columns.some(column => column.name === name)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
-}
 
-function ensureHeadlessSchema() {
-  sqlite.exec(`
-CREATE TABLE IF NOT EXISTS operation_artifacts (
- id TEXT PRIMARY KEY,
- operation_id TEXT NOT NULL REFERENCES operation_requests(id) ON DELETE CASCADE,
- project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
- page_id TEXT REFERENCES pages(id) ON DELETE SET NULL,
- article_id TEXT NOT NULL,
- artifact_path TEXT NOT NULL,
- content_sha256 TEXT NOT NULL,
- source_ids_json TEXT NOT NULL,
- validator_version TEXT,
- validator_status TEXT NOT NULL DEFAULT 'pending',
- validator_result_hash TEXT,
- validator_result_json TEXT,
- build_command TEXT,
- build_status TEXT NOT NULL DEFAULT 'pending',
- build_result_hash TEXT,
- before_hash TEXT,
- after_hash TEXT NOT NULL,
- manifest_json TEXT NOT NULL,
- revision_key TEXT,
- revision_count INTEGER NOT NULL DEFAULT 0,
- validation_attempts INTEGER NOT NULL DEFAULT 0,
- no_progress_count INTEGER NOT NULL DEFAULT 0,
- generated_at TEXT NOT NULL,
- verified_at TEXT,
- updated_at TEXT NOT NULL,
- deleted_at TEXT,
- deleted_by TEXT,
- UNIQUE(operation_id, project_id, article_id)
-);
-CREATE INDEX IF NOT EXISTS operation_artifacts_project_status_idx ON operation_artifacts(project_id, validator_status, updated_at DESC);
-CREATE INDEX IF NOT EXISTS operation_artifacts_page_idx ON operation_artifacts(project_id, page_id, updated_at DESC);
-`);
-  ensureColumn('operation_artifacts', 'deleted_at', 'deleted_at TEXT');
-  ensureColumn('operation_artifacts', 'deleted_by', 'deleted_by TEXT');
-  ensureColumn('operation_projects', 'blocker_class', 'blocker_class TEXT');
-  ensureColumn('operation_projects', 'last_progress_at', 'last_progress_at TEXT');
-  ensureColumn('operation_projects', 'runtime_consumed_ms', 'runtime_consumed_ms INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('operation_executors', 'failure_class', 'failure_class TEXT');
-  ensureColumn('operation_executors', 'failure_count', 'failure_count INTEGER NOT NULL DEFAULT 0');
-  ensureColumn('operation_executors', 'cooldown_until', 'cooldown_until TEXT');
-  ensureColumn('operation_executors', 'last_error', 'last_error TEXT');
-  ensureColumn('operation_executors', 'last_failure_at', 'last_failure_at TEXT');
-  ensureColumn('autopilot_state', 'tick_lease_owner', 'tick_lease_owner TEXT');
-  ensureColumn('autopilot_state', 'tick_lease_expires_at', 'tick_lease_expires_at TEXT');
-  ensureColumn('autopilot_state', 'last_tick_started_at', 'last_tick_started_at TEXT');
-  ensureColumn('autopilot_state', 'last_tick_finished_at', 'last_tick_finished_at TEXT');
-  sqlite.exec(`
-CREATE TRIGGER IF NOT EXISTS autonomous_handoff_requires_verified_artifact
-BEFORE INSERT ON blog_handoffs
-WHEN COALESCE(json_extract(NEW.payload_json, '$.publication_authorized'), 0) = 1
-BEGIN
-  SELECT CASE WHEN NOT EXISTS (
-    SELECT 1 FROM operation_artifacts a
-    WHERE a.project_id=NEW.project_id AND a.page_id=NEW.page_id
-      AND COALESCE(a.deleted_at,'')='' AND a.validator_status='passed' AND a.build_status='passed' AND a.verified_at IS NOT NULL
-  ) THEN RAISE(ABORT, 'Autonomous publication requires a verified local article artifact') END;
-END;
-`);
-}
-ensureHeadlessSchema();
 
-function artifactRoot() {
+export function articleRuntime(projectId: string) {
+  const binding = one('SELECT blog_site_id,origin FROM blog_bindings WHERE project_id=?', projectId);
+  if (binding) return { ...readBlogRuntime(binding.blog_site_id, binding.origin), bound: true };
   const configured = process.env.KEYWORDS_BLOG_ROOT?.trim() || process.env.KEYWORDS_ARTIFACT_ROOT?.trim();
   if (!configured) throw new Error('KEYWORDS_BLOG_ROOT is required for article file writes and validation');
-  return resolve(configured);
+  return { root: resolve(configured), buildCommand: process.env.KEYWORDS_BLOG_BUILD_COMMAND?.trim() ?? '', collections: [], bound: false };
 }
 
-function safeArtifactPath(ref: string) {
+export function safeArtifactPath(ref: string, projectId: string) {
   const clean = ref.trim().replaceAll('\\', '/').replace(/^\.\//, '');
   if (!clean || isAbsolute(clean) || clean.includes(':') || clean.split('/').some(part => part === '..' || part === '.')) throw new Error('Artifact path must be a safe relative path');
-  const root = artifactRoot();
+  const configuredRoot = articleRuntime(projectId).root;
+  const root = existsSync(configuredRoot) ? realpathSync(configuredRoot) : configuredRoot;
   const absolute = resolve(root, clean);
   const rel = relative(root, absolute);
   if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new Error('Artifact path escapes KEYWORDS_BLOG_ROOT');
+  let existingParent = absolute;
+  while (!existsSync(existingParent) && existingParent !== dirname(existingParent)) existingParent = dirname(existingParent);
+  if (existsSync(root)) {
+    const physical = relative(root, realpathSync(existingParent));
+    if (physical === '..' || physical.startsWith(`..${sep}`) || isAbsolute(physical)) throw new Error('Artifact path escapes the site through a symlink');
+  }
   return { root, ref: clean, absolute };
 }
 
@@ -201,8 +146,14 @@ function defaultArtifactRef(projectId: string, page: any) {
     const target = one('SELECT url FROM pages WHERE id=? AND project_id=?', page.target_page_id, projectId);
     const binding = one('SELECT snapshot_json FROM blog_bindings WHERE project_id=?', projectId);
     const snapshot = parse<any>(binding?.snapshot_json, {});
-    const match = (snapshot.sources ?? []).find((item: any) => item.expected_url === target?.url);
-    if (match?.source_ref) return String(match.source_ref);
+    const matches = (snapshot.sources ?? []).filter((item: any) => item.expected_url === target?.url);
+    if (matches.length === 1 && matches[0].source_ref) return String(matches[0].source_ref);
+    if (binding) throw new Error('Existing page has no unique source mapping; propose a structural repair instead of creating a different article');
+  }
+  const runtime = articleRuntime(projectId);
+  if (runtime.bound) {
+    const binding = one('SELECT origin FROM blog_bindings WHERE project_id=?', projectId);
+    return newBlogArticleTarget(runtime, binding.origin, String(page.slug)).path;
   }
   const configuredDir = (process.env.KEYWORDS_BLOG_ARTICLE_DIR ?? 'content').replace(/^\/+|\/+$/g, '');
   const extension = process.env.KEYWORDS_BLOG_ARTICLE_EXTENSION?.trim() || '.md';
@@ -219,7 +170,7 @@ function reserveArtifactAction(ctx: CommandContext, projectId: string) {
   const session = one('SELECT * FROM work_sessions WHERE id=? AND project_id=?', ctx.workSessionId, projectId);
   if (!session) throw new Error('Artifact command work session is not in project');
   if (session.status !== 'running') throw new Error(`Work session is ${session.status}`);
-  const used = Number(one("SELECT COUNT(*) AS n FROM runs WHERE work_session_id=? AND status IN ('succeeded','failed')", session.id)?.n ?? 0);
+  const used = rows('SELECT command FROM runs WHERE work_session_id=?',session.id).filter(row=>isBudgetedCommand(row.command)).length;
   if (used >= Number(session.max_actions)) throw new Error('Work session action budget exhausted');
 }
 
@@ -254,7 +205,7 @@ function artifactView(row: any) {
 
 function artifactContent(row: any) {
   if (!row) return null;
-  const path = safeArtifactPath(row.artifact_path);
+  const path = safeArtifactPath(row.artifact_path, row.project_id);
   const exists = existsSync(path.absolute);
   const content = exists ? readFileSync(path.absolute, 'utf8') : null;
   return {
@@ -307,15 +258,22 @@ function contentOperationRequired(op: any, child: any) {
 function completionStatus(operationId: string) {
   const op = one('SELECT * FROM operation_requests WHERE id=?', operationId); if (!op) throw new Error('Operation not found');
   const children = rows('SELECT * FROM operation_projects WHERE operation_id=?', operationId);
+  const constraints = parse<Record<string, unknown>>(op.constraints_json, {});
+  const evidenceCommands: Record<string, string[]> = {
+    capture_recovery: ['recovery.capture'], sync_site: ['site.sync_sitemap'], capture_metrics: ['metrics.capture'],
+    recover_existing_page: ['artifact.validate', 'insight.create'], observe_outcome: ['operation.outcome'], blog_observation_due: ['blog.evaluate','blog.receipt']
+  };
   const projects = children.map(child => {
     const required = contentOperationRequired(op, child);
     const artifact = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', operationId, child.project_id);
     let fileMatches = false;
     if (artifact) {
-      try { const p = safeArtifactPath(artifact.artifact_path); fileMatches = existsSync(p.absolute) && hashText(readFileSync(p.absolute, 'utf8')) === artifact.content_sha256; } catch { fileMatches = false; }
+      try { const p = safeArtifactPath(artifact.artifact_path, child.project_id); fileMatches = existsSync(p.absolute) && hashText(readFileSync(p.absolute, 'utf8')) === artifact.content_sha256; } catch { fileMatches = false; }
     }
-    const complete = !required || Boolean(artifact && fileMatches && artifact.validator_status === 'passed' && artifact.build_status === 'passed' && artifact.verified_at && parse(artifact.source_ids_json, []).length);
-    return { projectId: child.project_id, required, complete, blockerClass: child.blocker_class ?? null, fileMatches, artifact: artifactView(artifact) };
+    const allowedCommands = evidenceCommands[String(constraints.operatorKind ?? '')];
+    const evidenceComplete = !allowedCommands || Boolean(child.work_session_id && rows("SELECT command,input_json FROM runs WHERE work_session_id=? AND project_id=? AND status='succeeded' AND created_at>=?", child.work_session_id, child.project_id, op.created_at).some(row => allowedCommands.includes(row.command) && (row.command !== 'insight.create' || parse<any>(row.input_json, {}).sourceId === constraints.observationSourceId)));
+    const complete = evidenceComplete && (!required || Boolean(artifact && fileMatches && artifact.validator_status === 'passed' && artifact.build_status === 'passed' && artifact.verified_at && parse(artifact.source_ids_json, []).length));
+    return { projectId: child.project_id, required, complete, evidenceComplete, requiredEvidence: allowedCommands ?? [], blockerClass: child.blocker_class ?? null, fileMatches, artifact: artifactView(artifact) };
   });
   return { operationId, required: projects.some(item => item.required), complete: projects.every(item => item.complete), projects };
 }
@@ -364,7 +322,7 @@ export const headlessCommands = {
 
   classifyExecutorFailure: (value: unknown) => {
     const text = String(value instanceof Error ? `${value.name}: ${value.message}` : value ?? '').toLowerCase();
-    if (/enoent|not found|cannot find.*executable|spawn .* failed/.test(text)) return 'executable_missing';
+    if (/spawn .*enoent|cannot find.*executable|executable.*not found|spawn .* failed/.test(text)) return 'executable_missing';
     if (/rate.?limit|too many requests|\b429\b|quota|usage limit|capacity limit/.test(text)) return 'provider_rate_limit';
     if (/unauthori[sz]ed|forbidden|invalid api.?key|authentication|\b401\b|\b403\b/.test(text)) return 'executor_authentication';
     if (/mcp.*(fail|error)|bootstrap.*(fail|error)|failed to start.*mcp/.test(text)) return 'mcp_bootstrap';
@@ -407,27 +365,39 @@ export const headlessCommands = {
     const content = input.content; if (!content?.trim()) throw new Error('Article content is required');
     try {
       assertArticleKeywordResearch(input.projectId, input.pageId, input.operationId);
+      if (page.plan_mode !== 'existing_page_improvement') assertRecoveryAllowsExpansion(input.projectId);
     } catch (error) {
       recordRun(ctx, input.projectId, 'artifact.write_draft', { operationId: input.operationId, pageId: input.pageId, articleId: input.articleId ?? null }, null, error);
       throw error;
     }
-    const ref = input.artifactPath?.trim() || defaultArtifactRef(input.projectId, page);
-    const path = safeArtifactPath(ref);
+    const sourceIds = validateSources(input.projectId, input.sourceIds?.length ? input.sourceIds : pageSourceIds(input.projectId, input.pageId));
+    const runtime = articleRuntime(input.projectId);
+    const expectedRef = defaultArtifactRef(input.projectId, page);
+    const ref = input.artifactPath?.trim() || expectedRef;
+    if (runtime.bound && ref.replaceAll('\\', '/') !== expectedRef.replaceAll('\\', '/')) throw new Error('Article path must match the bound site and page mapping');
+    if (runtime.bound && input.buildCommand?.trim() && input.buildCommand.trim() !== runtime.buildCommand) throw new Error('Use the configured site build; an agent cannot substitute a different build command');
+    const path = safeArtifactPath(ref, input.projectId);
     const beforeHash = existsSync(path.absolute) ? hashText(readFileSync(path.absolute, 'utf8')) : null;
+    if (runtime.bound && page.plan_mode === 'existing_page_improvement') {
+      const target = one('SELECT url FROM pages WHERE id=? AND project_id=?', page.target_page_id, input.projectId);
+      const snapshot = parse<any>(one('SELECT snapshot_json FROM blog_bindings WHERE project_id=?', input.projectId)?.snapshot_json, {});
+      const mapped = snapshot.sources?.find((item: any) => item.expected_url === target?.url);
+      const prior = one('SELECT content_sha256 FROM operation_artifacts WHERE operation_id=? AND project_id=? AND page_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', input.operationId, input.projectId, input.pageId);
+      if (!beforeHash || beforeHash !== (prior?.content_sha256 ?? mapped?.source_sha256)) throw new Error('Mapped source changed since the snapshot/artifact; refresh and reconcile before overwriting');
+    }
     atomicWrite(path.absolute, content);
     const persisted = readFileSync(path.absolute, 'utf8');
     const afterHash = hashText(persisted); if (persisted !== content) throw new Error('Atomic article write verification failed');
-    const sourceIds = validateSources(input.projectId, input.sourceIds?.length ? input.sourceIds : pageSourceIds(input.projectId, input.pageId));
     const articleId = input.articleId?.trim() || input.pageId;
     const old = one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND article_id=?', input.operationId, input.projectId, articleId);
     const revisionCount = old && old.content_sha256 !== afterHash ? Number(old.revision_count ?? 0) + 1 : Number(old?.revision_count ?? 0);
     const id = old?.id ?? randomUUID(); const t = now();
-    const provisional = { operation_id: input.operationId, project_id: input.projectId, page_id: input.pageId, article_id: articleId, artifact_path: path.ref, content_sha256: afterHash, source_ids_json: JSON.stringify(sourceIds), validator_version: VALIDATOR_VERSION, validator_status: 'pending', validator_result_hash: null, build_command: input.buildCommand?.trim() || old?.build_command || process.env.KEYWORDS_BLOG_BUILD_COMMAND?.trim() || null, build_status: 'pending', build_result_hash: null, before_hash: beforeHash, after_hash: afterHash, generated_at: t, verified_at: null };
+    const provisional = { operation_id: input.operationId, project_id: input.projectId, page_id: input.pageId, article_id: articleId, artifact_path: path.ref, content_sha256: afterHash, source_ids_json: JSON.stringify(sourceIds), validator_version: VALIDATOR_VERSION, validator_status: 'pending', validator_result_hash: null, build_command: runtime.bound ? runtime.buildCommand : input.buildCommand?.trim() || old?.build_command || runtime.buildCommand || null, build_status: 'pending', build_result_hash: null, before_hash: old?.before_hash ?? beforeHash, after_hash: afterHash, generated_at: t, verified_at: null };
     const manifest = buildManifest(provisional);
     run(`INSERT INTO operation_artifacts(id,operation_id,project_id,page_id,article_id,artifact_path,content_sha256,source_ids_json,validator_version,validator_status,validator_result_hash,validator_result_json,build_command,build_status,build_result_hash,before_hash,after_hash,manifest_json,revision_key,revision_count,validation_attempts,no_progress_count,generated_at,verified_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(operation_id,project_id,article_id) DO UPDATE SET page_id=excluded.page_id,artifact_path=excluded.artifact_path,content_sha256=excluded.content_sha256,source_ids_json=excluded.source_ids_json,validator_version=excluded.validator_version,validator_status='pending',validator_result_hash=NULL,validator_result_json=NULL,build_command=excluded.build_command,build_status='pending',build_result_hash=NULL,before_hash=excluded.before_hash,after_hash=excluded.after_hash,manifest_json=excluded.manifest_json,revision_key=NULL,revision_count=excluded.revision_count,no_progress_count=CASE WHEN operation_artifacts.content_sha256=excluded.content_sha256 THEN operation_artifacts.no_progress_count ELSE 0 END,generated_at=excluded.generated_at,verified_at=NULL,deleted_at=NULL,deleted_by=NULL,updated_at=excluded.updated_at`,
-      id,input.operationId,input.projectId,input.pageId,articleId,path.ref,afterHash,JSON.stringify(sourceIds),VALIDATOR_VERSION,'pending',null,null,provisional.build_command,'pending',null,beforeHash,afterHash,JSON.stringify(manifest),null,revisionCount,Number(old?.validation_attempts ?? 0),old?.content_sha256===afterHash?Number(old?.no_progress_count??0):0,t,null,t);
+      id,input.operationId,input.projectId,input.pageId,articleId,path.ref,afterHash,JSON.stringify(sourceIds),VALIDATOR_VERSION,'pending',null,null,provisional.build_command,'pending',null,provisional.before_hash,afterHash,JSON.stringify(manifest),null,revisionCount,Number(old?.validation_attempts ?? 0),old?.content_sha256===afterHash?Number(old?.no_progress_count??0):0,t,null,t);
     run("UPDATE operation_projects SET last_progress_at=?,blocker=NULL,blocker_class=NULL,updated_at=? WHERE operation_id=? AND project_id=?", t, t, input.operationId, input.projectId);
     const result = artifactView(one('SELECT * FROM operation_artifacts WHERE id=?', id)); recordRun(ctx, input.projectId, 'artifact.write_draft', { operationId: input.operationId, pageId: input.pageId, artifactPath: path.ref, sourceIds }, { artifactId: id, contentSha256: afterHash });
     return result;
@@ -439,11 +409,13 @@ export const headlessCommands = {
     const articleId = input.articleId?.trim();
     const artifact = articleId ? one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND article_id=? AND deleted_at IS NULL', input.operationId, input.projectId, articleId) : one('SELECT * FROM operation_artifacts WHERE operation_id=? AND project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC LIMIT 1', input.operationId, input.projectId);
     if (!artifact) throw new Error('No article artifact has been written for this operation');
-    const path = safeArtifactPath(artifact.artifact_path); const exists = existsSync(path.absolute); const content = exists ? readFileSync(path.absolute, 'utf8') : '';
+    const path = safeArtifactPath(artifact.artifact_path, input.projectId); const exists = existsSync(path.absolute); const content = exists ? readFileSync(path.absolute, 'utf8') : '';
     const page = artifact.page_id ? one('SELECT * FROM pages WHERE id=? AND project_id=?', artifact.page_id, input.projectId) : null;
     const briefRow = artifact.page_id ? one('SELECT packet_json,packet_hash FROM blog_briefs WHERE project_id=? AND page_id=?', input.projectId, artifact.page_id) : null;
     const brief = parse<any>(briefRow?.packet_json, {}); const sourceIds = validateSources(input.projectId, parse<string[]>(artifact.source_ids_json, []));
-    const buildCommand = input.buildCommand?.trim() || artifact.build_command || process.env.KEYWORDS_BLOG_BUILD_COMMAND?.trim() || '';
+    const runtime = articleRuntime(input.projectId);
+    if (runtime.bound && input.buildCommand?.trim() && input.buildCommand.trim() !== runtime.buildCommand) throw new Error('Use the configured site build');
+    const buildCommand = runtime.bound ? runtime.buildCommand : input.buildCommand?.trim() || artifact.build_command || runtime.buildCommand || '';
     const revisionKey = hashJson({ contentSha256: exists ? hashText(content) : null, packetHash: briefRow?.packet_hash ?? null, validatorVersion: VALIDATOR_VERSION, buildCommand });
     if (!input.force && artifact.revision_key === revisionKey && artifact.validator_result_json) return { cached: true, ...artifactView(artifact) };
     const checks: Array<{ key: string; ok: boolean; detail?: unknown }> = [];
@@ -466,7 +438,7 @@ export const headlessCommands = {
     const question = String(page?.question ?? brief?.reader_task ?? ''); checks.push({ key: 'reader_question_coverage', ok: !question || similarity(content, question) >= 0.08, detail: question });
     let maxDuplicate = 0;
     for (const other of rows("SELECT * FROM operation_artifacts WHERE project_id=? AND id<>? AND deleted_at IS NULL AND validator_status='passed' ORDER BY updated_at DESC LIMIT 20", input.projectId, artifact.id)) {
-      try { const otherPath = safeArtifactPath(other.artifact_path); if (existsSync(otherPath.absolute)) maxDuplicate = Math.max(maxDuplicate, similarity(content, readFileSync(otherPath.absolute, 'utf8'))); } catch {}
+      try { const otherPath = safeArtifactPath(other.artifact_path, input.projectId); if (existsSync(otherPath.absolute)) maxDuplicate = Math.max(maxDuplicate, similarity(content, readFileSync(otherPath.absolute, 'utf8'))); } catch {}
     }
     checks.push({ key: 'duplicate_content', ok: maxDuplicate < 0.88, detail: maxDuplicate });
     const firstParty = (brief?.autonomy?.source_packet?.first_party_source_ids ?? []).length > 0;
@@ -508,7 +480,7 @@ export const headlessCommands = {
   },
 
   completionStatus: async (operationId: string) => completionStatus(operationId),
-  assertCompletion: (operationId: string) => { const status = completionStatus(operationId); if (!status.complete) { const missing = status.projects.filter(item => !item.complete).map(item => `${item.projectId}:${item.artifact ? `${item.artifact.validatorStatus}/${item.artifact.buildStatus}` : 'artifact_missing'}`); throw new Error(`Operation cannot complete until required article artifacts are verified: ${missing.join(', ')}`); } return status; },
+  assertCompletion: (operationId: string) => { const status = completionStatus(operationId); if (!status.complete) { const missing = status.projects.filter(item => !item.complete).map(item => `${item.projectId}:${!item.evidenceComplete ? `evidence_missing(${item.requiredEvidence.join('|')})` : item.artifact ? `${item.artifact.validatorStatus}/${item.artifact.buildStatus}` : 'artifact_missing'}`); throw new Error(`Operation cannot complete until required article artifacts are verified and task evidence is persisted: ${missing.join(', ')}`); } return status; },
   canAutoResumeBlocker: (blockerClass?: string | null) => Boolean(blockerClass && AUTO_RESUME_BLOCKERS.has(blockerClass)),
 
   resumeEligibleOperations: async () => {

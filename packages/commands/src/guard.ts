@@ -109,7 +109,13 @@ function autonomyControlTimestamp(projectId: string) {
 }
 
 export function assertSessionBudget(ctx: CommandContext, projectId: string, command: string) {
-  if (!ctx.workSessionId) return;
+  if (!ctx.workSessionId) {
+    if (ctx.actor === 'agent' && isBudgetedCommand(command)) {
+      const pending = one("SELECT id,status FROM work_sessions WHERE project_id=? AND status IN ('running','blocked','awaiting_review') ORDER BY updated_at DESC LIMIT 1", projectId);
+      if (pending) throw new Error(`Attach work session ${pending.id} (${pending.status}) before writes or external research`);
+    }
+    return;
+  }
   const session = one('SELECT * FROM work_sessions WHERE id=? AND project_id=?', ctx.workSessionId, projectId);
   required(session, 'Work session is not in this project');
   if (session.status !== 'running') throw new Error(`Work session ${session.id} is ${session.status}; writes and external research are paused`);
@@ -148,9 +154,14 @@ export function assertOperationAllowed(
   const delegation = input.capability ? assertDelegated(ctx, input.projectId, input.capability) : null;
   const operation = ctx.actor === 'agent' ? operationForContext(ctx, input.projectId) : null;
   if (operation && !input.allowWhilePaused) {
+    if (operation.status !== 'active') throw new Error(`Operation is ${operation.status}; writes and external research are paused`);
     const budget = parse<Record<string, number>>(operation.budget_json, {});
     const maxRuntimeMinutes = Number(budget.maxRuntimeMinutes ?? 0);
-    if (maxRuntimeMinutes > 0 && Date.now() > Date.parse(operation.created_at) + maxRuntimeMinutes * 60_000) {
+    const runtime = one('SELECT runtime_consumed_ms,runtime_started_at FROM operation_projects WHERE operation_id=? AND project_id=?', operation.id, input.projectId);
+    const executor = one("SELECT id,lease_expires_at FROM operation_executors WHERE current_operation_id=? AND current_project_id=? AND status='busy' ORDER BY last_seen_at DESC LIMIT 1", operation.id, input.projectId);
+    if (runtime?.runtime_started_at && (!executor || executor.id !== ctx.actorId || !executor.lease_expires_at || executor.lease_expires_at <= now())) throw new Error('Executor lease is unavailable or ownership changed');
+    const activeMs = runtime?.runtime_started_at && executor?.lease_expires_at ? Math.max(0, Math.min(Date.now(), Date.parse(executor.lease_expires_at)) - Date.parse(runtime.runtime_started_at)) : 0;
+    if (maxRuntimeMinutes > 0 && Number(runtime?.runtime_consumed_ms ?? 0) + activeMs >= maxRuntimeMinutes * 60_000) {
       throw new Error(`Operation runtime budget exhausted (${maxRuntimeMinutes} minutes)`);
     }
   }

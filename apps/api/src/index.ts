@@ -5,6 +5,7 @@ import { cors } from 'hono/cors';
 import { commands } from '@keywords/commands';
 import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
+import { recoveryCommands } from '@keywords/commands/recovery';
 import { measurementCommands } from '@keywords/commands/measurement';
 import { operationCommands } from '@keywords/commands/operation';
 import { operationDiscoveryCommands } from '@keywords/commands/operation-discovery';
@@ -83,6 +84,8 @@ app.post('/operations/projects/:projectId/measurements/import', async c => c.jso
 app.get('/operations/projects/:projectId/measurements/context', async c => c.json(await measurementCommands.context(ctx(c), c.req.param('projectId'), Number(c.req.query('limit') ?? 25))));
 app.post('/operations/projects/:projectId/measurements/capture', async c => c.json(await metricsCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') }), 201));
 app.post('/operations/projects/:projectId/site/sync', async c => c.json(await siteCommands.syncSitemap(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
+app.get('/operations/projects/:projectId/recovery', async c => c.json(await recoveryCommands.context(ctx(c), { projectId: c.req.param('projectId') })));
+app.post('/operations/projects/:projectId/recovery/capture', async c => c.json(await recoveryCommands.capture(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
 
 registerProductRoutes(app, ctx, body);
 app.onError((error, c) => c.json({ error: error instanceof Error ? error.message : String(error) }, 500));

@@ -23,6 +23,7 @@ const toolCtx = (projectId?: string) => ({ ...baseCtx, ...(activeWorkSession && 
 const sessionIdFor = (projectId: string, explicit?: string) => explicit ?? (activeWorkSession?.projectId === projectId ? activeWorkSession.id : undefined);
 
 const budgetedTools = new Set([
+  'recovery_capture',
   'blog_importContext','blog_prepare','blog_export','blog_receipt','blog_capture','blog_expand',
   'blog_observe',
   'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
@@ -30,6 +31,7 @@ const budgetedTools = new Set([
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate'
 ]);
 const allowedWhilePaused = new Set([
+  'recovery_context',
   'blog_context','blog_get','blog_evaluate','blog_observations',
   'blog_contract',
   'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',

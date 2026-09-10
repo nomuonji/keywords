@@ -61,6 +61,10 @@ jobs:
             KEYWORDS_DB_PATH=/tmp/keywords-product-smoke.sqlite npx tsx scripts/product-workflow-smoke.ts
             npx tsx scripts/blog-smoke.ts
             npm run test:portfolio
+            npx tsx scripts/recovery-smoke.ts
+            npx tsx scripts/site-runtime-smoke.ts
+            npx tsx scripts/maintenance-recovery-smoke.ts
+            npx tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --esModuleInterop --skipLibCheck scripts/autopilot-runner.ts
             KEYWORDS_DB_PATH=/tmp/keywords-product-smoke.sqlite npm run cli -- maintenance backup --destination /tmp/keywords-product-backup.sqlite
             npx tsx scripts/db-restore.ts /tmp/keywords-product-backup.sqlite /tmp/keywords-product-restored.sqlite
             KEYWORDS_DB_PATH=/tmp/keywords-product-restored.sqlite npm run cli -- project list

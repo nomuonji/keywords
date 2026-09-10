@@ -26,15 +26,19 @@ async function assertPublicUrl(url: URL) {
   if (!addresses.length || addresses.some(item => isPrivateIp(item.address))) throw new Error('Sitemap resolves to a private/local address');
 }
 
-async function fetchXml(input: string, redirects = 0): Promise<{ xml: string; finalUrl: string }> {
+async function fetchXml(input: string, redirects = 0, onRequest?: (url: string) => Promise<void>): Promise<{ xml: string; finalUrl: string }> {
   if (redirects > 5) throw new Error('Too many sitemap redirects');
   const url = new URL(input);
+  if (url.username || url.password) throw new Error('Sitemap URLs cannot contain credentials');
   await assertPublicUrl(url);
+  await onRequest?.(url.toString());
   const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(20_000), headers: { 'user-agent': 'keywords-research/0.1' } });
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location');
     if (!location) throw new Error(`Redirect without location from ${url}`);
-    return fetchXml(new URL(location, url).toString(), redirects + 1);
+    const next = new URL(location, url);
+    if (next.origin !== url.origin) throw new Error('Cross-origin sitemap redirect rejected');
+    return fetchXml(next.toString(), redirects + 1, onRequest);
   }
   if (!response.ok) throw new Error(`HTTP ${response.status} from sitemap ${url}`);
   const length = Number(response.headers.get('content-length') ?? 0);
@@ -52,29 +56,60 @@ export interface SitemapDiscovery {
   sitemaps: string[];
   urls: string[];
   fetchedAt: string;
+  complete: boolean;
+  rejectedUrls: number;
 }
 
-export async function fetchSitemapUrls(input: { sitemapUrl: string }): Promise<SitemapDiscovery> {
+export async function fetchSitemapUrls(input: { sitemapUrl: string; targetOrigin?: string; discover?: boolean; onRequest?: (url: string) => Promise<void> }): Promise<SitemapDiscovery> {
+  const origin = input.targetOrigin ?? new URL(input.sitemapUrl).origin;
+  if (new URL(input.sitemapUrl).origin !== origin) throw new Error('Sitemap must belong to the target origin');
   const queue = [input.sitemapUrl];
   const seen = new Set<string>();
   const urls = new Set<string>();
   const sitemaps: string[] = [];
+  let complete = true, rejectedUrls = 0, triedDiscovery = false;
   while (queue.length && seen.size < MAX_SITEMAPS && urls.size < MAX_URLS) {
     const next = queue.shift()!;
     if (seen.has(next)) continue;
     seen.add(next);
-    const { xml, finalUrl } = await fetchXml(next);
+    let fetched: { xml: string; finalUrl: string };
+    try { fetched = await fetchXml(next, 0, input.onRequest); }
+    catch (error) {
+      if (!input.discover || triedDiscovery || sitemaps.length || !/HTTP (404|410)/.test(String(error))) throw error;
+      triedDiscovery = true;
+      try {
+        const robots = await fetchXml(new URL('/robots.txt', origin).toString(), 0, input.onRequest);
+        const declared = [...robots.xml.matchAll(/^\s*Sitemap:\s*(\S+)/gim)].map(match => match[1]).filter(value => { try { return new URL(value).origin === origin; } catch { return false; } });
+        for (const value of declared) if (!seen.has(value) && !queue.includes(value)) queue.push(value);
+      } catch (robotsError) { if (!/HTTP (404|410)/.test(String(robotsError))) throw robotsError; }
+      if (!queue.length) queue.push(new URL('/sitemap-index.xml', origin).toString());
+      continue;
+    }
+    const { xml, finalUrl } = fetched;
+    if (!/<(?:urlset|sitemapindex)\b/i.test(xml)) throw new Error('Response is not a sitemap XML document');
     sitemaps.push(finalUrl);
     const locs = locations(xml);
     const isIndex = /<sitemapindex\b/i.test(xml);
     if (isIndex) {
-      for (const loc of locs) if (!seen.has(loc) && queue.length + seen.size < MAX_SITEMAPS) queue.push(loc);
+      for (const loc of locs) {
+        let url: URL;
+        try { url = new URL(loc, finalUrl); } catch { rejectedUrls++; complete = false; continue; }
+        if (url.origin !== origin || url.username || url.password) { rejectedUrls++; complete = false; continue; }
+        if (!seen.has(url.toString()) && !queue.includes(url.toString())) {
+          if (queue.length + seen.size < MAX_SITEMAPS) queue.push(url.toString()); else complete = false;
+        }
+      }
     } else {
       for (const loc of locs) {
-        if (urls.size >= MAX_URLS) break;
-        try { urls.add(new URL(loc, finalUrl).toString()); } catch { /* ignore malformed loc */ }
+        if (urls.size >= MAX_URLS) { complete = false; break; }
+        try {
+          const url = new URL(loc, finalUrl);
+          if (url.origin !== origin || url.username || url.password || url.hash) { rejectedUrls++; complete = false; continue; }
+          urls.add(url.toString());
+        } catch { rejectedUrls++; complete = false; }
       }
     }
   }
-  return { sitemapUrl: input.sitemapUrl, sitemaps, urls: [...urls], fetchedAt: new Date().toISOString() };
+  if (queue.length) complete = false;
+  return { sitemapUrl: sitemaps[0] ?? input.sitemapUrl, sitemaps, urls: [...urls], fetchedAt: new Date().toISOString(), complete, rejectedUrls };
 }

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { readBlogRuntime, newBlogArticleTarget } from '@keywords/research/blog-runtime';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
+import { assertRecoveryAllowsExpansion } from './recovery-context.js';
 import { briefSchema, type BlogSnapshot } from './blog-contract.js';
 
 const { sqlite } = getDatabase();
@@ -130,8 +132,8 @@ export function createAutonomousHandoff(projectId:string,pageId:string){
   if(one("SELECT id FROM blog_handoffs WHERE page_id=? AND status NOT IN ('evaluated','blocked')",pageId))throw new Error('Previous handoff is still active');
   const brief=briefSchema.parse(parse(one('SELECT packet_json FROM blog_briefs WHERE page_id=?',pageId)?.packet_json,{})),target=p.target_page_id?one('SELECT * FROM pages WHERE id=? AND project_id=?',p.target_page_id,projectId):null;
   const action=p.plan_mode==='existing_page_improvement'?'substantial_revision':'new_article',capacity=publicationCapacity(projectId,action); if(!capacity.allowed)throw new Error(`Autopilot ${action} capacity exhausted (${capacity.used}/${capacity.limit} in 24h)`);
-  if(action==='new_article'){if(snap.eligibility.new_content_allowed!==true||snap.eligibility.clearance_gate!=='listed_for_scoped_clearance')throw new Error('Site snapshot does not clear new content');}else if(!target?.url)throw new Error('Existing target URL required');
-  const targetUrl=target?.url||`${b.origin}/${String(p.slug).replace(/^\/+|\/+$/g,'')}/`;sameOrigin(targetUrl,b.origin);
+  if(action==='new_article'){if(snap.eligibility.new_content_allowed!==true||snap.eligibility.clearance_gate!=='listed_for_scoped_clearance')throw new Error('Site snapshot does not clear new content');assertRecoveryAllowsExpansion(projectId);}else if(!target?.url)throw new Error('Existing target URL required');
+  const targetUrl=target?.url||newBlogArticleTarget(readBlogRuntime(b.blog_site_id,b.origin),b.origin,String(p.slug)).url;sameOrigin(targetUrl,b.origin);
   const matches=snap.sources.filter(s=>s.expected_url===targetUrl); if(matches.length!==(action==='new_article'?0:1))throw new Error('Target source is missing, ambiguous, or already exists');
   if(action==='new_article'&&snap.pages.some(x=>x.local_build_url===targetUrl))throw new Error('URL already exists in local build');
   const targets=rows('SELECT k.id,k.text,pk.role FROM page_keywords pk JOIN keywords k ON k.id=pk.keyword_id WHERE pk.page_id=? ORDER BY k.id',pageId); if(!targets.some(t=>t.role==='primary'))throw new Error('Primary keyword required');

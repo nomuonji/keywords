@@ -2,6 +2,8 @@ import { and, count, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext, ProjectSnapshot, TaskStatus } from '@keywords/domain';
 import { researchCommands, sourceCommands } from './research.js';
+import { assertOperationAllowed } from './guard.js';
+import { isBudgetedCommand } from './budget.js';
 
 const { db } = getDatabase();
 const now = () => new Date().toISOString();
@@ -14,6 +16,7 @@ async function withRun<T>(ctx: CommandContext, command: string, input: unknown, 
   const started = Date.now();
   const createdAt = now();
   try {
+    if (ctx.projectId && isBudgetedCommand(command)) assertOperationAllowed(ctx,{projectId:ctx.projectId,command});
     const output = await fn();
     await db.insert(schema.runs).values({
       id: runId, projectId: ctx.projectId ?? null, workSessionId: ctx.workSessionId ?? null, actor: ctx.actor, actorId: ctx.actorId ?? null,

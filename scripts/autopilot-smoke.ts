@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,6 +8,11 @@ const fixtureRoot = mkdtempSync(join(tmpdir(), 'keywords-autopilot-'));
 process.env.KEYWORDS_DB_PATH = join(fixtureRoot, 'test.sqlite');
 process.env.KEYWORDS_BLOG_ROOT = join(fixtureRoot, 'blog');
 process.env.KEYWORDS_BLOG_BUILD_COMMAND = 'node -e "process.exit(0)"';
+process.env.KEYWORDS_BLOG_WORKSPACE_ROOT = fixtureRoot;
+mkdirSync(join(fixtureRoot, '.seo-autopilot/integration/sites'), {recursive:true});
+mkdirSync(process.env.KEYWORDS_BLOG_ROOT, {recursive:true});
+writeFileSync(join(fixtureRoot,'.seo-autopilot/sites.json'), JSON.stringify({sites:[{id:'blog-autopilot-smoke',path:process.env.KEYWORDS_BLOG_ROOT,build_command:process.env.KEYWORDS_BLOG_BUILD_COMMAND}]}));
+writeFileSync(join(fixtureRoot,'.seo-autopilot/integration/sites/fixture.json'), JSON.stringify({blog_site_id:'blog-autopilot-smoke',canonical_origin:'https://example.com',collections:[{root:'content',extensions:['.md'],url_template:'/blog/{slug}/'}]}));
 
 const { getDatabase, schema } = await import('@keywords/db');
 const { commands } = await import('@keywords/commands');
@@ -63,6 +68,13 @@ assert.equal(gate.informationGain, 2);
 const decision = applyAutonomyDecision(projectId, pageId, gate);
 assert.equal(decision.verdict, 'approved');
 assert.equal((sqlite.prepare('SELECT status FROM pages WHERE id=?').get(pageId) as { status: string }).status, 'approved');
+assert.throws(() => createAutonomousHandoff(projectId, pageId), /SEO recovery/i);
+// Deterministic gate fixtures use managed observations; the collector is exercised in recovery-smoke.
+const { recoveryDate, dateOffset, cohortKey, RECOVERY_VERSION } = await import('@keywords/commands/recovery-context');
+const endDate=recoveryDate(),startDate=dateOffset(endDate,-20),cohort=Array.from({length:20},(_,i)=>`https://example.com/existing-${i}/`);
+const observation={version:RECOVERY_VERSION,projectId,targetOrigin:'https://example.com',property:'sc-domain:example.com',cohort,cohortKey:cohortKey(cohort),startDate,endDate,observedAt:now,inspections:cohort.map(url=>({url,verdict:'PASS',pageFetchState:'SUCCESSFUL',googleCanonical:url,userCanonical:url})),daily:Array.from({length:21},(_,i)=>({date:dateOffset(startDate,i),impressions:Math.floor(i/7)+1,clicks:0})),errors:[],complete:true};
+const recoveredSource=await commands.source.record(human,{projectId,type:'seo_recovery_snapshot',label:'Recovery fixture',metadata:observation});
+sqlite.prepare('INSERT INTO runs(id,project_id,actor,command,status,output_json,created_at) VALUES(?,?,?,?,?,?,?)').run('recovery-fixture',projectId,'system','recovery.capture','succeeded',JSON.stringify({sourceId:recoveredSource.id}),now);
 assert.throws(() => createAutonomousHandoff(projectId, pageId), /verified local article artifact/i);
 
 const articleOperation = await operationCommands.start(human, { requestText: 'Create the approved article artifact', objective: 'Create the approved article artifact', projectIds: [projectId], requestKey: 'autopilot-smoke-article', constraints: { requiresArtifact: true, pageId } });
@@ -77,6 +89,7 @@ const handoff = createAutonomousHandoff(projectId, pageId);
 assert.equal(handoff.reused, false);
 assert.equal((handoff.payload as any).publication_authorized, true);
 assert.equal((handoff.payload as any).authorization.mode, 'deterministic_autonomy_gate');
+assert.deepEqual((handoff.payload as any).target_urls,['https://example.com/blog/autopilot-evidence-guide/']);
 const repeated = createAutonomousHandoff(projectId, pageId);
 assert.equal(repeated.reused, true);
 assert.equal(autonomyPublicationUsage(projectId).newArticles, 1);

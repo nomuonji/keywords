@@ -1,4 +1,5 @@
 import type { CommandContext } from '@keywords/domain';
+import { recoveryCommands } from '@keywords/commands/recovery';
 import { discoveryCommands } from '@keywords/commands/discovery';
 import { workspaceCommands } from '@keywords/commands/workspace';
 import { workCommands } from '@keywords/commands/work';
@@ -11,6 +12,8 @@ import { metricsCommands } from '@keywords/commands/metrics';
 const s = (description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object' as const, description, properties, required });
 
 export const productTools = [
+  { name: 'recovery_context', description: 'Read fixed-cohort index recovery, complete weekly visibility, expansion eligibility and up to three existing-page investigation targets.', inputSchema: s('Recovery context', { projectId: { type: 'string' } }, ['projectId']) },
+  { name: 'recovery_capture', description: 'Capture up to 20 fixed-cohort URL inspections and 21 complete days of scoped GSC visibility. Resumes saved successful inspections; API failures never become deindexation or zero traffic. Requires up to 22 external-request units.', inputSchema: s('Recovery observation', { projectId: { type: 'string' }, siteUrl: { type: 'string' }, endDate: { type: 'string' } }, ['projectId']) },
   { name: 'operation_context', description: 'Read the durable agent-driven operation state, open judgments, executor status, outcomes and project controls.', inputSchema: s('Operation context', { projectId: { type: 'string' }, operationId: { type: 'string' } }) },
   { name: 'operation_start', description: 'Turn one natural-language request into an idempotent bounded shared operation. Requires a human-granted operation.start delegation for agents.', inputSchema: s('Start operation', { requestText: { type: 'string' }, requestKey: { type: 'string' }, conversationRef: { type: 'string' }, objective: { type: 'string' }, projectIds: { type: 'array', items: { type: 'string' } }, scope: { type: 'string', enum: ['single','portfolio'] }, completionCriteria: { type: 'array', items: { type: 'string' } }, constraints: { type: 'object', additionalProperties: true }, permissions: { type: 'object', additionalProperties: true }, assumptions: { type: 'array', items: { type: 'string' } }, budget: { type: 'object', additionalProperties: true } }, ['requestText']) },
   { name: 'operation_resume', description: 'Resume an existing operation after a blocker or resolved review without creating duplicate work.', inputSchema: s('Resume operation', { operationId: { type: 'string' }, projectId: { type: 'string' } }, ['operationId']) },
@@ -56,6 +59,8 @@ export const isProductTool = (name: string) => names.has(name);
 
 export async function callProductTool(name: string, a: any, ctx: CommandContext) {
   switch (name) {
+    case 'recovery_context': return recoveryCommands.context(ctx, a);
+    case 'recovery_capture': return recoveryCommands.capture(ctx, a);
     case 'operation_context': return operationCommands.context(ctx, a);
     case 'operation_start': {
       const result = await operationCommands.start(ctx, a);

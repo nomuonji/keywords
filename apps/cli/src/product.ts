@@ -7,6 +7,7 @@ import { operationCommands } from '@keywords/commands/operation';
 import { operationDiscoveryCommands } from '@keywords/commands/operation-discovery';
 import { measurementCommands } from '@keywords/commands/measurement';
 import { metricsCommands } from '@keywords/commands/metrics';
+import { recoveryCommands } from '@keywords/commands/recovery';
 
 const print = (value: unknown) => console.log(JSON.stringify(value, null, 2));
 const csv = (value?: string) => value?.split(',').map(item => item.trim()).filter(Boolean) ?? [];
@@ -14,6 +15,10 @@ const json = (value?: string) => value ? JSON.parse(value) : undefined;
 const agentCtx = (ctx: CommandContext, workSessionId?: string) => ({ ...ctx, actor: 'agent' as const, actorId: `${ctx.actorId ?? 'cli'}:agent`, workSessionId });
 
 export function registerProductCli(program: Command, ctx: CommandContext) {
+  const recovery = program.command('recovery').description('Index recovery and scoped search observations');
+  recovery.command('context').argument('<projectId>').action(async (projectId: string) => print(await recoveryCommands.context(ctx, { projectId })));
+  recovery.command('capture').argument('<projectId>').option('--property <siteUrl>').option('--end <date>').option('--session <workSessionId>').option('--actor-id <id>', 'Executor identity', process.env.KEYWORDS_AGENT_ID ?? 'mcp')
+    .action(async (projectId: string, opts: any) => print(await recoveryCommands.capture({ actor: 'agent', actorId: opts.actorId, workSessionId: opts.session }, { projectId, siteUrl: opts.property, endDate: opts.end })));
   const operation = program.command('operation').description('Durable agent-driven operations');
   operation.command('context').option('--project <projectId>').option('--operation <operationId>').action(async (opts: any) => print(await operationCommands.context(ctx, { projectId: opts.project, operationId: opts.operation })));
   operation.command('start').argument('<request>').option('--projects <csv>').option('--scope <scope>', 'single | portfolio', 'single').option('--conversation <ref>').option('--objective <text>').option('--criteria <csv>').option('--max-actions <number>', '16').option('--max-requests <number>', '10').option('--max-candidates <number>', '80').option('--max-projects <number>', '1').option('--runtime-minutes <number>', '45')

@@ -4,7 +4,7 @@ import { basename, extname, relative, resolve } from 'node:path';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
-import { articleKeywordResearchEvidence, headlessCommands } from './headless.js';
+import { articleKeywordResearchEvidence, articleRuntime, safeArtifactPath, headlessCommands } from './headless.js';
 
 const { db, sqlite } = getDatabase();
 const hasTable = (name: string) => Boolean(sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
@@ -17,17 +17,21 @@ function frontmatterValue(frontmatter: string, key: string) {
 }
 
 function localBlogArticles(projectId: string, artifactPaths: Set<string>) {
-  const configured = process.env.KEYWORDS_BLOG_ROOT?.trim() || process.env.KEYWORDS_ARTIFACT_ROOT?.trim();
-  if (!configured) return [];
-  const root = resolve(configured);
+  const projects = projectId ? [{id:projectId}] : sqlite.prepare('SELECT id FROM projects').all() as Array<{id:string}>;
+  return projects.flatMap(project => localBlogArticlesForProject(project.id, artifactPaths));
+}
+
+function localBlogArticlesForProject(projectId: string, artifactPaths: Set<string>) {
+  let runtime: ReturnType<typeof articleRuntime>;
+  try { runtime = articleRuntime(projectId); } catch { return []; }
+  const root = runtime.root;
   const scanRef = (process.env.KEYWORDS_BLOG_ARTICLE_SCAN_DIR?.trim() || 'content/posts').replaceAll('\\', '/').replace(/^\.\//, '').replace(/^\/+|\/+$/g, '');
   const scanDir = resolve(root, scanRef);
   const scanRelative = relative(root, scanDir);
   if (!scanRelative || scanRelative === '..' || scanRelative.startsWith('..\\') || scanRelative.startsWith('../')) return [];
-  if (!existsSync(scanDir)) return [];
-  const projects = sqlite.prepare('SELECT id,name,domain FROM projects').all() as any[];
+  const projects = sqlite.prepare('SELECT id,name,domain FROM projects WHERE id=?').all(projectId) as any[];
   const pages = sqlite.prepare(`SELECT p.id,p.project_id,p.title,p.slug,p.url,pr.name AS project_name,pr.domain AS project_domain
-    FROM pages p JOIN projects pr ON pr.id=p.project_id`).all() as any[];
+    FROM pages p JOIN projects pr ON pr.id=p.project_id WHERE p.project_id=?`).all(projectId) as any[];
   let rootHost: string | null = null;
   try {
     const site = parse(readFileSync(resolve(root, 'content/site.json'), 'utf8'), {} as any);
@@ -42,11 +46,15 @@ function localBlogArticles(projectId: string, artifactPaths: Set<string>) {
       else if (entry.isFile() && ['.md', '.mdx'].includes(extname(entry.name).toLowerCase())) files.push(absolute);
     }
   };
-  try { visit(scanDir); } catch { return []; }
+  try {
+    const scanRoots = runtime.bound ? runtime.collections.map(collection => safeArtifactPath(collection.root, projectId).absolute) : [scanDir];
+    for (const directory of new Set(scanRoots)) if (existsSync(directory)) visit(directory);
+  } catch { return []; }
   return files.flatMap(absolute => {
     try {
       const path = relative(root, absolute).replaceAll('\\', '/');
-      if (artifactPaths.has(path)) return [];
+      if (artifactPaths.has(`${projectId}:${path}`)) return [];
+      safeArtifactPath(path, projectId);
       const content = readFileSync(absolute, 'utf8');
       const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/);
       const frontmatter = match?.[1] ?? '';
@@ -58,9 +66,9 @@ function localBlogArticles(projectId: string, artifactPaths: Set<string>) {
           return pageStem === stem || (frontmatterValue(frontmatter, 'title') && item.title === frontmatterValue(frontmatter, 'title'));
         } catch { return false; }
       });
-      const project = page ? projects.find(item => item.id === page.project_id) : rootProjects.length === 1 ? rootProjects[0] : null;
+      const project = runtime.bound ? projects[0] : page ? projects.find(item => item.id === page.project_id) : rootProjects.length === 1 ? rootProjects[0] : null;
       if (!project || (projectId && project.id !== projectId)) return [];
-      const id = `local-file-${hashText(path).slice(0, 32)}`;
+      const id = `local-file-${hashText(`${projectId}:${path}`).slice(0, 32)}`;
       const stat = statSync(absolute);
       const research = articleKeywordResearchEvidence(project.id, page?.id ?? null);
       return [{
@@ -139,7 +147,7 @@ export const portfolioCommands = {
         outcome: outcomeFor(row.operation_id, row.project_id)
       };
     });
-    const artifactPaths = new Set(artifactItems.map(item => item.path));
+    const artifactPaths = new Set(artifactItems.map(item => `${item.projectId}:${item.path}`));
     const localItems = localBlogArticles(projectId, artifactPaths).filter(item => {
       if (status === 'complete') return false;
       if (query) return `${item.title} ${item.projectName} ${item.path} ${item.slug}`.toLowerCase().includes(query);
@@ -162,15 +170,13 @@ export const portfolioCommands = {
     const runId = randomUUID();
     const runInput = { projectId: input.projectId, articleId: input.articleId, reason: input.reason ?? null };
     try {
-      const configured = process.env.KEYWORDS_BLOG_ROOT?.trim() || process.env.KEYWORDS_ARTIFACT_ROOT?.trim();
-      if (!configured) throw new Error('KEYWORDS_BLOG_ROOT is required for article deletion');
-      const root = resolve(configured);
+      const root = articleRuntime(input.projectId).root;
       const local = localBlogArticles(input.projectId, new Set()).find(item => item.id === input.articleId);
       const artifact = sqlite.prepare("SELECT * FROM operation_artifacts WHERE id=? AND project_id=? AND deleted_at IS NULL").get(input.articleId, input.projectId) as any;
       if (!local && !artifact) throw new Error('Article not found or already deleted');
       const path = local?.path ?? artifact.artifact_path;
       const title = local?.title ?? (sqlite.prepare('SELECT title FROM pages WHERE id=? AND project_id=?').get(artifact.page_id, input.projectId) as any)?.title ?? artifact.article_id;
-      const absolute = resolve(root, path);
+      const absolute = safeArtifactPath(path, input.projectId).absolute;
       const relativePath = relative(root, absolute);
       if (!relativePath || relativePath === '..' || relativePath.startsWith('..\\') || relativePath.startsWith('../') || absolute === root) throw new Error('Article path escapes KEYWORDS_BLOG_ROOT');
       if (!existsSync(absolute)) throw new Error('Local article file no longer exists');

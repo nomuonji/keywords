@@ -20,6 +20,8 @@
     "./measurement": "./src/measurement.ts",
     "./site": "./src/site.ts",
     "./metrics": "./src/metrics.ts",
+    "./recovery": "./src/recovery.ts",
+    "./recovery-context": "./src/recovery-context.ts",
     "./operator": "./src/operator.ts",
     "./autonomy": "./src/autonomy.ts",
     "./autopilot": "./src/autopilot-locked.ts",
@@ -29,6 +31,7 @@
     "./discovery": "./src/discovery.ts",
     "./discovery-policy": "./src/discovery-policy.ts",
     "./maintenance": "./src/maintenance.ts",
+    "./maintenance-execution": "./src/maintenance-execution.ts",
     "./portfolio": "./src/portfolio.ts"
   },
   "scripts": {

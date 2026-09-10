@@ -6,6 +6,7 @@ import { assertHuman, assertOperationAllowed, fingerprint, listDelegations, oper
 import { headlessCommands } from './headless.js';
 import { googleAdsConfigured } from './workspace.js';
 import { isVerifiedDemand } from './discovery-policy.js';
+import { snapshotCounts, workCommands } from './work.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -97,7 +98,7 @@ function emitEvent(input: { operationId?: string | null; projectId?: string | nu
   return eventId;
 }
 
-function createChildWork(ctx: CommandContext, operationId: string, projectId: string, objective: string, criteria: string[], maxActions: number) {
+async function createChildWork(ctx: CommandContext, operationId: string, projectId: string, objective: string, criteria: string[], maxActions: number) {
   const existing = unfinishedSession(projectId);
   let sessionId: string | null = null, childStatus = 'queued', blocker: string | null = null, blockerClass: string | null = null;
   if (existing) {
@@ -105,9 +106,9 @@ function createChildWork(ctx: CommandContext, operationId: string, projectId: st
     blocker = existing.status === 'running' ? null : `Existing work session is ${existing.status}`;
     blockerClass = existing.status === 'awaiting_review' ? 'human_decision_required' : existing.status === 'blocked' ? 'site_dependency_failed' : null;
   } else {
-    sessionId = randomUUID(); const t = now();
+    sessionId = randomUUID(); const t = now(); const baseline = await snapshotCounts(projectId);
     run(`INSERT INTO work_sessions(id,project_id,actor_id,objective,completion_criteria_json,baseline_json,status,max_actions,summary,last_next_action,started_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, sessionId, projectId, ctx.actorId ?? null, objective, JSON.stringify(criteria), JSON.stringify({ operationId }), 'running', maxActions, null, 'operation_context', t, t);
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, sessionId, projectId, ctx.actorId ?? null, objective, JSON.stringify(criteria), JSON.stringify(baseline), 'running', maxActions, null, 'operation_context', t, t);
     run('INSERT INTO work_checkpoints(id,session_id,state,summary,next_action,created_at) VALUES(?,?,?,?,?,?)', randomUUID(), sessionId, 'working', `Operation ${operationId} started`, 'operation_context', t);
     childStatus = 'running';
   }
@@ -134,6 +135,23 @@ function statusForProject(projectId: string) {
 }
 
 export const operationCommands = {
+  recordRuntime: async (ctx: CommandContext, input: { executorId: string; generation: number; operationId: string; projectId: string }) => {
+    if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Runtime recording requires an executor');
+    return sqlite.transaction(() => {
+      const executor = one('SELECT * FROM operation_executors WHERE id=? AND generation=? AND current_operation_id=? AND current_project_id=?', input.executorId, input.generation, input.operationId, input.projectId);
+      required(executor, 'Runtime recording rejected because executor ownership changed');
+      const child = one('SELECT runtime_started_at,runtime_consumed_ms,work_session_id FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId);
+      required(child, 'Operation project not found');
+      if (!child.runtime_started_at) return { recorded: false, elapsedMs: 0, consumedMs: Number(child.runtime_consumed_ms ?? 0) };
+      const end = executor.lease_expires_at ? Math.min(Date.now(), Date.parse(executor.lease_expires_at)) : Date.now();
+      const elapsedMs = Math.max(0, end - Date.parse(child.runtime_started_at));
+      required(Number.isFinite(elapsedMs), 'Invalid executor runtime timestamp');
+      run('UPDATE operation_projects SET runtime_consumed_ms=runtime_consumed_ms+?,runtime_started_at=NULL,updated_at=? WHERE operation_id=? AND project_id=?', elapsedMs, now(), input.operationId, input.projectId);
+      const output = { recorded: true, elapsedMs, consumedMs: Number(child.runtime_consumed_ms ?? 0) + elapsedMs };
+      audit(ctx, 'operation.runtime', input.projectId, child.work_session_id, input, output);
+      return output;
+    }).immediate();
+  },
   context: async (_ctx: CommandContext, input: { projectId?: string; operationId?: string }) => {
     if (input.operationId) return operationView(input.operationId);
     if (input.projectId) {
@@ -161,7 +179,8 @@ export const operationCommands = {
     const budget = { maxActions: Math.max(1, Math.min(Math.floor(input.budget?.maxActions ?? 12), 100)), maxExternalRequests: Math.max(0, Math.min(Math.floor(input.budget?.maxExternalRequests ?? 8), 100)), maxCandidateWrites: Math.max(0, Math.min(Math.floor(input.budget?.maxCandidateWrites ?? 50), 1000)), maxProjects: projectIds.length, maxRuntimeMinutes: Math.max(1, Math.min(Math.floor(input.budget?.maxRuntimeMinutes ?? 30), 1440)), maxKnownCost: input.budget?.maxKnownCost ?? 0 };
     const operationId = randomUUID(); const t = now();
     sqlite.transaction(() => { run('INSERT INTO operation_requests(id,request_key,request_text,objective,constraints_json,permissions_json,budget_json,assumptions_json,conversation_ref,status,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)', operationId, requestKey, requestText, objective, JSON.stringify(input.constraints ?? {}), JSON.stringify(input.permissions ?? {}), JSON.stringify(budget), JSON.stringify(input.assumptions ?? []), input.conversationRef ?? null, 'active', ctx.actorId ?? ctx.actor, t, t); }).immediate();
-    const children = projectIds.map(projectId => createChildWork(ctx, operationId, projectId, objective, criteria, budget.maxActions));
+    const children = [];
+    for (const projectId of projectIds) children.push(await createChildWork(ctx, operationId, projectId, objective, criteria, budget.maxActions));
     emitEvent({ operationId, kind: 'operation_started', key: `operation:${operationId}:started`, payload: { projectIds, objective } });
     const result = { reused: false, children, operation: operationView(operationId) }; audit(ctx, 'operation.start', projectIds[0] ?? null, children[0]?.workSessionId ?? null, input, { operationId, projectIds }); return result;
   },
@@ -209,6 +228,9 @@ export const operationCommands = {
 
   complete: async (ctx: CommandContext, input: { operationId: string; summary: string }) => {
     const op = operationRow(input.operationId); required(op, 'Operation not found');
+    if (op.status === 'completed') return operationView(input.operationId);
+    const pending = one(`SELECT rr.id FROM review_requests rr JOIN operation_projects child ON child.work_session_id=rr.work_session_id WHERE child.operation_id=? AND rr.status='open' LIMIT 1`, input.operationId);
+    if (pending || op.status === 'awaiting_review' || op.status === 'blocked') throw new Error('Resume the operation after resolving its boundary before completing it');
     headlessCommands.assertCompletion(input.operationId);
     const children = rows('SELECT * FROM operation_projects WHERE operation_id=?', input.operationId);
     for (const child of children) {
@@ -216,8 +238,7 @@ export const operationCommands = {
       if (child.work_session_id) {
         const session = one('SELECT * FROM work_sessions WHERE id=?', child.work_session_id);
         if (session && !['completed','cancelled'].includes(session.status)) {
-          run('INSERT INTO work_checkpoints(id,session_id,state,summary,next_action,created_at) VALUES(?,?,?,?,?,?)', randomUUID(), session.id, 'completed', normalizeText(input.summary).slice(0, 3000), null, now());
-          run("UPDATE work_sessions SET status='completed',summary=?,last_next_action=NULL,updated_at=?,completed_at=? WHERE id=?", normalizeText(input.summary).slice(0, 3000), now(), now(), session.id);
+          await workCommands.complete(ctx, {projectId:child.project_id,sessionId:session.id,summary:normalizeText(input.summary).slice(0,3000)});
         }
       }
       if (child.task_id) run("UPDATE tasks SET status='done',updated_at=? WHERE id=?", now(), child.task_id);
@@ -225,6 +246,7 @@ export const operationCommands = {
     }
     run("UPDATE operation_requests SET status='completed',updated_at=?,completed_at=? WHERE id=?", now(), now(), input.operationId);
     emitEvent({ operationId: input.operationId, kind: 'operation_completed', key: `operation:${input.operationId}:completed`, payload: { summary: normalizeText(input.summary) } });
+    audit(ctx, 'operation.complete', children[0]?.project_id ?? null, children[0]?.work_session_id ?? null, input, { operationId: input.operationId, completed: true });
     return operationView(input.operationId);
   },
 
@@ -276,12 +298,13 @@ export const operationCommands = {
 
   executorRegister: async (ctx: CommandContext, input: { executorId?: string; capabilities?: string[]; leaseSeconds?: number }) => {
     if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Executor registration requires an agent or system actor'); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); const t = now(), expires = leaseUntil(input.leaseSeconds), existing = one('SELECT * FROM operation_executors WHERE id=?', executorId), generation = Number(existing?.generation ?? 0) + 1;
+    if (existing?.current_operation_id && existing?.current_project_id) await operationCommands.recordRuntime(ctx, { executorId, generation: Number(existing.generation), operationId: existing.current_operation_id, projectId: existing.current_project_id });
     run(`INSERT INTO operation_executors(id,kind,status,capabilities_json,current_operation_id,current_project_id,generation,last_seen_at,lease_expires_at,created_at,updated_at)
       VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=CASE WHEN operation_executors.cooldown_until>? THEN 'cooldown' ELSE 'online' END,capabilities_json=excluded.capabilities_json,current_operation_id=NULL,current_project_id=NULL,generation=excluded.generation,last_seen_at=excluded.last_seen_at,lease_expires_at=excluded.lease_expires_at,updated_at=excluded.updated_at`, executorId, 'agent', 'online', JSON.stringify(input.capabilities ?? []), null, null, generation, t, expires, existing?.created_at ?? t, t, t); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId));
   },
   executorHeartbeat: async (ctx: CommandContext, input: { executorId?: string; generation: number; leaseSeconds?: number }) => { if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Executor heartbeat requires an agent or system actor'); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); const t = now(), expires = leaseUntil(input.leaseSeconds); const result = run("UPDATE operation_executors SET status=CASE WHEN cooldown_until>? THEN 'cooldown' WHEN current_operation_id IS NOT NULL THEN 'busy' ELSE 'online' END,last_seen_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND generation=?", t, t, expires, t, executorId, input.generation); if (!result.changes) throw new Error('Executor generation changed; register again before continuing'); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId)); },
-  executorClaim: async (ctx: CommandContext, input: { executorId?: string; generation: number; operationId: string; projectId: string; leaseSeconds?: number }) => { assertOperationAllowed(ctx, { projectId: input.projectId, command: 'operation.executor_claim', capability: 'operation.start' }); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); required(one('SELECT 1 FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId), 'Operation project not found'); const health = headlessCommands.executorHealth(executorId); if (!health?.runnable) throw new Error(`Executor is ${health?.status ?? 'unavailable'}`); const t = now(), expires = leaseUntil(input.leaseSeconds); const result = run(`UPDATE operation_executors SET current_operation_id=?,current_project_id=?,status='busy',last_seen_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND generation=? AND (cooldown_until IS NULL OR cooldown_until<=?) AND status!='unavailable' AND (current_operation_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=? OR (current_operation_id=? AND current_project_id=?))`, input.operationId, input.projectId, t, expires, t, executorId, input.generation, t, t, input.operationId, input.projectId); if (!result.changes) throw new Error('Executor cannot claim this operation; ownership, health or generation changed'); run("UPDATE operation_projects SET status='running',blocker=NULL,updated_at=? WHERE operation_id=? AND project_id=?", t, input.operationId, input.projectId); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId)); },
-  executorRelease: async (ctx: CommandContext, input: { executorId?: string; generation: number; operationId: string; projectId: string }) => { if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Executor release requires an agent or system actor'); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); const t = now(); const result = run("UPDATE operation_executors SET current_operation_id=NULL,current_project_id=NULL,status=CASE WHEN cooldown_until>? THEN 'cooldown' ELSE 'online' END,last_seen_at=?,lease_expires_at=NULL,updated_at=? WHERE id=? AND generation=? AND current_operation_id=? AND current_project_id=?", t, t, t, executorId, input.generation, input.operationId, input.projectId); if (!result.changes) throw new Error('Executor release rejected because ownership changed'); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId)); },
+  executorClaim: async (ctx: CommandContext, input: { executorId?: string; generation: number; operationId: string; projectId: string; leaseSeconds?: number }) => { assertOperationAllowed(ctx, { projectId: input.projectId, command: 'operation.executor_claim', capability: 'operation.start' }); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); required(one('SELECT 1 FROM operation_projects WHERE operation_id=? AND project_id=?', input.operationId, input.projectId), 'Operation project not found'); const health = headlessCommands.executorHealth(executorId); if (!health?.runnable) throw new Error(`Executor is ${health?.status ?? 'unavailable'}`); const t = now(), expires = leaseUntil(input.leaseSeconds); const result = run(`UPDATE operation_executors SET current_operation_id=?,current_project_id=?,status='busy',last_seen_at=?,lease_expires_at=?,updated_at=? WHERE id=? AND generation=? AND (cooldown_until IS NULL OR cooldown_until<=?) AND status!='unavailable' AND (current_operation_id IS NULL OR lease_expires_at IS NULL OR lease_expires_at<=? OR (current_operation_id=? AND current_project_id=?))`, input.operationId, input.projectId, t, expires, t, executorId, input.generation, t, t, input.operationId, input.projectId); if (!result.changes) throw new Error('Executor cannot claim this operation; ownership, health or generation changed'); run("UPDATE operation_projects SET status='running',blocker=NULL,runtime_started_at=COALESCE(runtime_started_at,?),updated_at=? WHERE operation_id=? AND project_id=?", t, t, input.operationId, input.projectId); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId)); },
+  executorRelease: async (ctx: CommandContext, input: { executorId?: string; generation: number; operationId: string; projectId: string }) => { if (ctx.actor !== 'agent' && ctx.actor !== 'system') throw new Error('Executor release requires an agent or system actor'); const executorId = input.executorId?.trim() || ctx.actorId?.trim(); required(executorId, 'Executor ID is required'); await operationCommands.recordRuntime(ctx, { ...input, executorId }); const t = now(); const result = run("UPDATE operation_executors SET current_operation_id=NULL,current_project_id=NULL,status=CASE WHEN cooldown_until>? THEN 'cooldown' ELSE 'online' END,last_seen_at=?,lease_expires_at=NULL,updated_at=? WHERE id=? AND generation=? AND current_operation_id=? AND current_project_id=?", t, t, t, executorId, input.generation, input.operationId, input.projectId); if (!result.changes) throw new Error('Executor release rejected because ownership changed'); return executorView(one('SELECT * FROM operation_executors WHERE id=?', executorId)); },
 
   acknowledgeEvent: async (ctx: CommandContext, input: { eventId: string }) => { assertHuman(ctx, 'Acknowledging an operation event'); const result = run('UPDATE operation_events SET acknowledged_at=? WHERE id=?', now(), input.eventId); if (!result.changes) throw new Error('Operation event not found'); return { id: input.eventId, acknowledgedAt: now() }; },
   remoteReadiness: async (_ctx: CommandContext) => ({ generatedAt: now(), database: { path: getDatabase().path, remoteSafe: process.env.KEYWORDS_REMOTE_DB_READY === '1', note: process.env.KEYWORDS_REMOTE_DB_READY === '1' ? 'Remote persistence explicitly marked ready.' : 'Local SQLite is the default; do not run multiple remote writers without a managed persistence decision.' }, api: { bindHost: process.env.KEYWORDS_API_HOST ?? '127.0.0.1', humanTokenConfigured: Boolean(process.env.KEYWORDS_API_HUMAN_TOKEN), agentTokenConfigured: Boolean(process.env.KEYWORDS_API_AGENT_TOKEN), allowedOriginsConfigured: Boolean(process.env.KEYWORDS_ALLOWED_ORIGINS) }, executor: { persistentRequested: process.env.KEYWORDS_EXECUTOR_PERSISTENT === '1', maxRetryAttempts: Math.max(1, Number(process.env.KEYWORDS_EXECUTOR_MAX_RETRIES ?? 5)) }, recommendation: process.env.KEYWORDS_REMOTE_DB_READY === '1' && process.env.KEYWORDS_API_AGENT_TOKEN ? 'remote_host_eligible' : 'keep_local_executor' })

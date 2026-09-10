@@ -2,6 +2,8 @@
 
 2026-09-08。連携コード実装済み。ライブのSEO成果・公開・全サイトの接続完了を意味しない。
 
+2026-09-11追加: 回復計測・新規拡張の保留・サイト別runtime・計測専用workerの運用は[SEO回復を優先する自動運転](seo-recovery-operations.md)を参照。
+
 ## 実装した範囲
 
 共有commandsを通じたサイト現状取込、既存pagesとの照合、追加価値brief、自律品質ゲート（手動モードでは企画承認）、版付きhandoff、Blogのenqueue/claim/stage連携、結果receipt、query×page計測、観測評価、Operatorへの次タスク、Web/MCP/CLI/APIを接続した。

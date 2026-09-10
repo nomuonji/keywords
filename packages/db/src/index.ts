@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema.js';
 import { blogSchemaSql } from './blog-schema.js';
+import { ensureArticleSchema } from './article-schema.js';
 
 const WORKSPACE_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const DEFAULT_PATH = resolve(WORKSPACE_ROOT, 'data/keywords.sqlite');
@@ -120,6 +121,7 @@ export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PA
   sqlite.exec(bootstrapSql);
   ensureLegacyColumns(sqlite);
   sqlite.exec(blogSchemaSql);
+  ensureArticleSchema(sqlite);
   sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS pages_project_url_idx ON pages(project_id, url) WHERE url IS NOT NULL;');
   sqlite.exec('CREATE INDEX IF NOT EXISTS runs_work_session_created_idx ON runs(work_session_id, created_at ASC);');
   sqlite.exec('CREATE INDEX IF NOT EXISTS discovery_jobs_lease_idx ON discovery_jobs(status, lease_expires_at);');
