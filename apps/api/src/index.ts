@@ -57,6 +57,7 @@ app.post('/projects', async c => c.json(await commands.project.create(ctx(c), aw
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));
 app.post('/projects/:projectId/autopilot/configure', async c => c.json(await autopilotCommands.configure(ctx(c), { ...(await body(c)), projectId: c.req.param('projectId') })));
+app.post('/autopilot/run-today', async c => c.json(await autopilotCommands.runToday(ctx(c), await body(c))));
 
 // Agent execution has one public lane: Operation -> artifact -> validation -> delivery -> outcome.
 app.get('/operations/context', async c => c.json(await operationCommands.context(ctx(c), { projectId: c.req.query('projectId'), operationId: c.req.query('operationId') })));

@@ -16,6 +16,25 @@ const run = (sql: string, ...args: any[]) => sqlite.prepare(sql).run(...args);
 const parse = <T>(value: string | null | undefined, fallback: T): T => { try { return value ? JSON.parse(value) as T : fallback; } catch { return fallback; } };
 const systemCtx = (projectId: string): CommandContext => ({ actor: 'system', actorId: 'autopilot', projectId });
 
+async function withRun<T>(ctx: CommandContext, command: string, input: unknown, fn: () => Promise<T>): Promise<T> {
+  const runId = randomUUID();
+  const started = Date.now();
+  const createdAt = now();
+  try {
+    const output = await fn();
+    run('INSERT INTO runs(id,project_id,work_session_id,actor,actor_id,command,status,input_json,output_json,duration_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      runId, ctx.projectId ?? null, ctx.workSessionId ?? null, ctx.actor, ctx.actorId ?? null, command, 'succeeded', JSON.stringify(input ?? null), JSON.stringify(output ?? null), Date.now() - started, createdAt);
+    return output;
+  } catch (error) {
+    run('INSERT INTO runs(id,project_id,work_session_id,actor,actor_id,command,status,input_json,error,duration_ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+      runId, ctx.projectId ?? null, ctx.workSessionId ?? null, ctx.actor, ctx.actorId ?? null, command, 'failed', JSON.stringify(input ?? null), error instanceof Error ? error.message : String(error), Date.now() - started, createdAt);
+    throw error;
+  }
+}
+
+const DAILY_INSTRUCTION = '今日のSEO作業を進めて';
+const normalizeInstruction = (value: unknown) => String(value ?? '').trim().replace(/[　\s]+/gu, ' ').replace(/[。.!！?？]+$/u, '');
+
 function state(projectId: string) {
   const row = one('SELECT * FROM autopilot_state WHERE project_id=?', projectId);
   return row ? { status: row.status, stage: row.stage, operationId: row.operation_id, targetType: row.target_type, targetId: row.target_id, summary: row.summary, decision: parse(row.decision_json, null), lastTickAt: row.last_tick_at, nextTickAt: row.next_tick_at, lastError: row.last_error, updatedAt: row.updated_at }
@@ -68,6 +87,21 @@ function configurePortfolio(ctx:CommandContext,input:{enabled:boolean}){
 
 export const autopilotCommands={
  configure:async(ctx:CommandContext,input:Parameters<typeof configureAutonomy>[1])=>configureAutonomy(ctx,input), configurePortfolio:async(ctx:CommandContext,input:{enabled:boolean})=>configurePortfolio(ctx,input), portfolio:async()=>portfolioStatus(), enabledProjects:async()=>autonomyStatusRows(),
+ runToday:async(ctx:CommandContext,input:{instruction:string;projectId?:string})=>withRun(ctx,'autopilot.run_today',input,async()=>{
+   if(ctx.actor!=='human')throw new Error('今日のSEO作業の起動は認証済みの人間だけが実行できます');
+   if(normalizeInstruction(input.instruction)!==DAILY_INSTRUCTION)throw new Error(`対応している指示は「${DAILY_INSTRUCTION}」です`);
+   const { headlessCommands } = await import('./headless.js');
+   const projects=input.projectId
+     ? rows('SELECT id,name,domain FROM projects WHERE id=?',input.projectId)
+     : rows('SELECT p.id,p.name,p.domain FROM projects p JOIN autopilot_controls c ON c.project_id=p.id WHERE c.enabled=1 ORDER BY p.name');
+   if(input.projectId&&!projects.length)throw new Error('Project not found');
+   const results=[];
+   for(const project of projects){
+     try{results.push({projectId:project.id,name:project.name,domain:project.domain,result:await headlessCommands.runAutopilotTick(ctx,String(project.id),{force:true})});}
+     catch(error){results.push({projectId:project.id,name:project.name,domain:project.domain,error:error instanceof Error?error.message:String(error)});}
+   }
+   return {instruction:DAILY_INSTRUCTION,scope:input.projectId?'project':'enabled_projects',startedAt:now(),projects:results};
+ }),
  status:async(_ctx:CommandContext,projectId:string)=>{
   const project=one('SELECT id,name,domain,mode FROM projects WHERE id=?',projectId);if(!project)throw new Error('Project not found');const control=autonomyControl(projectId),opControl=operationControl(projectId);
   const active=one("SELECT o.id FROM operation_requests o JOIN operation_projects op ON op.operation_id=o.id WHERE op.project_id=? AND o.status IN ('active','awaiting_review','blocked') ORDER BY o.updated_at DESC LIMIT 1",projectId);

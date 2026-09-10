@@ -82,7 +82,10 @@ class MockApi(BaseHTTPRequestHandler):
 
     def do_POST(self):
         mutation_requests.append(self.path)
-        self.send_json({})
+        if self.path == "/autopilot/run-today":
+            self.send_json({"instruction": "今日のSEO作業を進めて", "scope": "enabled_projects", "startedAt": "2026-09-11T01:00:00Z", "projects": [{"projectId": "p2", "name": "対象サイト", "result": {"status": "running", "stage": "queued_for_agent", "summary": "Queued"}}]})
+        else:
+            self.send_json({})
 
     def do_OPTIONS(self):
         self.send_json({})
@@ -121,6 +124,12 @@ try:
         page.locator(".dashboardSkeleton").wait_for(state="detached")
         assert page.locator(".staleNotice").is_visible(), "stale analytics must be explicit"
         assert page.locator("#project-focus option").count() == 3, "only production projects plus the all option should show"
+        assert page.locator("#daily-instruction").input_value() == "今日のSEO作業を進めて"
+        page.get_by_role("button", name="指示を実行").click()
+        page.locator(".commandNotice").wait_for()
+        assert "今日のSEO作業を起動しました" in page.locator(".commandNotice").inner_text()
+        assert "/autopilot/run-today" in mutation_requests
+        mutation_requests.clear()
         page.locator("#project-focus").select_option("p2")
         assert page.locator(".operationalStats > div").first.locator("strong").inner_text() == "0", "focused stats must use focused scope"
         assert page.locator(".actionItem").count() == 1

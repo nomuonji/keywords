@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api } from './api';
 import { ReviewPanel } from './ReviewPanel';
 
@@ -19,6 +19,7 @@ type Outcome={id:string;projectId:string;status:string;targetUrl?:string|null;hy
 type Operations={outcomes?:Outcome[]};
 type Dashboard={generatedAt:string;errors:Array<{section:string;message:string}>;autopilot:AutoPortfolio|null;portfolio:Portfolio|null;operations:Operations|null};
 type QueueItem={project:AutoProject;priority:number;kind:string;reason:string;nextAction:string;objective:string};
+type RunTodayResponse={instruction:string;scope:string;startedAt:string;projects:Array<{projectId:string;name:string;domain?:string|null;result?:{status?:string;stage?:string;summary?:string|null}|null;error?:string}>};
 
 const when=(value?:string|null)=>value?new Date(value).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
 const verdictLabel:Record<string,string>={shortlisted:'採用',rejected:'見送り',hold:'保留',research_more:'追加調査'};
@@ -49,8 +50,9 @@ function queueItem(project:AutoProject,agentDisconnected:boolean):QueueItem|null
 }
 
 export function OperationsOverview({focusedProjectId,onFocusProject,onOpenArticles,onOpenSites}:{focusedProjectId:string;onFocusProject:(id:string)=>void;onOpenArticles:(id?:string)=>void;onOpenSites:(id?:string)=>void}){
-  const [auto,setAuto]=useState<AutoPortfolio|null>(null),[portfolio,setPortfolio]=useState<Portfolio|null>(null),[ops,setOps]=useState<Operations|null>(null),[query,setQuery]=useState(''),[errors,setErrors]=useState<Array<{section:string;message:string}>>([]),[loading,setLoading]=useState(true),[loaded,setLoaded]=useState(false),[updatedAt,setUpdatedAt]=useState(''),[reviewProject,setReviewProject]=useState<AutoProject|null>(null),[queueExpanded,setQueueExpanded]=useState(false),[showPlanning,setShowPlanning]=useState(false);
+  const [auto,setAuto]=useState<AutoPortfolio|null>(null),[portfolio,setPortfolio]=useState<Portfolio|null>(null),[ops,setOps]=useState<Operations|null>(null),[query,setQuery]=useState(''),[instruction,setInstruction]=useState('今日のSEO作業を進めて'),[errors,setErrors]=useState<Array<{section:string;message:string}>>([]),[loading,setLoading]=useState(true),[loaded,setLoaded]=useState(false),[updatedAt,setUpdatedAt]=useState(''),[reviewProject,setReviewProject]=useState<AutoProject|null>(null),[queueExpanded,setQueueExpanded]=useState(false),[showPlanning,setShowPlanning]=useState(false),[commandBusy,setCommandBusy]=useState(false),[commandNotice,setCommandNotice]=useState('');
   const load=async()=>{try{setLoading(true);const dashboard=await api<Dashboard>('/dashboard');if(dashboard.autopilot)setAuto(dashboard.autopilot);if(dashboard.portfolio)setPortfolio(dashboard.portfolio);if(dashboard.operations)setOps(dashboard.operations);setErrors(dashboard.errors);setUpdatedAt(dashboard.generatedAt)}catch(e){setErrors([{section:'dashboard',message:String(e)}])}finally{setLoading(false);setLoaded(true)}};
+  const runToday=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(commandBusy)return;setCommandBusy(true);setCommandNotice('');try{const result=await api<RunTodayResponse>('/autopilot/run-today',{method:'POST',body:JSON.stringify({instruction,projectId:focusedProjectId||undefined})});const failed=result.projects.filter(project=>project.error).length;const target=result.scope==='project'?'対象サイト':'有効なサイト';setCommandNotice(!result.projects.length?'起動対象がありません。サイト設定でAutopilotをONにしてください。':failed?`${target}の起動を試みましたが、${failed}件でエラーが発生しました。`:`${target}の今日のSEO作業を起動しました。キューと停止理由を更新しています。`);await load()}catch(error){setErrors([{section:'command',message:String(error)}])}finally{setCommandBusy(false)}};
   useEffect(()=>{void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load()},30000);return()=>clearInterval(timer)},[]);
   const selected=focusedProjectId?auto?.projects.find(p=>p.id===focusedProjectId):null;
   const includePlanning=showPlanning||Boolean(selected&&!isOperationalSite(selected));
@@ -68,6 +70,7 @@ export function OperationsOverview({focusedProjectId,onFocusProject,onOpenArticl
   const primary=queue[0];
   return <div className="corePage">
     <div className="coreTitleRow"><div><p className="coreEyebrow">DAILY CONTROL</p><h1>{selected?selected.name:'今日のSEO運用'}</h1><p>止まっている理由と次の一手を、優先度順に確認します。</p></div><div className="coreLive"><span/>{loading?'更新中':updatedAt?`${when(updatedAt)} 更新`:'30秒更新'}</div></div>
+    <section className="dailyCommand" aria-labelledby="daily-command-title"><div><p className="coreEyebrow">COMMAND</p><h2 id="daily-command-title">今日の作業を指示</h2><p>「今日のSEO作業を進めて」を送ると、Autopilotが有効なサイトの次の作業をキューに入れます。</p></div><form onSubmit={runToday}><label htmlFor="daily-instruction">指示文</label><div className="dailyCommandRow"><input id="daily-instruction" value={instruction} onChange={event=>setInstruction(event.target.value)} aria-describedby="daily-command-help"/><button className="primaryCommand" disabled={commandBusy}>{commandBusy?'起動中…':'指示を実行'}</button></div><small id="daily-command-help">対象サイトを絞り込んでいる場合は、そのサイトだけを対象にします。</small></form>{commandNotice&&<div className="commandNotice" role="status">{commandNotice}</div>}</section>
     {errors.length>0&&<div className="partialErrors" role="status"><div><strong>一部の情報を更新できませんでした</strong>{errors.map(item=><p key={item.section}>{item.section}: {item.message}</p>)}</div><button onClick={()=>void load()}>再試行</button></div>}
     {portfolio?.stale&&<aside className="staleNotice" role="status"><strong>分析データが古くなっています</strong><span>{when(portfolio.generatedAt)} 時点のスナップショットです。順位・流入の判断前に指標を更新してください。</span></aside>}
     {!loaded&&loading?<div className="dashboardSkeleton" aria-label="運用データを読み込み中"><span/><span/><span/><span/></div>:<>
