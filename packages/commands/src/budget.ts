@@ -3,7 +3,7 @@ export const BUDGETED_COMMANDS = new Set([
   'operation.candidate_triage',
   'operation.outcome',
   'measurement.import',
-  'blog.import_context', 'blog.prepare', 'blog.export', 'blog.receipt', 'blog.capture',
+  'blog.import_context', 'blog.prepare', 'blog.export', 'blog.receipt', 'blog.verify_published', 'blog.capture',
   'discovery.expand', 'discovery.observe',
   'source.record',
   'research.web_fetch',

@@ -12,11 +12,11 @@
 
 キーワード探索は二つのモードを持つ。通常のoperation経由の探索は`demand_policy=required`で、Google Ads Keyword Planner（または設定済みproxy）から月間検索数を取得できない場合は開始しない。プロバイダーには人が入力した種語と、その種語に明示的に含まれる代表トークンだけを送って関連候補を広げる。SERP related/PAAだけを使う場合は`demand_policy=surface_only`を明示した観測専用runとし、候補には`search_surface_observed`を保存する。検索ボリューム未取得の候補はshortlist・page planへ進めない。候補には種語からの`novelty_score`も保存し、種語そのものは探索成果として登録しない。
 
-記事の本文作成・資料の内容判断はエージェントの作業で、本文を無制限に量産する関数はない。Autopilot有効時は追加価値briefと決定論的な自律品質ゲートを通して人を待たずに進み、Autopilot無効時だけ人の企画承認を要求する。Blogの編集レビュー・近似内容監査・既存build gateは別に通す。削除・URL移動・DNS・credential・policy有効化などの破壊的または権限変更を伴う操作は引き続き人の確認を要する。
+記事の本文作成・資料の内容判断はエージェントの作業で、本文を無制限に量産する関数はない。Autopilot有効時は追加価値briefと決定論的な自律品質ゲートを通して人を待たずに進み、Autopilot無効時だけ人の企画承認を要求する。Blogの編集レビュー・近似内容監査・既存build gateは別に通す。削除・URL移動・DNS・credential・policy有効化などの破壊的または権限変更を伴う操作は引き続き人の確認を要する。Git接続済み本番サイトでは、push後にKeywordsが対象URLを直接検証し、Blog側の応答を待たずに公開記録を作る。
 
 新規記事の`blog_writeDraft`は、書き込み前にprimary keyword、月間検索数、競合、需要source、選定理由をDB上で確認する。検索面で見つけただけの語や未計測値は通過させない。推定月間流入はGSCクリック、または保存済みCTR×検索数がある場合だけ表示し、根拠がなければ未算出とする。既存artifactの改稿は初回ゲートを再利用する。
 
-記事一覧の段階は別々に扱う。`local_file`はBlog作業フォルダにあるがKeywordsへ未登録の本文、`artifact`はKeywordsが登録・検証している本文、`verified`はartifactの品質検証が完了した状態、`published`は公開後の記録が保存された状態である。どの段階でも人が確認して削除でき、削除時はBlog作業フォルダの本文を物理削除し、記事一覧から非表示にする。ただし`runs`と`decisions`の監査記録は残り、公開中サイトの公開停止やURL削除は行わない。
+記事一覧の段階は別々に扱う。`local_file`はBlog作業フォルダにあるがKeywordsへ未登録の本文、`artifact`はKeywordsが登録・検証している本文、`verified`はartifactの品質検証が完了した状態、`published`は公開後の記録が保存された状態である。`KEYWORDS_AUTO_GIT_PUSH=1`かつsite IDが`KEYWORDS_AUTO_GIT_PUSH_SITES`に含まれるときだけ、verified artifactはそのartifact pathだけをcommit・pushする（site ID空欄は全バインドサイト）。push後は`blog.verifyPublished`が対象URLのHTTP 200/canonical一致を直接検証し、成功すればBlog側のreceipt応答なしで`published`へ進める。どの段階でも人が確認して削除でき、削除時はBlog作業フォルダの本文を物理削除し、記事一覧から非表示にする。ただし`runs`と`decisions`の監査記録は残り、公開中サイトの公開停止やURL削除は行わない。
 
 ## 起動環境
 
@@ -56,7 +56,7 @@ contractはsnapshot/brief/receiptの厳密なJSON schemaを返す。CLIでAgent�
 7. Autopilot有効時は人を待たず、自律品質ゲートが根拠・重複・情報価値・本文品質を判定する。Autopilot無効時のみ、人がコンテンツ計画またはBlog連携画面で根拠を確認し、page reviewを行う。未解決質問や資料なしではどちらのモードでも進めない。
 8. `blog_export`で確定版を取得。Blogでdry-run後に明示applyする。
 9. Blogの既存執筆・fast check・stage・batch-verifyを行い、編集レビューと近似内容監査を添付する。
-10. Blogからlocal_verifiedを返す。公開は別途許可された操作で行い、公開HTMLの一致を確認してpublishedを返す。
+10. 検証成功時、設定済みsiteならartifactだけをGitへcommit・pushする。push後はKeywordsが公開URLを直接取得し、HTTP 200とcanonical一致を確認してpublishedを返す。Blog側の応答は必須ではない。
 11. query×pageをcaptureしevaluate。結果はreceiptで記録する。小標本はinconclusiveで次回観測を設定する。
 
 新規企画は限定解除サイトのみ。以前のhandoffが未完、結果が不十分・悪化、または改善の比較が再現していないと新規拡大を止める。Blog側の品質・indexゲートも別途必要で、Keywordsの承認は解除ではない。

@@ -24,7 +24,7 @@ const sessionIdFor = (projectId: string, explicit?: string) => explicit ?? (acti
 
 const budgetedTools = new Set([
   'recovery_capture',
-  'blog_importContext','blog_prepare','blog_export','blog_receipt','blog_capture','blog_expand',
+  'blog_importContext','blog_prepare','blog_export','blog_receipt','blog_verifyPublished','blog_capture','blog_expand',
   'blog_observe',
   'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',

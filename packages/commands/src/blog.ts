@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
-import { searchConsoleQuery } from '@keywords/research';
+import { fetchPublicHtml, searchConsoleQuery } from '@keywords/research';
 import { blogContract, briefSchema, receiptSchema, snapshotSchema, type BlogSnapshot } from './blog-contract.js';
 import { isBudgetedCommand } from './budget.js';
 import { autonomyControl } from './autonomy.js';
@@ -22,6 +22,14 @@ function fresh(value: string, days = 7) {
 }
 function source(id: string, projectId: string) {
  const s = one('SELECT * FROM sources WHERE id=? AND project_id=?', id, projectId); required(s, 'Evidence source not in project'); return s;
+}
+
+function canonicalFromHtml(html: string, pageUrl: string) {
+ const match = html.match(/<link\b[^>]*\brel=["'][^"']*\bcanonical\b[^"']*["'][^>]*>/i) ?? html.match(/<link\b[^>]*\bcanonical\b[^>]*>/i);
+ if (!match) return null;
+ const href = match[0].match(/\bhref=["']([^"']+)["']/i)?.[1];
+ if (!href) return null;
+ try { return new URL(href, pageUrl).toString(); } catch { return null; }
 }
 function pageVersion(pageId: string) {
  const p = one('SELECT * FROM pages WHERE id=?', pageId);
@@ -158,7 +166,7 @@ export const blogCommands = {
   if(old){required(old.payload_hash===hash&&old.handoff_id===h.id,'Event ID payload collision');return {status:h.status,duplicate:true};}
   required(r.version_hash===h.version_hash,'Receipt version mismatch');fresh(r.occurred_at,365);
   const payload=parse(h.payload_json);required(JSON.stringify([...r.final_urls].sort())===JSON.stringify([...payload.target_urls].sort()),'Receipt URLs differ from approved targets');
-  const allowed:Record<string,string[]>={exported:['accepted','blocked'],accepted:['local_verified','blocked'],blocked:['accepted'],local_verified:['published','blocked'],published:['observing','evaluated','blocked'],observing:['observing','evaluated','blocked'],evaluated:['observing','evaluated']};
+  const allowed:Record<string,string[]>={exported:['accepted','published','blocked'],accepted:['local_verified','published','blocked'],blocked:['accepted'],local_verified:['published','blocked'],published:['observing','evaluated','blocked'],observing:['observing','evaluated','blocked'],evaluated:['observing','evaluated']};
   required(allowed[h.status]?.includes(r.status),'Invalid receipt transition');
   if(r.status==='accepted')required(pageVersion(h.page_id)===h.version_hash,'Plan changed since export');
   if(r.status==='blocked')required(r.reason,'Blocker reason required');
@@ -180,6 +188,23 @@ export const blogCommands = {
   run('UPDATE blog_handoffs SET status=?,published_at=?,next_observation_at=?,updated_at=? WHERE id=?',r.status,publishedAt,due,now(),h.id);
   return {status:r.status,duplicate:false,nextObservationAt:due};
  }).immediate()),
+ verifyPublished: async(ctx:CommandContext,input:{projectId:string;handoffId:string;source?:string})=>audited(ctx,input.projectId,'blog.verify_published',async()=>{
+  const h=one('SELECT * FROM blog_handoffs WHERE id=? AND project_id=?',input.handoffId,input.projectId);required(h,'Handoff not found');
+  if(h.published_at)return {status:'already_published',publishedAt:h.published_at,nextObservationAt:h.next_observation_at};
+  required(['exported','accepted','local_verified'].includes(h.status),'Only an active delivered handoff can be directly verified');
+  const payload=parse(h.payload_json), urls=(payload.target_urls??[]) as string[];required(urls.length,'Handoff has no target URLs');
+  const checks=[] as Array<{url:string;http_status:200;canonical:string}>;const failures=[] as Array<{url:string;reason:string}>;
+  for(const url of urls){
+   try { const page=await fetchPublicHtml(url); const canonical=canonicalFromHtml(page.html,url); if(page.status!==200)failures.push({url,reason:`HTTP ${page.status}`}); else if(canonical!==new URL(url).toString())failures.push({url,reason:`canonical mismatch: ${canonical??'missing'}`}); else checks.push({url,http_status:200,canonical}); }
+   catch(error){failures.push({url,reason:error instanceof Error?error.message:String(error)});}
+  }
+  if(failures.length)return {status:'not_published',checks,failures};
+  const confirmedAt=now(),receipt={schema_version:1,event_id:`keywords-direct-publication:${h.id}:${confirmedAt}`,handoff_id:h.id,version_hash:h.version_hash,status:'published',occurred_at:confirmedAt,evidence_refs:[input.source??'keywords:direct-live-verification','keywords:git-delivery'],final_urls:urls,publication:{confirmed_at:confirmedAt,checks}};
+  const hash=fingerprint(receipt),due=new Date(Date.parse(confirmedAt)+7*86400000).toISOString();
+  run('INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)',receipt.event_id,h.id,hash,JSON.stringify(receipt),confirmedAt);
+  run('UPDATE blog_handoffs SET status=?,published_at=?,next_observation_at=?,updated_at=? WHERE id=?', 'published',confirmedAt,due,confirmedAt,h.id);
+  return {status:'published',publishedAt:confirmedAt,nextObservationAt:due,checks};
+ }),
  capture: async(ctx:CommandContext,input:{projectId:string;startDate:string;endDate:string;siteUrl:string;searchType?:string})=>audited(ctx,input.projectId,'blog.capture',async()=>{
   const b=binding(input.projectId);required(/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)&&/^\d{4}-\d{2}-\d{2}$/.test(input.endDate)&&input.startDate<=input.endDate,'Valid ordered dates required');
   for(const date of [input.startDate,input.endDate])required(Number.isFinite(Date.parse(date))&&new Date(date).toISOString().slice(0,10)===date,'Invalid calendar date');

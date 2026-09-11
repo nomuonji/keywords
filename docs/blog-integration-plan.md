@@ -10,7 +10,7 @@
 
 ## 1. 目的と製品境界
 
-調査結果を「採用されたキーワード」で終わらせず、実サイトの改善と公開後の観測に結びつける。Keywordsは調査・企画・レビュー・学習を持ち、Blog側エージェントが記事とサイトを変更する。Keywords内への本文生成、CMS投稿、git push機能の追加はしない。
+調査結果を「採用されたキーワード」で終わらせず、実サイトの改善と公開後の観測に結びつける。Keywordsは調査・企画・レビュー・学習を持ち、検証済みartifactをBlog Gitリポジトリへcommit・pushする。Git接続済みの本番サイトでは、push後にKeywordsが公開URLを直接検証し、Blog側の応答なしで公開後観測へ進める。CMS投稿そのものは扱わない。
 
 Agent-nativeの原則を維持する。UI、CLI、MCP、Operatorは同じcommandsとSQLを利用する。新しいagent専用DBやタスクJSONを追加しない。JSON受け渡しは監査可能な輸送物であり、状態の正本は共有SQLとBlogの既存実行台帳に分担する。
 
@@ -34,7 +34,7 @@ Agent-nativeの原則を維持する。UI、CLI、MCP、Operatorは同じcommand
 - `packages/db`: site binding、handoff、receipt/outcome、必要なquery×page履歴のschemaとmigration。既存pages/tasks/work_sessionsを参照し、複製しない。
 - `packages/domain`: バージョン付き交換型と検証型。
 - `packages/research`: GSC query×page等の外部読み取り。SQLを変更しない。
-- `packages/commands`: binding更新、context受領、承認版export、receipt受領、予算・権限・再送・監査。
+- `packages/commands`: binding更新、context受領、承認版export、直接公開検証/receipt記録、予算・権限・再送・監査。
 - `apps/api`, `apps/cli`, `apps/mcp`: 同じcommandのadapter。直接SQLを書かない。
 - `apps/web`: 人の対応確認、企画レビュー、Blog状態・結果・保留理由の表示。
 - Blog側adapter: ローカルinventory、autopilot.py、品質証拠への接続。Keywordsから任意のシェルを実行しない。

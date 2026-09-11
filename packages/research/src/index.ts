@@ -198,6 +198,12 @@ export interface GoogleAdsKeywordIdeaResult {
   fetchedAt: string;
 }
 
+/** Fetch a public HTML page for direct delivery/publication verification. */
+export async function fetchPublicHtml(input: string): Promise<{ status: number; finalUrl: string; html: string }> {
+  const { response, finalUrl } = await safeFetch(input, { headers: { 'user-agent': 'keywords-publication-verifier/1.0' } });
+  return { status: response.status, finalUrl, html: await readLimitedText(response) };
+}
+
 function googleAdsRefreshCredentials() {
   const refreshToken = process.env.GOOGLE_ADS_REFRESH_TOKEN ?? process.env.ADS_REFRESH_TOKEN;
   const clientId = process.env.GOOGLE_ADS_CLIENT_ID ?? process.env.ADS_CLIENT_ID;

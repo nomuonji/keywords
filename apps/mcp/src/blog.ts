@@ -12,6 +12,7 @@ const definitions:Array<[string,string,Record<string,unknown>,string[]]>=[
  ['export','Export a current human-approved plan with expected source hashes and evidence; never publishes.',{pageId:string},['pageId']],
  ['get','Read live handoff validity before local work; stale approvals are invalid.',{handoffId:string},['handoffId']],
  ['receipt','Record idempotent Blog verification, publication evidence or outcome; guarded transitions.',{receipt:object},['receipt']],
+ ['verifyPublished','Directly verify target URLs from Keywords after Git delivery and record the publication/observation deadline; no Blog-side response is required.',{handoffId:string,source:string},['handoffId']],
  ['capture','Capture settled query-by-page GSC history scoped to the bound origin.',{startDate:string,endDate:string,siteUrl:string,searchType:string},['startDate','endDate','siteUrl']],
  ['evaluate','Compare matching before/after publication windows; small samples are inconclusive.',{handoffId:string,baselineId:string,followupId:string},['handoffId','baselineId','followupId']],
  ['expand','Expand a job seed or external observation through related searches/PAA; budget/lease/depth limited.',{jobId:string,seed:string,parentId:string,idempotencyKey:string},['jobId']],

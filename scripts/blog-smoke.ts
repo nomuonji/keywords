@@ -36,7 +36,7 @@ const handoff=await blogCommands.export(agent,{projectId:p.id,pageId:plan.page.i
 assert.equal(handoff.target_sources[0].sha256,'b'.repeat(64));
 assert.deepEqual(await blogCommands.export(agent,{projectId:p.id,pageId:plan.page.id}),handoff);
 const event=(status:string,extra:any={})=>({schema_version:1,event_id:`${handoff.handoff_id}-${status}`,handoff_id:handoff.handoff_id,version_hash:handoff.version_hash,status,occurred_at:new Date().toISOString(),blog_item_id:'task-1',evidence_refs:['quality.json','build.json'],final_urls:handoff.target_urls,...extra});
-await assert.rejects(()=>blogCommands.receipt(agent,{projectId:p.id,receipt:event('published')}),/transition/);
+await assert.rejects(()=>blogCommands.receipt(agent,{projectId:p.id,receipt:event('published')}),/transition|Publication checks required/);
 const accepted=event('accepted');
 await blogCommands.receipt(agent,{projectId:p.id,receipt:accepted});
 assert.equal((await blogCommands.receipt(agent,{projectId:p.id,receipt:accepted})).duplicate,true);

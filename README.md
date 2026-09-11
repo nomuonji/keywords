@@ -2,7 +2,7 @@
 
 `keywords` is a shared SEO operating system where humans and AI agents work on the same SQL-backed project state. Web UI, CLI, HTTP API, MCP, and the scheduled Operator all use the same command layer.
 
-The current product scope intentionally stops before article generation and publishing.
+The current product scope supports evidence-backed article revisions and an opt-in Git commit/push delivery step. For bound production sites, Keywords verifies the live URL directly after delivery and starts post-publication observation without waiting for a Blog-side response.
 
 Blogサイト群との連携コードを実装しました。現在の機能・起動条件・Agent手順は [Blog連携の運用手順](docs/blog-integration-operations.md) が正本です。設計判断と実装前の経緯は [Blog連携計画](docs/blog-integration-plan.md) に残しています。
 
@@ -22,7 +22,7 @@ Blogサイト群との連携コードを実装しました。現在の機能・�
 - **real site URL synchronization from sitemap and Search Console into the same Page model**
 - **Blog site context, evidence brief, human-approved handoff, receipt, query×page observation, and bounded discovery bridge**
 - React/Vite Web UI, Hono API, CLI, and MCP server
-- external article generation / publishing intentionally out of scope
+- CMS publication is intentionally out of scope; verified artifacts may use the opt-in, allowlisted Git delivery path
 
 ## Architecture
 
@@ -348,7 +348,7 @@ CI cancels superseded runs on the same branch.
 
 The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization**. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
 
-**Article generation and external publishing are intentionally not implemented in the current scope.**
+**CMS publication is not performed by this workspace, but Git-connected production sites are verified directly.** Evidence-backed artifacts may be committed and pushed when `KEYWORDS_AUTO_GIT_PUSH=1` (an empty site allowlist means all bound sites). After delivery, Keywords checks each target URL for HTTP 200 and an exact canonical URL and records the publication/observation deadline itself; no Blog-side receipt response is required.
 
 ## Blog配下での起動と全サイトの実績
 

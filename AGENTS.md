@@ -36,7 +36,7 @@ This repository is an agent-native SEO workspace. Do not add a second, agent-onl
 14. Durable project-specific operating rules belong in `policy_rules`. Agents may propose candidates from decisions, but only humans may activate, reject, or retire them.
 15. Active project policies take precedence over generic SEO heuristics in `skills/`, unless a higher-level product/safety boundary conflicts with them.
 16. Research credentials are environment-only; never write access tokens, API keys, developer tokens, or OAuth secrets to SQLite, source metadata, runs, decisions, policy rules, work sessions, checkpoints, or review requests.
-17. Publishing is intentionally not implemented. Do not add WordPress, Hatena, Blogger, CMS, or article-generation side effects unless product scope explicitly changes.
+17. CMS publication remains out of scope. A verified local artifact may be committed and pushed only through the configured Git delivery path; it must stage only that artifact and record a `runs` audit entry. For Git-connected production sites, Keywords performs the HTTP/canonical check directly after delivery and may mark the handoff `published` without waiting for a Blog-side response. Do not add WordPress, Hatena, Blogger, or other CMS side effects unless product scope explicitly changes.
 
 ## Agent safety model
 

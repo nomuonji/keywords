@@ -8,6 +8,7 @@ import { assertOperationAllowed, operationControl } from './guard.js';
 import { assertRecoveryAllowsExpansion } from './recovery-context.js';
 import { readBlogRuntime, newBlogArticleTarget } from '@keywords/research/blog-runtime';
 import { isBudgetedCommand } from './budget.js';
+import { blogCommands } from './blog.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -19,6 +20,58 @@ const hashText = (value: string) => createHash('sha256').update(value).digest('h
 const hashJson = (value: unknown) => hashText(JSON.stringify(value));
 const VALIDATOR_VERSION = 'article-validator-v1';
 const AUTO_RESUME_BLOCKERS = new Set(['quality_revision_required', 'artifact_missing']);
+
+type GitDelivery = {
+  status: 'disabled' | 'not_allowlisted' | 'not_git_repository' | 'no_changes' | 'pushed' | 'failed';
+  siteId: string | null;
+  remote?: string;
+  branch?: string;
+  commit?: string;
+  error?: string;
+};
+
+function gitResult(root: string, args: string[]) {
+  const result = spawnSync('git', args, { cwd: root, shell: false, encoding: 'utf8', timeout: 120_000, maxBuffer: 200_000, env: process.env });
+  const detail = [result.error?.message, result.stderr, result.stdout].filter(Boolean).join('\n').trim().slice(-4_000);
+  if (result.error || result.status === null || result.status !== 0) throw new Error(`git ${args[0]} failed${detail ? `: ${detail}` : ''}`);
+  return String(result.stdout ?? '').trim();
+}
+
+function configuredGitDelivery(projectId: string): { siteId: string | null; enabled: boolean; allowed: boolean } {
+  const siteId = one('SELECT blog_site_id FROM blog_bindings WHERE project_id=?', projectId)?.blog_site_id ?? null;
+  const enabled = process.env.KEYWORDS_AUTO_GIT_PUSH === '1';
+  const allowlist = (process.env.KEYWORDS_AUTO_GIT_PUSH_SITES ?? '').split(',').map(value => value.trim()).filter(Boolean);
+  return { siteId, enabled, allowed: Boolean(siteId && (!allowlist.length || allowlist.includes(siteId))) };
+}
+
+/** Commit and push only the verified artifact, never unrelated working-tree changes. */
+function pushVerifiedArtifact(projectId: string, artifactPath: string, operationId: string): GitDelivery {
+  const configured = configuredGitDelivery(projectId);
+  if (!configured.enabled) return { status: 'disabled', siteId: configured.siteId };
+  if (!configured.allowed) return { status: 'not_allowlisted', siteId: configured.siteId };
+  const root = articleRuntime(projectId).root;
+  try {
+    if (gitResult(root, ['rev-parse', '--is-inside-work-tree']) !== 'true') return { status: 'not_git_repository', siteId: configured.siteId };
+    const branch = process.env.KEYWORDS_AUTO_GIT_PUSH_BRANCH?.trim() || gitResult(root, ['branch', '--show-current']);
+    if (!branch || !/^[A-Za-z0-9._/-]+$/.test(branch) || branch.includes('..')) throw new Error('Configured Git branch is invalid or detached');
+    const remote = process.env.KEYWORDS_AUTO_GIT_PUSH_REMOTE?.trim() || 'origin';
+    gitResult(root, ['remote', 'get-url', remote]);
+    const ref = artifactPath.replaceAll('\\', '/');
+    const dirty = spawnSync('git', ['diff', '--quiet', '--', ref], { cwd: root, shell: false, encoding: 'utf8', timeout: 30_000, env: process.env });
+    if (dirty.error || (dirty.status !== 0 && dirty.status !== 1)) throw new Error(`git diff failed: ${(dirty.error?.message ?? dirty.stderr ?? '').slice(-2_000)}`);
+    if (dirty.status === 0) return { status: 'no_changes', siteId: configured.siteId, remote, branch };
+    gitResult(root, ['add', '--', ref]);
+    const staged = spawnSync('git', ['diff', '--cached', '--quiet', '--', ref], { cwd: root, shell: false, encoding: 'utf8', timeout: 30_000, env: process.env });
+    if (staged.error || (staged.status !== 0 && staged.status !== 1)) throw new Error(`git staged diff failed: ${(staged.error?.message ?? staged.stderr ?? '').slice(-2_000)}`);
+    if (staged.status === 0) return { status: 'no_changes', siteId: configured.siteId, remote, branch };
+    gitResult(root, ['commit', '--only', '-m', `SEO: verified artifact ${operationId.slice(0, 8)}`, '--', ref]);
+    const commit = gitResult(root, ['rev-parse', 'HEAD']);
+    gitResult(root, ['push', remote, `HEAD:refs/heads/${branch}`]);
+    return { status: 'pushed', siteId: configured.siteId, remote, branch, commit };
+  } catch (error) {
+    return { status: 'failed', siteId: configured.siteId, error: error instanceof Error ? error.message.slice(0, 4_000) : String(error).slice(0, 4_000) };
+  }
+}
 
 
 
@@ -454,7 +507,14 @@ export const headlessCommands = {
       buildDetail = { status: built.status, signal: built.signal, error: built.error?.message ?? null };
     }
     checks.push({ key: 'site_build', ok: buildStatus === 'passed', detail: buildDetail });
-    const passed = checks.every(check => check.ok); const result = { validatorVersion: VALIDATOR_VERSION, status: passed ? 'passed' : 'failed', revisionKey, contentSha256: actualHash, checks, failedChecks: checks.filter(check => !check.ok).map(check => check.key), validatedAt: now() };
+    const passed = checks.every(check => check.ok);
+    const delivery = passed ? pushVerifiedArtifact(input.projectId, artifact.artifact_path, input.operationId) : { status: 'disabled' as const, siteId: one('SELECT blog_site_id FROM blog_bindings WHERE project_id=?', input.projectId)?.blog_site_id ?? null };
+    let publication: unknown = null;
+    if (passed && (delivery.status === 'pushed' || delivery.status === 'no_changes')) {
+      const handoff = one("SELECT id FROM blog_handoffs WHERE project_id=? AND page_id=? AND status IN ('exported','accepted','local_verified') ORDER BY created_at DESC LIMIT 1", input.projectId, artifact.page_id);
+      if (handoff) publication = await blogCommands.verifyPublished(ctx, { projectId: input.projectId, handoffId: handoff.id, source: delivery.status === 'pushed' ? 'keywords:git-push-live-verification' : 'keywords:direct-live-verification' });
+    }
+    const result = { validatorVersion: VALIDATOR_VERSION, status: passed ? 'passed' : 'failed', revisionKey, contentSha256: actualHash, checks, failedChecks: checks.filter(check => !check.ok).map(check => check.key), delivery, publication, validatedAt: now() };
     const resultHash = hashJson(result); const attempts = Number(artifact.validation_attempts ?? 0) + 1; const maxRevisions = Math.max(1, Number(process.env.KEYWORDS_MAX_ARTICLE_REVISIONS ?? 3));
     const verifiedAt = passed ? now() : null;
     const next = { ...artifact, validator_version: VALIDATOR_VERSION, validator_status: result.status, validator_result_hash: resultHash, validator_result_json: JSON.stringify(result), build_command: buildCommand || null, build_status: buildStatus, build_result_hash: buildResultHash, revision_key: revisionKey, validation_attempts: attempts, verified_at: verifiedAt };
@@ -462,7 +522,11 @@ export const headlessCommands = {
     run('UPDATE operation_artifacts SET validator_version=?,validator_status=?,validator_result_hash=?,validator_result_json=?,build_command=?,build_status=?,build_result_hash=?,revision_key=?,validation_attempts=?,verified_at=?,manifest_json=?,updated_at=? WHERE id=?', VALIDATOR_VERSION,result.status,resultHash,JSON.stringify(result),buildCommand||null,buildStatus,buildResultHash,revisionKey,attempts,verifiedAt,JSON.stringify(manifest),now(),artifact.id);
     if (passed) run("UPDATE operation_projects SET last_progress_at=?,blocker=NULL,blocker_class=NULL,updated_at=? WHERE operation_id=? AND project_id=?", now(), now(), input.operationId, input.projectId);
     else if (Number(artifact.revision_count ?? 0) >= maxRevisions) ensureHumanBoundary(input.operationId, input.projectId, artifact, `Article validation failed after ${artifact.revision_count} revisions: ${result.failedChecks.join(', ')}`);
-    const view = artifactView(one('SELECT * FROM operation_artifacts WHERE id=?', artifact.id)); recordRun(ctx, input.projectId, 'artifact.validate', { operationId: input.operationId, articleId: artifact.article_id, revisionKey }, { status: result.status, resultHash, cached: false });
+    const view = artifactView(one('SELECT * FROM operation_artifacts WHERE id=?', artifact.id));
+    recordRun(ctx, input.projectId, 'artifact.validate', { operationId: input.operationId, articleId: artifact.article_id, revisionKey }, { status: result.status, resultHash, cached: false, delivery });
+    if (delivery.status === 'pushed') recordRun(ctx, input.projectId, 'artifact.git_push', { operationId: input.operationId, articleId: artifact.article_id, path: artifact.artifact_path }, delivery);
+    if (delivery.status === 'failed') recordRun(ctx, input.projectId, 'artifact.git_push', { operationId: input.operationId, articleId: artifact.article_id, path: artifact.artifact_path }, null, delivery.error);
+    if (publication) recordRun(ctx, input.projectId, 'artifact.publication_verify', { operationId: input.operationId, articleId: artifact.article_id }, publication);
     return { cached: false, ...view };
   },
 

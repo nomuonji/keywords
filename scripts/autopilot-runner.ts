@@ -5,6 +5,9 @@ import { headlessCommands } from '@keywords/commands/headless';
 import { revisionCommands } from '@keywords/commands/revision';
 import { executeMaintenance, MAINTENANCE_KINDS } from '@keywords/commands/maintenance-execution';
 import { autopilotCommands } from '@keywords/commands/autopilot';
+import { loadResearchEnvironment } from '@keywords/research';
+
+loadResearchEnvironment();
 
 const maintenanceOnly = process.argv.includes('--maintenance-only');
 const once = process.argv.includes('--once');
