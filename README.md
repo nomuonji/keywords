@@ -318,7 +318,7 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 - SERP: `KEYWORDS_SERPER_API_KEY` / `SERPER_API_KEY`
 - Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
 - Google Ads OAuth refresh: `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`
-- Google Ads proxy fallback: `GOOGLE_ADS_KEYWORD_VOLUME_API_URL` (or existing `KEYWORD_VOLUME_API_URL`)
+- Google Ads proxy for remote demand research: `GOOGLE_ADS_KEYWORD_VOLUME_API_URL` (primary for `keyword_demand_research`; legacy alias `KEYWORD_VOLUME_API_URL` is also accepted)
 - Search Console: `GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
 - Search Console service account: `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
 - shared Google OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
@@ -326,7 +326,7 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
-The API loads the repository `.env` on startup. Google Ads uses the direct API when valid credentials are available and falls back to the configured keyword-volume proxy for seed-keyword research when direct OAuth or customer access is unavailable. Operation-driven discovery requires one of those demand providers; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
+The API loads the repository `.env` on startup. The remote six-tool MCP uses the configured keyword-volume proxy first for `keyword_demand_research`, because that proxy owns the known-working Google Ads credential set, and falls back to direct Google Ads only when the proxy request fails. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
 
 # Verification
 
