@@ -38,12 +38,14 @@ when the local `.env` has the read-capable Firebase settings above.
 
 ## ChatGPT connection
 
-In ChatGPT Developer Mode, create a custom MCP app, provide the `/mcp` URL,
-choose bearer/API-token authentication if the UI offers it, and supply
-`KEYWORDS_REMOTE_MCP_TOKEN`. Scan the tools before publishing. Keep
+In ChatGPT Developer Mode, create a custom MCP app and provide the `/mcp` URL.
+Choose **OAuth**: the endpoint advertises OAuth metadata and uses PKCE. When
+the authorization window opens, enter the `KEYWORDS_REMOTE_MCP_TOKEN` value as
+the access key. The service issues short-lived access tokens and renewable
+refresh tokens; the original access key is never sent with normal MCP calls.
+
+Do not choose **No authentication**. It is intentionally rejected. The static
+bearer token remains supported for command-line/API MCP clients, but OAuth is
+the preferred ChatGPT integration. Scan tools before publishing and keep
 `keyword_treasury_save` enabled as a write action so ChatGPT presents its
 normal confirmation when appropriate.
-
-If the workspace only permits OAuth-based custom apps, put an OAuth gateway in
-front of this endpoint and have it forward the validated identity as the bearer
-credential; do not make the endpoint public just to bypass that policy.

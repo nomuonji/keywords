@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod/v4';
@@ -8,17 +9,35 @@ import * as z from 'zod/v4';
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave } from '../packages/keyword-treasury/src/index.js';
 
 const app = new Hono();
-const token = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
-if (!token) throw new Error('KEYWORDS_REMOTE_MCP_TOKEN is required for the remote MCP');
-const origin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
-app.use('*', cors({ origin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
+const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
+if (!configuredToken) throw new Error('KEYWORDS_REMOTE_MCP_TOKEN is required for the remote MCP');
+const token: string = configuredToken;
+const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
+app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
+function origin(c: any) { return new URL(c.req.url).origin; }
+function b64(value: string) { return Buffer.from(value).toString('base64url'); }
+function unb64(value: string) { return Buffer.from(value, 'base64url').toString('utf8'); }
+function signed(kind: string, claims: Record<string, unknown>) {
+  const body = b64(JSON.stringify({ kind, exp: Math.floor(Date.now() / 1000) + (kind === 'refresh' ? 60 * 60 * 24 * 30 : kind === 'access' ? 60 * 60 : 5 * 60), ...claims }));
+  return `${body}.${createHmac('sha256', token).update(body).digest('base64url')}`;
+}
+function verified(value: string, kind: string) {
+  const [body, signature] = value.split('.'); if (!body || !signature) return null;
+  const expected = createHmac('sha256', token).update(body).digest('base64url');
+  if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+  try { const payload = JSON.parse(unb64(body)); return payload.kind === kind && typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000) ? payload : null; } catch { return null; }
+}
+function isAuthorized(value: string) { return value === token || Boolean(verified(value, 'access')); }
+function sameSecret(value: string) { return value.length === token.length && timingSafeEqual(Buffer.from(value), Buffer.from(token)); }
+function query(c: any, name: string) { return c.req.query(name) ?? ''; }
+function safeRedirect(value: string) { try { const url = new URL(value); return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname)) ? url : null; } catch { return null; } }
+function form(c: any, values: Record<string, string>) { return c.html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Keywords Treasury</title><style>body{font-family:system-ui;max-width:34rem;margin:5rem auto;padding:1.5rem;color:#17211f}input,button{width:100%;padding:.75rem;margin:.5rem 0;font:inherit}button{background:#176b52;color:white;border:0;border-radius:.4rem}small{color:#52615c}</style><h1>Keywords Treasury を接続</h1><p>ChatGPT が共有キーワードストックを読み書きできるようにします。</p><form method="post" action="${origin(c)}/oauth/authorize">${Object.entries(values).map(([key,value])=>`<input type="hidden" name="${key}" value="${value.replaceAll('&','&amp;').replaceAll('"','&quot;')}">`).join('')}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>Vercel の <code>KEYWORDS_REMOTE_MCP_TOKEN</code> の値を入力してください。</small><button type="submit">許可して接続</button></form></html>`); }
 const requireToken = async (c: any, next: any) => {
-  const supplied = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
-  if (supplied !== token) return c.json({ error: 'Unauthorized' }, 401);
+  const supplied = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  if (!isAuthorized(supplied)) { c.header('WWW-Authenticate', `Bearer resource_metadata="${origin(c)}/.well-known/oauth-protected-resource"`); return c.json({ error: 'Unauthorized' }, 401); }
   return next();
 };
-app.use('/mcp', requireToken);
-app.use('/api/mcp', requireToken);
+app.use('/mcp', requireToken); app.use('/api/mcp', requireToken);
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 function server() {
   const mcp = new McpServer({ name: 'keywords-treasury', version: '1.0.0' });
@@ -32,4 +51,10 @@ const health = (c: any) => c.json({ ok: true, service: 'keywords-treasury-mcp', 
 const handleMcp = async (c: any) => { const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true }); const instance = server(); await instance.connect(transport); return transport.handleRequest(c.req.raw); };
 app.get('/health', health); app.get('/mcp/health', health); app.get('/api/mcp/health', health);
 app.all('/mcp', handleMcp); app.all('/api/mcp', handleMcp);
+app.get('/.well-known/oauth-protected-resource', c => c.json({ resource: origin(c), authorization_servers: [origin(c)], scopes_supported: ['keyword-treasury'] }));
+app.get('/.well-known/oauth-authorization-server', c => c.json({ issuer: origin(c), authorization_endpoint: `${origin(c)}/oauth/authorize`, token_endpoint: `${origin(c)}/oauth/token`, response_types_supported: ['code'], grant_types_supported: ['authorization_code', 'refresh_token'], token_endpoint_auth_methods_supported: ['none'], code_challenge_methods_supported: ['S256'], scopes_supported: ['keyword-treasury'] }));
+app.get('/oauth/authorize', c => { const redirectUri = safeRedirect(query(c, 'redirect_uri')); const clientId = query(c, 'client_id'); const codeChallenge = query(c, 'code_challenge'); if (query(c, 'response_type') !== 'code' || !redirectUri || !clientId || !codeChallenge || query(c, 'code_challenge_method') !== 'S256') return c.text('Invalid OAuth authorization request', 400); return form(c, { redirect_uri: redirectUri.toString(), client_id: clientId, state: query(c, 'state'), code_challenge: codeChallenge, code_challenge_method: 'S256' }); });
+app.post('/oauth/authorize', async c => { const body = await c.req.parseBody(); const redirectUri = safeRedirect(String(body.redirect_uri ?? '')); const clientId = String(body.client_id ?? ''); const challenge = String(body.code_challenge ?? ''); if (!redirectUri || !clientId || !challenge || !sameSecret(String(body.access_key ?? ''))) return c.text('Authorization denied', 401); const code = signed('code', { redirectUri: redirectUri.toString(), clientId, challenge }); redirectUri.searchParams.set('code', code); if (body.state) redirectUri.searchParams.set('state', String(body.state)); return c.redirect(redirectUri.toString()); });
+app.post('/oauth/token', async c => { const body = await c.req.parseBody(); const grant = String(body.grant_type ?? ''); if (grant === 'refresh_token') { const refresh = verified(String(body.refresh_token ?? ''), 'refresh'); if (!refresh) return c.json({ error: 'invalid_grant' }, 400); return c.json({ access_token: signed('access', { clientId: refresh.clientId }), token_type: 'Bearer', expires_in: 3600, scope: 'keyword-treasury' }); }
+  const code = verified(String(body.code ?? ''), 'code'); const verifier = String(body.code_verifier ?? ''); const redirectUri = String(body.redirect_uri ?? ''); const clientId = String(body.client_id ?? ''); const actualChallenge = createHash('sha256').update(verifier).digest('base64url'); if (grant !== 'authorization_code' || !code || code.redirectUri !== redirectUri || code.clientId !== clientId || code.challenge !== actualChallenge) return c.json({ error: 'invalid_grant' }, 400); return c.json({ access_token: signed('access', { clientId }), refresh_token: signed('refresh', { clientId }), token_type: 'Bearer', expires_in: 3600, scope: 'keyword-treasury' }); });
 export default app;
