@@ -3,7 +3,9 @@ import { cors } from 'hono/cors';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import * as z from 'zod/v4';
-import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave } from '@keywords/keyword-treasury';
+// Keep this import relative: Vercel bundles a root-level serverless function
+// independently of npm workspace links.
+import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave } from '../packages/keyword-treasury/src/index.js';
 
 const app = new Hono();
 const token = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
