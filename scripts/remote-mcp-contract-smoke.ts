@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
-import { buildGoogleAdsHistoricalMetricsPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
+import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
 assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.0');
@@ -45,6 +45,24 @@ const payload = buildGoogleAdsHistoricalMetricsPayload({ keywords: ['ai 英会�
 assert.deepEqual(payload.historicalMetricsOptions, { includeAverageCpc: true });
 assert.equal(payload.language, 'languageConstants/1005');
 assert.deepEqual(payload.geoTargetConstants, ['geoTargetConstants/2392']);
+
+const ideasPayload = buildGoogleAdsKeywordIdeasPayload({ keywords: ['ai 英会話 比較'], languageId: '1005', geoTargetIds: ['2392'], includeAdultKeywords: false });
+assert.deepEqual(ideasPayload.historicalMetricsOptions, { includeAverageCpc: true });
+assert.deepEqual(ideasPayload.keywordSeed, { keywords: ['ai 英会話 比較'] });
+assert.equal(ideasPayload.includeAdultKeywords, false);
+assert.equal(ideasPayload.language, 'languageConstants/1005');
+assert.deepEqual(ideasPayload.geoTargetConstants, ['geoTargetConstants/2392']);
+
+const ideaMetrics = normalizeGoogleAdsHistoricalResults([{
+  text: 'ai 英会話 比較',
+  keywordIdeaMetrics: {
+    avgMonthlySearches: 480,
+    averageCpcMicros: 321000,
+    monthlySearchVolumes: [{ year: 2026, month: 'AUGUST', monthlySearches: 520 }]
+  }
+}]);
+assert.equal(ideaMetrics[0]?.averageCpcMicros, 321000);
+assert.deepEqual(ideaMetrics[0]?.monthlySearchVolumes, [{ year: 2026, month: 8, searches: 520 }]);
 
 const analysis = analyzeSerp({
   query: 'ai 英会話 比較',
