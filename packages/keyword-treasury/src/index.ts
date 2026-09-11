@@ -116,7 +116,17 @@ export async function keywordDemand(input: { keywords: string[]; languageConstan
   const keywords = [...new Set((input.keywords ?? []).map(keyword => keyword.trim()).filter(Boolean))];
   if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keywords, options: { languageConstant: input.languageConstant ?? '1005', geoTargetConstants: input.geoTargetConstants ?? ['2392'], includeAdultKeywords: input.includeAdultKeywords ?? true } }) });
-  if (!response.ok) throw new Error(`Keyword-volume provider failed (${response.status})`);
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({})) as any;
+    const codes = Array.isArray(errorBody?.googleAdsErrorCodes) ? errorBody.googleAdsErrorCodes.filter((value: unknown) => typeof value === 'string').join(',') : '';
+    const detail = [
+      typeof errorBody?.googleAdsStatus === 'string' ? errorBody.googleAdsStatus : null,
+      codes || null,
+      typeof errorBody?.googleAdsMessage === 'string' ? errorBody.googleAdsMessage : null,
+      typeof errorBody?.requestId === 'string' ? `requestId=${errorBody.requestId}` : null
+    ].filter(Boolean).join(' | ');
+    throw new Error(`Keyword-volume provider failed (${response.status}${detail ? ` | ${detail}` : ''})`);
+  }
   const raw = await response.json() as Record<string, any>;
   const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
   const monthly = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ year: numeric(item.year), month: numeric(item.month), searches: numeric(item.monthlySearches ?? item.searches) })).filter((item): item is { year: number; month: number; searches: number } => item.year !== null && item.month !== null && item.searches !== null) : [];
