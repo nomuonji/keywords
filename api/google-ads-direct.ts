@@ -68,6 +68,7 @@ export function normalizeGoogleAdsHistoricalResults(value: unknown): HistoricalM
 export function googleAdsDirectConfiguration() {
   const customerIdConfigured = Boolean(process.env.GOOGLE_ADS_CUSTOMER_ID || process.env.ADS_CUSTOMER_ID);
   const developerTokenConfigured = Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN || process.env.ADS_DEVELOPER_TOKEN);
+  const loginCustomerIdConfigured = Boolean(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID || process.env.ADS_LOGIN_CUSTOMER_ID);
   const accessTokenConfigured = Boolean(process.env.GOOGLE_ADS_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN);
   const refreshCredentialsConfigured = Boolean(
     (process.env.GOOGLE_ADS_REFRESH_TOKEN || process.env.ADS_REFRESH_TOKEN) &&
@@ -78,6 +79,7 @@ export function googleAdsDirectConfiguration() {
     configured: customerIdConfigured && developerTokenConfigured && (accessTokenConfigured || refreshCredentialsConfigured),
     customerIdConfigured,
     developerTokenConfigured,
+    loginCustomerIdConfigured,
     accessTokenConfigured,
     refreshCredentialsConfigured
   };
@@ -136,7 +138,26 @@ async function googleAdsResponseError(response: Response) {
   const body = await response.json().catch(() => ({})) as any;
   const status = typeof body?.error?.status === 'string' ? body.error.status : null;
   const message = typeof body?.error?.message === 'string' ? body.error.message : null;
-  return `Google Ads request failed (${response.status}${status ? ` ${status}` : ''}${message ? `: ${message}` : ''})`;
+  let adsErrorCode: string | null = null;
+  let adsMessage: string | null = null;
+  let requestId: string | null = null;
+  for (const detail of Array.isArray(body?.error?.details) ? body.error.details : []) {
+    if (!requestId && typeof detail?.requestId === 'string') requestId = detail.requestId;
+    for (const failure of Array.isArray(detail?.errors) ? detail.errors : []) {
+      if (!adsMessage && typeof failure?.message === 'string') adsMessage = failure.message;
+      if (!adsErrorCode && failure?.errorCode && typeof failure.errorCode === 'object') {
+        const code = Object.values(failure.errorCode).find(value => typeof value === 'string');
+        if (typeof code === 'string') adsErrorCode = code;
+      }
+    }
+  }
+  const parts = [
+    `${response.status}${status ? ` ${status}` : ''}`,
+    adsErrorCode,
+    adsMessage ?? message,
+    requestId ? `requestId=${requestId}` : null
+  ].filter(Boolean);
+  return `Google Ads request failed (${parts.join(' | ')})`;
 }
 
 export function sanitizeGoogleAdsError(error: unknown) {
