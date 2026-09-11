@@ -1,5 +1,19 @@
 # AGENTS.md
 
+## このプロジェクトで「作業開始して」が意味すること
+
+このリポジトリにおける「作業」「作業開始して」「作業して」「SEO作業を進めて」「続きから進めて」は、説明や作業候補の提示を求める言葉ではない。**アプリを起動または既存の起動状態へ接続し、SEO改善の運用ループをその場で最後まで実行する指示**である。
+
+この指示を受けたら、次の順で直ちに進める。
+
+1. Keywords API（`http://127.0.0.1:8787/health`）とWeb画面の起動状態を確認し、未起動なら `scripts/start-local.ps1` で起動する。起動済みなら二重起動せず、その状態を再利用する。
+2. Blog接続済みサイトの計測・回復運用が必要なら `scripts/start-maintenance.ps1` を起動する。同じworkerが動いている場合は二重起動しない。
+3. `operator_context` と `work_context` を読み、既存のwork session/taskを再利用する。未完了sessionがなければ `work_start` する。ユーザーが具体的な対象を指定していない場合は、operatorが選んだ最優先タスクを実行対象にする。
+4. プロジェクトのpolicyとSEO回復・Blog連携の境界を確認し、調査、既存ページ改善、構造化変更、計測など、許可された作業を判断して実行する。回復待ちで新規記事が禁止されていても、計測、既存ページの検査、根拠付き改善、またはno-change記録まで進める。禁止状態を理由に、作業候補だけを返して終わらない。
+5. 変更・検証・checkpoint・`work_complete` まで通す。人の承認、明示pause、予算超過、公開・pushなどの不可逆境界に到達した場合だけ、そこで停止して具体的な理由と次の一手を報告する。
+
+アプリの起動確認、状態同期、調査、構造化されたworkspace変更、build検証、監査記録は、この「作業」に含まれる。ユーザーに「何をしますか」「どのサイトですか」と聞き返すのは、対象を安全に特定できる情報が本当にない場合を除き禁止する。
+
 ## Product principle
 
 This repository is an agent-native SEO workspace. Do not add a second, agent-only state model. Human UI actions, CLI operations, MCP tool calls, and scheduled operator ticks must execute the same commands against the same SQL database.
