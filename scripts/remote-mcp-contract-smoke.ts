@@ -4,7 +4,7 @@ import { analyzeSerp } from '../packages/research/src/index.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.2');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.3');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -92,5 +92,8 @@ assert.match(mcpSource, /providerRoute:\s*'direct_fallback'/);
 assert.match(mcpSource, /fallbackUsed:\s*true/);
 assert.match(mcpSource, /proxyProviderError/);
 assert.match(mcpSource, /directProviderError/);
+
+const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
+assert.match(treasurySource, /value === null \|\| value === undefined \|\| value === ''/);
 
 console.log('remote MCP contract smoke passed');
