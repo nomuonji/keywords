@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
-import { fetchWebDocument, googleAdsKeywordIdeas, searchConsoleQuery, searchSerp } from '@keywords/research';
+import { analyzeSerp, fetchWebDocument, googleAdsKeywordIdeas, searchConsoleQuery, searchSerp, type SerpProvider } from '@keywords/research';
 import { providerSeedKeywords } from './discovery-policy.js';
 
 const { db } = getDatabase();
@@ -142,10 +142,11 @@ export const researchCommands = {
     const source = await saveSource({ projectId: input.projectId, type: 'web', label: document.title || document.finalUrl, url: document.finalUrl, metadata: { document } });
     return { source, document };
   }),
-  serp: async (ctx: CommandContext, input: { projectId: string; query: string; country?: string; language?: string; location?: string; num?: number }) => withRun(projectCtx(ctx, input.projectId), 'research.serp', input, async () => {
+  serp: async (ctx: CommandContext, input: { projectId: string; query: string; country?: string; language?: string; location?: string; num?: number; provider?: SerpProvider }) => withRun(projectCtx(ctx, input.projectId), 'research.serp', input, async () => {
     const result = await searchSerp(input);
-    const source = await saveSource({ projectId: input.projectId, type: 'serp', label: `SERP: ${input.query}`, metadata: { result } });
-    return { source, result };
+    const analysis = analyzeSerp(result);
+    const source = await saveSource({ projectId: input.projectId, type: 'serp', label: `SERP (${result.provider}): ${input.query}`, metadata: { result, analysis } });
+    return { source, result, analysis };
   }),
   googleAdsKeywordIdeas: async (ctx: CommandContext, input: { projectId: string; customerId?: string; seedKeywords?: string[]; url?: string; languageId?: string; geoTargetIds?: string[]; network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS'; importKeywords?: boolean }) => withRun(projectCtx(ctx, input.projectId), 'research.google_ads_keyword_ideas', input, async () => {
     const providerSeeds = providerSeedKeywords(input.seedKeywords ?? []);

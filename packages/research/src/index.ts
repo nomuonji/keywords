@@ -145,6 +145,8 @@ export interface SerpResult {
   position: number | null;
   title: string;
   link: string;
+  /** Normalized hostname, retained so callers do not need to parse URLs. */
+  domain: string;
   snippet: string | null;
 }
 
@@ -155,10 +157,38 @@ export interface SerpSnapshot {
   results: SerpResult[];
   peopleAlsoAsk: string[];
   relatedSearches: string[];
+  provider: 'brave' | 'serper';
   fetchedAt: string;
 }
 
-export async function searchSerp(input: { query: string; country?: string; language?: string; location?: string; num?: number }): Promise<SerpSnapshot> {
+export type SerpProvider = 'brave' | 'serper';
+
+function hostname(value: string) {
+  try { return new URL(value).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
+}
+
+function normalizedSerpResult(item: { position?: unknown; title?: unknown; link?: unknown; url?: unknown; snippet?: unknown }, fallbackPosition: number): SerpResult | null {
+  const link = String(item.link ?? item.url ?? '').trim();
+  const title = String(item.title ?? '').trim();
+  const domain = hostname(link);
+  if (!title || !link || !domain) return null;
+  return { position: Number.isFinite(Number(item.position)) ? Number(item.position) : fallbackPosition, title, link, domain, snippet: item.snippet ? String(item.snippet) : null };
+}
+
+async function searchBrave(input: { query: string; country?: string; language?: string; num?: number }): Promise<SerpSnapshot> {
+  const apiKey = env('BRAVE_API_KEY', 'KEYWORDS_BRAVE_API_KEY');
+  const endpoint = process.env.KEYWORDS_BRAVE_SEARCH_ENDPOINT ?? 'https://api.search.brave.com/res/v1/web/search';
+  const url = new URL(endpoint);
+  url.searchParams.set('q', input.query);
+  url.searchParams.set('count', String(Math.max(1, Math.min(input.num ?? 10, 20))));
+  if (input.country) url.searchParams.set('country', input.country.toUpperCase());
+  if (input.language) url.searchParams.set('search_lang', input.language.toLowerCase());
+  const raw = await jsonRequest<Record<string, any>>(url.toString(), { headers: { accept: 'application/json', 'x-subscription-token': apiKey } });
+  const results = (Array.isArray(raw.web?.results) ? raw.web.results : []).map((item: any, index: number) => normalizedSerpResult({ position: index + 1, title: item.title, url: item.url, snippet: item.description }, index + 1)).filter((item: SerpResult | null): item is SerpResult => Boolean(item));
+  return { query: input.query, country: input.country ?? null, language: input.language ?? null, results, peopleAlsoAsk: [], relatedSearches: [], provider: 'brave', fetchedAt: new Date().toISOString() };
+}
+
+async function searchSerper(input: { query: string; country?: string; language?: string; location?: string; num?: number }): Promise<SerpSnapshot> {
   const apiKey = env('KEYWORDS_SERPER_API_KEY', 'SERPER_API_KEY');
   const endpoint = process.env.KEYWORDS_SERP_ENDPOINT ?? 'https://google.serper.dev/search';
   const payload: Record<string, unknown> = { q: input.query, num: Math.max(1, Math.min(input.num ?? 10, 100)) };
@@ -170,15 +200,49 @@ export async function searchSerp(input: { query: string; country?: string; langu
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
     body: JSON.stringify(payload)
   });
-  const results = Array.isArray(raw.organic) ? raw.organic.map((item: any): SerpResult => ({
-    position: typeof item.position === 'number' ? item.position : null,
-    title: String(item.title ?? ''),
-    link: String(item.link ?? ''),
-    snippet: item.snippet ? String(item.snippet) : null
-  })).filter((item: SerpResult) => item.title && item.link) : [];
+  const results = Array.isArray(raw.organic) ? raw.organic.map((item: any, index: number) => normalizedSerpResult(item, index + 1)).filter((item: SerpResult | null): item is SerpResult => Boolean(item)) : [];
   const peopleAlsoAsk = Array.isArray(raw.peopleAlsoAsk) ? raw.peopleAlsoAsk.map((item: any) => String(item.question ?? '')).filter(Boolean) : [];
   const relatedSearches = Array.isArray(raw.relatedSearches) ? raw.relatedSearches.map((item: any) => String(item.query ?? '')).filter(Boolean) : [];
-  return { query: input.query, country: input.country ?? null, language: input.language ?? null, results, peopleAlsoAsk, relatedSearches, fetchedAt: new Date().toISOString() };
+  return { query: input.query, country: input.country ?? null, language: input.language ?? null, results, peopleAlsoAsk, relatedSearches, provider: 'serper', fetchedAt: new Date().toISOString() };
+}
+
+/**
+ * Retrieve a normalized web SERP. Brave is deliberately the default; Serper is
+ * only used when explicitly requested so a Google-SERP confirmation remains a
+ * deliberate, higher-cost final check.
+ */
+export async function searchSerp(input: { query: string; country?: string; language?: string; location?: string; num?: number; provider?: SerpProvider }): Promise<SerpSnapshot> {
+  return input.provider === 'serper' ? searchSerper(input) : searchBrave(input);
+}
+
+export interface SerpAnalysis {
+  query: string;
+  provider: SerpProvider;
+  resultCount: number;
+  weakDomainCount: number;
+  exactTitleCount: number;
+  forumCount: number;
+  stalePageCount: number;
+  opportunityScore: number;
+  signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
+}
+
+const FORUM_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|chiebukuro\.yahoo\.co\.jp|detail\.chiebukuro\.yahoo\.co\.jp|5ch\.net|note\.com)$/i;
+const WEAK_HOST = /(^|\.)(note\.com|ameblo\.jp|hatena\.ne\.jp|fc2\.com|livedoor\.blog|blogspot\.com|wordpress\.com|reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|5ch\.net|chiebukuro\.yahoo\.co\.jp)$/i;
+function normalText(value: string) { return value.toLocaleLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim(); }
+function staleSnippet(value: string | null) { return Boolean(value && /(?:19|20)\d{2}[年\/.\-]\s?(?:0?[1-9]|1[0-2])(?:月|[\/.\-])|\b(?:19|20)(?:0|1)\d\b/.test(value)); }
+
+/** A reproducible, signal-only screening score; it is not a ranking prediction. */
+export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
+  const query = normalText(snapshot.query);
+  const weak = snapshot.results.filter(result => WEAK_HOST.test(result.domain));
+  const forums = snapshot.results.filter(result => FORUM_HOST.test(result.domain));
+  const exact = snapshot.results.filter(result => normalText(result.title).includes(query));
+  const stale = snapshot.results.filter(result => staleSnippet(result.snippet));
+  // More weak/forum/stale results can indicate an addressable gap; exact-title
+  // saturation reduces it. Result-count prevents an incomplete response scoring highly.
+  const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
+  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
 }
 
 export interface GoogleAdsKeywordIdea {
@@ -189,6 +253,7 @@ export interface GoogleAdsKeywordIdea {
   averageCpcMicros: number | null;
   lowTopOfPageBidMicros: number | null;
   highTopOfPageBidMicros: number | null;
+  monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
 }
 
 export interface GoogleAdsKeywordIdeaResult {
@@ -241,6 +306,7 @@ async function googleAdsKeywordIdeasViaProxy(input: { seedKeywords?: string[]; l
     })
   });
   const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const monthly = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ year: numeric(item.year), month: numeric(item.month), searches: numeric(item.monthlySearches ?? item.searches) })).filter((item): item is { year: number; month: number; searches: number } => item.year !== null && item.month !== null && item.searches !== null) : [];
   const ideas = Object.values(response).map((item: any): GoogleAdsKeywordIdea => ({
     text: String(item.keywordText ?? ''),
     avgMonthly: numeric(item.avgMonthlySearches),
@@ -248,7 +314,8 @@ async function googleAdsKeywordIdeasViaProxy(input: { seedKeywords?: string[]; l
     competitionIndex: numeric(item.competitionIndex),
     averageCpcMicros: numeric(item.averageCpcMicros),
     lowTopOfPageBidMicros: numeric(item.lowTopOfPageBidMicros),
-    highTopOfPageBidMicros: numeric(item.highTopOfPageBidMicros)
+    highTopOfPageBidMicros: numeric(item.highTopOfPageBidMicros),
+    monthlySearchVolumes: monthly(item.monthlySearchVolumes ?? item.monthly_search_volumes)
   })).filter(item => item.text);
   return { customerId: 'proxy', apiVersion: 'keyword-volume-proxy', ideas, fetchedAt: new Date().toISOString() };
 }
@@ -317,7 +384,8 @@ export async function googleAdsKeywordIdeas(input: {
         competitionIndex: numeric(metrics.competitionIndex),
         averageCpcMicros: numeric(metrics.averageCpcMicros),
         lowTopOfPageBidMicros: numeric(metrics.lowTopOfPageBidMicros),
-        highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros)
+        highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros),
+        monthlySearchVolumes: Array.isArray(metrics.monthlySearchVolumes) ? metrics.monthlySearchVolumes.map((month: any) => ({ year: numeric(month.year), month: numeric(month.month), searches: numeric(month.monthlySearches) })).filter((month: any): month is { year: number; month: number; searches: number } => month.year !== null && month.month !== null && month.searches !== null) : []
       };
     }).filter(item => item.text);
     return { customerId, apiVersion, ideas, fetchedAt: new Date().toISOString() };

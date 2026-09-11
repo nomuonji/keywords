@@ -117,7 +117,24 @@ export async function keywordDemand(input: { keywords: string[]; languageConstan
   if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
   const response = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ keywords, options: { languageConstant: input.languageConstant ?? '1005', geoTargetConstants: input.geoTargetConstants ?? ['2392'], includeAdultKeywords: input.includeAdultKeywords ?? true } }) });
   if (!response.ok) throw new Error(`Keyword-volume provider failed (${response.status})`);
-  return response.json();
+  const raw = await response.json() as Record<string, any>;
+  const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const monthly = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ year: numeric(item.year), month: numeric(item.month), searches: numeric(item.monthlySearches ?? item.searches) })).filter((item): item is { year: number; month: number; searches: number } => item.year !== null && item.month !== null && item.searches !== null) : [];
+  const values = Array.isArray(raw) ? raw : Array.isArray(raw.results) ? raw.results : Object.values(raw);
+  return {
+    provider: 'google_ads_keyword_volume_proxy',
+    fetchedAt: new Date().toISOString(),
+    results: values.map((item: any) => ({
+      keyword: String(item.keyword ?? item.keywordText ?? item.text ?? ''),
+      avgMonthlySearches: numeric(item.avgMonthlySearches ?? item.avg_monthly_searches),
+      monthlySearchVolumes: monthly(item.monthlySearchVolumes ?? item.monthly_search_volumes),
+      competition: item.competition ?? item.competitionLevel ?? null,
+      competitionIndex: numeric(item.competitionIndex ?? item.competition_index),
+      averageCpcMicros: numeric(item.averageCpcMicros ?? item.average_cpc_micros),
+      lowTopOfPageBidMicros: numeric(item.lowTopOfPageBidMicros ?? item.low_top_of_page_bid_micros),
+      highTopOfPageBidMicros: numeric(item.highTopOfPageBidMicros ?? item.high_top_of_page_bid_micros)
+    })).filter(item => item.keyword)
+  };
 }
 
-export function treasuryConfiguration() { return { firestoreConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64), projectConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID), demandProviderConfigured: Boolean(process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL || process.env.KEYWORD_VOLUME_API_URL) }; }
+export function treasuryConfiguration() { return { firestoreConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64), projectConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID), demandProviderConfigured: Boolean(process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL || process.env.KEYWORD_VOLUME_API_URL), braveConfigured: Boolean(process.env.BRAVE_API_KEY || process.env.KEYWORDS_BRAVE_API_KEY) }; }
