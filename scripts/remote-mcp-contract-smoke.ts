@@ -4,7 +4,7 @@ import { analyzeSerp } from '../packages/research/src/index.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.1');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
