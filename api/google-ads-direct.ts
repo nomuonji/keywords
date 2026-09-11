@@ -14,6 +14,10 @@ const MONTH_NUMBER: Record<string, number> = {
 };
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const PROXY_GOOGLE_ADS_ACCOUNT = {
+  customerId: '8154035223',
+  loginCustomerId: '5790359570'
+} as const;
 
 type HistoricalMetric = {
   keyword: string;
@@ -26,10 +30,20 @@ type HistoricalMetric = {
   highTopOfPageBidMicros: number | null;
 };
 
+type GoogleAdsAccountCandidate = {
+  customerId: string;
+  loginCustomerId?: string;
+  source: 'configured' | 'proxy';
+};
+
 function numeric(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+function normalizedId(value: string | undefined) {
+  return value?.replaceAll('-', '').trim() || undefined;
 }
 
 export function googleAdsMonthNumber(value: unknown): number | null {
@@ -65,6 +79,21 @@ export function normalizeGoogleAdsHistoricalResults(value: unknown): HistoricalM
   }).filter((item: HistoricalMetric | null): item is HistoricalMetric => Boolean(item));
 }
 
+export function googleAdsDirectAccountCandidates(): GoogleAdsAccountCandidate[] {
+  const configuredCustomerId = normalizedId(process.env.GOOGLE_ADS_CUSTOMER_ID ?? process.env.ADS_CUSTOMER_ID);
+  const configuredLoginCustomerId = normalizedId(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? process.env.ADS_LOGIN_CUSTOMER_ID);
+  const candidates: GoogleAdsAccountCandidate[] = [];
+  if (configuredCustomerId) {
+    candidates.push({ customerId: configuredCustomerId, loginCustomerId: configuredLoginCustomerId, source: 'configured' });
+  }
+  const proxyAlreadyConfigured = configuredCustomerId === PROXY_GOOGLE_ADS_ACCOUNT.customerId
+    && configuredLoginCustomerId === PROXY_GOOGLE_ADS_ACCOUNT.loginCustomerId;
+  if (!proxyAlreadyConfigured) {
+    candidates.push({ ...PROXY_GOOGLE_ADS_ACCOUNT, source: 'proxy' });
+  }
+  return candidates;
+}
+
 export function googleAdsDirectConfiguration() {
   const customerIdConfigured = Boolean(process.env.GOOGLE_ADS_CUSTOMER_ID || process.env.ADS_CUSTOMER_ID);
   const developerTokenConfigured = Boolean(process.env.GOOGLE_ADS_DEVELOPER_TOKEN || process.env.ADS_DEVELOPER_TOKEN);
@@ -76,12 +105,13 @@ export function googleAdsDirectConfiguration() {
     (process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET)
   );
   return {
-    configured: customerIdConfigured && developerTokenConfigured && (accessTokenConfigured || refreshCredentialsConfigured),
+    configured: developerTokenConfigured && (accessTokenConfigured || refreshCredentialsConfigured),
     customerIdConfigured,
     developerTokenConfigured,
     loginCustomerIdConfigured,
     accessTokenConfigured,
-    refreshCredentialsConfigured
+    refreshCredentialsConfigured,
+    proxyAccountRetryConfigured: true
   };
 }
 
@@ -169,6 +199,37 @@ export function sanitizeGoogleAdsError(error: unknown) {
     .slice(0, 700);
 }
 
+async function requestGoogleAdsHistoricalMetrics(input: {
+  account: GoogleAdsAccountCandidate;
+  accessToken: string;
+  developerToken: string;
+  apiVersion: string;
+  payload: ReturnType<typeof buildGoogleAdsHistoricalMetricsPayload>;
+}) {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${input.accessToken}`,
+    'developer-token': input.developerToken,
+    'content-type': 'application/json'
+  };
+  if (input.account.loginCustomerId) headers['login-customer-id'] = input.account.loginCustomerId;
+  const response = await fetch(`https://googleads.googleapis.com/${input.apiVersion}/customers/${input.account.customerId}:generateKeywordHistoricalMetrics`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(input.payload),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error(await googleAdsResponseError(response));
+  const raw = await response.json() as { results?: unknown };
+  return {
+    provider: 'google_ads' as const,
+    customerId: input.account.customerId,
+    accountSource: input.account.source,
+    apiVersion: input.apiVersion,
+    fetchedAt: new Date().toISOString(),
+    results: normalizeGoogleAdsHistoricalResults(raw.results)
+  };
+}
+
 export async function googleAdsKeywordHistoricalMetricsDirect(input: {
   keywords: string[];
   languageId?: string;
@@ -177,31 +238,33 @@ export async function googleAdsKeywordHistoricalMetricsDirect(input: {
 }) {
   const keywords = [...new Set(input.keywords.map(value => value.trim()).filter(Boolean))];
   if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
-  const customerId = (process.env.GOOGLE_ADS_CUSTOMER_ID ?? process.env.ADS_CUSTOMER_ID ?? '').replaceAll('-', '');
   const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? process.env.ADS_DEVELOPER_TOKEN;
-  if (!customerId || !developerToken) throw new Error('Google Ads direct customer/developer credentials are not configured');
+  if (!developerToken) throw new Error('Google Ads direct developer token is not configured');
+  const candidates = googleAdsDirectAccountCandidates();
+  if (!candidates.length) throw new Error('Google Ads direct customer account is not configured');
   const accessToken = await googleAdsAccessToken();
   const apiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${accessToken}`,
-    'developer-token': developerToken,
-    'content-type': 'application/json'
-  };
-  const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? process.env.ADS_LOGIN_CUSTOMER_ID)?.replaceAll('-', '');
-  if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
-  const response = await fetch(`https://googleads.googleapis.com/${apiVersion}/customers/${customerId}:generateKeywordHistoricalMetrics`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(buildGoogleAdsHistoricalMetricsPayload({ ...input, keywords })),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  });
-  if (!response.ok) throw new Error(await googleAdsResponseError(response));
-  const raw = await response.json() as { results?: unknown };
-  return {
-    provider: 'google_ads' as const,
-    customerId,
-    apiVersion,
-    fetchedAt: new Date().toISOString(),
-    results: normalizeGoogleAdsHistoricalResults(raw.results)
-  };
+  const payload = buildGoogleAdsHistoricalMetricsPayload({ ...input, keywords });
+  let configuredError: Error | null = null;
+
+  for (const [index, account] of candidates.entries()) {
+    try {
+      return await requestGoogleAdsHistoricalMetrics({ account, accessToken, developerToken, apiVersion, payload });
+    } catch (error) {
+      const normalized = error instanceof Error ? error : new Error(String(error));
+      const canRetryProxy = index === 0
+        && account.source === 'configured'
+        && candidates.length > 1
+        && normalized.message.includes('CUSTOMER_NOT_ENABLED');
+      if (canRetryProxy) {
+        configuredError = normalized;
+        continue;
+      }
+      if (configuredError) {
+        throw new Error(`${configuredError.message}; proxy account retry failed: ${normalized.message}`);
+      }
+      throw normalized;
+    }
+  }
+  throw configuredError ?? new Error('Google Ads direct request failed');
 }
