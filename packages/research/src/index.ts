@@ -263,6 +263,14 @@ export interface GoogleAdsKeywordIdeaResult {
   fetchedAt: string;
 }
 
+export interface GoogleAdsKeywordDemandResult {
+  provider: 'google_ads';
+  customerId: string;
+  apiVersion: string;
+  results: GoogleAdsKeywordIdea[];
+  fetchedAt: string;
+}
+
 /** Fetch a public HTML page for direct delivery/publication verification. */
 export async function fetchPublicHtml(input: string): Promise<{ status: number; finalUrl: string; html: string }> {
   const { response, finalUrl } = await safeFetch(input, { headers: { 'user-agent': 'keywords-publication-verifier/1.0' } });
@@ -393,6 +401,38 @@ export async function googleAdsKeywordIdeas(input: {
     if (proxyUrl && !input.url) return googleAdsKeywordIdeasViaProxy(input, proxyUrl);
     throw error;
   }
+}
+
+/**
+ * Fetch historical metrics for the supplied phrases themselves (rather than
+ * asking Google for a wider set of keyword ideas). This is the direct Google
+ * Ads path used where month-by-month volume must not be lost in a proxy.
+ */
+export async function googleAdsKeywordHistoricalMetrics(input: { keywords: string[]; languageId?: string; geoTargetIds?: string[]; network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS' }): Promise<GoogleAdsKeywordDemandResult> {
+  const keywords = [...new Set(input.keywords.map(value => value.trim()).filter(Boolean))];
+  if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
+  const customerId = (process.env.GOOGLE_ADS_CUSTOMER_ID ?? process.env.ADS_CUSTOMER_ID ?? '').replaceAll('-', '');
+  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN ?? process.env.ADS_DEVELOPER_TOKEN;
+  if (!customerId || !developerToken) throw new Error('Google Ads direct credentials are required for historical metrics');
+  const accessToken = await googleAdsAccessToken();
+  const apiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
+  const languageId = input.languageId ?? process.env.GOOGLE_ADS_LANGUAGE_ID ?? '1005';
+  const geoIds = input.geoTargetIds?.length ? input.geoTargetIds : (process.env.GOOGLE_ADS_GEO_TARGET_IDS?.split(',').map(value => value.trim()).filter(Boolean) ?? ['2392']);
+  const headers: Record<string, string> = { authorization: `Bearer ${accessToken}`, 'developer-token': developerToken, 'content-type': 'application/json' };
+  const loginCustomerId = (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID ?? process.env.ADS_LOGIN_CUSTOMER_ID)?.replaceAll('-', '');
+  if (loginCustomerId) headers['login-customer-id'] = loginCustomerId;
+  const raw = await jsonRequest<{ results?: any[] }>(`https://googleads.googleapis.com/${apiVersion}/customers/${customerId}:generateKeywordHistoricalMetrics`, {
+    method: 'POST', headers, body: JSON.stringify({ keywords, language: `languageConstants/${languageId}`, geoTargetConstants: geoIds.map(value => `geoTargetConstants/${value}`), keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH' })
+  });
+  const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const results = (raw.results ?? []).map((item: any): GoogleAdsKeywordIdea => {
+    const metrics = item.keywordMetrics ?? item.keywordIdeaMetrics ?? {};
+    return {
+      text: String(item.text ?? ''), avgMonthly: numeric(metrics.avgMonthlySearches), competition: metrics.competition ? String(metrics.competition) : null, competitionIndex: numeric(metrics.competitionIndex), averageCpcMicros: numeric(metrics.averageCpcMicros), lowTopOfPageBidMicros: numeric(metrics.lowTopOfPageBidMicros), highTopOfPageBidMicros: numeric(metrics.highTopOfPageBidMicros),
+      monthlySearchVolumes: Array.isArray(metrics.monthlySearchVolumes) ? metrics.monthlySearchVolumes.map((month: any) => ({ year: numeric(month.year), month: numeric(month.month), searches: numeric(month.monthlySearches) })).filter((month: any): month is { year: number; month: number; searches: number } => month.year !== null && month.month !== null && month.searches !== null) : []
+    };
+  }).filter(result => result.text);
+  return { provider: 'google_ads', customerId, apiVersion, results, fetchedAt: new Date().toISOString() };
 }
 
 export interface SearchConsoleRow {

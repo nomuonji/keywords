@@ -7,7 +7,7 @@ import * as z from 'zod/v4';
 // Keep this import relative: Vercel bundles a root-level serverless function
 // independently of npm workspace links.
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave } from '../packages/keyword-treasury/src/index.js';
-import { analyzeSerp, searchSerp } from '../packages/research/src/index.js';
+import { analyzeSerp, googleAdsKeywordHistoricalMetrics, searchSerp } from '../packages/research/src/index.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -41,10 +41,18 @@ const requireToken = async (c: any, next: any) => {
 app.use('/mcp', requireToken); app.use('/api/mcp', requireToken);
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
 function server() {
-  const mcp = new McpServer({ name: 'keywords-treasury', version: '1.0.0' });
+  const mcp = new McpServer({ name: 'keywords-treasury', version: '1.1.0' });
   mcp.registerTool('remote_keyword_status', { description: 'Check whether the remote keyword treasury, Firestore, and demand provider are configured. No secrets are returned.' }, async () => text(treasuryConfiguration()));
-  mcp.registerTool('keyword_demand_research', { description: 'Get normalized Google Ads keyword demand metrics including the prior 12 monthly search-volume values when the provider supplies them. This only researches; it does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => text(await keywordDemand(input)));
-  mcp.registerTool('serp_research', { description: 'Retrieve a normalized web SERP. Brave is the default provider; use Serper only when explicitly requested and configured. This only researches; it does not save candidates.', inputSchema: { query: z.string().min(1).max(500), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => text(await searchSerp(input)));
+  mcp.registerTool('keyword_demand_research', { description: 'Get normalized Google Ads historical demand for exact supplied keywords, including the prior 12 monthly search-volume values and CPC. Uses Google Ads directly and falls back to the configured proxy only if direct credentials fail. This only researches; it does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
+    try {
+      const result = await googleAdsKeywordHistoricalMetrics({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants });
+      return text({ ...result, results: result.results.map(item => ({ keyword: item.text, avgMonthlySearches: item.avgMonthly, monthlySearchVolumes: item.monthlySearchVolumes, competition: item.competition, competitionIndex: item.competitionIndex, averageCpcMicros: item.averageCpcMicros, lowTopOfPageBidMicros: item.lowTopOfPageBidMicros, highTopOfPageBidMicros: item.highTopOfPageBidMicros })) });
+    } catch { return text(await keywordDemand(input)); }
+  });
+  mcp.registerTool('serp_research', { description: 'Retrieve and analyze a normalized web SERP. Brave is the default provider; use Serper only when explicitly requested and configured. Accepts query or keyword. This only researches; it does not save candidates.', inputSchema: { query: z.string().min(1).max(500).optional(), keyword: z.string().min(1).max(500).optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().min(1).max(20).optional(), count: z.number().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => {
+    const query = input.query ?? input.keyword; if (!query) throw new Error('query or keyword is required');
+    const result = await searchSerp({ ...input, query, num: input.num ?? input.count }); return text({ ...result, analysis: analyzeSerp(result) });
+  });
   mcp.registerTool('serp_analyze', { description: 'Compute a transparent screening score from a normalized SERP. Scores are signal-only, not a ranking prediction. It returns weak-domain, exact-title, forum, and stale-snippet counts.', inputSchema: { snapshot: z.object({ query: z.string().min(1), country: z.string().nullable().optional(), language: z.string().nullable().optional(), provider: z.enum(['brave', 'serper']), fetchedAt: z.string(), peopleAlsoAsk: z.array(z.string()).optional(), relatedSearches: z.array(z.string()).optional(), results: z.array(z.object({ position: z.number().nullable(), title: z.string(), link: z.string(), domain: z.string().optional(), snippet: z.string().nullable() })).max(20) }) } }, async ({ snapshot }) => {
     const results = snapshot.results.map(result => ({ ...result, domain: result.domain || (() => { try { return new URL(result.link).hostname.toLowerCase().replace(/^www\\./, ''); } catch { return ''; } })() }));
     return text(analyzeSerp({ ...snapshot, results, peopleAlsoAsk: snapshot.peopleAlsoAsk ?? [], relatedSearches: snapshot.relatedSearches ?? [] }));
