@@ -51,6 +51,17 @@ async function accessToken() {
 
 function projectId() { return process.env.FIREBASE_PROJECT_ID?.trim() || process.env.GOOGLE_CLOUD_PROJECT?.trim() || process.env.GCP_PROJECT_ID?.trim() || serviceAccount().project_id || env('FIREBASE_PROJECT_ID'); }
 function baseUrl() { return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId())}/databases/(default)/documents`; }
+function demandProviderUrl() { return process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORD_VOLUME_API_URL?.trim() || ''; }
+function demandProviderTarget() {
+  const raw = demandProviderUrl();
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return 'invalid_url';
+  }
+}
 
 async function firestore(path: string, init?: RequestInit) {
   const response = await fetch(`${baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${await accessToken()}`, 'content-type': 'application/json', ...(init?.headers ?? {}) } });
@@ -111,7 +122,7 @@ export async function treasuryList(input: { status?: string; limit?: number; que
 }
 
 export async function keywordDemand(input: { keywords: string[]; languageConstant?: string; geoTargetConstants?: string[]; includeAdultKeywords?: boolean }) {
-  const url = process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORD_VOLUME_API_URL?.trim();
+  const url = demandProviderUrl();
   if (!url) throw new Error('Missing GOOGLE_ADS_KEYWORD_VOLUME_API_URL for remote keyword-demand research');
   const keywords = [...new Set((input.keywords ?? []).map(keyword => keyword.trim()).filter(Boolean))];
   if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
@@ -149,4 +160,4 @@ export async function keywordDemand(input: { keywords: string[]; languageConstan
   };
 }
 
-export function treasuryConfiguration() { return { firestoreConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64), projectConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID), demandProviderConfigured: Boolean(process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL || process.env.KEYWORD_VOLUME_API_URL), braveConfigured: Boolean(process.env.BRAVE_API_KEY || process.env.KEYWORDS_BRAVE_API_KEY) }; }
+export function treasuryConfiguration() { return { firestoreConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64), projectConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID), demandProviderConfigured: Boolean(demandProviderUrl()), demandProviderTarget: demandProviderTarget(), braveConfigured: Boolean(process.env.BRAVE_API_KEY || process.env.KEYWORDS_BRAVE_API_KEY) }; }
