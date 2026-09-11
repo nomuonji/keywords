@@ -4,7 +4,7 @@ import { analyzeSerp } from '../packages/research/src/index.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.1');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.2');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -86,7 +86,11 @@ const mcpSource = readFileSync(new URL('../api/mcp.ts', import.meta.url), 'utf8'
 assert.match(mcpSource, /keyword:\s*z\.string\(\)/);
 assert.match(mcpSource, /count:\s*z\.number\(\)/);
 assert.match(mcpSource, /analysis:\s*analyzeSerp\(result\)/);
+assert.match(mcpSource, /googleAdsDemandProviderOrder:\s*\['proxy', 'direct'\]/);
+assert.match(mcpSource, /providerRoute:\s*'proxy'/);
+assert.match(mcpSource, /providerRoute:\s*'direct_fallback'/);
 assert.match(mcpSource, /fallbackUsed:\s*true/);
+assert.match(mcpSource, /proxyProviderError/);
 assert.match(mcpSource, /directProviderError/);
 
 console.log('remote MCP contract smoke passed');
