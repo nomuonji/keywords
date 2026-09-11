@@ -58,6 +58,7 @@ function runtimeStatus() {
     },
     toolCount: KEYWORDS_MCP_TOOL_NAMES.length,
     tools: [...KEYWORDS_MCP_TOOL_NAMES],
+    googleAdsDemandProviderOrder: ['proxy', 'direct'],
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
     googleAdsDirectLastError
@@ -67,21 +68,25 @@ function runtimeStatus() {
 function server() {
   const mcp = new McpServer({ name: 'keywords-treasury', version: KEYWORDS_MCP_SERVER_VERSION });
   const [statusTool, demandTool, serpResearchTool, serpAnalyzeTool, saveTool, listTool] = KEYWORDS_MCP_TOOL_NAMES;
-  mcp.registerTool(statusTool, { description: 'Check the live remote MCP version, deployment, six-tool contract, treasury configuration, and Google Ads direct-provider readiness. No secrets are returned.' }, async () => text(runtimeStatus()));
-  mcp.registerTool(demandTool, { description: 'Get normalized Google Ads historical demand for exact supplied keywords, including the prior 12 monthly search-volume values and CPC. Uses Google Ads directly and falls back to the configured proxy only if direct credentials or the direct request fail. This only researches; it does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
+  mcp.registerTool(statusTool, { description: 'Check the live remote MCP version, deployment, six-tool contract, treasury configuration, Google Ads provider order, and direct-provider readiness. No secrets are returned.' }, async () => text(runtimeStatus()));
+  mcp.registerTool(demandTool, { description: 'Get normalized Google Ads historical demand for exact supplied keywords, including the prior 12 monthly search-volume values and CPC. Uses the configured Google Ads proxy first because it owns the known-working credential set, then falls back to direct Google Ads only if the proxy request fails. This only researches; it does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
+    let proxyProviderError: string | null = null;
     try {
-      const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants });
+      const result = await keywordDemand(input);
       googleAdsDirectLastError = null;
-      return text({ ...result, fallbackUsed: false });
+      return text({ ...result, fallbackUsed: false, providerRoute: 'proxy' });
+    } catch (error) {
+      proxyProviderError = sanitizeGoogleAdsError(error);
+    }
+
+    try {
+      const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants, includeAdultKeywords: input.includeAdultKeywords });
+      googleAdsDirectLastError = null;
+      return text({ ...result, fallbackUsed: true, providerRoute: 'direct_fallback', proxyProviderError });
     } catch (error) {
       const directProviderError = sanitizeGoogleAdsError(error);
       googleAdsDirectLastError = directProviderError;
-      try {
-        const fallback = await keywordDemand(input);
-        return text({ ...fallback, fallbackUsed: true, directProviderError });
-      } catch (fallbackError) {
-        throw new Error(`Google Ads direct failed: ${directProviderError}; fallback failed: ${sanitizeGoogleAdsError(fallbackError)}`);
-      }
+      throw new Error(`Google Ads proxy failed: ${proxyProviderError}; direct fallback failed: ${directProviderError}`);
     }
   });
   mcp.registerTool(serpResearchTool, { description: 'Retrieve and analyze a normalized web SERP. Brave is the default provider; use Serper only when explicitly requested and configured. Accepts query or keyword and num or count. This only researches; it does not save candidates.', inputSchema: { query: z.string().min(1).max(500).optional(), keyword: z.string().min(1).max(500).optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().min(1).max(20).optional(), count: z.number().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => {
