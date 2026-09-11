@@ -1,5 +1,8 @@
-const localApiHost = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '127.0.0.1' : window.location.hostname;
-const BASE = import.meta.env.VITE_API_BASE_URL ?? `${window.location.protocol}//${localApiHost}:8787`;
+const local = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const localApiHost = local ? '127.0.0.1' : window.location.hostname;
+// Production ships a small, read-only Firestore endpoint at the same origin.
+// The full commands API remains intentionally local-only.
+const BASE = import.meta.env.VITE_API_BASE_URL ?? (local ? `${window.location.protocol}//${localApiHost}:8787` : window.location.origin);
 let mutationTail = Promise.resolve();
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
