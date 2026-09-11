@@ -46,6 +46,10 @@ function normalizedId(value: string | undefined) {
   return value?.replaceAll('-', '').trim() || undefined;
 }
 
+function normalizedKeyword(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 export function googleAdsMonthNumber(value: unknown): number | null {
   const numericMonth = numeric(value);
   if (numericMonth !== null && numericMonth >= 1 && numericMonth <= 12) return numericMonth;
@@ -111,7 +115,8 @@ export function googleAdsDirectConfiguration() {
     loginCustomerIdConfigured,
     accessTokenConfigured,
     refreshCredentialsConfigured,
-    proxyAccountRetryConfigured: true
+    proxyAccountRetryConfigured: true,
+    keywordIdeasCompatibilityFallbackConfigured: true
   };
 }
 
@@ -145,8 +150,7 @@ async function googleAdsAccessToken() {
   return body.access_token;
 }
 
-export function buildGoogleAdsHistoricalMetricsPayload(input: {
-  keywords: string[];
+function targeting(input: {
   languageId?: string;
   geoTargetIds?: string[];
   network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS';
@@ -156,11 +160,38 @@ export function buildGoogleAdsHistoricalMetricsPayload(input: {
     ? input.geoTargetIds
     : (process.env.GOOGLE_ADS_GEO_TARGET_IDS?.split(',').map(value => value.trim()).filter(Boolean) ?? ['2392']);
   return {
-    keywords: input.keywords,
     language: `languageConstants/${languageId}`,
     geoTargetConstants: geoIds.map(value => `geoTargetConstants/${value}`),
-    keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH',
+    keywordPlanNetwork: input.network ?? 'GOOGLE_SEARCH'
+  };
+}
+
+export function buildGoogleAdsHistoricalMetricsPayload(input: {
+  keywords: string[];
+  languageId?: string;
+  geoTargetIds?: string[];
+  network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS';
+}) {
+  return {
+    keywords: input.keywords,
+    ...targeting(input),
     historicalMetricsOptions: { includeAverageCpc: true }
+  };
+}
+
+export function buildGoogleAdsKeywordIdeasPayload(input: {
+  keywords: string[];
+  languageId?: string;
+  geoTargetIds?: string[];
+  network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS';
+  includeAdultKeywords?: boolean;
+}) {
+  return {
+    ...targeting(input),
+    includeAdultKeywords: input.includeAdultKeywords ?? false,
+    keywordSeed: { keywords: input.keywords },
+    historicalMetricsOptions: { includeAverageCpc: true },
+    pageSize: 100
   };
 }
 
@@ -199,6 +230,16 @@ export function sanitizeGoogleAdsError(error: unknown) {
     .slice(0, 700);
 }
 
+function googleAdsHeaders(account: GoogleAdsAccountCandidate, accessToken: string, developerToken: string) {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${accessToken}`,
+    'developer-token': developerToken,
+    'content-type': 'application/json'
+  };
+  if (account.loginCustomerId) headers['login-customer-id'] = account.loginCustomerId;
+  return headers;
+}
+
 async function requestGoogleAdsHistoricalMetrics(input: {
   account: GoogleAdsAccountCandidate;
   accessToken: string;
@@ -206,15 +247,9 @@ async function requestGoogleAdsHistoricalMetrics(input: {
   apiVersion: string;
   payload: ReturnType<typeof buildGoogleAdsHistoricalMetricsPayload>;
 }) {
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${input.accessToken}`,
-    'developer-token': input.developerToken,
-    'content-type': 'application/json'
-  };
-  if (input.account.loginCustomerId) headers['login-customer-id'] = input.account.loginCustomerId;
   const response = await fetch(`https://googleads.googleapis.com/${input.apiVersion}/customers/${input.account.customerId}:generateKeywordHistoricalMetrics`, {
     method: 'POST',
-    headers,
+    headers: googleAdsHeaders(input.account, input.accessToken, input.developerToken),
     body: JSON.stringify(input.payload),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
@@ -224,9 +259,43 @@ async function requestGoogleAdsHistoricalMetrics(input: {
     provider: 'google_ads' as const,
     customerId: input.account.customerId,
     accountSource: input.account.source,
+    apiMethod: 'generateKeywordHistoricalMetrics' as const,
     apiVersion: input.apiVersion,
     fetchedAt: new Date().toISOString(),
     results: normalizeGoogleAdsHistoricalResults(raw.results)
+  };
+}
+
+async function requestGoogleAdsKeywordIdeas(input: {
+  account: GoogleAdsAccountCandidate;
+  accessToken: string;
+  developerToken: string;
+  apiVersion: string;
+  payload: ReturnType<typeof buildGoogleAdsKeywordIdeasPayload>;
+  requestedKeywords: string[];
+}) {
+  const response = await fetch(`https://googleads.googleapis.com/${input.apiVersion}/customers/${input.account.customerId}:generateKeywordIdeas`, {
+    method: 'POST',
+    headers: googleAdsHeaders(input.account, input.accessToken, input.developerToken),
+    body: JSON.stringify(input.payload),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error(await googleAdsResponseError(response));
+  const raw = await response.json() as { results?: unknown };
+  const normalized = normalizeGoogleAdsHistoricalResults(raw.results);
+  const requested = new Set(input.requestedKeywords.map(normalizedKeyword));
+  const exactResults = normalized.filter(item => requested.has(normalizedKeyword(item.keyword)));
+  if (!exactResults.length) {
+    throw new Error('Google Ads keyword ideas request returned no exact seed metrics');
+  }
+  return {
+    provider: 'google_ads' as const,
+    customerId: input.account.customerId,
+    accountSource: input.account.source,
+    apiMethod: 'generateKeywordIdeas' as const,
+    apiVersion: input.apiVersion,
+    fetchedAt: new Date().toISOString(),
+    results: exactResults
   };
 }
 
@@ -235,6 +304,7 @@ export async function googleAdsKeywordHistoricalMetricsDirect(input: {
   languageId?: string;
   geoTargetIds?: string[];
   network?: 'GOOGLE_SEARCH' | 'GOOGLE_SEARCH_AND_PARTNERS';
+  includeAdultKeywords?: boolean;
 }) {
   const keywords = [...new Set(input.keywords.map(value => value.trim()).filter(Boolean))];
   if (!keywords.length || keywords.length > 50) throw new Error('keywords must contain 1–50 values');
@@ -243,28 +313,47 @@ export async function googleAdsKeywordHistoricalMetricsDirect(input: {
   const candidates = googleAdsDirectAccountCandidates();
   if (!candidates.length) throw new Error('Google Ads direct customer account is not configured');
   const accessToken = await googleAdsAccessToken();
-  const apiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
-  const payload = buildGoogleAdsHistoricalMetricsPayload({ ...input, keywords });
-  let configuredError: Error | null = null;
+  const historicalApiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
+  const keywordIdeasApiVersion = process.env.GOOGLE_ADS_KEYWORD_IDEA_API_VERSION ?? 'v21';
+  const historicalPayload = buildGoogleAdsHistoricalMetricsPayload({ ...input, keywords });
+  let priorError: Error | null = null;
 
-  for (const [index, account] of candidates.entries()) {
+  for (const account of candidates) {
     try {
-      return await requestGoogleAdsHistoricalMetrics({ account, accessToken, developerToken, apiVersion, payload });
-    } catch (error) {
-      const normalized = error instanceof Error ? error : new Error(String(error));
-      const canRetryProxy = index === 0
-        && account.source === 'configured'
-        && candidates.length > 1
-        && normalized.message.includes('CUSTOMER_NOT_ENABLED');
-      if (canRetryProxy) {
-        configuredError = normalized;
-        continue;
+      return await requestGoogleAdsHistoricalMetrics({
+        account,
+        accessToken,
+        developerToken,
+        apiVersion: historicalApiVersion,
+        payload: historicalPayload
+      });
+    } catch (historicalError) {
+      const historical = historicalError instanceof Error ? historicalError : new Error(String(historicalError));
+      if (!historical.message.includes('CUSTOMER_NOT_ENABLED')) {
+        if (priorError) throw new Error(`${priorError.message}; ${account.source} account failed: ${historical.message}`);
+        throw historical;
       }
-      if (configuredError) {
-        throw new Error(`${configuredError.message}; proxy account retry failed: ${normalized.message}`);
+
+      if (keywords.length <= 20) {
+        try {
+          return await requestGoogleAdsKeywordIdeas({
+            account,
+            accessToken,
+            developerToken,
+            apiVersion: keywordIdeasApiVersion,
+            payload: buildGoogleAdsKeywordIdeasPayload({ ...input, keywords }),
+            requestedKeywords: keywords
+          });
+        } catch (ideasError) {
+          const ideas = ideasError instanceof Error ? ideasError : new Error(String(ideasError));
+          priorError = new Error(`${historical.message}; generateKeywordIdeas compatibility fallback failed: ${ideas.message}`);
+          continue;
+        }
       }
-      throw normalized;
+
+      priorError = historical;
     }
   }
-  throw configuredError ?? new Error('Google Ads direct request failed');
+
+  throw priorError ?? new Error('Google Ads direct request failed');
 }
