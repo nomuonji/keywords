@@ -141,7 +141,11 @@ export async function keywordDemand(input: { keywords: string[]; languageConstan
     throw new Error(`Keyword-volume provider failed (${response.status}${detail ? ` | ${detail}` : ''})`);
   }
   const raw = await response.json() as Record<string, any>;
-  const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : null;
+  const numeric = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  };
   const monthly = (value: unknown) => Array.isArray(value) ? value.map((item: any) => ({ year: numeric(item.year), month: numeric(item.month), searches: numeric(item.monthlySearches ?? item.searches) })).filter((item): item is { year: number; month: number; searches: number } => item.year !== null && item.month !== null && item.searches !== null) : [];
   const values = Array.isArray(raw) ? raw : Array.isArray(raw.results) ? raw.results : Object.values(raw);
   return {
