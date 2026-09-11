@@ -3,6 +3,8 @@
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     { "source": "/mcp", "destination": "/api/mcp" },
-    { "source": "/mcp/health", "destination": "/api/mcp" }
+    { "source": "/mcp/health", "destination": "/api/mcp" },
+    { "source": "/oauth/(.*)", "destination": "/api/mcp" },
+    { "source": "/.well-known/(.*)", "destination": "/api/mcp" }
   ]
 }
