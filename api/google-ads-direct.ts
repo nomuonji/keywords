@@ -314,7 +314,7 @@ export async function googleAdsKeywordHistoricalMetricsDirect(input: {
   if (!candidates.length) throw new Error('Google Ads direct customer account is not configured');
   const accessToken = await googleAdsAccessToken();
   const historicalApiVersion = process.env.GOOGLE_ADS_API_VERSION ?? 'v25';
-  const keywordIdeasApiVersion = process.env.GOOGLE_ADS_KEYWORD_IDEA_API_VERSION ?? 'v21';
+  const keywordIdeasApiVersion = process.env.GOOGLE_ADS_KEYWORD_IDEA_API_VERSION ?? historicalApiVersion;
   const historicalPayload = buildGoogleAdsHistoricalMetricsPayload({ ...input, keywords });
   let priorError: Error | null = null;
 
