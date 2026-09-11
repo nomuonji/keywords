@@ -14,6 +14,7 @@ import { autopilotCommands } from '@keywords/commands/autopilot';
 import { registerProductRoutes } from './product.js';
 import { registerBlogRoutes } from './blog.js';
 import { dashboardCommands } from '@keywords/commands/dashboard';
+import { treasuryList } from '@keywords/keyword-treasury';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
@@ -53,6 +54,8 @@ registerBlogRoutes(app, ctx, body);
 app.get('/portfolio', async c => c.json(await portfolioCommands.context()));
 app.get('/dashboard', async c => c.json(await dashboardCommands.context(ctx(c))));
 app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
+// Remote-first Firestore storage, deliberately readable in the local console.
+app.get('/keyword-treasury', async c => c.json(await treasuryList({ status: c.req.query('status'), query: c.req.query('query'), limit: Number(c.req.query('limit') ?? 100) })));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));

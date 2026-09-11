@@ -17,6 +17,15 @@ body {
     #0b1111;
   color: #e7efec;
 }
+
+.treasuryView { display: grid; gap: 18px; }
+.treasuryTable { overflow-x: auto; border: 1px solid #263837; border-radius: 12px; background: #101919; }
+.treasuryTable table { width: 100%; border-collapse: collapse; min-width: 840px; }
+.treasuryTable th, .treasuryTable td { padding: 13px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid #263837; }
+.treasuryTable th { color: #9db4af; font-size: 12px; letter-spacing: .04em; }
+.treasuryTable td { color: #dbe8e4; font-size: 13px; }
+.treasuryTable td small, .treasuryTable td b { display: block; }
+.treasuryTable td small { margin-top: 4px; color: #8fa39e; }
 button, input, select, textarea { font: inherit; }
 button, summary { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid #b9f36b; outline-offset: 2px; }
