@@ -119,10 +119,12 @@ export async function keywordDemand(input: { keywords: string[]; languageConstan
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({})) as any;
     const codes = Array.isArray(errorBody?.googleAdsErrorCodes) ? errorBody.googleAdsErrorCodes.filter((value: unknown) => typeof value === 'string').join(',') : '';
+    const providerError = typeof errorBody?.error === 'string' ? errorBody.error.replace(/https?:\/\/\S+/gi, '[url]').replace(/\b\d{10,}\b/g, '[id]').slice(0, 300) : null;
     const detail = [
       typeof errorBody?.googleAdsStatus === 'string' ? errorBody.googleAdsStatus : null,
       codes || null,
       typeof errorBody?.googleAdsMessage === 'string' ? errorBody.googleAdsMessage : null,
+      providerError,
       typeof errorBody?.requestId === 'string' ? `requestId=${errorBody.requestId}` : null
     ].filter(Boolean).join(' | ');
     throw new Error(`Keyword-volume provider failed (${response.status}${detail ? ` | ${detail}` : ''})`);
