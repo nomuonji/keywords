@@ -1,0 +1,17 @@
+.git
+.vercel
+node_modules
+**/node_modules
+.env
+.env.*
+**/.env
+**/.env.*
+data
+dist
+**/dist
+api-cjs
+*.sqlite
+*.sqlite-*
+**/*.sqlite
+**/*.sqlite-*
+**/*.tsbuildinfo

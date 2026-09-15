@@ -8,8 +8,69 @@ work sessions, or filesystem operations.
 
 - `remote_keyword_status` — configuration check without secrets
 - `keyword_demand_research` — calls the configured keyword-volume proxy
+- `serp_research` / `serp_analyze` — SERP evidence and transparent screening
 - `keyword_treasury_save` — writes evidence-backed candidates to Firestore
 - `keyword_treasury_list` — reads the shared candidate stock
+- `site_structure_list` — lists shared site concepts, with `nextPageToken`
+- `site_structure_get` — reads a concept, revision and original linked keywords
+- `site_structure_save` — creates/edits a concept and its page hierarchy
+
+## Site concepts and page structures
+
+The **サイト構想** tab (`?view=structures`) reads the same Firestore data as
+the remote MCP. Like the keyword treasury, this is a public, read-only browser
+view; writes require the existing MCP bearer/OAuth authentication. Do not store
+secrets or private client information in these shared concepts.
+
+Firestore uses collections rather than SQL tables. `siteStructures/{id}` stores
+the concept and its complete page graph in one document. It is created on the
+first save; no separate database migration or manual Firebase console setup is
+needed. There is no SQLite copy or separate agent state. Persistence primitives
+and types belong to `packages/db`, validation/mutations to `packages/commands`,
+and HTTP/MCP adapters call the same commands. This is a remote-first planning
+extension, like the existing treasury, rather than the local SEO execution loop.
+
+| Field | Meaning |
+| --- | --- |
+| `id`, `title` | Stable concept ID and display name |
+| `concept`, `audience`, `monetization`, `notes` | Site brief |
+| `status` | `draft`, `active` (under consideration), or `archived` |
+| `nodes[]` | Stable page `id`, `parentId` (null for roots), `title`, relative `path`, `kind` (`home/category/article/landing`), `purpose`, `keywordIds`, `notes` |
+| `links[]` | Internal links: node IDs `from`, `to`, and anchor/purpose `label` |
+| `revision`, `createdAt`, `updatedAt` | Conflict protection and timestamps |
+
+Use `keyword_treasury_list` after research to obtain keyword IDs. Link these
+IDs to pages; do not manufacture measured demand. The detail endpoint resolves
+the original keyword records, so demand is not copied into stale plan fields.
+Unmeasured page ideas can be saved with an empty `keywordIds` array.
+
+Create with a client-chosen stable ID, `expectedRevision: 0`, and a title:
+
+```json
+{
+  "id": "new-site-concept",
+  "expectedRevision": 0,
+  "title": "新しいサイト構想",
+  "concept": "調査済みキーワードをもとに検討するサイト",
+  "nodes": [
+    { "id": "home", "parentId": null, "title": "トップ", "path": "/", "kind": "home", "keywordIds": [] }
+  ]
+}
+```
+
+To edit, call `site_structure_get`, then pass its revision as `expectedRevision`.
+Omitted fields stay unchanged; provided `nodes` and `links` replace their whole
+arrays. Preserve unchanged entries when editing a single page. Use empty arrays
+to clear them and `status: archived` to retire a concept. Parent cycles, duplicate
+IDs/paths, dangling internal links, and unknown treasury IDs are rejected.
+Concurrent updates are rejected via Firestore `updateTime` preconditions; re-read
+and reconcile instead of blindly retrying. Each successful save atomically writes
+one `runs` audit record in Firestore. No publication or page approval occurs.
+
+Each concept supports up to 200 pages, 500 internal links and 500 unique treasury
+references, with a 600 KB JSON size cap. Listing is paginated newest-first; the UI
+offers **さらに読み込む** and searches loaded concepts. After adding these tools,
+refresh the MCP tool list in the agent client if it caches the old six tools.
 
 The write tool is intentionally separate from research, so the model can show
 its evidence and ChatGPT can ask for a write confirmation before persistence.
@@ -28,7 +89,7 @@ them in Git or a Vite-prefixed variable.
 | `KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN` | Optional browser origin restriction |
 
 Use a dedicated service account with the smallest Firestore role that can read
-and write the `keywordTreasury` collection. The function exchanges the service
+and write the `keywordTreasury`, `siteStructures`, and `runs` collections. The function exchanges the service
 account for short-lived Google access tokens; it does not put Firebase secrets
 in the browser, SQLite, or Firestore documents.
 

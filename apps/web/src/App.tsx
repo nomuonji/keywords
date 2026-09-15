@@ -3,13 +3,15 @@ import { OperationsOverview } from './OperationsOverview';
 import { ArticlesOverview } from './ArticlesOverview';
 import { SitesOverview } from './SitesOverview';
 import { KeywordTreasury } from './KeywordTreasury';
+import { SiteStructures } from './SiteStructures';
 
-type View='operations'|'articles'|'sites'|'treasury';
+type View='operations'|'articles'|'sites'|'treasury'|'structures';
 const views:Array<{id:View;label:string;hint:string}>=[
   {id:'operations',label:'今日',hint:'優先順位・停止理由'},
   {id:'sites',label:'サイト',hint:'状態・設定'},
   {id:'articles',label:'記事',hint:'管理・検証・成果'},
-  {id:'treasury',label:'お宝KW',hint:'共有ストック'}
+  {id:'treasury',label:'お宝KW',hint:'共有ストック'},
+  {id:'structures',label:'サイト構想',hint:'設計・ページ構造'}
 ];
 
 function readLocation(){
@@ -46,6 +48,7 @@ export function App(){
       {view==='articles'&&<ArticlesOverview focusedProjectId={projectId} onFocusProject={id=>navigate('articles',id,true)} onOpenOperations={id=>navigate('operations',id)}/>}
       {view==='sites'&&<SitesOverview focusedProjectId={projectId} onClearProject={()=>navigate('sites','',true)} onOpenArticles={id=>navigate('articles',id)} onOpenOperations={id=>navigate('operations',id)}/>}
       {view==='treasury'&&<KeywordTreasury/>}
+      {view==='structures'&&<SiteStructures/>}
     </main>
   </div>;
 }

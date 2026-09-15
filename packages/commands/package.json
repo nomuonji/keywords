@@ -33,7 +33,8 @@
     "./maintenance": "./src/maintenance.ts",
     "./maintenance-execution": "./src/maintenance-execution.ts",
     "./portfolio": "./src/portfolio.ts",
-    "./dashboard": "./src/dashboard.ts"
+    "./dashboard": "./src/dashboard.ts",
+    "./site-structure": "./src/site-structure.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

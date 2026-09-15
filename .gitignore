@@ -8,3 +8,4 @@ data/
 *.sqlite-wal
 .DS_Store
 *.tsbuildinfo
+.vercel

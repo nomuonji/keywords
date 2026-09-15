@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { treasuryList } from '../packages/keyword-treasury/src/index.js';
 
-// This is intentionally the only public browser endpoint. It is read-only;
+// This public browser endpoint is read-only;
 // all research and Firestore mutations remain behind the authenticated MCP.
 const app = new Hono();
 app.get('/api/treasury', async c => {

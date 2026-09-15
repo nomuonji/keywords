@@ -4,16 +4,19 @@ import { analyzeSerp } from '../packages/research/src/index.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.2.3');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.3.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
   'serp_research',
   'serp_analyze',
   'keyword_treasury_save',
-  'keyword_treasury_list'
+  'keyword_treasury_list',
+  'site_structure_list',
+  'site_structure_get',
+  'site_structure_save'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 6);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 9);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
