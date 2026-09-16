@@ -68,6 +68,53 @@ function gscComparison(before: MetricSnapshot | null, after: MetricSnapshot | nu
   };
 }
 
+function boundedEnvNumber(name: string, fallback: number, min: number, max: number) {
+  const configured = Number(process.env[name] ?? fallback);
+  return Number.isFinite(configured) ? Math.max(min, Math.min(configured, max)) : fallback;
+}
+
+function evaluationTrafficThresholds() {
+  return {
+    fastImpressions7d: boundedEnvNumber('KEYWORDS_OPTIMIZATION_FAST_IMPRESSIONS_7D', 500, 1, 1_000_000),
+    fastClicks7d: boundedEnvNumber('KEYWORDS_OPTIMIZATION_FAST_CLICKS_7D', 20, 1, 1_000_000),
+    mediumImpressions7d: boundedEnvNumber('KEYWORDS_OPTIMIZATION_MEDIUM_IMPRESSIONS_7D', 100, 1, 1_000_000),
+    mediumClicks7d: boundedEnvNumber('KEYWORDS_OPTIMIZATION_MEDIUM_CLICKS_7D', 5, 1, 1_000_000)
+  };
+}
+
+function trafficAdjustedEvaluationWindow(event: OptimizationEvent, baseline: MetricSnapshot | null, baselineDays: number) {
+  const thresholds = evaluationTrafficThresholds();
+  const impressions = numberMetric(baseline, 'impressions');
+  const clicks = numberMetric(baseline, 'clicks');
+  const normalizedImpressions7d = impressions === null ? null : impressions * 7 / Math.max(1, baselineDays);
+  const normalizedClicks7d = clicks === null ? null : clicks * 7 / Math.max(1, baselineDays);
+  let trafficClass: 'high' | 'medium' | 'low' | 'unknown' = 'unknown';
+  let recommendedWaitDays = 14;
+  if (baseline) {
+    const fast = (normalizedImpressions7d ?? 0) >= thresholds.fastImpressions7d || (normalizedClicks7d ?? 0) >= thresholds.fastClicks7d;
+    const medium = (normalizedImpressions7d ?? 0) >= thresholds.mediumImpressions7d || (normalizedClicks7d ?? 0) >= thresholds.mediumClicks7d;
+    if (fast) { trafficClass = 'high'; recommendedWaitDays = 14; }
+    else if (medium) { trafficClass = 'medium'; recommendedWaitDays = 21; }
+    else { trafficClass = 'low'; recommendedWaitDays = 28; }
+  }
+  const changedAtMs = event.changedAt ? Date.parse(event.changedAt) : NaN;
+  const recommendedAtMs = Number.isFinite(changedAtMs) ? changedAtMs + recommendedWaitDays * 86_400_000 : NaN;
+  const persistedAtMs = event.evaluateAfter ? Date.parse(event.evaluateAfter) : NaN;
+  const effectiveAtMs = Number.isFinite(recommendedAtMs) && Number.isFinite(persistedAtMs)
+    ? Math.max(recommendedAtMs, persistedAtMs)
+    : Number.isFinite(recommendedAtMs) ? recommendedAtMs : persistedAtMs;
+  const effectiveEvaluateAfter = Number.isFinite(effectiveAtMs) ? new Date(effectiveAtMs).toISOString() : null;
+  return {
+    trafficClass,
+    recommendedWaitDays,
+    persistedEvaluateAfter: event.evaluateAfter ?? null,
+    effectiveEvaluateAfter,
+    normalized7d: { impressions: normalizedImpressions7d, clicks: normalizedClicks7d },
+    thresholds,
+    policy: 'wait_only_not_verdict'
+  };
+}
+
 /**
  * Build a deterministic evidence packet for one implemented optimization.
  * It intentionally does not decide improved/neutral/worsened: the persisted
@@ -84,22 +131,25 @@ export async function optimizationEvaluationContext(input: unknown) {
     .filter(item => item.completeness === 'complete') as MetricSnapshot[];
   const baselineDays = dateDays(event.baselinePeriod.start, event.baselinePeriod.end);
   const baseline = snapshots.find(item => item.periodStart === event.baselinePeriod.start && item.periodEnd === event.baselinePeriod.end) ?? null;
+  const evaluationWindow = trafficAdjustedEvaluationWindow(event, baseline, baselineDays);
   const changedDate = dateOnly(event.changedAt);
-  const evaluateDate = dateOnly(event.evaluateAfter);
+  const effectiveEvaluateDate = dateOnly(evaluationWindow.effectiveEvaluateAfter);
   const compatiblePost = snapshots
     .filter(item => dateDays(item.periodStart, item.periodEnd) === baselineDays)
     .filter(item => !changedDate || item.periodStart > changedDate)
-    .filter(item => !evaluateDate || item.periodEnd >= evaluateDate)
+    .filter(item => !effectiveEvaluateDate || item.periodEnd >= effectiveEvaluateDate)
     .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
   const post = compatiblePost[0] ?? null;
 
-  const matured = Boolean(event.evaluateAfter && Date.now() >= Date.parse(event.evaluateAfter));
+  const minimumWaitMatured = Boolean(event.evaluateAfter && Date.now() >= Date.parse(event.evaluateAfter));
+  const matured = Boolean(evaluationWindow.effectiveEvaluateAfter && Date.now() >= Date.parse(evaluationWindow.effectiveEvaluateAfter));
   const warnings: string[] = [];
   if (event.phase !== 'implemented' || event.result !== 'pending') warnings.push(`Event is ${event.phase}/${event.result}; it is not an active pending optimization.`);
   if (!event.changedAt || !event.evaluateAfter) warnings.push('Implementation/evaluation timestamps are missing.');
-  if (!matured) warnings.push(`Evaluation wait has not matured${event.evaluateAfter ? `; evaluate after ${event.evaluateAfter}` : ''}.`);
   if (!baseline) warnings.push('No complete article-level GSC snapshot exactly matches the persisted baselinePeriod.');
-  if (!post) warnings.push('No complete equal-length article-level GSC period fully after the change and reaching the evaluation date is available yet.');
+  if (baseline && minimumWaitMatured && !matured) warnings.push(`Traffic-aware wait is still active for ${evaluationWindow.trafficClass} baseline traffic; evaluate after ${evaluationWindow.effectiveEvaluateAfter}.`);
+  else if (!matured) warnings.push(`Evaluation wait has not matured${evaluationWindow.effectiveEvaluateAfter ? `; evaluate after ${evaluationWindow.effectiveEvaluateAfter}` : ''}.`);
+  if (matured && !post) warnings.push('No complete equal-length article-level GSC period fully after the change and reaching the effective evaluation date is available yet.');
 
   return {
     siteId: args.siteId,
@@ -108,17 +158,23 @@ export async function optimizationEvaluationContext(input: unknown) {
       requiresCompleteGsc: true,
       equalPeriodLength: true,
       postPeriodStartsAfterChangedDate: true,
-      postPeriodReachesEvaluateAfter: true,
+      postPeriodReachesEffectiveEvaluateAfter: true,
+      trafficChangesWaitOnly: true,
       automaticVerdict: false
     },
+    minimumWaitMatured,
     matured,
     baselinePeriodDays: baselineDays,
+    evaluationWindow,
     baseline,
     post,
     deltas: gscComparison(baseline, post),
     readyForAgentEvaluation: event.phase === 'implemented' && event.result === 'pending' && matured && Boolean(baseline && post),
     warnings,
-    nextAction: !matured ? 'wait' : !baseline || !post ? 'collect_more_compatible_gsc' : 'compare_deltas_to_the_persisted_hypothesis_then_record_result_with_optimization_event_update'
+    nextAction: !baseline ? 'collect_complete_baseline_gsc'
+      : !matured ? 'wait_for_traffic_adjusted_evaluation_window'
+      : !post ? 'collect_more_compatible_gsc'
+      : 'compare_deltas_to_the_persisted_hypothesis_then_record_result_with_optimization_event_update'
   };
 }
 
@@ -145,6 +201,9 @@ function flattenedEvaluationMetrics(context: Awaited<ReturnType<typeof optimizat
     result[`${name}Delta`] = delta.absolute;
     result[`${name}Relative`] = delta.relative;
   }
+  result.evaluationWaitDays = context.evaluationWindow.recommendedWaitDays;
+  result.baselineImpressions7d = context.evaluationWindow.normalized7d.impressions;
+  result.baselineClicks7d = context.evaluationWindow.normalized7d.clicks;
   return result;
 }
 
@@ -161,7 +220,7 @@ export async function localOptimizationRecordResult(input: unknown) {
   if (context.event.revision !== args.expectedRevision) {
     throw new Error(`Revision conflict: expected ${args.expectedRevision}, current ${context.event.revision}`);
   }
-  const evidence = `Evaluation evidence: baseline=${context.baseline.id} (${context.baseline.periodStart}..${context.baseline.periodEnd}); post=${context.post.id} (${context.post.periodStart}..${context.post.periodEnd}).`;
+  const evidence = `Evaluation evidence: baseline=${context.baseline.id} (${context.baseline.periodStart}..${context.baseline.periodEnd}); post=${context.post.id} (${context.post.periodStart}..${context.post.periodEnd}); trafficClass=${context.evaluationWindow.trafficClass}; waitDays=${context.evaluationWindow.recommendedWaitDays}.`;
   const updated = await optimizationEventUpdate({
     id: args.eventId,
     expectedRevision: args.expectedRevision,
@@ -192,17 +251,20 @@ async function computeNextSiteOptimizationEvaluation(projectId: string) {
   const due = events
     .filter(event => event.evaluateAfter && Date.parse(event.evaluateAfter) <= Date.now())
     .sort((a, b) => Date.parse(a.evaluateAfter ?? '') - Date.parse(b.evaluateAfter ?? ''));
+  const waiting: Array<{ eventId: string; nextAction: string; effectiveEvaluateAfter: string | null; warnings: string[] }> = [];
   for (const event of due) {
     const evaluation = await optimizationEvaluationContext({ siteId: site.id, eventId: event.id });
     if (evaluation.readyForAgentEvaluation) {
       return { status: 'ready' as const, projectId, site, event, evaluation };
     }
+    waiting.push({ eventId: event.id, nextAction: evaluation.nextAction, effectiveEvaluateAfter: evaluation.evaluationWindow.effectiveEvaluateAfter, warnings: evaluation.warnings });
   }
   return {
-    status: due.length ? 'waiting_for_compatible_metrics' as const : 'none_due' as const,
+    status: due.length ? 'waiting_for_evaluation_window_or_metrics' as const : 'none_due' as const,
     projectId,
     site,
-    dueEventIds: due.map(event => event.id)
+    dueEventIds: due.map(event => event.id),
+    waiting
   };
 }
 
