@@ -67,11 +67,21 @@ export const keywordTreasurySaveShape = {
 type DemandInput = z.infer<z.ZodObject<typeof demandShape>>;
 let googleAdsDirectLastError: string | null = null;
 
+function demandInput(args: DemandInput) {
+  return {
+    keywords: args.keywords,
+    languageConstant: args.languageConstant,
+    geoTargetConstants: args.geoTargetConstants,
+    includeAdultKeywords: args.includeAdultKeywords
+  };
+}
+
 export function keywordResearchProviderStatus() {
+  const direct = googleAdsDirectConfiguration();
   return {
     googleAdsDemandProviderOrder: ['proxy', 'direct'] as const,
-    googleAdsDirectConfigured: googleAdsDirectConfiguration().configured,
-    googleAdsDirectConfiguration: googleAdsDirectConfiguration(),
+    googleAdsDirectConfigured: direct.configured,
+    googleAdsDirectConfiguration: direct,
     googleAdsDirectLastError
   };
 }
@@ -104,14 +114,14 @@ export async function keywordDemandWithFallback(input: unknown) {
 
 export async function keywordScreenBatch(input: unknown) {
   const args = z.object(keywordScreenBatchShape).strict().parse(input);
-  const demand = await keywordDemandWithFallback(args);
+  const demand = await keywordDemandWithFallback(demandInput(args));
   const screening = screenDemandResults(demand.results, args.criteria ?? {});
   return { demand, screening };
 }
 
 export async function keywordResearchPipeline(input: unknown) {
   const args = z.object(keywordResearchPipelineShape).strict().parse(input);
-  const demand = await keywordDemandWithFallback(args);
+  const demand = await keywordDemandWithFallback(demandInput(args));
   const screening = screenDemandResults(demand.results, args.criteria ?? {});
   const selected = screening.results.filter(item => item.passed).slice(0, args.maxSerpChecks);
   const serpChecks: Array<Record<string, unknown>> = [];
