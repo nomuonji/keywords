@@ -53,6 +53,9 @@ jobs:
             npm run test:site-operations
             npm run test:site-operations-bridge
             npm run test:site-operations-analysis
+            npm run test:site-optimization-workflow
+            npm run test:site-optimization-delivery-proof
+            npm run test:site-operations-readiness
             npm run test:site-query-feedback
             npm run db:init
             KEYWORDS_DB_PATH=/tmp/keywords-migration-smoke.sqlite npx tsx scripts/migration-smoke.ts

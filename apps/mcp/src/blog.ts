@@ -12,6 +12,7 @@ import {
  localSiteOptimizationMarkImplemented
 } from '@keywords/commands/site-optimization-workflow';
 import { assertSiteOptimizationDeliveryProof } from '@keywords/commands/site-optimization-delivery-proof';
+import { siteOperationsReadiness } from '@keywords/commands/site-operations-readiness';
 import type { CommandContext } from '@keywords/domain';
 const string={type:'string'},object={type:'object',additionalProperties:true};
 const boolean={type:'boolean'},stringArray={type:'array',items:{type:'string'}};
@@ -34,6 +35,7 @@ const definitions:Array<[string,string,Record<string,unknown>,string[]]>=[
  ['artifactContext','Read persisted article artifacts, hashes, validation failures and build status for resume without private reasoning.',{operationId:string,pageId:string},[]]
 ];
 const siteOperationTools=[
+ {name:'site_operations_readiness',description:'Read-only preflight for one project or every existing_site project. Reports Sites registration, Blog binding, GSC, Ads, Git delivery, Autopilot and persistent-agent blockers without exposing secrets.',inputSchema:{type:'object' as const,properties:{projectId:string}}},
  {name:'site_optimization_candidate',description:'Read the strongest fresh material article-level GSC decline for the linked site using complete equal-length saved snapshots. This never edits content or creates an optimization.',inputSchema:{type:'object' as const,properties:{projectId:string},required:['projectId']}},
  {name:'site_optimization_context',description:'Read one linked article plus saved metrics and active/proposed optimization state before deciding whether another change is allowed.',inputSchema:{type:'object' as const,properties:{projectId:string,articleId:string},required:['projectId','articleId']}},
  {name:'site_optimization_create',description:'Persist exactly one proposed Sites optimization before editing an existing mapped article. The baseline period is derived from the pinned complete article GSC snapshot. Requires an active shared Operation and action budget.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string,articleId:string,baselineSnapshotId:string,comparisonSnapshotId:string,observation:string,diagnosis:string,hypothesis:string,actionType:{type:'string',enum:['content_expand','title_snippet','internal_links','cta_ui','freshness','indexing','other']},beforeCommit:{type:['string','null']},notes:string},required:['projectId','eventId','articleId','baselineSnapshotId','observation','diagnosis','hypothesis','actionType']}},
@@ -45,6 +47,7 @@ export const blogTools=[...definitions.map(([name,description,properties,require
 export const isBlogTool=(name:string)=>blogTools.some(t=>t.name===name);
 export async function callBlogTool(name:string,args:any,ctx:CommandContext){
  if(!isBlogTool(name))throw new Error('Unknown Blog/Sites execution tool');
+ if(name==='site_operations_readiness')return siteOperationsReadiness(args??{});
  if(name==='site_optimization_candidate')return localSiteOptimizationCandidate(args);
  if(name==='site_optimization_context')return localSiteOptimizationContext(args);
  if(name==='site_optimization_create'){
