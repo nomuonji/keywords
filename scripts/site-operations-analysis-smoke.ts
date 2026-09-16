@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { field } from '../packages/db/src/firestore.js';
 import {
   metricSnapshotSave,
   optimizationEventCreate,
@@ -126,13 +125,16 @@ try {
   const opportunities = await siteQueryOpportunities({ siteId: 'site-a', minImpressions: 50, minGrowthRatio: 1.5, limit: 10 });
   assert.equal(opportunities.comparable, true);
   assert.equal(opportunities.periodDays, 7);
+  assert.equal(opportunities.queryCoverage, 'bounded_saved_top_queries');
   assert.deepEqual(opportunities.candidates.map((item: any) => item.query).sort(), ['brand new query', 'rising query']);
-  assert.equal((opportunities.candidates.find((item: any) => item.query === 'brand new query') as any).kind, 'new_query');
+  const newlyObserved = opportunities.candidates.find((item: any) => item.query === 'brand new query') as any;
+  assert.equal(newlyObserved.kind, 'newly_observed_query');
+  assert.match(newlyObserved.observationCaveat, /not proof/);
   assert.equal((opportunities.candidates.find((item: any) => item.query === 'rising query') as any).kind, 'rising_query');
   assert.match(String(opportunities.nextAction), /keyword_screen_batch/);
   assert.match(String(opportunities.nextAction), /keyword_research_pipeline/);
 
-  console.log('site operations analysis smoke passed: compatible optimization evaluation evidence and quota-safe GSC query feedback candidates');
+  console.log('site operations analysis smoke passed: compatible optimization evaluation evidence and quota-safe bounded GSC query feedback candidates');
 } finally {
   globalThis.fetch = originalFetch;
 }
