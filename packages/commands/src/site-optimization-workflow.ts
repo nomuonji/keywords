@@ -18,7 +18,7 @@ import type { MetricSnapshot, OptimizationEvent, SiteArticleRecord, SiteRecord }
 const { sqlite } = getDatabase();
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const commitSha = z.string().regex(/^[a-f0-9]{7,64}$/i);
-const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 'cta_ui', 'freshness', 'indexing', 'new_article', 'other']);
+const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 'cta_ui', 'freshness', 'indexing', 'other']);
 const note = z.string().trim().min(1).max(4000);
 const optionalNote = z.string().trim().max(3000).default('');
 const isoTime = z.string().datetime({ offset: true });
@@ -138,7 +138,7 @@ function deterministicEventId(siteId: string, articleId: string, baselineSnapsho
   return `auto_${digest}`;
 }
 
-function equalEventSemantics(event: OptimizationEvent, input: z.infer<z.ZodObject<any>>, baseline: MetricSnapshot) {
+function equalEventSemantics(event: OptimizationEvent, input: any, baseline: MetricSnapshot) {
   return event.articleId === input.articleId
     && event.baselinePeriod.start === baseline.periodStart
     && event.baselinePeriod.end === baseline.periodEnd
@@ -159,9 +159,8 @@ export async function localSiteOptimizationContext(input: unknown) {
   const pendingProposed = (context.optimizationEvents as OptimizationEvent[]).find(event => event.phase === 'proposed' && event.result === 'pending') ?? null;
   return {
     projectId: args.projectId,
-    site,
-    article,
     ...context,
+    article,
     changeAllowed: Boolean(context.changeAllowed && !pendingProposed),
     pendingProposed,
     policy: {
@@ -301,7 +300,7 @@ export async function localSiteOptimizationCreate(input: unknown) {
     const events = (await optimizationEventList({ siteId: site.id, articleId: article.id, limit: 100 })).items as OptimizationEvent[];
     const existingById = events.find(event => event.id === args.eventId);
     if (existingById) {
-      if (!equalEventSemantics(existingById, args as any, baseline)) throw new Error('Optimization event ID already exists with different pinned semantics.');
+      if (!equalEventSemantics(existingById, args, baseline)) throw new Error('Optimization event ID already exists with different pinned semantics.');
       return { ...existingById, reused: true };
     }
     const active = events.find(event => event.result === 'pending' && ['proposed', 'implemented'].includes(event.phase));
