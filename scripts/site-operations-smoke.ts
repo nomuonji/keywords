@@ -142,9 +142,11 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 14);
+  assert.equal(listing.tools.length, 16);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_query_opportunities'));
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
   const mapped = await call('tools/call', { name: 'site_registry_resolve', arguments: { localProjectId: 'local-project-a' } });
@@ -154,7 +156,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.2.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.3.0');
 
   console.log('site operations smoke passed: explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
