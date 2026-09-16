@@ -31,7 +31,9 @@ export const BUDGETED_COMMANDS = new Set([
   'task.create',
   'task.set_status',
   'policy.propose',
-  'decision.record'
+  'decision.record',
+  'site_optimization.create',
+  'site_optimization.mark_implemented'
 ]);
 
 export const isBudgetedCommand = (command: string) => BUDGETED_COMMANDS.has(command);
