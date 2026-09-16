@@ -6,9 +6,11 @@ The current product scope supports evidence-backed article revisions and an opt-
 
 Blogサイト群との連携コードを実装しました。現在の機能・起動条件・Agent手順は [Blog連携の運用手順](docs/blog-integration-operations.md) が正本です。設計判断と実装前の経緯は [Blog連携計画](docs/blog-integration-plan.md) に残しています。
 
+The Vercel-hosted **Remote Keywords Operator** is a separate Firestore-backed planning/research extension for ChatGPT. It now supports resumable research sessions, quota-aware cached SERP research, Google Ads-first staged screening, rich Treasury search, incremental Site Concept edits, and DB-driven site metadata. The operating rule is **Google Ads for broad first-stage screening, SERP only for a bounded high-value second stage, Firestore for durable cache/state**. See [Remote Keywords Operator](docs/remote-keyword-treasury.md) for the 18-tool contract and Firestore schema.
+
 ## Completed scope
 
-- SQLite + Drizzle; no Firebase / Firestore
+- SQLite + Drizzle for the local SEO execution workspace; Firestore only for the remote shared keyword/site research extension
 - shared typed command boundary and `runs` audit trail
 - project, topic, keyword, cluster, page, source, insight, task, decision, policy, work-session, checkpoint, review-request models
 - Google Ads keyword ideas, Search Console, SERP, public-web research
@@ -38,9 +40,15 @@ Human CLI ──────────┼────────────�
 Agent MCP ──────────┘                      ├── pages / metric snapshots
                                            ├── policy_rules
                                            └── work_sessions / review_requests
+
+Remote ChatGPT MCP ──> commands/research adapters ──> Firestore
+                        ├── keywordTreasury
+                        ├── researchSessions
+                        ├── serpCache / serpUsage
+                        └── siteStructures / runs
 ```
 
-Adapters do not write SQL directly.
+Adapters do not write SQL directly. The remote MCP likewise keeps external SERP reads in `packages/research` and durable Firestore mutations/business rules in `packages/commands`.
 
 Specialized command surfaces:
 
@@ -221,6 +229,32 @@ site_list
 site_sync
 ```
 
+# Remote treasure-keyword research loop
+
+The remote ChatGPT MCP uses a staged flow so the ~2,000/month SERP budget is not spent on raw candidate generation:
+
+```text
+research_session_get / create
+        ↓
+generate many candidates in-agent
+        ↓
+keyword_screen_batch (Google Ads, <=50)
+        ↓
+keyword_research_pipeline (SERP only for top maxSerpChecks; default 5)
+        ↓
+keyword_treasury_save (final evidence-backed candidates only)
+        ↓
+keyword_treasury_search (for example shortlisted + linkedToSite=false)
+        ↓
+site_structure_save / site_structure_patch
+        ↓
+research_session_update (findings + nextActions + siteConceptIds)
+```
+
+`serp_research` caches by query/country/language/location/provider/result count. The default TTL is 30 days. Monthly defaults are `limit=2000`, `softLimit=1500`, `reserve=500`; normal automation stops at the normal cutoff, while explicit `forceRefresh=true` may consume reserve until the hard limit. `serp_usage_status` exposes actual provider requests, cache hits, blocked requests and remaining capacity. Values are environment-configurable.
+
+Research sessions are the cross-chat handoff mechanism. A `research_session_get` call without an ID returns the latest active session (or latest overall if none is active), so a new agent session can resume without reconstructing the prior chat transcript.
+
 # Agent work loop
 
 Substantial Agent work is grouped into an explicit `work_session`:
@@ -313,9 +347,10 @@ Agents stop at proposal creation. Page approval is human-only, and exact target 
 
 # Credentials
 
-Credentials are environment-only and are never intentionally persisted to SQLite.
+Credentials are environment-only and are never intentionally persisted to SQLite or Firestore research/session records.
 
-- SERP: `KEYWORDS_SERPER_API_KEY` / `SERPER_API_KEY`
+- SERP (remote): `BRAVE_API_KEY` / `KEYWORDS_BRAVE_API_KEY`; optional explicit Serper via `KEYWORDS_SERPER_API_KEY`
+- SERP quota/cache: `KEYWORDS_SERP_MONTHLY_LIMIT`, `KEYWORDS_SERP_SOFT_LIMIT`, `KEYWORDS_SERP_RESERVE`, `KEYWORDS_SERP_CACHE_TTL_DAYS`
 - Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
 - Google Ads OAuth refresh: `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`
 - Google Ads proxy for remote demand research: `GOOGLE_ADS_KEYWORD_VOLUME_API_URL` (primary for `keyword_demand_research`; legacy alias `KEYWORD_VOLUME_API_URL` is also accepted)
@@ -326,13 +361,16 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
-The API loads the repository `.env` on startup. The remote six-tool MCP uses the configured keyword-volume proxy first for `keyword_demand_research`, because that proxy owns the known-working Google Ads credential set, and falls back to direct Google Ads only when the proxy request fails. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
+The API loads the repository `.env` on startup. The remote 18-tool MCP uses the configured keyword-volume proxy first for Google Ads demand research because that proxy owns the known-working credential set, and falls back to direct Google Ads only when the proxy request fails. Its SERP tools use Firestore cache/quota enforcement before reaching the external provider. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
 
 # Verification
 
-GitHub Actions verifies:
+GitHub Actions / build verification includes:
 
 - typecheck: domain, db, research, commands, api, cli, mcp, web
+- remote MCP contract smoke
+- remote keyword cache/quota/research-session smoke
+- site concept full-save + patch + revision smoke
 - SQLite initialization
 - legacy SQLite migration into work/review/live-page/GSC-history schema
 - content-planning smoke
@@ -346,7 +384,7 @@ CI cancels superseded runs on the same branch.
 
 # Current autonomy boundary
 
-The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization**. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
+The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization** for local execution. The Remote Keywords Operator adds persistent exploratory research and site-concept planning, but it still does not treat a screening/opportunity score as a ranking prediction and does not automatically promote every candidate into a site. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
 
 **CMS publication is not performed by this workspace, but Git-connected production sites are verified directly.** Evidence-backed artifacts may be committed and pushed when `KEYWORDS_AUTO_GIT_PUSH=1` (an empty site allowlist means all bound sites). After delivery, Keywords checks each target URL for HTTP 200 and an exact canonical URL and records the publication/observation deadline itself; no Blog-side receipt response is required.
 
