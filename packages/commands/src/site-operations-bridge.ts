@@ -34,6 +34,20 @@ function canonicalKey(value: unknown) {
   }
 }
 
+function landingPageCanonicalKey(productionUrl: string, landingPage: unknown) {
+  if (typeof landingPage !== 'string') return null;
+  const path = landingPage.trim();
+  if (!path.startsWith('/') || path.startsWith('//')) return null;
+  try {
+    const origin = new URL(productionUrl).origin;
+    const resolved = new URL(path, origin);
+    if (resolved.origin !== origin) return null;
+    return canonicalKey(resolved.toString());
+  } catch {
+    return null;
+  }
+}
+
 function aggregateGsc(input: any[]) {
   const valid = input.map(row => ({
     clicks: finite(row.clicks) ?? 0,
@@ -86,15 +100,29 @@ function parseJson(value: unknown) {
   try { return typeof value === 'string' ? JSON.parse(value) : null; } catch { return null; }
 }
 
-function normalizedDirectGa4Metrics(payload: any) {
-  if (!payload || typeof payload !== 'object' || !payload.metrics || typeof payload.metrics !== 'object') return null;
+function normalizedGa4Metrics(value: any) {
+  if (!value || typeof value !== 'object') return null;
   const metrics = {
-    sessions: finite(payload.metrics.sessions),
-    activeUsers: finite(payload.metrics.activeUsers),
-    engagement: finite(payload.metrics.engagement),
-    views: finite(payload.metrics.views)
+    sessions: finite(value.sessions),
+    activeUsers: finite(value.activeUsers),
+    engagement: finite(value.engagement),
+    views: finite(value.views)
   };
-  return Object.values(metrics).every(value => value === null) ? null : metrics;
+  return Object.values(metrics).every(item => item === null) ? null : metrics;
+}
+
+function normalizedDirectGa4Metrics(payload: any) {
+  return normalizedGa4Metrics(payload?.metrics);
+}
+
+function completeGa4LandingPages(payload: any) {
+  const landingPages = payload?.landingPages;
+  if (!landingPages || landingPages.status !== 'complete' || !Array.isArray(landingPages.rows)) return null;
+  return landingPages.rows.flatMap((row: any) => {
+    const landingPage = typeof row?.landingPage === 'string' ? row.landingPage.trim() : '';
+    const metrics = normalizedGa4Metrics(row?.metrics);
+    return landingPage && metrics ? [{ landingPage, metrics }] : [];
+  });
 }
 
 /**
@@ -219,6 +247,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const gscSite: ProjectionCounter = { saved: 0, reused: 0 };
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
+  const ga4Articles: ProjectionCounter = { saved: 0, reused: 0 };
 
   const configuredImportLimit = Number(process.env.KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT ?? 4);
   const importLimit = Number.isFinite(configuredImportLimit) ? Math.max(1, Math.min(configuredImportLimit, 20)) : 4;
@@ -286,6 +315,9 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     WHERE project_id=? AND provider='ga4' AND completeness='complete'
     ORDER BY captured_at DESC LIMIT ?`, projectId, importLimit);
   let directGa4Projected = 0;
+  let directGa4ArticleProjected = 0;
+  let directGa4UnmappedLandingRows = 0;
+  let directGa4AmbiguousArticleRows = 0;
   for (const observation of directGa4Imports) {
     if (!site.ga4PropertyId) {
       warnings.push(`Skipped direct GA4 source ${observation.source_version}: the site registry has no ga4PropertyId.`);
@@ -304,7 +336,8 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       warnings.push(`Skipped direct GA4 source ${observation.source_version}: GA4 property does not match the site registry.`);
       continue;
     }
-    const metrics = normalizedDirectGa4Metrics(parseJson(observation.payload_json));
+    const payload = parseJson(observation.payload_json);
+    const metrics = normalizedDirectGa4Metrics(payload);
     if (!metrics) {
       warnings.push(`Skipped direct GA4 source ${observation.source_version}: no normalized site metrics were persisted.`);
       continue;
@@ -322,13 +355,62 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       capturedAt: observation.captured_at
     });
     directGa4Projected++;
+
+    const landingPages = completeGa4LandingPages(payload);
+    if (!landingPages) {
+      if (payload?.landingPages) warnings.push(`Direct GA4 source ${observation.source_version} has no complete landing-page set; site metrics were projected without article GA4.`);
+      continue;
+    }
+
+    const mappedRows = new Map<string, Array<{ article: SiteArticleRecord; metrics: Record<string, number | null> }>>();
+    for (const row of landingPages) {
+      const key = landingPageCanonicalKey(site.productionUrl, row.landingPage);
+      const article = key ? articleByUrl.get(key) : undefined;
+      if (!article) {
+        directGa4UnmappedLandingRows++;
+        continue;
+      }
+      const group = mappedRows.get(article.id) ?? [];
+      group.push({ article, metrics: row.metrics });
+      mappedRows.set(article.id, group);
+    }
+
+    for (const group of mappedRows.values()) {
+      if (group.length !== 1) {
+        directGa4AmbiguousArticleRows += group.length;
+        continue;
+      }
+      const [{ article, metrics: articleMetrics }] = group;
+      await persist(ga4Articles, {
+        siteId: site.id,
+        articleId: article.id,
+        provider: 'ga4',
+        periodStart: observation.start_date,
+        periodEnd: observation.end_date,
+        metrics: articleMetrics,
+        queries: [],
+        completeness: 'complete',
+        sourceVersion: `sqlite:ga4:${observation.source_version}:article:${article.id}`,
+        capturedAt: observation.captured_at
+      });
+      directGa4ArticleProjected++;
+    }
   }
 
-  let ga4Acquisition: { source: string; importsConsidered: number; projected: number };
+  let ga4Acquisition: { source: string; importsConsidered: number; projected: number; articleProjected: number; unmappedLandingRows: number; ambiguousArticleRows: number };
   if (directGa4Imports.length) {
-    ga4Acquisition = { source: 'direct_data_api', importsConsidered: directGa4Imports.length, projected: directGa4Projected };
+    ga4Acquisition = {
+      source: 'direct_data_api',
+      importsConsidered: directGa4Imports.length,
+      projected: directGa4Projected,
+      articleProjected: directGa4ArticleProjected,
+      unmappedLandingRows: directGa4UnmappedLandingRows,
+      ambiguousArticleRows: directGa4AmbiguousArticleRows
+    };
+    if (directGa4UnmappedLandingRows) warnings.push(`${directGa4UnmappedLandingRows} GA4 landing-page rows did not exactly match a registered article canonical URL.`);
+    if (directGa4AmbiguousArticleRows) warnings.push(`${directGa4AmbiguousArticleRows} GA4 landing-page rows collapsed onto ambiguous normalized article identities and were not projected.`);
   } else {
-    ga4Acquisition = { source: 'analytics_dashboard_fallback', importsConsidered: 0, projected: 0 };
+    ga4Acquisition = { source: 'analytics_dashboard_fallback', importsConsidered: 0, projected: 0, articleProjected: 0, unmappedLandingRows: 0, ambiguousArticleRows: 0 };
     const portfolio = await readPortfolio();
     if (portfolio.status === 'available' && portfolio.period && portfolio.generatedAt) {
       const productionHost = hostOf(site.productionUrl);
@@ -374,6 +456,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
     gsc: { importsConsidered: imports.length, site: gscSite, articles: gscArticle },
     ga4,
+    ga4Articles,
     ga4Acquisition,
     warnings
   };
