@@ -128,8 +128,7 @@ function liveEvidence(projectId: string, page: any) {
 
 function searchConsoleProperty(projectId: string, origin: string) {
   return one(`SELECT property FROM measurement_imports
-    WHERE project_id=? AND provider='gsc' AND completeness='complete'
-      AND (target_origin=? OR target_origin IS NULL)
+    WHERE project_id=? AND provider='gsc' AND completeness='complete' AND target_origin=?
     ORDER BY captured_at DESC LIMIT 1`, projectId, origin)?.property ?? null;
 }
 
@@ -173,8 +172,14 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
   if (currentSite?.localProjectId && currentSite.localProjectId !== projectId) {
     throw new Error(`Production URL is already linked to another local project: ${currentSite.localProjectId}`);
   }
+  if (currentSite?.productionUrl && currentSite.productionUrl !== binding.origin) {
+    throw new Error(`Bound Blog origin ${binding.origin} conflicts with Sites registry productionUrl ${currentSite.productionUrl}`);
+  }
   if (currentSite?.repository && currentSite.repository !== repository) {
     throw new Error(`Bound Blog Git repository ${repository} conflicts with Sites registry repository ${currentSite.repository}`);
+  }
+  if (currentSite?.searchConsoleProperty && observedProperty && currentSite.searchConsoleProperty !== observedProperty) {
+    throw new Error(`Observed Search Console property ${observedProperty} conflicts with Sites registry property ${currentSite.searchConsoleProperty}`);
   }
 
   const siteId = currentSite?.id ?? hashId('site', projectId);
