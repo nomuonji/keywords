@@ -71,14 +71,16 @@ async function projectReadiness(project: any) {
   const adsConfigured = googleAdsConfigured();
 
   let site: SiteRecord | null = null;
-  let siteLookupError: string | null = null;
+  let siteLookupFailed = false;
   let articles: SiteArticleRecord[] = [];
   if (sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured) {
     try {
       site = (await siteRegistryResolve({ localProjectId: project.id })).site as SiteRecord | null;
       if (site) articles = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
-    } catch (error) {
-      siteLookupError = error instanceof Error ? error.message : String(error);
+    } catch {
+      // Keep the preflight secret-safe. SDK/backend error strings are deliberately
+      // not surfaced because they can contain request or authentication context.
+      siteLookupFailed = true;
     }
   }
 
@@ -89,8 +91,8 @@ async function projectReadiness(project: any) {
   const controlPlaneBlockers: Array<string | null> = [
     !sitesRuntime.firestoreConfigured ? 'firebase_project_not_configured' : null,
     !sitesRuntime.projectConfigured ? 'firebase_service_account_not_configured' : null,
-    siteLookupError ? 'site_registry_unavailable' : null,
-    !site ? 'site_not_linked' : null,
+    siteLookupFailed ? 'site_registry_unavailable' : null,
+    !site && !siteLookupFailed ? 'site_not_linked' : null,
     site && !site.repository ? 'site_repository_missing' : null,
     site && !site.productionUrl ? 'site_production_url_missing' : null,
     site && ['paused','archived'].includes(site.status) ? `site_status_${site.status}` : null
@@ -131,8 +133,8 @@ async function projectReadiness(project: any) {
   const nextActions: Array<{ code: string; message: string; tool?: string }> = [];
   if (!sitesRuntime.firestoreConfigured) nextActions.push(action('configure_firebase_project', 'Configure FIREBASE_PROJECT_ID for the Sites control plane.'));
   if (sitesRuntime.firestoreConfigured && !sitesRuntime.projectConfigured) nextActions.push(action('configure_firebase_service_account', 'Configure the Firebase service account in the runtime environment.'));
-  if (sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured && !site && !siteLookupError) nextActions.push(action('register_real_site', `Register this deployed site once with localProjectId=${project.id}, explicit repository and productionUrl.`, 'site_registry_save'));
-  if (siteLookupError) nextActions.push(action('repair_site_registry_access', `Sites registry lookup failed: ${siteLookupError}`));
+  if (sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured && !site && !siteLookupFailed) nextActions.push(action('register_real_site', `Register this deployed site once with localProjectId=${project.id}, explicit repository and productionUrl.`, 'site_registry_save'));
+  if (siteLookupFailed) nextActions.push(action('repair_site_registry_access', 'Sites registry lookup failed. Check the Firestore connection and service-account access in the runtime environment.'));
   if (!binding) nextActions.push(action('confirm_blog_binding', 'Import/confirm the real Blog repository binding before automatic article sync or edits.', 'blog_importContext'));
   else if (!bindingFresh) nextActions.push(action('refresh_blog_binding', 'Refresh the confirmed Blog binding; the saved snapshot is older than seven days.', 'blog_importContext'));
   if (site && binding && !originMatches) nextActions.push(action('repair_origin_mapping', `Registered productionUrl (${site.productionUrl}) and Blog origin (${binding.origin}) must have the same origin.`));
@@ -155,7 +157,7 @@ async function projectReadiness(project: any) {
       id: site.id, status: site.status, repository: site.repository, productionUrl: site.productionUrl,
       deploymentProvider: site.deploymentProvider, searchConsoleProperty: site.searchConsoleProperty, ga4PropertyId: site.ga4PropertyId
     } : null,
-    siteLookupError,
+    siteLookupError: siteLookupFailed ? 'site_registry_unavailable' : null,
     blog: binding ? { siteId: binding.blog_site_id, origin: binding.origin, observedAt: binding.observed_at, fresh: bindingFresh, originMatchesRegisteredSite: originMatches } : null,
     articleRegistry: { total: articles.length, mapped: mappedArticles.length, publishedMapped: publishedMappedArticles.length, boundedAt: 100 },
     runtime: {
