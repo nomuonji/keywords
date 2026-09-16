@@ -12,6 +12,12 @@ import {
   siteArticleGet, siteArticleGetShape, siteArticleList, siteArticleListShape, siteArticleSave, siteArticleSaveShape,
   siteRegistryGet, siteRegistryGetShape, siteRegistryList, siteRegistryListShape, siteRegistryResolve, siteRegistryResolveShape, siteRegistrySave, siteRegistrySaveShape
 } from '../packages/commands/src/remote-site-operations.js';
+import {
+  optimizationEvaluationContext,
+  optimizationEvaluationContextShape,
+  siteQueryOpportunities,
+  siteQueryOpportunitiesShape
+} from '../packages/commands/src/site-operations-analysis.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -77,6 +83,8 @@ function server() {
   mcp.registerTool('optimization_event_list', { description: 'List persisted SEO observations, hypotheses, changes and outcomes.', inputSchema: optimizationEventListShape, annotations: { readOnlyHint: true } }, async input => structured(await optimizationEventList(input)));
   mcp.registerTool('optimization_event_update', { description: 'Mark a hypothesis implemented/evaluated/cancelled with optimistic revision control. An implemented change defaults to a 14-day evaluation wait and cannot be scored early.', inputSchema: optimizationEventUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await optimizationEventUpdate(input)));
   mcp.registerTool('optimization_context', { description: 'Read latest GSC/GA4 observations plus the active hypothesis/cooldown before changing an article.', inputSchema: optimizationContextShape, annotations: { readOnlyHint: true } }, async input => structured(await optimizationContext(input)));
+  mcp.registerTool('optimization_evaluation_context', { description: 'Build a read-only evaluation evidence packet for one optimization. Requires complete equal-length article GSC before/after periods and never invents an automatic improved/neutral/worsened verdict.', inputSchema: optimizationEvaluationContextShape, annotations: { readOnlyHint: true } }, async input => structured(await optimizationEvaluationContext(input)));
+  mcp.registerTool('site_query_opportunities', { description: 'Compare complete equal-length non-overlapping site GSC periods and surface new/rising queries. This never calls Google Ads/SERP or writes Treasury; selected queries must go back through Keywords Operator screening.', inputSchema: siteQueryOpportunitiesShape, annotations: { readOnlyHint: true } }, async input => structured(await siteQueryOpportunities(input)));
   return mcp;
 }
 
