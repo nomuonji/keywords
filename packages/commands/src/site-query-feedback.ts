@@ -27,7 +27,7 @@ async function compute(projectId: string) {
   const limit = Math.round(numberEnv('KEYWORDS_SITE_QUERY_FEEDBACK_LIMIT', 20, 1, 50));
   const maxSerpChecks = Math.round(numberEnv('KEYWORDS_SITE_QUERY_MAX_SERP_CHECKS', 5, 0, 10));
   const result = await siteQueryOpportunities({ siteId: site.id, minImpressions, minGrowthRatio, limit });
-  if (!result.comparable || !result.latest || !result.previous || !result.criteria || !result.queryCoverage || !result.periodDays) {
+  if (!('latest' in result) || !('previous' in result) || !('criteria' in result) || !('queryCoverage' in result) || !('periodDays' in result)) {
     return { status: 'waiting_for_compatible_metrics' as const, projectId, siteId: site.id, result };
   }
   if (!result.candidates.length) {
@@ -51,7 +51,7 @@ export function invalidateSiteQueryFeedbackCache(projectId: string) {
   cache.delete(projectId);
 }
 
-/** Bounded Firestore probe used by the local Operator. Ready work is never cached. */
+/** Bounded Firestore probe used by the local Operator. Ready work is not cached. */
 export async function nextSiteQueryFeedback(projectId: string) {
   const cached = cache.get(projectId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
