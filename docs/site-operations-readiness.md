@@ -33,6 +33,8 @@ For `existing_site` projects, Autopilot therefore reuses the `articleOptimizatio
 
 If the capability is not ready, Autopilot fails closed with `stage=preflight_blocked`, records a secret-safe `autopilot_content_preflight_blocked` event, and returns the relevant blocker codes / setup actions. It does not create a delivery Operation or claim publication progress.
 
+An already-running Autopilot content Operation is also rechecked on subsequent ticks. When readiness has deteriorated, the Operation remains structurally active so the normal runner is not converted into a permanent manual boundary, but its exact `operationId` is attached to `preflight_blocked`. The command guard then rejects agent `blog.prepare` and `blog.transport` actions for that Operation, including validation paths that could perform an automatic Git push. When readiness becomes valid again, a later tick clears the state by returning the Operation to the normal `executing` stage. The guard is operation-scoped, so an unrelated Operation or human action is not blocked by another target's preflight state.
+
 The following work remains available because it can establish evidence or clear readiness without mutating deployed content:
 
 - Search Console / GA4 measurement capture;
