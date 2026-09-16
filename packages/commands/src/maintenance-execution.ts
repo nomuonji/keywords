@@ -4,6 +4,7 @@ import { recoveryContext, recoveryDate, dateOffset } from './recovery-context.js
 import { siteCommands } from './site.js';
 import { metricsCommands } from './metrics.js';
 import { operationCommands } from './operation.js';
+import { projectSiteOperationsMetrics } from './site-operations-bridge.js';
 
 export const MAINTENANCE_KINDS = ['capture_recovery', 'sync_site', 'capture_metrics'] as const;
 
@@ -25,7 +26,16 @@ export async function executeMaintenance(ctx: CommandContext, claim: { operation
     const siteUrl = context.latest?.property;
     const previous = await metricsCommands.capture(scoped, { projectId: claim.projectId, siteUrl, startDate: dateOffset(endDate, -13), endDate: dateOffset(endDate, -7), timezone: 'America/Los_Angeles' });
     const current = await metricsCommands.capture(scoped, { projectId: claim.projectId, siteUrl, startDate: dateOffset(endDate, -6), endDate, timezone: 'America/Los_Angeles' });
-    result = { previous, current };
+    // Firestore projection is an additive cloud control-plane step. A missing
+    // Firebase credential or unlinked site returns `skipped`; a projection
+    // failure is reported without discarding the already-persisted local GSC data.
+    let cloudProjection: unknown;
+    try {
+      cloudProjection = await projectSiteOperationsMetrics(claim.projectId);
+    } catch (error) {
+      cloudProjection = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+    }
+    result = { previous, current, cloudProjection };
   }
   await operationCommands.complete({ ...scoped, workSessionId: undefined }, { operationId: claim.operationId,
     summary: claim.operatorKind === 'capture_recovery' ? 'Persisted fixed-cohort URL inspection and scoped weekly visibility observations. Recovery/expansion eligibility and the next observation are derived from those sources; no article was generated.' : 'Persisted the requested external inventory/measurement evidence through shared commands.' });

@@ -11,6 +11,8 @@ export type SiteDeploymentProvider = 'vercel' | 'cloudflare_pages' | 'github_pag
 export type SiteRecord = {
   id: string;
   siteConceptId: string | null;
+  /** Existing SQLite `projects.id`; explicit bridge, never inferred from names. */
+  localProjectId: string | null;
   name: string;
   repository: string;
   productionUrl: string;
@@ -27,6 +29,9 @@ export type SiteArticleStatus = 'draft' | 'published' | 'paused' | 'archived';
 export type SiteArticleRecord = {
   id: string;
   siteId: string;
+  /** Existing SQLite `pages.id`; optional explicit bridge for article-level metrics. */
+  localPageId: string | null;
+  canonicalUrl: string | null;
   repo: string;
   repoPath: string;
   currentCommitSha: string | null;
