@@ -13,6 +13,7 @@ import { operatorCommands } from '@keywords/commands/operator';
 import { operationControl } from '@keywords/commands/guard';
 import { productTools, isProductTool, callProductTool } from './product.js';
 import { blogTools, isBlogTool, callBlogTool } from './blog.js';
+import { keywordFeedbackTools, isKeywordFeedbackTool, callKeywordFeedbackTool } from './keyword-feedback.js';
 
 const baseCtx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
 let activeWorkSession: { id: string; projectId: string; status: string; remainingActions: number } | null = null;
@@ -27,6 +28,7 @@ const budgetedTools = new Set([
   'blog_importContext','blog_prepare','blog_export','blog_receipt','blog_verifyPublished','blog_capture','blog_expand',
   'blog_observe',
   'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
+  'keyword_screen_batch','keyword_research_pipeline','keyword_treasury_save',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate'
 ]);
@@ -99,12 +101,15 @@ const coreTools = [
   { name: 'task_set_status', description: 'Set task status.', inputSchema: s('Task status', { projectId: { type: 'string' }, taskId: { type: 'string' }, status: { type: 'string', enum: ['todo','doing','review','done'] } }, ['projectId','taskId','status']) },
   { name: 'decision_record', description: 'Record a decision for project memory.', inputSchema: s('Decision', { projectId: { type: 'string' }, action: { type: 'string' }, targetType: { type: 'string' }, targetId: { type: 'string' }, verdict: { type: 'string' }, reason: { type: 'string' } }, ['projectId','action','targetType','verdict']) }
 ];
-const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...productTools, ...coreTools];
+const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   const a = (request.params.arguments ?? {}) as any; const name = request.params.name; guardTool(name, a); let result: unknown;
   if (isBlogTool(name)) {
     result = await callBlogTool(name,a,toolCtx(a.projectId)); consumeBudget(name); return text(result);
+  }
+  if (isKeywordFeedbackTool(name)) {
+    result = await callKeywordFeedbackTool(name, a); consumeBudget(name); return text(result);
   }
   switch (name) {
     case 'portfolio_context': result = await portfolioCommands.context(); break;
