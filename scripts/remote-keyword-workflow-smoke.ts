@@ -16,6 +16,7 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
 let braveCalls = 0;
+let forceUsageRaceToHardLimit = false;
 const originalFetch = globalThis.fetch;
 
 function stored(name: string, fields: Record<string, any>) {
@@ -51,6 +52,11 @@ globalThis.fetch = async (input, init) => {
   if (init?.method === 'PATCH') {
     const name = path;
     const previous = docs.get(name);
+    if (forceUsageRaceToHardLimit && name.includes('/serpUsage/')) {
+      forceUsageRaceToHardLimit = false;
+      docs.set(name, stored(name, { ...previous.fields, actualApiRequests: field(4), updatedAt: field(new Date().toISOString()) }));
+      return Response.json({}, { status: 409 });
+    }
     const exists = url.searchParams.get('currentDocument.exists');
     const updateTime = url.searchParams.get('currentDocument.updateTime');
     if ((exists === 'false' && previous) || (updateTime && previous?.updateTime !== updateTime)) return Response.json({}, { status: 409 });
@@ -91,6 +97,13 @@ try {
   assert.equal(usage.blockedRequests, 1);
   assert.equal(usage.remaining, 2);
 
+  forceUsageRaceToHardLimit = true;
+  await assert.rejects(serpResearchCached({ query: '電子契約 比較', country: 'JP', language: 'ja', forceRefresh: true }), /hard limit/i);
+  assert.equal(braveCalls, 2, 'a losing quota reservation race must re-read the counter and block before the provider call');
+  const hardLimited = await serpUsageStatus();
+  assert.equal(hardLimited.actualApiRequests, 4);
+  assert.equal(hardLimited.state, 'hard_limited');
+
   const session = await researchSessionCreate({
     id: 'treasure-2026-09',
     title: 'お宝キーワード探索',
@@ -119,7 +132,7 @@ try {
   assert.equal(resumed.revision, 2);
   assert.equal(resumed.findings[0], '勤怠管理SaaSは比較属性が豊富');
 
-  console.log('remote keyword workflow smoke passed: cache reuse, quota reserve, forced refresh, audited resumable research sessions');
+  console.log('remote keyword workflow smoke passed: cache reuse, quota reserve/race protection, forced refresh, audited resumable research sessions');
 } finally {
   globalThis.fetch = originalFetch;
 }
