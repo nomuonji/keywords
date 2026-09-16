@@ -34,7 +34,8 @@
     "./maintenance-execution": "./src/maintenance-execution.ts",
     "./portfolio": "./src/portfolio.ts",
     "./dashboard": "./src/dashboard.ts",
-    "./site-structure": "./src/site-structure.ts"
+    "./site-structure": "./src/site-structure.ts",
+    "./remote-keyword-research": "./src/remote-keyword-research.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
