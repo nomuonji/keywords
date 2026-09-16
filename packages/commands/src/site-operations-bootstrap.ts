@@ -53,12 +53,19 @@ export function repositoryFromGitRemote(remote: string | null | undefined) {
   }
 }
 
-function repositoryForRoot(root: string) {
+function repositoryOverride() {
   const configured = process.env.KEYWORDS_SITE_REPOSITORY?.trim();
-  if (configured) {
-    if (!repositoryPattern.test(configured)) throw new Error('KEYWORDS_SITE_REPOSITORY must use owner/repository form');
-    return configured;
+  if (!configured) return null;
+  if (process.env.KEYWORDS_BLOG_WORKSPACE_ROOT?.trim()) {
+    throw new Error('KEYWORDS_SITE_REPOSITORY is a single-site override and cannot be used with KEYWORDS_BLOG_WORKSPACE_ROOT');
   }
+  if (!repositoryPattern.test(configured)) throw new Error('KEYWORDS_SITE_REPOSITORY must use owner/repository form');
+  return configured;
+}
+
+function repositoryForRoot(root: string) {
+  const configured = repositoryOverride();
+  if (configured) return configured;
   const remote = git(root, ['remote', 'get-url', 'origin']);
   const repository = repositoryFromGitRemote(remote);
   if (!repository) throw new Error('The bound Blog root has no unambiguous GitHub origin remote; Sites registry bootstrap will not guess a repository');
@@ -260,7 +267,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     skipped: skipped.slice(0, 100),
     policy: {
       requiresConfirmedBlogBinding: true,
-      requiresGitHubOriginRemote: !Boolean(process.env.KEYWORDS_SITE_REPOSITORY?.trim()),
+      requiresGitHubOriginRemote: !Boolean(repositoryOverride()),
       requiresUniqueSourceMapping: true,
       localBuildIsNotPublicationEvidence: true,
       liveEvidenceMayPromoteStatus: true
