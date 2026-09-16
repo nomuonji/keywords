@@ -64,7 +64,12 @@ export const keywordTreasurySaveShape = {
   candidates: z.array(treasuryCandidate).min(1).max(100)
 };
 
-type DemandInput = z.infer<z.ZodObject<typeof demandShape>>;
+type DemandInput = {
+  keywords: string[];
+  languageConstant?: string;
+  geoTargetConstants?: string[];
+  includeAdultKeywords?: boolean;
+};
 let googleAdsDirectLastError: string | null = null;
 
 function demandInput(args: DemandInput) {
