@@ -4,6 +4,8 @@
   "rewrites": [
     { "source": "/mcp", "destination": "/api/mcp" },
     { "source": "/mcp/health", "destination": "/api/mcp" },
+    { "source": "/sites-mcp", "destination": "/api/sites-mcp" },
+    { "source": "/sites-mcp/health", "destination": "/api/sites-mcp" },
     { "source": "/oauth/(.*)", "destination": "/api/mcp" },
     { "source": "/.well-known/(.*)", "destination": "/api/mcp" }
   ]
