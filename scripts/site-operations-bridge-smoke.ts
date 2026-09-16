@@ -51,14 +51,35 @@ globalThis.fetch = async (input, init) => {
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     const startDate = body.dateRanges?.[0]?.startDate;
     if (startDate === '2026-08-25') return Response.json({ error: { message: 'fixture failure' } }, { status: 503 });
+    const landing = body.dimensions?.[0]?.name === 'landingPage';
     const current = startDate === '2026-09-08';
+    const partial = startDate === '2026-08-18';
+    if (landing) {
+      const pageMetrics = current
+        ? ['13', '11', '0.66', '29']
+        : partial ? ['3', '3', '0.50', '7'] : ['9', '8', '0.61', '21'];
+      const rows = [{
+        dimensionValues: [{ value: current ? '/article-a/' : '/article-a' }],
+        metricValues: pageMetrics.map(value => ({ value }))
+      }];
+      if (current) rows.push({
+        dimensionValues: [{ value: '/unmapped' }],
+        metricValues: [{ value: '2' }, { value: '2' }, { value: '0.4' }, { value: '4' }]
+      });
+      return Response.json({
+        dimensionHeaders: [{ name: 'landingPage' }],
+        metricHeaders: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' }, { name: 'screenPageViews' }],
+        rows,
+        rowCount: partial ? 2 : rows.length
+      });
+    }
     return Response.json({
       metricHeaders: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' }, { name: 'screenPageViews' }],
       rows: [{ metricValues: [
-        { value: current ? '31' : '25' },
-        { value: current ? '27' : '22' },
-        { value: current ? '0.74' : '0.68' },
-        { value: current ? '71' : '56' }
+        { value: current ? '31' : partial ? '8' : '25' },
+        { value: current ? '27' : partial ? '7' : '22' },
+        { value: current ? '0.74' : partial ? '0.55' : '0.68' },
+        { value: current ? '71' : partial ? '18' : '56' }
       ] }],
       rowCount: 1
     });
@@ -101,7 +122,7 @@ globalThis.fetch = async (input, init) => {
 
 try {
   const { getDatabase } = await import('../packages/db/src/index.js');
-  const { siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
+  const { optimizationContext, siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
   const { captureGa4Period } = await import('../packages/commands/src/ga4-metrics.js');
   const { projectSiteOperationsMetrics } = await import('../packages/commands/src/site-operations-bridge.js');
   const { sqlite } = getDatabase();
@@ -159,10 +180,14 @@ try {
   const systemCtx = { actor: 'system' as const, actorId: 'bridge-smoke', projectId: 'project-a' };
   const previousGa4 = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-09-01', endDate: '2026-09-07' });
   const currentGa4 = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: 'properties/123', targetOrigin: 'https://example.com', startDate: '2026-09-08', endDate: '2026-09-14' });
+  const partialLandingGa4 = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-18', endDate: '2026-08-24' });
   assert.deepEqual(previousGa4.metrics, { sessions: 25, activeUsers: 22, engagement: 0.68, views: 56 });
   assert.deepEqual(currentGa4.metrics, { sessions: 31, activeUsers: 27, engagement: 0.74, views: 71 });
+  assert.equal(previousGa4.landingPages.status, 'complete');
+  assert.equal(currentGa4.landingPages.status, 'complete');
+  assert.equal(partialLandingGa4.landingPages.status, 'partial');
   const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
-  assert.equal(ga4Payloads.length, 2);
+  assert.equal(ga4Payloads.length, 3);
   assert.ok(!JSON.stringify(ga4Payloads).includes('ga4-secret-fixture-token'), 'measurement persistence must not contain credentials');
 
   await assert.rejects(() => captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-25', endDate: '2026-08-31' }), /GA4 collection failed/);
@@ -178,9 +203,14 @@ try {
   assert.equal(first.articleRegistrySync.reused, 0);
   assert.deepEqual(first.gsc.site, { saved: 1, reused: 0 });
   assert.deepEqual(first.gsc.articles, { saved: 1, reused: 0 });
-  assert.deepEqual(first.ga4, { saved: 2, reused: 0 });
-  assert.deepEqual(first.ga4Acquisition, { source: 'direct_data_api', importsConsidered: 2, projected: 2 });
+  assert.deepEqual(first.ga4, { saved: 3, reused: 0 });
+  assert.deepEqual(first.ga4Articles, { saved: 2, reused: 0 });
+  assert.deepEqual(first.ga4Acquisition, {
+    source: 'direct_data_api', importsConsidered: 3, projected: 3, articleProjected: 2, unmappedLandingRows: 1, ambiguousArticleRows: 0
+  });
   assert.equal(first.articleMappings.byLocalPageId, 1);
+  assert.ok(first.warnings.some(message => message.includes('no complete landing-page set')));
+  assert.ok(first.warnings.some(message => message.includes('did not exactly match')));
 
   const articleDocs = [...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`));
   assert.equal(articleDocs.length, 1);
@@ -188,15 +218,24 @@ try {
   assert.equal(decodeField(articleDocs[0].fields?.canonicalUrl), 'https://example.com/article-a');
   assert.equal(decodeField(articleDocs[0].fields?.repoPath), 'content/posts/article-a.mdx');
   assert.equal(decodeField(articleDocs[0].fields?.status), 'draft', 'local Blog mapping must not invent publication state');
+  const articleId = articleDocs[0].name.split('/').at(-1)!;
 
   const metricDocsAfterFirst = [...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`));
-  assert.equal(metricDocsAfterFirst.length, 4);
+  assert.equal(metricDocsAfterFirst.length, 7);
   const siteGsc = metricDocsAfterFirst.find(doc => decodeField(doc.fields?.provider) === 'gsc' && decodeField(doc.fields?.articleId) === null);
   assert.ok(siteGsc, 'site-level GSC snapshot should be projected');
   assert.equal(decodeField(siteGsc.fields?.sourceVersion), 'sqlite:gsc:local-source-v1');
   const directGa4Docs = metricDocsAfterFirst.filter(doc => decodeField(doc.fields?.provider) === 'ga4');
-  assert.equal(directGa4Docs.length, 2);
+  assert.equal(directGa4Docs.length, 5);
   assert.ok(directGa4Docs.every(doc => String(decodeField(doc.fields?.sourceVersion)).startsWith('sqlite:ga4:')), 'direct GA4 must win over analytics-dashboard fallback');
+  const articleGa4Docs = directGa4Docs.filter(doc => decodeField(doc.fields?.articleId) === articleId);
+  assert.equal(articleGa4Docs.length, 2, 'only complete landing-page periods should project article GA4');
+
+  const articleContext = await optimizationContext({ siteId: 'site-a', articleId, metricLimit: 30, eventLimit: 30 });
+  assert.ok(articleContext.latestMetrics.ga4, 'article optimization context should now include article-level GA4');
+  assert.equal(articleContext.latestMetrics.ga4.articleId, articleId);
+  assert.equal(articleContext.latestMetrics.ga4.provider, 'ga4');
+  assert.deepEqual(articleContext.latestMetrics.ga4.metrics, { sessions: 13, activeUsers: 11, engagement: 0.66, views: 29 });
 
   const second = await projectSiteOperationsMetrics('project-a');
   assert.equal(second.articleRegistrySync.status, 'synced');
@@ -204,12 +243,15 @@ try {
   assert.equal(second.articleRegistrySync.reused, 1);
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
-  assert.deepEqual(second.ga4, { saved: 0, reused: 2 });
-  assert.deepEqual(second.ga4Acquisition, { source: 'direct_data_api', importsConsidered: 2, projected: 2 });
+  assert.deepEqual(second.ga4, { saved: 0, reused: 3 });
+  assert.deepEqual(second.ga4Articles, { saved: 0, reused: 2 });
+  assert.deepEqual(second.ga4Acquisition, {
+    source: 'direct_data_api', importsConsidered: 3, projected: 3, articleProjected: 2, unmappedLandingRows: 1, ambiguousArticleRows: 0
+  });
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
-  assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 4);
+  assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 7);
 
-  console.log('site operations bridge smoke passed: direct GA4 is secret-safe, failure-isolated, preferred over the legacy dashboard fallback, and Firestore projection stays idempotent');
+  console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, and Firestore stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
