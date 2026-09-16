@@ -160,14 +160,15 @@ export async function siteStructureSave(input: unknown) {
   if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: call site_structure_get and reapply your edit');
   if (!current && !args.title) throw new Error('title is required for a new site structure');
   const now = new Date().toISOString();
-  const { expectedRevision, ...patch } = args;
+  const { expectedRevision, ...rawPatch } = args;
+  const patch = Object.fromEntries(Object.entries(rawPatch).filter(([, item]) => item !== undefined));
   const plan: SiteStructure = {
     title: '', concept: '', audience: '', monetization: '', notes: '', status: 'draft', links: [],
     dataModel: [], sourceStrategy: [], pageTemplates: [], refreshPolicy: [],
     createdAt: now, ...current, ...patch,
     nodes: args.nodes ? args.nodes.map(normalizeNode) : current?.nodes ?? [],
     revision: expectedRevision + 1, updatedAt: now
-  };
+  } as SiteStructure;
   validateGraph(plan);
   const keywordIds = [...new Set(plan.nodes.flatMap(node => node.keywordIds))];
   if (keywordIds.length > 500) throw new Error('A site structure can reference at most 500 keywords');
