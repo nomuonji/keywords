@@ -26,12 +26,13 @@ one existing-page change only
         ↓
 blog_writeDraft -> blog_validateDraft -> real site build
         ↓
-Git delivery + live verification
+Git push + live verification persisted in operation_artifacts
         ↓
 site_optimization_mark_implemented
+  server verifies caller Operation proof
   phase = implemented
   result = pending
-  afterCommit = real pushed commit
+  afterCommit = persisted pushed commit
         ↓
 14 / 21 / 28 day traffic-aware wait
         ↓
@@ -86,15 +87,27 @@ The proposed event persists:
 
 A proposed or implemented/pending event blocks another optimization on the same article. This prevents overlapping edits from destroying attribution.
 
-`new_article` is intentionally not accepted by the local optimization command. This loop is for an existing mapped page. New content remains a separate Keywords/Site Concept decision.
+`new_article` is intentionally not accepted by the local optimization command or its MCP schema. This loop is for an existing mapped page. New content remains a separate Keywords/Site Concept decision.
 
 ## Implementation boundary
 
 A proposed event is not equivalent to an implemented change. The article still passes the existing Blog artifact and build pipeline.
 
-`site_optimization_mark_implemented` is called only after the execution workflow has a real pushed commit and live delivery verification. It requires the actual `afterCommit`. If build, Git delivery, or live verification fails, the event remains `proposed` and the Operation records the blocker; the system must not pretend the change was implemented.
+The autonomous MCP path will not accept an Agent assertion that deployment happened. Before `site_optimization_mark_implemented` can update the event, it resolves the exact caller work session and mapped `localPageId`, then reads the persisted `operation_artifacts` evidence for that same Operation. All of the following must be true:
 
-The implementation command reuses the existing `optimization_event_update` behavior. `evaluateAfter` therefore receives the existing 14-day persisted minimum, while the analysis layer may extend the effective wait to 21 or 28 days for lower-traffic baselines.
+- `validator_status = passed`;
+- `build_status = passed`;
+- `verified_at` is present;
+- the persisted validator result itself has `status = passed`;
+- `delivery.status = pushed`;
+- `delivery.commit` exactly matches the submitted `afterCommit`;
+- `publication.status = published`, which comes from the existing direct live URL/canonical verification path.
+
+A different work session, missing artifact, local-only build, `no_changes`, failed push, mismatched commit, or failed live verification is rejected. In those cases the optimization stays `proposed`; the system does not manufacture an implementation timestamp.
+
+The lower-level Sites command remains reusable by trusted internal/manual paths, while the persistent autonomous Agent MCP is the path that applies this delivery-proof gate.
+
+Once the proof is accepted, the implementation update reuses the existing `optimization_event_update` behavior. `evaluateAfter` therefore receives the existing 14-day persisted minimum, while the analysis layer may extend the effective wait to 21 or 28 days for lower-traffic baselines.
 
 ## Operation and budget safety
 
@@ -105,7 +118,7 @@ site_optimization.create
 site_optimization.mark_implemented
 ```
 
-This is deliberate redundancy with the MCP execution guard: a direct command call cannot silently bypass the shared Operation budget.
+The persisted run ledger is the authoritative action-budget check, so direct command use cannot silently bypass the shared Operation budget. The MCP also requires an active work session before exposing either mutation to the persistent Agent.
 
 ## Failure behavior
 
@@ -114,8 +127,11 @@ This is deliberate redundancy with the MCP execution guard: a direct command cal
 - stale, partial, missing, unequal or overlapping GSC evidence -> no proposal;
 - material decline but existing proposed/implemented optimization -> block another edit;
 - diagnosis does not justify a change -> persist a no-change finding / checkpoint instead of creating an event;
-- validation or deployment fails -> keep the event proposed;
+- validation or build failure -> keep the event proposed;
+- no persisted Git push -> keep the event proposed;
+- submitted `afterCommit` differs from the persisted pushed commit -> reject implementation;
 - pushed commit exists but live verification fails -> keep the event proposed;
+- proof belongs to another work session / Operation -> reject implementation;
 - post-change evidence is not mature -> evaluation remains pending;
 - sparse evidence after the traffic-aware window -> Agent may record `inconclusive` rather than inventing success/failure.
 
@@ -126,7 +142,8 @@ Git / Markdown / MDX
   article body, commit history, rollback
 
 SQLite
-  Operation, action budget, local runner, artifacts, raw/materialized observations
+  Operation, action budget, local runner, artifacts, build/delivery/live proof,
+  raw/materialized observations
 
 Firestore Sites control plane
   article identity, normalized metric snapshots, durable optimization hypotheses/results
