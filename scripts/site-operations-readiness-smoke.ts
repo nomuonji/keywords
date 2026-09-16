@@ -47,6 +47,7 @@ try {
   assert.equal(all.summary.total, 1);
   assert.equal(all.summary.closedLoopReady, 0);
   assert.equal(all.policy.noSecretsReturned, true);
+  assert.equal(all.policy.globalGscPropertyOptionalWhenProjectOriginCanBeDiscovered, true);
 
   const project = all.projects[0];
   assert.equal(project.runtime.persistentAgentCommandConfigured, true);
@@ -54,6 +55,9 @@ try {
   assert.equal(project.blog?.fresh, false);
   assert.equal(project.runtime.autoGitPush.enabled, true);
   assert.equal(project.runtime.autoGitPush.allowed, false);
+  assert.equal(project.runtime.gscSiteUrlConfigured, false);
+  assert.equal(project.runtime.gscScopeResolvable, true);
+  assert.equal(project.runtime.gscPropertyDiscoveryAvailable, false);
   assert.equal(project.capabilities.controlPlane.ready, false);
   assert.equal(project.capabilities.measurement.ready, false);
   assert.equal(project.capabilities.articleOptimization.ready, false);
@@ -62,15 +66,19 @@ try {
   assert.ok(project.capabilities.controlPlane.blockers.includes('firebase_project_not_configured'));
   assert.ok(project.capabilities.controlPlane.blockers.includes('firebase_service_account_not_configured'));
   assert.ok(project.capabilities.measurement.blockers.includes('gsc_credentials_not_configured'));
+  assert.ok(!project.capabilities.measurement.blockers.includes('gsc_site_url_not_configured'));
+  assert.ok(!project.capabilities.measurement.blockers.includes('gsc_property_scope_unresolvable'));
   assert.ok(project.capabilities.articleOptimization.blockers.includes('blog_binding_stale'));
   assert.ok(project.capabilities.articleOptimization.blockers.includes('blog_site_not_allowed_for_git_push'));
   assert.ok(project.capabilities.queryFeedback.blockers.includes('google_ads_not_configured'));
   assert.ok(project.capabilities.autopilotExecution.blockers.includes('autopilot_disabled_for_project'));
 
   const actions = project.nextActions.map(item => item.code);
-  for (const expected of ['configure_firebase_project','refresh_blog_binding','configure_gsc_credentials','configure_gsc_property','allow_blog_site_git_delivery','configure_google_ads','enable_project_autopilot']) {
+  for (const expected of ['configure_firebase_project','refresh_blog_binding','configure_gsc_credentials','allow_blog_site_git_delivery','configure_google_ads','enable_project_autopilot']) {
     assert.ok(actions.includes(expected), `missing next action ${expected}`);
   }
+  assert.ok(!actions.includes('configure_gsc_property'));
+  assert.ok(!actions.includes('configure_project_origin_or_gsc_property'));
 
   const serialized = JSON.stringify(all);
   assert.ok(!serialized.includes('must-not-leak'));
@@ -81,7 +89,7 @@ try {
   assert.equal(one.projects.length, 1);
   await assert.rejects(siteOperationsReadiness({ projectId: 'missing' }), /Project not found/);
 
-  console.log('site operations readiness smoke passed: bounded existing-site preflight, capability blockers, next actions, and no secret values');
+  console.log('site operations readiness smoke passed: bounded existing-site preflight, multi-site GSC scope discovery, capability blockers, next actions, and no secret values');
 } finally {
   for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
     try { rmSync(path, { force: true }); } catch {}
