@@ -75,7 +75,7 @@ async function serviceAccountAccessToken() {
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth-grant-type:jwt-bearer', assertion }),
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
   const body = await response.json() as { access_token?: string };
