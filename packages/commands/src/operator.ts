@@ -113,7 +113,7 @@ async function inspect(projectId: string) {
       if (siteQueryFeedback.status === 'ready') {
         const alreadyHandled = sqlite.prepare(`SELECT id FROM operation_requests WHERE project_id=?
           AND json_extract(constraints_json,'$.operatorKind')='research_site_queries'
-          AND json_extract(constraints_json,'$.relatedId')=? LIMIT 1`).get(projectId, siteQueryFeedback.snapshotId);
+          AND json_extract(constraints_json,'$.relatedId')=? LIMIT 1`).get(projectId, siteQueryFeedback.snapshotId) as { id: string } | undefined;
         if (!alreadyHandled) {
           candidates.push({
             kind: 'research_site_queries', rank: 8.7,

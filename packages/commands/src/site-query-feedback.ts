@@ -27,7 +27,7 @@ async function compute(projectId: string) {
   const limit = Math.round(numberEnv('KEYWORDS_SITE_QUERY_FEEDBACK_LIMIT', 20, 1, 50));
   const maxSerpChecks = Math.round(numberEnv('KEYWORDS_SITE_QUERY_MAX_SERP_CHECKS', 5, 0, 10));
   const result = await siteQueryOpportunities({ siteId: site.id, minImpressions, minGrowthRatio, limit });
-  if (!('latest' in result) || !('previous' in result) || !('criteria' in result) || !('queryCoverage' in result) || !('periodDays' in result)) {
+  if (!result.comparable || !result.latest || !result.previous || !result.criteria || !result.queryCoverage || !result.periodDays) {
     return { status: 'waiting_for_compatible_metrics' as const, projectId, siteId: site.id, result };
   }
   if (!result.candidates.length) {
