@@ -166,8 +166,8 @@ export function assertOperationAllowed(
   }
   const delegation = input.capability ? assertDelegated(ctx, input.projectId, input.capability) : null;
   const operation = ctx.actor === 'agent' ? operationForContext(ctx, input.projectId) : null;
+  if (operation) assertAutopilotMutationPreflightState(operation, input.projectId, input.capability);
   if (operation && !input.allowWhilePaused) {
-    assertAutopilotMutationPreflightState(operation, input.projectId, input.capability);
     if (operation.status !== 'active') throw new Error(`Operation is ${operation.status}; writes and external research are paused`);
     const budget = parse<Record<string, number>>(operation.budget_json, {});
     const maxRuntimeMinutes = Number(budget.maxRuntimeMinutes ?? 0);
