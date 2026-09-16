@@ -83,7 +83,7 @@ globalThis.fetch = async (input, init) => {
 
 try {
   const { getDatabase } = await import('../packages/db/src/index.js');
-  const { siteArticleSave, siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
+  const { siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
   const { projectSiteOperationsMetrics } = await import('../packages/commands/src/site-operations-bridge.js');
   const { sqlite } = getDatabase();
   const t = '2026-09-15T00:00:00.000Z';
@@ -91,7 +91,37 @@ try {
   sqlite.prepare(`INSERT INTO projects(id,name,domain,mode,environment,created_at,updated_at) VALUES(?,?,?,?,?,?,?)`)
     .run('project-a', 'Project A', 'example.com', 'existing_site', 'production', t, t);
   sqlite.prepare(`INSERT INTO pages(id,project_id,title,slug,kind,status,plan_mode,url,source,last_seen_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run('page-a', 'project-a', 'Article A', 'article-a', 'article', 'published', 'existing_page_improvement', 'https://example.com/article-a', 'sitemap', t, t, t);
+    .run('page-a', 'project-a', 'Article A', 'article-a', 'article', 'published', 'existing_page_improvement', 'https://example.com/article-a', 'blog_local', t, t, t);
+
+  const blogSnapshot = {
+    schema_version: 1,
+    kind: 'blog_site_context',
+    observed_at: t,
+    blog_site_id: 'blog-site-a',
+    canonical_origin: 'https://example.com',
+    language: 'ja',
+    country: 'jp',
+    mapping_sha256: '0'.repeat(64),
+    route_evidence: [],
+    eligibility: {
+      remediation_status: 'clear', clearance_gate: 'listed_for_scoped_clearance', new_content_allowed: true,
+      reason: 'fixture', quality_status: 'verified', index_health: 'healthy'
+    },
+    sources: [{
+      source_ref: 'content/posts/article-a.mdx', source_sha256: '1'.repeat(64), title: 'Article A',
+      expected_url: 'https://example.com/article-a', draft: false, declared_date: null, headings: ['Article A'], local_build_present: true
+    }],
+    pages: [{
+      local_build_url: 'https://example.com/article-a', canonical_url: null, canonical_status: 'unverified', title: 'Article A',
+      source_refs: ['content/posts/article-a.mdx'], source_mapping_status: 'mapped', build_ref: 'dist/article-a/index.html',
+      build_sha256: '2'.repeat(64), build_file_modified_at: t, robots: [], internal_links: [], publication_status: 'unverified', index_status: 'unverified'
+    }],
+    coverage: { source_count: 1, local_build_page_count: 1, unmapped_build_pages: 0, sources_absent_from_build: 0, duplicate_expected_urls: [], complete_site_coverage: true },
+    warnings: []
+  };
+  sqlite.prepare(`INSERT INTO blog_bindings(project_id,blog_site_id,origin,language,country,snapshot_json,snapshot_hash,observed_at) VALUES(?,?,?,?,?,?,?,?)`)
+    .run('project-a', 'blog-site-a', 'https://example.com', 'ja', 'jp', JSON.stringify(blogSnapshot), 'fixture-hash', t);
+
   sqlite.prepare(`INSERT INTO measurement_imports(id,project_id,provider,property,target_origin,filters_json,start_date,end_date,timezone,search_type,dimensions_json,status,completeness,source_label,source_version,captured_at,payload_json,created_at)
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run('import-a', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-08', '2026-09-14', 'America/Los_Angeles', 'web', '["query","page"]', 'succeeded', 'complete', 'GSC snapshot', 'local-source-v1', t, '{}', t);
@@ -106,17 +136,24 @@ try {
     id: 'site-a', expectedRevision: 0, localProjectId: 'project-a', name: 'Site A', repository: 'nomuonji/site-a',
     productionUrl: 'https://example.com', deploymentProvider: 'vercel', searchConsoleProperty: 'sc-domain:example.com', ga4PropertyId: 'properties/123', status: 'active'
   });
-  await siteArticleSave({
-    id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'page-a', canonicalUrl: 'https://example.com/article-a',
-    repo: 'nomuonji/site-a', repoPath: 'content/posts/article-a.mdx', currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A', status: 'published'
-  });
 
   const first = await projectSiteOperationsMetrics('project-a');
   assert.equal(first.status, 'projected');
+  assert.equal(first.articleRegistrySync.status, 'synced');
+  assert.equal(first.articleRegistrySync.created, 1);
+  assert.equal(first.articleRegistrySync.updated, 0);
+  assert.equal(first.articleRegistrySync.reused, 0);
   assert.deepEqual(first.gsc.site, { saved: 1, reused: 0 });
   assert.deepEqual(first.gsc.articles, { saved: 1, reused: 0 });
   assert.deepEqual(first.ga4, { saved: 2, reused: 0 });
   assert.equal(first.articleMappings.byLocalPageId, 1);
+
+  const articleDocs = [...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`));
+  assert.equal(articleDocs.length, 1);
+  assert.equal(decodeField(articleDocs[0].fields?.localPageId), 'page-a');
+  assert.equal(decodeField(articleDocs[0].fields?.canonicalUrl), 'https://example.com/article-a');
+  assert.equal(decodeField(articleDocs[0].fields?.repoPath), 'content/posts/article-a.mdx');
+  assert.equal(decodeField(articleDocs[0].fields?.status), 'draft', 'local Blog mapping must not invent publication state');
 
   const metricDocsAfterFirst = [...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`));
   assert.equal(metricDocsAfterFirst.length, 4);
@@ -125,12 +162,16 @@ try {
   assert.equal(decodeField(siteGsc.fields?.sourceVersion), 'sqlite:gsc:local-source-v1');
 
   const second = await projectSiteOperationsMetrics('project-a');
+  assert.equal(second.articleRegistrySync.status, 'synced');
+  assert.equal(second.articleRegistrySync.created, 0);
+  assert.equal(second.articleRegistrySync.reused, 1);
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
   assert.deepEqual(second.ga4, { saved: 0, reused: 2 });
+  assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 4);
 
-  console.log('site operations bridge smoke passed: local GSC + saved GA4 projection is explicit, bounded and idempotent');
+  console.log('site operations bridge smoke passed: confirmed Blog mappings auto-register articles without inventing publication, then GSC + GA4 projection stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
