@@ -8,6 +8,7 @@ import {
   optimizationEventUpdate,
   siteArticleSave,
   siteRegistryGet,
+  siteRegistryResolve,
   siteRegistrySave
 } from '../packages/commands/src/remote-site-operations.js';
 
@@ -65,22 +66,28 @@ globalThis.fetch = async (input, init) => {
 
 try {
   const site = await siteRegistrySave({
-    id: 'site-a', expectedRevision: 0, siteConceptId: 'concept-a', name: 'Site A', repository: 'nomuonji/site-a',
+    id: 'site-a', expectedRevision: 0, siteConceptId: 'concept-a', localProjectId: 'local-project-a', name: 'Site A', repository: 'nomuonji/site-a',
     productionUrl: 'https://example.com', deploymentProvider: 'vercel', ga4PropertyId: 'properties/123',
     searchConsoleProperty: 'sc-domain:example.com', status: 'active'
   });
   assert.equal(site.revision, 1);
   assert.equal((await siteRegistryGet({ id: 'site-a' })).siteConceptId, 'concept-a');
+  assert.equal((await siteRegistryResolve({ localProjectId: 'local-project-a' })).site?.id, 'site-a');
+  assert.equal((await siteRegistryResolve({ productionUrl: 'https://example.com' })).site?.id, 'site-a');
+  assert.equal((await siteRegistryResolve({ localProjectId: 'missing-project' })).site, null);
   await assert.rejects(siteRegistrySave({ id: 'site-a', expectedRevision: 0, status: 'paused' }), /Revision conflict/);
   await assert.rejects(siteRegistrySave({ id: 'site-b', expectedRevision: 0, siteConceptId: 'missing', name: 'x', repository: 'nomuonji/x', productionUrl: 'https://x.example' }), /Unknown siteConceptId/);
+  await assert.rejects(siteRegistrySave({ id: 'site-b', expectedRevision: 0, localProjectId: 'local-project-a', name: 'x', repository: 'nomuonji/x', productionUrl: 'https://x.example' }), /already linked/);
 
   const article = await siteArticleSave({
-    id: 'article-a', expectedRevision: 0, siteId: 'site-a', repo: 'nomuonji/site-a', repoPath: 'content/posts/article-a.mdx',
-    currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A', primaryKeywordId: 'b'.repeat(32), status: 'published',
-    publishedAt: '2026-08-01T00:00:00.000Z', lastUpdatedAt: '2026-09-01T00:00:00.000Z'
+    id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
+    repo: 'nomuonji/site-a', repoPath: 'content/posts/article-a.mdx', currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A',
+    primaryKeywordId: 'b'.repeat(32), status: 'published', publishedAt: '2026-08-01T00:00:00.000Z', lastUpdatedAt: '2026-09-01T00:00:00.000Z'
   });
   assert.equal(article.repoPath, 'content/posts/article-a.mdx');
+  assert.equal(article.localPageId, 'local-page-a');
   await assert.rejects(siteArticleSave({ id: 'bad-path', expectedRevision: 0, siteId: 'site-a', repo: 'nomuonji/site-a', repoPath: '../secret', slug: 'bad', title: 'bad' }));
+  await assert.rejects(siteArticleSave({ id: 'article-b', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', repo: 'nomuonji/site-a', repoPath: 'content/posts/b.mdx', slug: 'b', title: 'B' }), /already linked/);
 
   const gscInput = {
     siteId: 'site-a', articleId: 'article-a', provider: 'gsc' as const, periodStart: '2026-09-01', periodEnd: '2026-09-07',
@@ -135,18 +142,21 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 13);
+  assert.equal(listing.tools.length, 14);
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
+  const mapped = await call('tools/call', { name: 'site_registry_resolve', arguments: { localProjectId: 'local-project-a' } });
+  assert.equal(mapped.structuredContent.site.id, 'site-a');
 
   // Verify compatibility with access tokens signed by the existing Keywords OAuth server.
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.1.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.2.0');
 
-  console.log('site operations smoke passed: site/article registry, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
+  console.log('site operations smoke passed: explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }
