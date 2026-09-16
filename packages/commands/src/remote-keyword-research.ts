@@ -149,26 +149,35 @@ export async function serpUsageStatus() {
 }
 
 async function reserveApiRequest(forceRefresh: boolean) {
-  let allowed = false;
-  let status: Awaited<ReturnType<typeof serpUsageStatus>> | null = null;
-  try {
-    const usage = await mutateUsage(current => {
-      const config = serpQuotaConfiguration();
-      const used = Number(current.actualApiRequests ?? 0);
-      const hardBlocked = used >= config.monthlyLimit;
-      const softBlocked = !forceRefresh && used >= config.normalCutoff;
-      if (hardBlocked || softBlocked) return { ...current, blockedRequests: Number(current.blockedRequests ?? 0) + 1 };
-      allowed = true;
-      return { ...current, actualApiRequests: used + 1, forcedApiRequests: Number(current.forcedApiRequests ?? 0) + (forceRefresh ? 1 : 0) };
-    });
-    status = { ...await serpUsageStatus(), actualApiRequests: usage.actualApiRequests, blockedRequests: usage.blockedRequests, forcedApiRequests: usage.forcedApiRequests };
-  } catch (error) {
-    throw error;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { doc, usage } = await getUsageDocument();
+    const config = serpQuotaConfiguration();
+    const used = Number(usage.actualApiRequests ?? 0);
+    const hardBlocked = used >= config.monthlyLimit;
+    const softBlocked = !forceRefresh && used >= config.normalCutoff;
+    const blocked = hardBlocked || softBlocked;
+    const next: SerpUsage = blocked
+      ? { ...usage, blockedRequests: Number(usage.blockedRequests ?? 0) + 1, updatedAt: nowIso() }
+      : {
+          ...usage,
+          actualApiRequests: used + 1,
+          forcedApiRequests: Number(usage.forcedApiRequests ?? 0) + (forceRefresh ? 1 : 0),
+          updatedAt: nowIso()
+        };
+    try {
+      await writeUsage(doc, next);
+      if (blocked) {
+        throw new Error(hardBlocked
+          ? 'SERP monthly hard limit reached'
+          : 'SERP soft limit/reserve reached; use forceRefresh=true only for an explicit high-value check');
+      }
+      return;
+    } catch (error) {
+      if (error instanceof FirestoreError && [409, 412].includes(error.status)) continue;
+      throw error;
+    }
   }
-  if (!allowed) {
-    const reason = status?.state === 'hard_limited' ? 'SERP monthly hard limit reached' : 'SERP soft limit/reserve reached; use forceRefresh=true only for an explicit high-value check';
-    throw new Error(reason);
-  }
+  throw new Error('SERP usage counter contention: retry the request');
 }
 async function recordCacheHit() {
   await mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
