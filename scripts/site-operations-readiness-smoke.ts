@@ -24,7 +24,17 @@ delete process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
 delete process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL;
 delete process.env.GOOGLE_ADS_ACCESS_TOKEN;
 delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
+delete process.env.ADS_REFRESH_TOKEN;
+delete process.env.GOOGLE_ADS_CLIENT_ID;
+delete process.env.ADS_CLIENT_ID;
+delete process.env.GOOGLE_ADS_CLIENT_SECRET;
+delete process.env.ADS_CLIENT_SECRET;
+delete process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+delete process.env.ADS_DEVELOPER_TOKEN;
+delete process.env.GOOGLE_ADS_CUSTOMER_ID;
+delete process.env.ADS_CUSTOMER_ID;
 delete process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL;
+delete process.env.KEYWORD_VOLUME_API_URL;
 
 try {
   const { getDatabase } = await import('../packages/db/src/index.js');
