@@ -26,6 +26,8 @@ try {
   const { getDatabase, schema } = await import('../packages/db/src/index.js');
   const { configureAutonomy } = await import('../packages/commands/src/autonomy.js');
   const { autopilotCommands } = await import('../packages/commands/src/autopilot.js');
+  const { operationCommands } = await import('../packages/commands/src/operation.js');
+  const { assertOperationAllowed } = await import('../packages/commands/src/guard.js');
   const { autopilotContentMutationPreflight } = await import('../packages/commands/src/autopilot-site-preflight.js');
   const { db, sqlite } = getDatabase();
   const now = new Date().toISOString();
@@ -76,6 +78,31 @@ try {
   assert.ok(blockedEvent);
   assert.ok(JSON.parse(blockedEvent.payload_json).blockers.includes('firebase_project_not_configured'));
 
+  // A content Operation that was already active is rechecked on the next tick. We
+  // keep it active (so readiness can recover automatically), but the guard layer
+  // refuses agent blog.prepare/blog.transport commands while the Autopilot state
+  // is preflight_blocked.
+  const activeContent = await operationCommands.start(system, {
+    requestText: 'Investigate and repair an existing-page query decline.',
+    objective: 'Investigate and repair an existing-page query decline.',
+    projectIds: ['delivery-blocked'],
+    requestKey: 'fixture-active-content-operation',
+    constraints: { source: 'autopilot', operatorKind: 'investigate_query_drop', measurementOnly: false },
+    permissions: { contentResearch: true, contentPlanning: true, contentDelivery: true, destructiveActions: false },
+    budget: { maxActions: 8, maxExternalRequests: 4, maxCandidateWrites: 0, maxProjects: 1, maxRuntimeMinutes: 30 }
+  });
+  const activeTick = await autopilotCommands.tick(system, 'delivery-blocked');
+  assert.equal(activeTick.status, 'attention');
+  assert.equal(activeTick.stage, 'preflight_blocked');
+  assert.equal(activeTick.operationId, activeContent.operation.id);
+  assert.equal(activeTick.targetType, 'operation');
+  const workSessionId = activeContent.children[0]?.workSessionId;
+  assert.ok(workSessionId);
+  assert.throws(() => assertOperationAllowed(
+    { actor: 'agent', actorId: 'autopilot-preflight-system', projectId: 'delivery-blocked', workSessionId },
+    { projectId: 'delivery-blocked', command: 'artifact.validate', capability: 'blog.prepare', allowWhilePaused: true }
+  ), /Autopilot content mutation is blocked by site readiness/);
+
   await db.insert(schema.projects).values({
     id: 'measurement-continues', name: 'Measurement continues', domain: 'measure.example.com', mode: 'existing_site',
     environment: 'production', language: 'ja', country: 'JP', createdAt: now, updatedAt: now
@@ -115,7 +142,7 @@ try {
   assert.equal(newSite.applicable, false);
   assert.equal(newSite.allowed, true);
 
-  console.log('autopilot preflight smoke passed: existing-site mutation/delivery fail closed while measurement remains schedulable and new-site planning is unaffected');
+  console.log('autopilot preflight smoke passed: existing-site mutation/delivery fail closed, active Autopilot writes are guarded, measurement remains schedulable, and new-site planning is unaffected');
 } finally {
   for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
     try { rmSync(path, { force: true }); } catch {}
