@@ -92,7 +92,6 @@ function parse(doc: any): SiteStructure {
   const raw = Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) as any;
   return {
     title: '', concept: '', audience: '', monetization: '', notes: '', status: 'draft',
-    dataModel: [], sourceStrategy: [], pageTemplates: [], refreshPolicy: [], nodes: [], links: [],
     revision: 0, createdAt: '', updatedAt: '',
     ...raw,
     id: doc.name.split('/').pop(),
