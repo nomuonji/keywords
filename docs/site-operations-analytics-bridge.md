@@ -65,69 +65,54 @@ completeness = complete
 
 are projected. Partial and failed captures remain local observations and are not promoted into cloud decision state.
 
-Site-level snapshots include:
-
-```text
-clicks
-impressions
-ctr
-averagePosition
-queries (top 200 by impressions)
-```
-
-Article-level snapshots include the page-level GSC metrics already materialized in SQLite. The bridge does not fabricate query×page rows when the local capture did not collect that dimension.
+Site-level snapshots include clicks, impressions, CTR, average position, and the top 200 queries by impressions. Article-level snapshots include the page-level GSC metrics already materialized in SQLite. The bridge does not fabricate query×page rows when the local capture did not collect that dimension.
 
 All writes use `site_metric_snapshot_save`, so repeated projection of the same source version is idempotent.
 
 ## GA4 flow
 
-Direct GA4 Data API collection is not yet duplicated inside `keywords`.
-
-The repository already reads the persisted `analytics-dashboard/data/latest.json` snapshot. The bridge reuses that observation source and projects its current/previous site-level GA4 totals into Firestore:
-
-```text
-sessions
-activeUsers
-engagement
-views
-```
-
-This is deliberately **saved GA4 snapshot projection**, not direct GA4 API integration in `keywords`.
-
-Article-level GA4 is not created because the current saved dashboard source is site-level only.
+Direct GA4 Data API collection is not duplicated inside `keywords`. The repository already reads the persisted `analytics-dashboard/data/latest.json` snapshot. The bridge reuses that observation source and projects its current/previous site-level GA4 totals into Firestore. Article-level GA4 is not created because the current saved dashboard source is site-level only.
 
 ## Optimization evaluation evidence
 
-`optimization_evaluation_context` is deliberately read-only. It finds one persisted optimization event and builds a compatible before/after GSC evidence packet.
+`optimization_evaluation_context` is read-only. It finds one persisted optimization event and builds a compatible before/after GSC evidence packet. The baseline must be complete article-level GSC for the exact persisted `baselinePeriod`. The post snapshot must be complete, equal in duration, start after the change, and reach the effective evaluation date.
 
-The comparison requires:
+The tool returns absolute and relative deltas for clicks, impressions, CTR, and average position. It does **not** automatically label the result improved/neutral/worsened. The hypothesis is semantic and already persisted in `optimizationEvents`; the Agent compares compatible deltas to that hypothesis and records the result only after the wait has matured.
+
+### Traffic-aware minimum wait
+
+The persisted `optimizationEvent.evaluateAfter` remains the hard minimum and is never shortened. A derived traffic policy may extend that wait to avoid forcing sparse pages into a premature verdict.
+
+Baseline clicks and impressions are normalized to a seven-day rate. Defaults are:
+
+| baseline traffic (7-day normalized) | derived minimum wait |
+| --- | ---: |
+| impressions >= 500 **or** clicks >= 20 | 14 days |
+| impressions >= 100 **or** clicks >= 5 | 21 days |
+| below both medium thresholds | 28 days |
+
+The effective evaluation date is:
 
 ```text
-baseline snapshot
-  = complete article-level GSC
-  = exact optimizationEvent.baselinePeriod
-
-post snapshot
-  = complete article-level GSC
-  = same period length as baseline
-  = period starts after the change date
-  = period reaches/passes evaluateAfter
+max(persisted evaluateAfter, changedAt + derived minimum wait)
 ```
 
-The tool returns absolute/relative deltas for:
+Configuration:
 
 ```text
-clicks
-impressions
-ctr
-averagePosition
+KEYWORDS_OPTIMIZATION_FAST_IMPRESSIONS_7D=500
+KEYWORDS_OPTIMIZATION_FAST_CLICKS_7D=20
+KEYWORDS_OPTIMIZATION_MEDIUM_IMPRESSIONS_7D=100
+KEYWORDS_OPTIMIZATION_MEDIUM_CLICKS_7D=5
 ```
 
-It **does not automatically label the result improved/neutral/worsened**. The hypothesis is semantic and already persisted in `optimizationEvents`; the Agent compares the compatible deltas to that hypothesis and records the result only after the wait has matured.
+These thresholds affect **wait time only**. They never determine whether a result is improved, neutral, worsened, or inconclusive. After the maximum derived wait of 28 days, the Agent may still choose `inconclusive` when the compatible evidence remains too sparse to support the persisted hypothesis.
+
+The evaluation packet exposes `minimumWaitMatured`, traffic-adjusted `matured`, the normalized baseline traffic, traffic class, recommended wait days, persisted evaluation date, and effective evaluation date. An optimization whose persisted 14-day date has passed but whose traffic-adjusted date has not is not placed in the Agent evaluation queue.
 
 ### Autopilot evaluation handoff
 
-The local Operator now performs a bounded Sites check for linked `existing_site` projects. When an implemented/pending optimization has reached `evaluateAfter` **and** a compatible GSC baseline/post pair exists, it emits:
+The local Operator performs a bounded Sites check for linked `existing_site` projects. When an implemented/pending optimization has reached its traffic-adjusted effective evaluation date **and** a compatible GSC baseline/post pair exists, it emits:
 
 ```text
 kind = evaluate_site_optimization
@@ -135,7 +120,7 @@ relatedType = site_optimization
 relatedId = optimizationEvent.id
 ```
 
-The ordinary Autopilot runner turns that candidate into a shared Operation. It does not create a second worker.
+The ordinary Autopilot runner turns that candidate into a shared Operation; no second worker exists.
 
 The persistent execution Agent receives two local Keywords MCP adapters backed by the same Sites command layer:
 
@@ -144,36 +129,19 @@ site_optimization_evaluation_context
 site_optimization_record_result
 ```
 
-The first returns the persisted observation, diagnosis, hypothesis and compatible deltas. The second accepts only:
+The first returns the persisted observation, diagnosis, hypothesis, evaluation-window policy, and compatible deltas. The second accepts only the semantic result, notes, and expected revision. The Agent cannot submit evaluation metric numbers: the command recomputes them from saved snapshots immediately before the optimistic Firestore update. Stored evaluation metrics also include the derived wait days and seven-day-normalized baseline clicks/impressions.
 
-```text
-result = improved | neutral | worsened | inconclusive
-notes
-expectedRevision
-```
-
-The Agent cannot submit evaluation metric numbers. `site_optimization_record_result` recomputes those numbers from the saved snapshots immediately before the optimistic write, then records them in `optimizationEvents.evaluationMetrics`. This prevents invented or stale metric values from being persisted.
-
-Evaluation is a measurement-only Operation: it must not edit the article or start a second optimization. If evidence is not ready, the Agent checkpoints the concrete missing evidence rather than manufacturing a verdict.
+Evaluation is a measurement-only Operation. It must not edit the article or start a second optimization. If evidence is not ready, the Agent checkpoints the concrete missing evidence rather than manufacturing a verdict.
 
 Non-actionable due checks are cached locally for `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES` (default 30) to avoid unnecessary Firestore reads. Ready work is never cached, and the cache is invalidated after result persistence and after fresh metric projection, preventing immediate duplicate scheduling.
 
-This preserves the one-change/one-hypothesis boundary and prevents a generic metric rule from silently redefining the experiment after publication.
-
 ## GSC query feedback loop
 
-`site_query_opportunities` compares only complete, equal-length, non-overlapping **site-level** GSC snapshots. The snapshots retain a bounded saved top-query set, so the tool distinguishes:
-
-```text
-newly_observed_query
-rising_query
-```
+`site_query_opportunities` compares only complete, equal-length, non-overlapping site-level GSC snapshots. The snapshots retain a bounded saved top-query set, so the tool distinguishes `newly_observed_query` and `rising_query`.
 
 `newly_observed_query` means the query is present in the current saved query set but absent from the previous saved query set. It is **not** proof that the query never existed in Search Console before. The output includes this caveat and `queryCoverage = bounded_saved_top_queries`.
 
-Candidates use configurable minimum impressions and impression-growth ratio.
-
-The tool does not spend SERP quota and does not write Keyword Treasury. The intended handoff is:
+The tool does not spend SERP quota and does not write Keyword Treasury. The intended handoff remains:
 
 ```text
 Sites Operator site_query_opportunities
@@ -185,17 +153,13 @@ Keywords Operator keyword_research_pipeline  (bounded SERP)
 keyword_treasury_save / Site Concept updates
 ```
 
-This preserves the existing SERP budget and ownership boundary instead of allowing the operations side to bypass research policy.
-
 ## Cadence
-
-The existing Operator remains responsible for scheduling.
 
 - sitemap/live URL inventory: 7-day freshness threshold
 - GSC measurement collection: `KEYWORDS_METRICS_CADENCE_HOURS`, default `24`
-- comparison windows: still seven-day periods, so daily capture refreshes evidence without changing the statistical comparison unit
+- GSC comparison windows: equal-length saved periods
 - optimization due-check cache: `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES`, default `30`; ready work is not cached
-- optimization evaluation: controlled by `optimizationEvents.evaluateAfter`; daily measurement does not permit daily content changes
+- optimization evaluation: persisted minimum plus derived 14/21/28-day traffic wait; daily measurement never permits daily content changes
 
 ## Failure behavior
 
@@ -206,7 +170,9 @@ Cloud projection and evaluation discovery are additive and cannot invalidate loc
 - GA4 saved snapshot unavailable -> GSC can still project
 - Firestore projection error -> maintenance records the projection failure while retaining successful local GSC capture
 - ambiguous mappings -> fail closed rather than infer identity
-- no exact baseline / compatible post period -> evaluation context remains not-ready instead of manufacturing a verdict
+- no exact baseline -> evaluation stays not-ready
+- traffic-adjusted wait not mature -> no evaluation Operation is created
+- no compatible post period -> evaluation stays not-ready
 - revision changes between read and result write -> optimistic write fails and the Agent must reread
 - no compatible site GSC pair -> query-opportunity output remains empty instead of comparing overlapping windows
 
@@ -232,6 +198,5 @@ No existing SQLite migration is required for this bridge.
 2. Register existing Git articles with `localPageId` and/or `canonicalUrl` where article-level GSC tracking is needed.
 3. Run the persistent Autopilot with Firebase/Sites credentials available so mature optimizations can enter the shared evaluation queue.
 4. Let the Agent pass selected `site_query_opportunities` through Keywords Operator's Ads-first pipeline; do not directly auto-save every observed query.
-5. Add a traffic-aware evaluation-window policy for low-sample articles instead of forcing every experiment to resolve after 14 days.
-6. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
-7. Consider article-level GA4 only when a trustworthy page-scoped acquisition source exists.
+5. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
+6. Consider article-level GA4 only when a trustworthy page-scoped acquisition source exists.
