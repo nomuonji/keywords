@@ -160,7 +160,21 @@ export async function keywordResearchPipeline(input: unknown) {
   };
 }
 
+function assertGscFeedbackProvenance(candidate: z.infer<typeof treasuryCandidate>) {
+  if (candidate.source !== 'gsc_feedback') return;
+  const evidence = candidate.evidence;
+  if (!evidence
+    || typeof evidence.siteId !== 'string'
+    || typeof evidence.snapshotId !== 'string'
+    || typeof evidence.previousSnapshotId !== 'string'
+    || !evidence.gsc
+    || typeof evidence.gsc !== 'object') {
+    throw new Error('gsc_feedback Treasury candidates require evidence.siteId, snapshotId, previousSnapshotId and the original gsc candidate row');
+  }
+}
+
 export async function keywordTreasurySave(input: unknown) {
   const args = z.object(keywordTreasurySaveShape).strict().parse(input);
+  for (const candidate of args.candidates) assertGscFeedbackProvenance(candidate);
   return treasurySave(args.candidates);
 }
