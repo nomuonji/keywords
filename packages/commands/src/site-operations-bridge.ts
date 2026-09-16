@@ -13,6 +13,7 @@ import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations
 
 const { sqlite } = getDatabase();
 const rows = (sql: string, ...args: any[]): any[] => sqlite.prepare(sql).all(...args);
+type ArticleLink = Pick<SiteArticleRecord, 'id' | 'localPageId' | 'canonicalUrl'>;
 
 function finite(value: unknown) {
   const number = Number(value);
@@ -99,8 +100,17 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       : 'Provide an unambiguous bound Git repository or register the site explicitly with site_registry_save.'
   };
 
+  // Remote list remains backward-compatible and bounded, while bootstrap returns
+  // every article identity it safely resolved in this local run. Combining both
+  // avoids dropping article-level GSC projection on Blog-managed sites with >100
+  // registered source files.
   const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
-  const articles = articleResponse.items as SiteArticleRecord[];
+  const remoteArticles = articleResponse.items as SiteArticleRecord[];
+  const bootstrapArticles: ArticleLink[] = Array.isArray(bootstrap?.articleMappings) ? bootstrap.articleMappings : [];
+  const articleLinks = new Map<string, ArticleLink>();
+  for (const article of remoteArticles) articleLinks.set(article.id, { id: article.id, localPageId: article.localPageId, canonicalUrl: article.canonicalUrl });
+  for (const article of bootstrapArticles) articleLinks.set(article.id, article);
+  const articles = [...articleLinks.values()];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const articleByUrl = new Map(articles.flatMap(article => {
     const key = canonicalKey(article.canonicalUrl);
