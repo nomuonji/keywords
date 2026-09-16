@@ -18,6 +18,22 @@ export interface Ga4ReportResult {
   fetchedAt: string;
 }
 
+export interface Ga4LandingPageRow {
+  landingPage: string;
+  metrics: Ga4Metrics;
+}
+
+export interface Ga4LandingPageReportResult {
+  propertyId: string;
+  resourceName: string;
+  startDate: string;
+  endDate: string;
+  rows: Ga4LandingPageRow[];
+  rowCount: number;
+  complete: boolean;
+  fetchedAt: string;
+}
+
 function refreshCredentials() {
   const refreshToken = process.env.GOOGLE_ANALYTICS_REFRESH_TOKEN ?? process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
   const clientId = process.env.GOOGLE_ANALYTICS_CLIENT_ID ?? process.env.GOOGLE_OAUTH_CLIENT_ID ?? process.env.GOOGLE_ADS_CLIENT_ID ?? process.env.ADS_CLIENT_ID;
@@ -55,7 +71,7 @@ async function serviceAccountAccessToken() {
   const claim = encode(JSON.stringify({ iss: credentials.client_email, scope: ANALYTICS_SCOPE, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
   const signer = createSign('RSA-SHA256');
   signer.update(`${header}.${claim}`);
-  const assertion = `${header}.${claim}.${signer.sign(credentials.private_key, 'base64url')}`;
+  const assertion = `${header}.${claim}.${signer.sign(credentials.privateKey ?? credentials.private_key, 'base64url')}`;
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -91,26 +107,98 @@ function numeric(value: unknown) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-/** Direct GA4 Data API acquisition. No secret values are returned or logged. */
-export async function ga4RunReport(input: { propertyId: string; startDate: string; endDate: string }): Promise<Ga4ReportResult> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(input.endDate)) throw new Error('GA4 dates must use YYYY-MM-DD');
-  if (Date.parse(`${input.startDate}T00:00:00Z`) > Date.parse(`${input.endDate}T00:00:00Z`)) throw new Error('GA4 startDate must be on or before endDate');
+function assertDates(startDate: string, endDate: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) throw new Error('GA4 dates must use YYYY-MM-DD');
+  if (Date.parse(`${startDate}T00:00:00Z`) > Date.parse(`${endDate}T00:00:00Z`)) throw new Error('GA4 startDate must be on or before endDate');
+}
+
+const metricNames: Ga4MetricName[] = ['sessions', 'activeUsers', 'engagementRate', 'screenPageViews'];
+function metricsFromRow(headers: Array<{ name?: string }>, values: Array<{ value?: string }>) {
+  const byName = new Map(headers.map((header, index) => [String(header.name ?? ''), numeric(values[index]?.value)]));
+  return Object.fromEntries(metricNames.map(name => [name, byName.has(name) ? byName.get(name)! : null])) as Ga4Metrics;
+}
+
+async function runReport(input: { propertyId: string; body: Record<string, unknown> }) {
   const propertyId = normalizeGa4PropertyId(input.propertyId);
   const resourceName = `properties/${propertyId}`;
   const token = await accessToken();
   const endpoint = (process.env.GOOGLE_ANALYTICS_DATA_API_ENDPOINT ?? DEFAULT_ENDPOINT).replace(/\/+$/, '');
-  const metricNames: Ga4MetricName[] = ['sessions', 'activeUsers', 'engagementRate', 'screenPageViews'];
   const response = await fetch(`${endpoint}/${resourceName}:runReport`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ dateRanges: [{ startDate: input.startDate, endDate: input.endDate }], metrics: metricNames.map(name => ({ name })), limit: '1' }),
+    body: JSON.stringify(input.body),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
   });
   if (!response.ok) throw new Error(`GA4 Data API request failed (HTTP ${response.status})`);
-  const raw = await response.json() as { metricHeaders?: Array<{ name?: string }>; rows?: Array<{ metricValues?: Array<{ value?: string }> }>; rowCount?: number };
+  const raw = await response.json() as {
+    dimensionHeaders?: Array<{ name?: string }>;
+    metricHeaders?: Array<{ name?: string }>;
+    rows?: Array<{ dimensionValues?: Array<{ value?: string }>; metricValues?: Array<{ value?: string }> }>;
+    rowCount?: number;
+  };
+  return { propertyId, resourceName, raw };
+}
+
+/** Direct GA4 site-total acquisition. No secret values are returned or logged. */
+export async function ga4RunReport(input: { propertyId: string; startDate: string; endDate: string }): Promise<Ga4ReportResult> {
+  assertDates(input.startDate, input.endDate);
+  const { propertyId, resourceName, raw } = await runReport({
+    propertyId: input.propertyId,
+    body: {
+      dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
+      metrics: metricNames.map(name => ({ name })),
+      limit: '1'
+    }
+  });
   const headers = raw.metricHeaders ?? [];
   const values = raw.rows?.[0]?.metricValues ?? [];
-  const byName = new Map(headers.map((header, index) => [String(header.name ?? ''), numeric(values[index]?.value)]));
-  const metrics = Object.fromEntries(metricNames.map(name => [name, byName.has(name) ? byName.get(name)! : null])) as Ga4Metrics;
-  return { propertyId, resourceName, startDate: input.startDate, endDate: input.endDate, metrics, rowCount: Number(raw.rowCount ?? raw.rows?.length ?? 0), fetchedAt: new Date().toISOString() };
+  return {
+    propertyId,
+    resourceName,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    metrics: metricsFromRow(headers, values),
+    rowCount: Number(raw.rowCount ?? raw.rows?.length ?? 0),
+    fetchedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Bounded landing-page acquisition for exact article mapping. `landingPage` is
+ * the path of the first pageview in the session; query strings are deliberately
+ * excluded so canonical article identity can be matched without URL-parameter noise.
+ */
+export async function ga4RunLandingPageReport(input: { propertyId: string; startDate: string; endDate: string; maxRows?: number }): Promise<Ga4LandingPageReportResult> {
+  assertDates(input.startDate, input.endDate);
+  const maxRows = Math.max(1, Math.min(Math.floor(input.maxRows ?? 25_000), 250_000));
+  const { propertyId, resourceName, raw } = await runReport({
+    propertyId: input.propertyId,
+    body: {
+      dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
+      dimensions: [{ name: 'landingPage' }],
+      metrics: metricNames.map(name => ({ name })),
+      dimensionFilter: {
+        notExpression: { filter: { fieldName: 'landingPage', stringFilter: { value: '(not set)', matchType: 'EXACT' } } }
+      },
+      limit: String(maxRows),
+      offset: '0'
+    }
+  });
+  const metricHeaders = raw.metricHeaders ?? [];
+  const rows = (raw.rows ?? []).flatMap(row => {
+    const landingPage = String(row.dimensionValues?.[0]?.value ?? '').trim();
+    if (!landingPage || landingPage === '(not set)') return [];
+    return [{ landingPage, metrics: metricsFromRow(metricHeaders, row.metricValues ?? []) }];
+  });
+  const rowCount = Number(raw.rowCount ?? rows.length);
+  return {
+    propertyId,
+    resourceName,
+    startDate: input.startDate,
+    endDate: input.endDate,
+    rows,
+    rowCount,
+    complete: Number.isFinite(rowCount) && rowCount <= rows.length,
+    fetchedAt: new Date().toISOString()
+  };
 }
