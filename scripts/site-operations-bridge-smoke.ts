@@ -11,6 +11,7 @@ for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`, analyticsPath]) {
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.KEYWORDS_DB_PATH = dbPath;
 process.env.KEYWORDS_ANALYTICS_FILE = analyticsPath;
+process.env.GOOGLE_ANALYTICS_ACCESS_TOKEN = 'ga4-secret-fixture-token';
 process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
   client_email: 'test@example.com',
   private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }),
@@ -18,13 +19,14 @@ process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
 });
 process.env.FIREBASE_PROJECT_ID = 'test';
 
+// Compatibility fixture: direct GA4 imports below must take precedence over it.
 writeFileSync(analyticsPath, JSON.stringify({
   generatedAt: '2026-09-16T00:00:00.000Z',
   period: { start: '2026-09-08', end: '2026-09-14', previousStart: '2026-09-01', previousEnd: '2026-09-07' },
   sites: [{
     name: 'Example', host: 'example.com', error: false,
     gsc: { current: { total: { clicks: 12, impressions: 400, ctr: 0.03, position: 8.4 } }, previous: { total: { clicks: 10, impressions: 380, ctr: 0.026, position: 9.1 } } },
-    ga4: { current: { total: { sessions: 30, activeUsers: 26, engagement: 0.73, views: 70 } }, previous: { total: { sessions: 24, activeUsers: 21, engagement: 0.69, views: 55 } } }
+    ga4: { current: { total: { sessions: 999, activeUsers: 999, engagement: 0.99, views: 999 } }, previous: { total: { sessions: 998, activeUsers: 998, engagement: 0.98, views: 998 } } }
   }]
 }), 'utf8');
 
@@ -45,6 +47,22 @@ const decodeField = (input: any): any => {
 globalThis.fetch = async (input, init) => {
   const url = String(input);
   if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'test-access-token', expires_in: 3600 });
+  if (url.startsWith('https://analyticsdata.googleapis.com/v1beta/properties/123:runReport')) {
+    const body = init?.body ? JSON.parse(String(init.body)) : {};
+    const startDate = body.dateRanges?.[0]?.startDate;
+    if (startDate === '2026-08-25') return Response.json({ error: { message: 'fixture failure' } }, { status: 503 });
+    const current = startDate === '2026-09-08';
+    return Response.json({
+      metricHeaders: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' }, { name: 'screenPageViews' }],
+      rows: [{ metricValues: [
+        { value: current ? '31' : '25' },
+        { value: current ? '27' : '22' },
+        { value: current ? '0.74' : '0.68' },
+        { value: current ? '71' : '56' }
+      ] }],
+      rowCount: 1
+    });
+  }
   assert.ok(url.startsWith('https://firestore.googleapis.com/'), `Unexpected network request: ${url}`);
   const parsed = new URL(url);
   const path = parsed.pathname.replace('/v1/', '');
@@ -84,6 +102,7 @@ globalThis.fetch = async (input, init) => {
 try {
   const { getDatabase } = await import('../packages/db/src/index.js');
   const { siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
+  const { captureGa4Period } = await import('../packages/commands/src/ga4-metrics.js');
   const { projectSiteOperationsMetrics } = await import('../packages/commands/src/site-operations-bridge.js');
   const { sqlite } = getDatabase();
   const t = '2026-09-15T00:00:00.000Z';
@@ -137,6 +156,20 @@ try {
     productionUrl: 'https://example.com', deploymentProvider: 'vercel', searchConsoleProperty: 'sc-domain:example.com', ga4PropertyId: 'properties/123', status: 'active'
   });
 
+  const systemCtx = { actor: 'system' as const, actorId: 'bridge-smoke', projectId: 'project-a' };
+  const previousGa4 = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-09-01', endDate: '2026-09-07' });
+  const currentGa4 = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: 'properties/123', targetOrigin: 'https://example.com', startDate: '2026-09-08', endDate: '2026-09-14' });
+  assert.deepEqual(previousGa4.metrics, { sessions: 25, activeUsers: 22, engagement: 0.68, views: 56 });
+  assert.deepEqual(currentGa4.metrics, { sessions: 31, activeUsers: 27, engagement: 0.74, views: 71 });
+  const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
+  assert.equal(ga4Payloads.length, 2);
+  assert.ok(!JSON.stringify(ga4Payloads).includes('ga4-secret-fixture-token'), 'measurement persistence must not contain credentials');
+
+  await assert.rejects(() => captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-25', endDate: '2026-08-31' }), /GA4 collection failed/);
+  const failedGa4 = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='failed' ORDER BY captured_at DESC LIMIT 1").get('project-a') as { payload_json: string };
+  assert.deepEqual(JSON.parse(failedGa4.payload_json), { error: 'ga4_collection_failed' });
+  assert.ok(!failedGa4.payload_json.includes('fixture failure'));
+
   const first = await projectSiteOperationsMetrics('project-a');
   assert.equal(first.status, 'projected');
   assert.equal(first.articleRegistrySync.status, 'synced');
@@ -146,6 +179,7 @@ try {
   assert.deepEqual(first.gsc.site, { saved: 1, reused: 0 });
   assert.deepEqual(first.gsc.articles, { saved: 1, reused: 0 });
   assert.deepEqual(first.ga4, { saved: 2, reused: 0 });
+  assert.deepEqual(first.ga4Acquisition, { source: 'direct_data_api', importsConsidered: 2, projected: 2 });
   assert.equal(first.articleMappings.byLocalPageId, 1);
 
   const articleDocs = [...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`));
@@ -160,6 +194,9 @@ try {
   const siteGsc = metricDocsAfterFirst.find(doc => decodeField(doc.fields?.provider) === 'gsc' && decodeField(doc.fields?.articleId) === null);
   assert.ok(siteGsc, 'site-level GSC snapshot should be projected');
   assert.equal(decodeField(siteGsc.fields?.sourceVersion), 'sqlite:gsc:local-source-v1');
+  const directGa4Docs = metricDocsAfterFirst.filter(doc => decodeField(doc.fields?.provider) === 'ga4');
+  assert.equal(directGa4Docs.length, 2);
+  assert.ok(directGa4Docs.every(doc => String(decodeField(doc.fields?.sourceVersion)).startsWith('sqlite:ga4:')), 'direct GA4 must win over analytics-dashboard fallback');
 
   const second = await projectSiteOperationsMetrics('project-a');
   assert.equal(second.articleRegistrySync.status, 'synced');
@@ -168,10 +205,11 @@ try {
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
   assert.deepEqual(second.ga4, { saved: 0, reused: 2 });
+  assert.deepEqual(second.ga4Acquisition, { source: 'direct_data_api', importsConsidered: 2, projected: 2 });
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 4);
 
-  console.log('site operations bridge smoke passed: confirmed Blog mappings auto-register articles without inventing publication, then GSC + GA4 projection stays idempotent');
+  console.log('site operations bridge smoke passed: direct GA4 is secret-safe, failure-isolated, preferred over the legacy dashboard fallback, and Firestore projection stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {

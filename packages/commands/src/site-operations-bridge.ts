@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
+import { normalizeGa4PropertyId } from '@keywords/research/ga4';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
 import {
   metricSnapshotSave,
@@ -79,6 +80,21 @@ function articleSlug(url: string) {
 function articleSyncLimit() {
   const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 100);
   return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
+}
+
+function parseJson(value: unknown) {
+  try { return typeof value === 'string' ? JSON.parse(value) : null; } catch { return null; }
+}
+
+function normalizedDirectGa4Metrics(payload: any) {
+  if (!payload || typeof payload !== 'object' || !payload.metrics || typeof payload.metrics !== 'object') return null;
+  const metrics = {
+    sessions: finite(payload.metrics.sessions),
+    activeUsers: finite(payload.metrics.activeUsers),
+    engagement: finite(payload.metrics.engagement),
+    views: finite(payload.metrics.views)
+  };
+  return Object.values(metrics).every(value => value === null) ? null : metrics;
 }
 
 /**
@@ -171,11 +187,9 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
 
 /**
  * Project existing local observations into the Firestore control plane.
- *
- * This deliberately does not fetch GSC/GA4 itself. GSC remains owned by the
- * existing metrics.capture command and GA4 remains owned by the existing
- * analytics-dashboard snapshot producer. The bridge only normalizes and
- * persists already-observed data, keeping one scheduler and one collection path.
+ * Acquisition stays in shared commands: GSC in metrics.capture and direct GA4
+ * in captureProjectGa4Metrics. The legacy analytics-dashboard file is retained
+ * only as a compatibility fallback when no complete direct GA4 import exists.
  */
 export async function projectSiteOperationsMetrics(projectId: string) {
   if (!firestoreReady()) return { status: 'skipped' as const, reason: 'firestore_not_configured', projectId };
@@ -268,35 +282,84 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     }
   }
 
-  const portfolio = await readPortfolio();
-  if (portfolio.status === 'available' && portfolio.period && portfolio.generatedAt) {
-    const productionHost = hostOf(site.productionUrl);
-    const observedSite = productionHost ? portfolio.sites.find(item => item.host === productionHost) : null;
-    if (observedSite) {
-      const periods = [
-        { key: 'current' as const, start: portfolio.period.start, end: portfolio.period.end, metrics: observedSite.ga4.current },
-        { key: 'previous' as const, start: portfolio.period.previousStart, end: portfolio.period.previousEnd, metrics: observedSite.ga4.previous }
-      ];
-      for (const item of periods) {
-        if (!item.start || !item.end || !item.metrics) continue;
-        await persist(ga4, {
-          siteId: site.id,
-          articleId: null,
-          provider: 'ga4',
-          periodStart: item.start,
-          periodEnd: item.end,
-          metrics: item.metrics,
-          queries: [],
-          completeness: observedSite.error ? 'partial' : 'complete',
-          sourceVersion: `analytics-dashboard:${portfolio.generatedAt}:${productionHost}:${item.key}:${item.start}:${item.end}`,
-          capturedAt: portfolio.generatedAt
-        });
-      }
-    } else if (productionHost) {
-      warnings.push(`GA4 snapshot has no site entry for ${productionHost}.`);
+  const directGa4Imports = rows(`SELECT * FROM measurement_imports
+    WHERE project_id=? AND provider='ga4' AND completeness='complete'
+    ORDER BY captured_at DESC LIMIT ?`, projectId, importLimit);
+  let directGa4Projected = 0;
+  for (const observation of directGa4Imports) {
+    if (!site.ga4PropertyId) {
+      warnings.push(`Skipped direct GA4 source ${observation.source_version}: the site registry has no ga4PropertyId.`);
+      continue;
     }
+    let expectedProperty: string;
+    let observedProperty: string;
+    try {
+      expectedProperty = normalizeGa4PropertyId(site.ga4PropertyId);
+      observedProperty = normalizeGa4PropertyId(observation.property);
+    } catch {
+      warnings.push(`Skipped direct GA4 source ${observation.source_version}: invalid GA4 property identity.`);
+      continue;
+    }
+    if (expectedProperty !== observedProperty) {
+      warnings.push(`Skipped direct GA4 source ${observation.source_version}: GA4 property does not match the site registry.`);
+      continue;
+    }
+    const metrics = normalizedDirectGa4Metrics(parseJson(observation.payload_json));
+    if (!metrics) {
+      warnings.push(`Skipped direct GA4 source ${observation.source_version}: no normalized site metrics were persisted.`);
+      continue;
+    }
+    await persist(ga4, {
+      siteId: site.id,
+      articleId: null,
+      provider: 'ga4',
+      periodStart: observation.start_date,
+      periodEnd: observation.end_date,
+      metrics,
+      queries: [],
+      completeness: 'complete',
+      sourceVersion: `sqlite:ga4:${observation.source_version}`,
+      capturedAt: observation.captured_at
+    });
+    directGa4Projected++;
+  }
+
+  let ga4Acquisition: { source: string; importsConsidered: number; projected: number };
+  if (directGa4Imports.length) {
+    ga4Acquisition = { source: 'direct_data_api', importsConsidered: directGa4Imports.length, projected: directGa4Projected };
   } else {
-    warnings.push('GA4 portfolio snapshot is unavailable; GSC projection can still succeed.');
+    ga4Acquisition = { source: 'analytics_dashboard_fallback', importsConsidered: 0, projected: 0 };
+    const portfolio = await readPortfolio();
+    if (portfolio.status === 'available' && portfolio.period && portfolio.generatedAt) {
+      const productionHost = hostOf(site.productionUrl);
+      const observedSite = productionHost ? portfolio.sites.find(item => item.host === productionHost) : null;
+      if (observedSite) {
+        const periods = [
+          { key: 'current' as const, start: portfolio.period.start, end: portfolio.period.end, metrics: observedSite.ga4.current },
+          { key: 'previous' as const, start: portfolio.period.previousStart, end: portfolio.period.previousEnd, metrics: observedSite.ga4.previous }
+        ];
+        for (const item of periods) {
+          if (!item.start || !item.end || !item.metrics) continue;
+          await persist(ga4, {
+            siteId: site.id,
+            articleId: null,
+            provider: 'ga4',
+            periodStart: item.start,
+            periodEnd: item.end,
+            metrics: item.metrics,
+            queries: [],
+            completeness: observedSite.error ? 'partial' : 'complete',
+            sourceVersion: `analytics-dashboard:${portfolio.generatedAt}:${productionHost}:${item.key}:${item.start}:${item.end}`,
+            capturedAt: portfolio.generatedAt
+          });
+          ga4Acquisition.projected++;
+        }
+      } else if (productionHost) {
+        warnings.push(`GA4 snapshot has no site entry for ${productionHost}.`);
+      }
+    } else {
+      warnings.push('GA4 portfolio snapshot is unavailable; GSC projection can still succeed.');
+    }
   }
 
   invalidateSiteOptimizationDueCache(projectId);
@@ -311,6 +374,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
     gsc: { importsConsidered: imports.length, site: gscSite, articles: gscArticle },
     ga4,
+    ga4Acquisition,
     warnings
   };
 }

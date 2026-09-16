@@ -1,4 +1,5 @@
 import { getDatabase } from '@keywords/db';
+import { ga4Configured } from '@keywords/research/ga4';
 import { autonomyControl } from './autonomy.js';
 import { operationControl } from './guard.js';
 import { gscMeasurementReadiness } from './gsc-property.js';
@@ -50,6 +51,7 @@ async function projectReadiness(project: any) {
   const gscCredentials = gsc.credentialsConfigured;
   const gscSiteUrlConfigured = gsc.configuredPropertyPresent;
   const gscScopeResolvable = gsc.scopeResolvable;
+  const ga4Credentials = ga4Configured();
   const agentCommandConfigured = Boolean(process.env.KEYWORDS_AGENT_COMMAND?.trim());
   const schedulerEnabled = process.env.KEYWORDS_AUTOPILOT_SCHEDULER !== '0';
   const adsConfigured = googleAdsConfigured();
@@ -86,6 +88,11 @@ async function projectReadiness(project: any) {
     !gscCredentials ? 'gsc_credentials_not_configured' : null,
     !gscScopeResolvable ? 'gsc_property_scope_unresolvable' : null
   ];
+  const behaviorAnalyticsBlockers: Array<string | null> = [
+    ...controlPlaneBlockers,
+    !ga4Credentials ? 'ga4_credentials_not_configured' : null,
+    site && !site.ga4PropertyId ? 'ga4_property_not_registered' : null
+  ];
   const articleOptimizationBlockers: Array<string | null> = [
     ...measurementBlockers,
     !binding ? 'blog_binding_missing' : null,
@@ -109,6 +116,7 @@ async function projectReadiness(project: any) {
   const capabilities = {
     controlPlane: capability(controlPlaneBlockers),
     measurement: capability(measurementBlockers),
+    behaviorAnalytics: capability(behaviorAnalyticsBlockers),
     articleOptimization: capability(articleOptimizationBlockers),
     queryFeedback: capability(queryFeedbackBlockers),
     autopilotExecution: capability(autopilotBlockers)
@@ -124,6 +132,8 @@ async function projectReadiness(project: any) {
   if (site && binding && !originMatches) nextActions.push(action('repair_origin_mapping', `Registered productionUrl (${site.productionUrl}) and Blog origin (${binding.origin}) must have the same origin.`));
   if (!gscCredentials) nextActions.push(action('configure_gsc_credentials', 'Configure Search Console credentials for autonomous measurement.'));
   if (!gscScopeResolvable) nextActions.push(action('configure_project_origin_or_gsc_property', 'Set a valid project domain / confirmed Blog origin, or configure GOOGLE_SEARCH_CONSOLE_SITE_URL, so the shared property resolver can select the correct Search Console property.'));
+  if (!ga4Credentials) nextActions.push(action('configure_ga4_credentials', 'Configure Google Analytics Data API credentials for direct GA4 collection.'));
+  if (site && !site.ga4PropertyId) nextActions.push(action('register_ga4_property', 'Set the exact GA4 property ID on the registered site; it is never inferred from a hostname.', 'site_registry_save'));
   if (site && binding && originMatches && mappedArticles.length === 0) nextActions.push(action('project_article_registry', 'Run a fresh metrics projection after the confirmed Blog binding so mapped article metadata can sync into Sites.'));
   if (!gitPush.enabled) nextActions.push(action('enable_git_delivery', 'Set KEYWORDS_AUTO_GIT_PUSH=1 when autonomous verified article delivery is desired.'));
   else if (!gitPush.allowed) nextActions.push(action('allow_blog_site_git_delivery', `Add Blog site ${binding?.blog_site_id ?? '(missing)'} to KEYWORDS_AUTO_GIT_PUSH_SITES, or leave the allowlist empty to allow all confirmed Blog sites.`));
@@ -134,6 +144,7 @@ async function projectReadiness(project: any) {
   if (!agentCommandConfigured) nextActions.push(action('configure_persistent_agent', 'Configure KEYWORDS_AGENT_COMMAND so queued Operations have a persistent executor.'));
 
   const readyForClosedLoop = capabilities.measurement.ready && capabilities.articleOptimization.ready && capabilities.autopilotExecution.ready;
+  const readyForFullAnalyticsClosedLoop = readyForClosedLoop && capabilities.behaviorAnalytics.ready;
 
   return {
     project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode, environment: project.environment },
@@ -150,6 +161,9 @@ async function projectReadiness(project: any) {
       gscSiteUrlConfigured,
       gscPropertyDiscoveryAvailable: gsc.propertyDiscoveryAvailable,
       gscScopeResolvable,
+      ga4CredentialsConfigured: ga4Credentials,
+      ga4PropertyRegistered: Boolean(site?.ga4PropertyId),
+      ga4DirectCollectionReady: Boolean(ga4Credentials && site?.ga4PropertyId),
       googleAdsConfigured: adsConfigured,
       autoGitPush: gitPush,
       autopilot: { enabled: autonomy.enabled, autoApprove: autonomy.autoApprove, autoPublish: autonomy.autoPublish, cadenceMinutes: autonomy.cadenceMinutes },
@@ -159,6 +173,7 @@ async function projectReadiness(project: any) {
     },
     capabilities,
     readyForClosedLoop,
+    readyForFullAnalyticsClosedLoop,
     nextActions
   };
 }
@@ -181,7 +196,9 @@ export async function siteOperationsReadiness(input: { projectId?: string } = {}
     summary: {
       total: results.length,
       closedLoopReady: results.filter(result => result.readyForClosedLoop).length,
+      fullAnalyticsClosedLoopReady: results.filter(result => result.readyForFullAnalyticsClosedLoop).length,
       measurementReady: results.filter(result => result.capabilities.measurement.ready).length,
+      behaviorAnalyticsReady: results.filter(result => result.capabilities.behaviorAnalytics.ready).length,
       optimizationReady: results.filter(result => result.capabilities.articleOptimization.ready).length,
       queryFeedbackReady: results.filter(result => result.capabilities.queryFeedback.ready).length,
       autopilotReady: results.filter(result => result.capabilities.autopilotExecution.ready).length
@@ -190,6 +207,7 @@ export async function siteOperationsReadiness(input: { projectId?: string } = {}
       readOnly: true,
       noSecretsReturned: true,
       siteRegistrationRemainsExplicit: true,
+      ga4PropertyRegistrationRemainsExplicit: true,
       globalGscPropertyOptionalWhenProjectOriginCanBeDiscovered: true,
       articleBodySourceOfTruth: 'git_repository',
       cloudControlPlane: 'firestore',
