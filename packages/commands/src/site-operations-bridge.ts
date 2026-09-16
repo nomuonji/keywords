@@ -92,7 +92,8 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
 
-  const importLimit = Math.max(1, Math.min(Number(process.env.KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT ?? 4), 20));
+  const configuredImportLimit = Number(process.env.KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT ?? 4);
+  const importLimit = Number.isFinite(configuredImportLimit) ? Math.max(1, Math.min(configuredImportLimit, 20)) : 4;
   const imports = rows(`SELECT * FROM measurement_imports
     WHERE project_id=? AND provider='gsc' AND completeness='complete'
     ORDER BY captured_at DESC LIMIT ?`, projectId, importLimit);
