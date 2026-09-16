@@ -142,12 +142,12 @@ function assertPeriod(start: string, end: string) {
   if (Date.parse(`${start}T00:00:00Z`) > Date.parse(`${end}T00:00:00Z`)) throw new Error('Period start must be on or before period end');
 }
 
-function normalizeImplementedEvent<T extends OptimizationEvent>(event: T): T {
+function normalizeImplementedEvent<T extends OptimizationEvent>(event: T, forcePending = true): T {
   if (event.phase !== 'implemented') return event;
   const changedAt = event.changedAt ?? now();
   const evaluateAfter = event.evaluateAfter ?? new Date(Date.parse(changedAt) + 14 * 86_400_000).toISOString();
   if (Date.parse(evaluateAfter) <= Date.parse(changedAt)) throw new Error('evaluateAfter must be later than changedAt');
-  return { ...event, changedAt, evaluateAfter, result: 'pending' };
+  return { ...event, changedAt, evaluateAfter, result: forcePending ? 'pending' : event.result };
 }
 
 async function assertNoPendingImplementedChange(siteId: string, articleId: string, excludeId?: string) {
@@ -261,7 +261,7 @@ export async function optimizationEventCreate(input: unknown) {
     actionType: args.actionType, beforeCommit: args.beforeCommit ?? null, afterCommit: args.afterCommit ?? null, baselinePeriod: args.baselinePeriod,
     changedAt: args.changedAt ?? null, evaluateAfter: args.evaluateAfter ?? null, phase: args.phase, result: 'pending', evaluationMetrics: {}, notes: args.notes, revision: 1, createdAt: t, updatedAt: t };
   if (event.changedAt && event.phase === 'proposed') event.phase = 'implemented';
-  event = normalizeImplementedEvent(event);
+  event = normalizeImplementedEvent(event, true);
   const runId = await auditWrite('optimization_event_create', event.id, { __write: { collection: 'optimizationEvents', id: event.id, fields: event } }, null);
   return { ...event, runId };
 }
@@ -280,7 +280,7 @@ export async function optimizationEventUpdate(input: unknown) {
   let event: OptimizationEvent = { ...current, ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)), revision: expectedRevision + 1, updatedAt: t } as OptimizationEvent;
   const becomingImplemented = event.phase === 'implemented' && current.phase !== 'implemented';
   if (becomingImplemented || (event.phase === 'implemented' && current.result !== 'pending')) await assertNoPendingImplementedChange(event.siteId, event.articleId, event.id);
-  event = normalizeImplementedEvent(event);
+  event = normalizeImplementedEvent(event, becomingImplemented);
   if (event.result !== 'pending') {
     if (!event.changedAt || !event.evaluateAfter) throw new Error('Implemented/evaluation timestamps are required before recording a result');
     if (Date.now() < Date.parse(event.evaluateAfter)) throw new Error('Evaluation window has not matured yet; keep the event pending');
