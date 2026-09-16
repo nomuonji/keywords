@@ -6,11 +6,13 @@ The current product scope supports evidence-backed article revisions and an opt-
 
 Blogサイト群との連携コードを実装しました。現在の機能・起動条件・Agent手順は [Blog連携の運用手順](docs/blog-integration-operations.md) が正本です。設計判断と実装前の経緯は [Blog連携計画](docs/blog-integration-plan.md) に残しています。
 
-The Vercel-hosted **Remote Keywords Operator** is a separate Firestore-backed planning/research extension for ChatGPT. It now supports resumable research sessions, quota-aware cached SERP research, Google Ads-first staged screening, rich Treasury search, incremental Site Concept edits, and DB-driven site metadata. The operating rule is **Google Ads for broad first-stage screening, SERP only for a bounded high-value second stage, Firestore for durable cache/state**. See [Remote Keywords Operator](docs/remote-keyword-treasury.md) for the 18-tool contract and Firestore schema.
+The Vercel-hosted **Remote Keywords Operator** is a Firestore-backed planning/research extension for ChatGPT. It supports resumable research sessions, quota-aware cached SERP research, Google Ads-first staged screening, rich Treasury search, incremental Site Concept edits, and DB-driven site metadata. The operating rule is **Google Ads for broad first-stage screening, SERP only for a bounded high-value second stage, Firestore for durable cache/state**. See [Remote Keywords Operator](docs/remote-keyword-treasury.md) for the 18-tool contract and Firestore schema.
+
+The same repository/deployment/Firebase project now also hosts a separate **Sites Operator** at `/sites-mcp`. Keywords Operator answers **what should we build?**; Sites Operator answers **how is the real deployed site performing and what hypothesis is currently being tested?**. Real sites and article registry metadata live in Firestore, article bodies remain in Git/Markdown/MDX, and SQLite remains the local execution plane. The existing runner projects complete local GSC observations and the already-saved analytics-dashboard GA4 totals into Firestore without introducing another scheduler. See [Agent-native Site Operations Architecture](docs/site-operations-architecture.md) and [Sites Operator Analytics Bridge](docs/site-operations-analytics-bridge.md).
 
 ## Completed scope
 
-- SQLite + Drizzle for the local SEO execution workspace; Firestore only for the remote shared keyword/site research extension
+- SQLite + Drizzle for the local SEO execution workspace; Firestore for remote keyword/site research and the remote Sites control plane
 - shared typed command boundary and `runs` audit trail
 - project, topic, keyword, cluster, page, source, insight, task, decision, policy, work-session, checkpoint, review-request models
 - Google Ads keyword ideas, Search Console, SERP, public-web research
@@ -23,6 +25,8 @@ The Vercel-hosted **Remote Keywords Operator** is a separate Firestore-backed pl
 - **historical Search Console query/page snapshots and explicit decline detection**
 - **real site URL synchronization from sitemap and Search Console into the same Page model**
 - **Blog site context, evidence brief, human-approved handoff, receipt, query×page observation, and bounded discovery bridge**
+- **Sites Operator real-site/article registry, GSC/GA4 snapshot control plane, and one-change/one-hypothesis optimization events**
+- **explicit `localProjectId` / `localPageId` mapping and idempotent local → Firestore analytics projection**
 - React/Vite Web UI, Hono API, CLI, and MCP server
 - CMS publication is intentionally out of scope; verified artifacts may use the opt-in, allowlisted Git delivery path
 
@@ -35,20 +39,24 @@ External research ──────┼── Sitemap / live URLs
                                   │
                                   v
 Scheduled Operator ─┐       @keywords/commands ─────> @keywords/db ──> SQLite
-Human Web UI ───────┤              ^       │
-Human CLI ──────────┼──────────────┘       ├── runs / tasks / decisions
-Agent MCP ──────────┘                      ├── pages / metric snapshots
-                                           ├── policy_rules
-                                           └── work_sessions / review_requests
+Human Web UI ───────┤              ^       │                 │
+Human CLI ──────────┼──────────────┘       ├── runs / tasks   │ complete GSC
+Local Agent MCP ────┘                      ├── pages / metrics│ observations
+                                           └── work / events  │
+                                                              v
+Remote Keywords Operator /mcp ───────┐      Firestore control plane
+  ├── keywordTreasury                │        ├── sites
+  ├── researchSessions               ├──────► ├── articles (registry only)
+  ├── serpCache / serpUsage          │        ├── metricSnapshots
+  └── siteStructures (Site Concepts) │        └── optimizationEvents
+                                      │
+Remote Sites Operator /sites-mcp ─────┘
 
-Remote ChatGPT MCP ──> commands/research adapters ──> Firestore
-                        ├── keywordTreasury
-                        ├── researchSessions
-                        ├── serpCache / serpUsage
-                        └── siteStructures / runs
+Git repositories / Markdown / MDX = article body + revisions + rollback
+analytics-dashboard saved snapshot = current GA4 acquisition source projected by runner
 ```
 
-Adapters do not write SQL directly. The remote MCP likewise keeps external SERP reads in `packages/research` and durable Firestore mutations/business rules in `packages/commands`.
+Adapters do not write SQL directly. Remote MCP mutations/business rules live in `packages/commands`; external research remains in `packages/research`. MCP responsibility is separated without splitting the repository, Vercel project, or Firebase project.
 
 Specialized command surfaces:
 
@@ -61,6 +69,8 @@ Specialized command surfaces:
 @keywords/commands/metrics
 @keywords/commands/operator
 @keywords/commands/blog
+remote-site-operations
+site-operations-bridge
 ```
 
 ## Run locally
@@ -113,9 +123,10 @@ The Hono API can run this automatically while it is alive:
 ```env
 KEYWORDS_OPERATOR_INTERVAL_MINUTES=60
 KEYWORDS_OPERATOR_RUN_ON_START=1
+KEYWORDS_METRICS_CADENCE_HOURS=24
 ```
 
-`0` disables scheduling. A tick creates a task; it does **not** silently execute an SEO strategy or cross human review boundaries.
+`0` disables the legacy Operator scheduler option where supported. The GSC freshness threshold defaults to 24 hours while the comparison unit remains equal non-overlapping seven-day periods. A tick does **not** silently execute an SEO strategy or cross human review boundaries.
 
 HTTP:
 
@@ -164,6 +175,8 @@ The context deliberately exposes separate signals rather than one score:
 
 These signals feed `operator.inspect`, so a real decline can become the next shared Agent task.
 
+When a real site is explicitly linked through Sites Operator (`sites.localProjectId`), the existing `capture_metrics` maintenance flow also projects complete materialized GSC observations into Firestore `metricSnapshots`. Article-level GSC projection requires an article registry mapping through `localPageId` and/or `canonicalUrl`; unmatched pages are skipped rather than guessed.
+
 HTTP:
 
 ```text
@@ -180,7 +193,7 @@ metrics_capture
 
 # 3. Real site synchronization
 
-Live URLs use the **same `pages` table** as content proposals. This makes existing coverage visible to page planning/cannibalization logic instead of maintaining a second site model.
+Live URLs use the **same `pages` table** as content proposals. This makes existing coverage visible to page planning/cannibalization logic instead of maintaining a second local site-page model.
 
 Live Page fields include:
 
@@ -222,16 +235,18 @@ GET  /projects/:projectId/site
 POST /projects/:projectId/site/sync
 ```
 
-MCP:
+Local MCP:
 
 ```text
 site_list
 site_sync
 ```
 
-# Remote treasure-keyword research loop
+# Remote Operators
 
-The remote ChatGPT MCP uses a staged flow so the ~2,000/month SERP budget is not spent on raw candidate generation:
+## Keywords Operator
+
+The remote ChatGPT keyword MCP uses a staged flow so the ~2,000/month SERP budget is not spent on raw candidate generation:
 
 ```text
 research_session_get / create
@@ -254,6 +269,16 @@ research_session_update (findings + nextActions + siteConceptIds)
 `serp_research` caches by query/country/language/location/provider/result count. The default TTL is 30 days. Monthly defaults are `limit=2000`, `softLimit=1500`, `reserve=500`; normal automation stops at the normal cutoff, while explicit `forceRefresh=true` may consume reserve until the hard limit. `serp_usage_status` exposes actual provider requests, cache hits, blocked requests and remaining capacity. Values are environment-configurable.
 
 Research sessions are the cross-chat handoff mechanism. A `research_session_get` call without an ID returns the latest active session (or latest overall if none is active), so a new agent session can resume without reconstructing the prior chat transcript.
+
+## Sites Operator
+
+Remote endpoint: `/sites-mcp` on the same Vercel deployment as `/mcp`.
+
+The Sites Operator manages real deployed-site control state, not Site Concepts. The initial contract includes site/article registry operations, GSC/GA4 snapshot persistence, optimization-event history, and `optimization_context`. `site_registry_resolve` links a Firestore real site to a local SQLite project explicitly; it never guesses from project/site names.
+
+Article body text is deliberately excluded from Firestore. Registry records point to repository/path/commit metadata while Git remains authoritative for revisions and rollback.
+
+Daily observation does not mean daily rewriting. `optimizationEvents` enforces one implemented + unevaluated change per article and defaults to a 14-day evaluation wait.
 
 # Agent work loop
 
@@ -347,7 +372,7 @@ Agents stop at proposal creation. Page approval is human-only, and exact target 
 
 # Credentials
 
-Credentials are environment-only and are never intentionally persisted to SQLite or Firestore research/session records.
+Credentials are environment-only and are never intentionally persisted to SQLite or Firestore research/session/site-operation records.
 
 - SERP (remote): `BRAVE_API_KEY` / `KEYWORDS_BRAVE_API_KEY`; optional explicit Serper via `KEYWORDS_SERPER_API_KEY`
 - SERP quota/cache: `KEYWORDS_SERP_MONTHLY_LIMIT`, `KEYWORDS_SERP_SOFT_LIMIT`, `KEYWORDS_SERP_RESERVE`, `KEYWORDS_SERP_CACHE_TTL_DAYS`
@@ -358,19 +383,25 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 - Search Console service account: `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_SEARCH_CONSOLE_SITE_URL`
 - shared Google OAuth fallback: `GOOGLE_OAUTH_ACCESS_TOKEN`
 - scheduler: `KEYWORDS_OPERATOR_INTERVAL_MINUTES`, `KEYWORDS_OPERATOR_RUN_ON_START`
+- GSC collection cadence: `KEYWORDS_METRICS_CADENCE_HOURS` (default `24`, bounded to 1–168)
+- cloud projection depth: `KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT` (default `4`, bounded to 1–20)
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
-The API loads the repository `.env` on startup. The remote 18-tool MCP uses the configured keyword-volume proxy first for Google Ads demand research because that proxy owns the known-working credential set, and falls back to direct Google Ads only when the proxy request fails. Its SERP tools use Firestore cache/quota enforcement before reaching the external provider. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
+The API loads the repository `.env` on startup. The remote 18-tool Keywords MCP uses the configured keyword-volume proxy first for Google Ads demand research because that proxy owns the known-working credential set, and falls back to direct Google Ads only when the proxy request fails. Its SERP tools use Firestore cache/quota enforcement before reaching the external provider. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
+
+The Sites bridge does not expose Firebase/Google credentials. GA4 is currently projected from the already-persisted analytics-dashboard snapshot; direct GA4 Data API acquisition has not been duplicated inside this repository.
 
 # Verification
 
 GitHub Actions / build verification includes:
 
 - typecheck: domain, db, research, commands, api, cli, mcp, web
-- remote MCP contract smoke
+- remote Keywords MCP contract smoke
 - remote keyword cache/quota/research-session smoke
 - site concept full-save + patch + revision smoke
+- Sites Operator registry/optimization/MCP smoke
+- local GSC + saved GA4 -> Firestore idempotent bridge smoke
 - SQLite initialization
 - legacy SQLite migration into work/review/live-page/GSC-history schema
 - content-planning smoke
@@ -384,7 +415,9 @@ CI cancels superseded runs on the same branch.
 
 # Current autonomy boundary
 
-The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history + real-site synchronization** for local execution. The Remote Keywords Operator adds persistent exploratory research and site-concept planning, but it still does not treat a screening/opportunity score as a ranking prediction and does not automatically promote every candidate into a site. Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, and propose pages. Human approval remains required where configured.
+The local SEO OS remains authoritative for execution, evidence, scheduling, artifact validation and publication safeguards. Remote Keywords Operator adds persistent exploratory research and Site Concept planning. Remote Sites Operator adds durable real-site analytics/optimization state without treating a screening score or a short-term metric move as an automatic rewrite instruction.
+
+Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, propose pages and persist optimization hypotheses. Existing human/review/publication boundaries remain in force. **Daily measurement is allowed; an implemented optimization blocks another implemented change on that article until it is evaluated or cancelled.**
 
 **CMS publication is not performed by this workspace, but Git-connected production sites are verified directly.** Evidence-backed artifacts may be committed and pushed when `KEYWORDS_AUTO_GIT_PUSH=1` (an empty site allowlist means all bound sites). After delivery, Keywords checks each target URL for HTTP 200 and an exact canonical URL and records the publication/observation deadline itself; no Blog-side receipt response is required.
 
@@ -398,9 +431,9 @@ The SEO OS is considered feature-complete at **Operator/Scheduler + GSC history 
 - DBの既定パスと相対 `KEYWORDS_DB_PATH` は起動ディレクトリによらずkeywordsルート基準です。既存の `data/keywords.sqlite` をAPI/CLI/MCPで共有します。
 - `KEYWORDS_ANALYTICS_FILE` は任意。相対値はBlogルート基準、既定値は `analytics-dashboard/data/latest.json`。CLI/MCPでも環境変数を設定して利用できます。
 - 同じ一覧を `npm run cli -- portfolio`、HTTP `GET /portfolio`、MCP `portfolio_context` から読めます。新しい状態DBは作りません。
-- 集計の保存時刻が3日超、対象期間末が7日超、または時刻不明なら更新を促します。欠損を0にせず、同日数・非重複期間のみ増減を表示します。dashboard集計を企画の効果測定やquery×pageの根拠へ自動転用しません。
+- 集計の保存時刻が3日超、対象期間末が7日超、または時刻不明なら更新を促します。欠損を0にせず、同日数・非重複期間のみ増減を表示します。dashboard集計を企画の効果測定やquery×pageの根拠へ自動転用しません。Sites OperatorへのGA4投影は保存済み観測の共有であり、新しい推論値を作りません。
 - dashboard未登録のプロジェクトも一覧に出し、検索データなしと表示します。新しいサイトの実績取得にはdashboard側の取得設定も必要です。
 
 運用は一覧で対象を選択 → 各サイトで検索履歴・既存ページを確認 → 改稿企画とレビュー → Blogの品質検証 → 公開後のquery×page比較、の順で進めます。公開や新規記事の制限は既存のBlog連携に従います。
 
-検証: `npm run test:portfolio`、`npm run test:blog`、`npm run build`。ブラウザ検証はPython Playwrightを使い `py scripts/run-portfolio-ui-smoke.py`（隔離DB・ポート18787/15173）で実行します。
+検証: `npm run test:portfolio`、`npm run test:blog`、`npm run test:site-operations`、`npm run test:site-operations-bridge`、`npm run build`。ブラウザ検証はPython Playwrightを使い `py scripts/run-portfolio-ui-smoke.py`（隔離DB・ポート18787/15173）で実行します。
