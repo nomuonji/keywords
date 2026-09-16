@@ -28,10 +28,16 @@ try {
   });
   assert.equal(operation.reused, false);
   const operationId = operation.operation.id;
+  const workSessionId = operation.children[0]?.workSessionId;
+  assert.ok(workSessionId);
   const commit = 'b'.repeat(40);
 
   assert.throws(() => assertSiteOptimizationDeliveryProof({
-    projectId: 'project-proof', pageId: 'page-proof', afterCommit: commit
+    projectId: 'project-proof', workSessionId: 'wrong-session', pageId: 'page-proof', afterCommit: commit
+  }), /caller active shared Operation/);
+
+  assert.throws(() => assertSiteOptimizationDeliveryProof({
+    projectId: 'project-proof', workSessionId, pageId: 'page-proof', afterCommit: commit
   }), /No artifact/);
 
   const validation = {
@@ -50,13 +56,14 @@ try {
   );
 
   assert.throws(() => assertSiteOptimizationDeliveryProof({
-    projectId: 'project-proof', pageId: 'page-proof', afterCommit: 'd'.repeat(40)
+    projectId: 'project-proof', workSessionId, pageId: 'page-proof', afterCommit: 'd'.repeat(40)
   }), /does not match/);
 
   const proof = assertSiteOptimizationDeliveryProof({
-    projectId: 'project-proof', pageId: 'page-proof', afterCommit: commit
+    projectId: 'project-proof', workSessionId, pageId: 'page-proof', afterCommit: commit
   });
   assert.equal(proof.operationId, operationId);
+  assert.equal(proof.workSessionId, workSessionId);
   assert.equal(proof.artifactId, 'artifact-proof');
   assert.equal(proof.commit, commit);
   assert.equal(proof.publicationStatus, 'published');
@@ -64,10 +71,10 @@ try {
   sqlite.prepare('UPDATE operation_artifacts SET validator_result_json=? WHERE id=?')
     .run(JSON.stringify({ ...validation, publication: { status: 'not_published' } }), 'artifact-proof');
   assert.throws(() => assertSiteOptimizationDeliveryProof({
-    projectId: 'project-proof', pageId: 'page-proof', afterCommit: commit
+    projectId: 'project-proof', workSessionId, pageId: 'page-proof', afterCommit: commit
   }), /live publication verification/);
 
-  console.log('site optimization delivery proof smoke passed: active operation + passed build + pushed commit + live publication are all required');
+  console.log('site optimization delivery proof smoke passed: caller session + passed build + pushed commit + live publication are all required');
 } finally {
   for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
     try { rmSync(path, { force: true }); } catch {}
