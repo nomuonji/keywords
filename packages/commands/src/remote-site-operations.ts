@@ -189,12 +189,14 @@ export async function siteRegistrySave(input: unknown) {
     if (!concept) throw new Error('Unknown siteConceptId: create the Site Concept before registering a real site');
   }
   const t = now(); const { expectedRevision, ...patch } = args;
-  const record: SiteRecord = {
+  const base: SiteRecord = current ?? {
     id: args.id, siteConceptId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other',
-    ga4PropertyId: null, searchConsoleProperty: null, status: 'planned', revision: expectedRevision + 1, createdAt: t, updatedAt: t,
-    ...current, ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)), id: args.id,
-    revision: expectedRevision + 1, createdAt: current?.createdAt ?? t, updatedAt: t
+    ga4PropertyId: null, searchConsoleProperty: null, status: 'planned', revision: 0, createdAt: t, updatedAt: t
   };
+  const record: SiteRecord = {
+    ...base, ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)),
+    id: args.id, revision: expectedRevision + 1, createdAt: current?.createdAt ?? t, updatedAt: t
+  } as SiteRecord;
   const runId = await auditWrite('site_registry_save', record.id, { __write: { collection: 'sites', id: record.id, fields: record } }, previous);
   return { ...record, runId };
 }
@@ -217,12 +219,14 @@ export async function siteArticleSave(input: unknown) {
   if (current && current.siteId !== args.siteId) throw new Error('An existing article cannot be moved to another site');
   if (!current && (!args.repo || !args.repoPath || !args.slug || !args.title)) throw new Error('repo, repoPath, slug and title are required for a new article');
   const t = now(); const { expectedRevision, ...patch } = args;
-  const record: SiteArticleRecord = {
+  const base: SiteArticleRecord = current ?? {
     id: args.id, siteId: args.siteId, repo: '', repoPath: '', currentCommitSha: null, slug: '', title: '', primaryKeywordId: null,
-    secondaryKeywordIds: [], status: 'draft', publishedAt: null, lastUpdatedAt: null, revision: expectedRevision + 1, createdAt: t, updatedAt: t,
-    ...current, ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)), id: args.id, siteId: args.siteId,
-    revision: expectedRevision + 1, createdAt: current?.createdAt ?? t, updatedAt: t
+    secondaryKeywordIds: [], status: 'draft', publishedAt: null, lastUpdatedAt: null, revision: 0, createdAt: t, updatedAt: t
   };
+  const record: SiteArticleRecord = {
+    ...base, ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)),
+    id: args.id, siteId: args.siteId, revision: expectedRevision + 1, createdAt: current?.createdAt ?? t, updatedAt: t
+  } as SiteArticleRecord;
   const runId = await auditWrite('site_article_save', record.id, { __write: { collection: 'articles', id: record.id, fields: record } }, previous);
   return { ...record, runId };
 }
