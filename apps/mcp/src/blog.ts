@@ -5,6 +5,12 @@ import {
  localOptimizationEvaluationContext,
  localOptimizationRecordResult
 } from '@keywords/commands/site-operations-analysis';
+import {
+ localSiteOptimizationCandidate,
+ localSiteOptimizationContext,
+ localSiteOptimizationCreate,
+ localSiteOptimizationMarkImplemented
+} from '@keywords/commands/site-optimization-workflow';
 import type { CommandContext } from '@keywords/domain';
 const string={type:'string'},object={type:'object',additionalProperties:true};
 const boolean={type:'boolean'},stringArray={type:'array',items:{type:'string'}};
@@ -27,6 +33,10 @@ const definitions:Array<[string,string,Record<string,unknown>,string[]]>=[
  ['artifactContext','Read persisted article artifacts, hashes, validation failures and build status for resume without private reasoning.',{operationId:string,pageId:string},[]]
 ];
 const siteOperationTools=[
+ {name:'site_optimization_candidate',description:'Read the strongest fresh material article-level GSC decline for the linked site using complete equal-length saved snapshots. This never edits content or creates an optimization.',inputSchema:{type:'object' as const,properties:{projectId:string},required:['projectId']}},
+ {name:'site_optimization_context',description:'Read one linked article plus saved metrics and active/proposed optimization state before deciding whether another change is allowed.',inputSchema:{type:'object' as const,properties:{projectId:string,articleId:string},required:['projectId','articleId']}},
+ {name:'site_optimization_create',description:'Persist exactly one proposed Sites optimization before editing. The baseline period is derived from the pinned complete article GSC snapshot. Requires an active shared Operation and action budget.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string,articleId:string,baselineSnapshotId:string,comparisonSnapshotId:string,observation:string,diagnosis:string,hypothesis:string,actionType:{type:'string',enum:['content_expand','title_snippet','internal_links','cta_ui','freshness','indexing','new_article','other']},beforeCommit:{type:['string','null']},notes:string},required:['projectId','eventId','articleId','baselineSnapshotId','observation','diagnosis','hypothesis','actionType']}},
+ {name:'site_optimization_mark_implemented',description:'Mark a pending proposed optimization implemented only after the execution workflow verified delivery. Requires the real afterCommit; the result remains pending until the traffic-aware evaluation window matures.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string,expectedRevision:{type:'number'},afterCommit:string,changedAt:string,notes:string},required:['projectId','eventId','expectedRevision','afterCommit']}},
  {name:'site_optimization_evaluation_context',description:'Read compatible persisted before/after GSC evidence for one due Sites optimization linked to this local project. This never invents a verdict.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string},required:['projectId','eventId']}},
  {name:'site_optimization_record_result',description:'Record the semantic result of a mature Sites optimization. Numeric evaluation metrics are recomputed from saved snapshots; the agent supplies only the verdict and notes.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string,expectedRevision:{type:'number'},result:{type:'string',enum:['improved','neutral','worsened','inconclusive']},notes:string},required:['projectId','eventId','expectedRevision','result']}}
 ];
@@ -34,6 +44,16 @@ export const blogTools=[...definitions.map(([name,description,properties,require
 export const isBlogTool=(name:string)=>blogTools.some(t=>t.name===name);
 export async function callBlogTool(name:string,args:any,ctx:CommandContext){
  if(!isBlogTool(name))throw new Error('Unknown Blog/Sites execution tool');
+ if(name==='site_optimization_candidate')return localSiteOptimizationCandidate(args);
+ if(name==='site_optimization_context')return localSiteOptimizationContext(args);
+ if(name==='site_optimization_create'){
+  if(!ctx.workSessionId)throw new Error('Creating an optimization requires an active shared Operation.');
+  return localSiteOptimizationCreate(args);
+ }
+ if(name==='site_optimization_mark_implemented'){
+  if(!ctx.workSessionId)throw new Error('Marking an optimization implemented requires an active shared Operation.');
+  return localSiteOptimizationMarkImplemented(args);
+ }
  if(name==='site_optimization_evaluation_context')return localOptimizationEvaluationContext(args);
  if(name==='site_optimization_record_result'){
   if(!ctx.workSessionId)throw new Error('Recording an optimization result requires an active shared Operation.');
