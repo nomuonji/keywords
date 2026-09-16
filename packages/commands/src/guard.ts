@@ -140,6 +140,19 @@ function operationForContext(ctx: CommandContext, projectId: string) {
   return null;
 }
 
+function assertAutopilotMutationPreflightState(operation: any, projectId: string, capability?: DelegationCapability | string) {
+  if (!operation || !['blog.prepare','blog.transport'].includes(String(capability ?? ''))) return;
+  const constraints = parse<Record<string, unknown>>(operation.constraints_json, {});
+  const source = String(constraints.source ?? '');
+  if (source !== 'autopilot' && source !== 'autopilot_delivery') return;
+  const state = one("SELECT stage,decision_json FROM autopilot_state WHERE project_id=? AND stage='preflight_blocked'", projectId);
+  if (!state) return;
+  const decision = parse<any>(state.decision_json, {});
+  const blockers = Array.isArray(decision?.preflight?.blockers) ? decision.preflight.blockers.map(String).filter(Boolean) : [];
+  const suffix = blockers.length ? `: ${blockers.join(', ')}` : '';
+  throw new Error(`Autopilot content mutation is blocked by site readiness${suffix}`);
+}
+
 export function assertOperationAllowed(
   ctx: CommandContext,
   input: { projectId: string; command: string; capability?: DelegationCapability | string; allowWhilePaused?: boolean }
@@ -154,6 +167,7 @@ export function assertOperationAllowed(
   const delegation = input.capability ? assertDelegated(ctx, input.projectId, input.capability) : null;
   const operation = ctx.actor === 'agent' ? operationForContext(ctx, input.projectId) : null;
   if (operation && !input.allowWhilePaused) {
+    assertAutopilotMutationPreflightState(operation, input.projectId, input.capability);
     if (operation.status !== 'active') throw new Error(`Operation is ${operation.status}; writes and external research are paused`);
     const budget = parse<Record<string, number>>(operation.budget_json, {});
     const maxRuntimeMinutes = Number(budget.maxRuntimeMinutes ?? 0);
