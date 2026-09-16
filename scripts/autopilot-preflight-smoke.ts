@@ -42,6 +42,18 @@ try {
     status: 'local', planMode: 'existing_page_improvement', url: 'https://blocked.example.com/blocked-page', source: 'blog_local',
     lastSeenAt: now, createdAt: now, updatedAt: now
   });
+  // Preserve the existing database safety boundary: an authorized handoff may only
+  // exist after a verified local artifact. The fixture proves the *additional*
+  // runtime readiness gate rather than bypassing the artifact trigger.
+  sqlite.prepare(`INSERT INTO operation_requests(id,request_key,request_text,objective,constraints_json,permissions_json,budget_json,assumptions_json,conversation_ref,status,created_by,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'fixture-op', 'fixture-op-key', 'Verified fixture artifact', 'Verified fixture artifact', '{}', '{}', '{}', '[]', null, 'completed', 'fixture', now, now
+    );
+  sqlite.prepare(`INSERT INTO operation_artifacts(id,operation_id,project_id,page_id,article_id,artifact_path,content_sha256,source_ids_json,validator_status,build_status,after_hash,manifest_json,revision_count,validation_attempts,no_progress_count,generated_at,verified_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      'fixture-artifact', 'fixture-op', 'delivery-blocked', 'blocked-page', 'blocked-page', 'content/blocked-page.md', 'a'.repeat(64), '[]',
+      'passed', 'passed', 'b'.repeat(64), '{}', 0, 1, 0, now, now, now
+    );
   sqlite.prepare(`INSERT INTO blog_handoffs(id,project_id,page_id,version_hash,payload_json,status,created_at,updated_at)
     VALUES(?,?,?,?,?,?,?,?)`).run(
       'handoff-blocked', 'delivery-blocked', 'blocked-page', 'version-1',
