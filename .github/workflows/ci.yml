@@ -57,6 +57,7 @@ jobs:
             npm run test:site-optimization-delivery-proof
             npm run test:site-operations-readiness
             npm run test:site-query-feedback
+            npm run test:autopilot-preflight
             npm run db:init
             KEYWORDS_DB_PATH=/tmp/keywords-migration-smoke.sqlite npx tsx scripts/migration-smoke.ts
             KEYWORDS_DB_PATH=/tmp/keywords-planning-smoke.sqlite npx tsx scripts/planning-smoke.ts
