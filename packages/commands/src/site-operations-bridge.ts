@@ -77,7 +77,10 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const site = resolved.site as SiteRecord | null;
   if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', projectId, nextAction: 'Set sites.localProjectId with site_registry_save.' };
 
-  const articleResponse = await siteArticleList({ siteId: site.id, limit: 500 });
+  // Remote list calls stay bounded. Sites with >100 tracked article records can
+  // still receive site-level metrics; additional article projection can be paged
+  // in a later scale phase without changing the source-of-truth model.
+  const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
   const articles = articleResponse.items as SiteArticleRecord[];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const articleByUrl = new Map(articles.flatMap(article => {
@@ -129,7 +132,8 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       ORDER BY impressions DESC LIMIT 10000`, projectId, observation.property, observation.start_date, observation.end_date, observation.search_type ?? 'web', observation.captured_at);
     const seenArticles = new Set<string>();
     for (const row of pageRows) {
-      const article = (row.page_id ? articleByPage.get(String(row.page_id)) : undefined) ?? (canonicalKey(row.url) ? articleByUrl.get(canonicalKey(row.url)!) : undefined);
+      const key = canonicalKey(row.url);
+      const article = (row.page_id ? articleByPage.get(String(row.page_id)) : undefined) ?? (key ? articleByUrl.get(key) : undefined);
       if (!article || seenArticles.has(article.id)) continue;
       seenArticles.add(article.id);
       await persist(gscArticle, {
