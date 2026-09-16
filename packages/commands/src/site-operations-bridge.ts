@@ -1,11 +1,14 @@
+import { createHash } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
 import {
   metricSnapshotSave,
   remoteSitesStatus,
   siteArticleList,
+  siteArticleSave,
   siteRegistryResolve
 } from './remote-site-operations.js';
+import { snapshotSchema } from './blog-contract.js';
 import { invalidateSiteOptimizationDueCache } from './site-operations-analysis.js';
 import { invalidateSiteQueryFeedbackCache } from './site-query-feedback.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -64,6 +67,108 @@ function firestoreReady() {
   return status.firestoreConfigured && status.projectConfigured;
 }
 
+function articleId(siteId: string, sourceRef: string) {
+  return `blog_${createHash('sha256').update(`${siteId}\0${sourceRef}`).digest('hex').slice(0, 32)}`;
+}
+
+function articleSlug(url: string) {
+  const pathname = new URL(url).pathname.replace(/^\/+|\/+$/g, '');
+  return pathname || 'index';
+}
+
+function articleSyncLimit() {
+  const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 100);
+  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
+}
+
+/**
+ * Register exact Blog source mappings in the Sites article registry before
+ * projecting page-level metrics. This only uses the already human-confirmed
+ * Blog binding and exact local page URLs; it never guesses a repository, site,
+ * source path, canonical URL, or publication state.
+ */
+async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
+  const binding = sqlite.prepare('SELECT * FROM blog_bindings WHERE project_id=?').get(projectId) as any;
+  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: [] as string[] };
+
+  const warnings: string[] = [];
+  let snapshot;
+  try {
+    snapshot = snapshotSchema.parse(JSON.parse(String(binding.snapshot_json)));
+  } catch {
+    return { status: 'skipped' as const, reason: 'invalid_blog_snapshot', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: ['Blog binding snapshot is invalid; article registry sync was skipped.'] };
+  }
+
+  let siteOrigin: string | null = null;
+  try { siteOrigin = new URL(site.productionUrl).origin; } catch {}
+  if (!siteOrigin || siteOrigin !== binding.origin || snapshot.canonical_origin !== binding.origin) {
+    return {
+      status: 'skipped' as const,
+      reason: 'binding_origin_mismatch',
+      considered: 0, created: 0, updated: 0, reused: 0, skipped: 0,
+      warnings: ['Blog binding origin does not exactly match the registered production site; article identities were not inferred.']
+    };
+  }
+
+  const existing = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
+  const byPage = new Map(existing.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
+  const byUrl = new Map(existing.flatMap(article => {
+    const key = canonicalKey(article.canonicalUrl);
+    return key ? [[key, article] as const] : [];
+  }));
+  const limit = articleSyncLimit();
+  const sources = snapshot.sources.slice(0, limit);
+  if (snapshot.sources.length > limit) warnings.push(`Blog article registry sync is bounded to ${limit} sources per projection; ${snapshot.sources.length - limit} source mappings were deferred.`);
+
+  let created = 0, updated = 0, reused = 0, skipped = 0;
+  for (const source of sources) {
+    const localPages = rows('SELECT id,url FROM pages WHERE project_id=? AND url=? LIMIT 2', projectId, source.expected_url);
+    if (localPages.length !== 1) {
+      skipped++;
+      warnings.push(`Skipped ${source.source_ref}: expected exactly one local page for ${source.expected_url}.`);
+      continue;
+    }
+    const localPageId = String(localPages[0].id);
+    const key = canonicalKey(source.expected_url);
+    const pageMatch = byPage.get(localPageId);
+    const urlMatch = key ? byUrl.get(key) : undefined;
+    if (pageMatch && urlMatch && pageMatch.id !== urlMatch.id) {
+      skipped++;
+      warnings.push(`Skipped ${source.source_ref}: localPageId and canonicalUrl resolve to different registered articles.`);
+      continue;
+    }
+    const current = pageMatch ?? urlMatch;
+    const desired = {
+      localPageId,
+      canonicalUrl: source.expected_url,
+      repo: site.repository,
+      repoPath: source.source_ref,
+      slug: articleSlug(source.expected_url),
+      title: source.title || source.source_ref
+    };
+    if (current) {
+      const changed = Object.entries(desired).some(([field, value]) => (current as any)[field] !== value);
+      if (!changed) {
+        reused++;
+        continue;
+      }
+      const saved = await siteArticleSave({ id: current.id, expectedRevision: current.revision, siteId: site.id, ...desired }) as SiteArticleRecord;
+      byPage.set(localPageId, saved);
+      if (key) byUrl.set(key, saved);
+      updated++;
+      continue;
+    }
+    const saved = await siteArticleSave({
+      id: articleId(site.id, source.source_ref), expectedRevision: 0, siteId: site.id, ...desired
+    }) as SiteArticleRecord;
+    byPage.set(localPageId, saved);
+    if (key) byUrl.set(key, saved);
+    created++;
+  }
+
+  return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings };
+}
+
 /**
  * Project existing local observations into the Firestore control plane.
  *
@@ -79,6 +184,17 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const site = resolved.site as SiteRecord | null;
   if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', projectId, nextAction: 'Set sites.localProjectId with site_registry_save.' };
 
+  const warnings: string[] = [];
+  let articleRegistrySync: Awaited<ReturnType<typeof syncBoundBlogArticles>>;
+  try {
+    articleRegistrySync = await syncBoundBlogArticles(projectId, site);
+    warnings.push(...articleRegistrySync.warnings);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    articleRegistrySync = { status: 'skipped', reason: 'sync_failed', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: [`Blog article registry sync failed: ${message.slice(0, 300)}`] };
+    warnings.push(...articleRegistrySync.warnings);
+  }
+
   const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
   const articles = articleResponse.items as SiteArticleRecord[];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
@@ -86,7 +202,6 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     const key = canonicalKey(article.canonicalUrl);
     return key ? [[key, article] as const] : [];
   }));
-  const warnings: string[] = [];
   const gscSite: ProjectionCounter = { saved: 0, reused: 0 };
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
@@ -192,6 +307,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     projectId,
     siteId: site.id,
     siteName: site.name,
+    articleRegistrySync,
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
     gsc: { importsConsidered: imports.length, site: gscSite, articles: gscArticle },
     ga4,
