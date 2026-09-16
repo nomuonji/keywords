@@ -7,6 +7,7 @@ import {
   siteRegistrySave
 } from '../packages/commands/src/remote-site-operations.js';
 import {
+  invalidateSiteOptimizationDueCache,
   localOptimizationEvaluationContext,
   localOptimizationRecordResult,
   nextSiteOptimizationEvaluation,
@@ -28,6 +29,8 @@ const docs = new Map<string, any>();
 let sequence = 0;
 const originalFetch = globalThis.fetch;
 const decodeField = (value: any): any => value?.stringValue ?? value?.integerValue ?? value?.doubleValue ?? value?.booleanValue ?? null;
+const DAY = 86_400_000;
+const date = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 globalThis.fetch = async (input, init) => {
   const url = String(input);
@@ -83,8 +86,8 @@ try {
     metrics: { clicks: 10, impressions: 300, ctr: 10 / 300, averagePosition: 11 }, sourceVersion: 'article-baseline', capturedAt: '2026-07-08T00:00:00.000Z'
   });
   await metricSnapshotSave({
-    siteId: 'site-a', articleId: 'article-a', provider: 'gsc', periodStart: '2026-07-22', periodEnd: '2026-07-28',
-    metrics: { clicks: 18, impressions: 360, ctr: 0.05, averagePosition: 8.5 }, sourceVersion: 'article-post', capturedAt: '2026-07-29T00:00:00.000Z'
+    siteId: 'site-a', articleId: 'article-a', provider: 'gsc', periodStart: '2026-07-23', periodEnd: '2026-07-29',
+    metrics: { clicks: 18, impressions: 360, ctr: 0.05, averagePosition: 8.5 }, sourceVersion: 'article-post', capturedAt: '2026-07-30T00:00:00.000Z'
   });
 
   const createdEvent = await optimizationEventCreate({
@@ -95,14 +98,18 @@ try {
   });
 
   const evaluation = await optimizationEvaluationContext({ siteId: 'site-a', eventId: 'opt-eval' });
+  assert.equal(evaluation.minimumWaitMatured, true);
   assert.equal(evaluation.matured, true);
   assert.equal(evaluation.readyForAgentEvaluation, true);
+  assert.equal(evaluation.evaluationWindow.trafficClass, 'medium');
+  assert.equal(evaluation.evaluationWindow.recommendedWaitDays, 21);
   assert.equal(evaluation.baseline?.sourceVersion, 'article-baseline');
   assert.equal(evaluation.post?.sourceVersion, 'article-post');
   assert.equal(evaluation.deltas.clicks.absolute, 8);
   assert.equal(evaluation.deltas.impressions.absolute, 60);
   assert.ok(Math.abs((evaluation.deltas.averagePosition.absolute ?? 0) - (-2.5)) < 1e-9);
   assert.equal(evaluation.policy.automaticVerdict, false);
+  assert.equal(evaluation.policy.trafficChangesWaitOnly, true);
   assert.match(evaluation.nextAction, /optimization_event_update/);
 
   const localEvaluation = await localOptimizationEvaluationContext({ projectId: 'project-a', eventId: 'opt-eval' });
@@ -158,13 +165,54 @@ try {
   assert.equal(recorded.result, 'improved');
   assert.equal(recorded.evaluationMetrics.clicksDelta, 8);
   assert.equal(recorded.evaluationMetrics.impressionsDelta, 60);
+  assert.equal(recorded.evaluationMetrics.evaluationWaitDays, 21);
   assert.ok(Math.abs((recorded.evaluationMetrics.averagePositionDelta ?? 0) - (-2.5)) < 1e-9);
-  assert.match(recorded.notes, /baseline=.*article-baseline|baseline=/);
+  assert.match(recorded.notes, /trafficClass=medium; waitDays=21/);
 
   const dueAfter = await nextSiteOptimizationEvaluation('project-a');
   assert.equal(dueAfter.status, 'none_due');
 
-  console.log('site operations analysis smoke passed: compatible evaluation, runner mapping, server-derived metrics, no duplicate due work, and quota-safe bounded GSC query feedback');
+  // Low-traffic baseline: persisted 14-day minimum is mature, but the derived
+  // policy waits 28 days before a semantic verdict is even offered to the Agent.
+  await siteArticleSave({
+    id: 'article-low', expectedRevision: 0, siteId: 'site-a', localPageId: 'page-low', canonicalUrl: 'https://example.com/low',
+    repo: 'nomuonji/site-a', repoPath: 'content/low.mdx', currentCommitSha: 'c'.repeat(40), slug: 'low', title: 'Low Traffic', status: 'published'
+  });
+  const nowMs = Date.now();
+  const changedMs = nowMs - 16 * DAY;
+  const baselineStart = date(changedMs - 7 * DAY);
+  const baselineEnd = date(changedMs - DAY);
+  const persistedEvaluateMs = changedMs + 14 * DAY;
+  const earlyPostEnd = date(persistedEvaluateMs);
+  const earlyPostStart = date(persistedEvaluateMs - 6 * DAY);
+  await metricSnapshotSave({
+    siteId: 'site-a', articleId: 'article-low', provider: 'gsc', periodStart: baselineStart, periodEnd: baselineEnd,
+    metrics: { clicks: 1, impressions: 40, ctr: 0.025, averagePosition: 19 }, sourceVersion: 'low-baseline', capturedAt: new Date(changedMs).toISOString()
+  });
+  await metricSnapshotSave({
+    siteId: 'site-a', articleId: 'article-low', provider: 'gsc', periodStart: earlyPostStart, periodEnd: earlyPostEnd,
+    metrics: { clicks: 2, impressions: 55, ctr: 2 / 55, averagePosition: 17 }, sourceVersion: 'low-early-post', capturedAt: new Date(persistedEvaluateMs + DAY).toISOString()
+  });
+  await optimizationEventCreate({
+    id: 'opt-low', siteId: 'site-a', articleId: 'article-low', observation: 'Low-volume page has sparse GSC data.',
+    diagnosis: 'The page may need more settling time before interpreting the change.', hypothesis: 'The focused update should improve relevance without changing intent.',
+    actionType: 'freshness', baselinePeriod: { start: baselineStart, end: baselineEnd }, beforeCommit: 'c'.repeat(40), afterCommit: 'd'.repeat(40),
+    changedAt: new Date(changedMs).toISOString(), evaluateAfter: new Date(persistedEvaluateMs).toISOString(), phase: 'implemented'
+  });
+  const lowEvaluation = await optimizationEvaluationContext({ siteId: 'site-a', eventId: 'opt-low' });
+  assert.equal(lowEvaluation.minimumWaitMatured, true);
+  assert.equal(lowEvaluation.evaluationWindow.trafficClass, 'low');
+  assert.equal(lowEvaluation.evaluationWindow.recommendedWaitDays, 28);
+  assert.equal(lowEvaluation.matured, false);
+  assert.equal(lowEvaluation.readyForAgentEvaluation, false);
+  assert.equal(lowEvaluation.post, null);
+  assert.equal(lowEvaluation.nextAction, 'wait_for_traffic_adjusted_evaluation_window');
+  assert.match(lowEvaluation.warnings.join(' '), /Traffic-aware wait is still active/);
+  invalidateSiteOptimizationDueCache('project-a');
+  const lowDue = await nextSiteOptimizationEvaluation('project-a');
+  assert.equal(lowDue.status, 'waiting_for_evaluation_window_or_metrics');
+
+  console.log('site operations analysis smoke passed: 14/21/28-day wait policy, compatible evaluation, server-derived metrics, no duplicate due work, and quota-safe bounded GSC query feedback');
 } finally {
   globalThis.fetch = originalFetch;
 }
