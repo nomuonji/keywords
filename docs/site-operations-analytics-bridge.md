@@ -2,7 +2,7 @@
 
 Updated: 2026-09-16
 
-This document is the implementation addendum to `site-operations-architecture.md`. It records the implemented analytics projection, optimization-evaluation evidence, and GSC-query feedback boundary.
+This document is the implementation addendum to `site-operations-architecture.md`. It records the implemented analytics projection, optimization-evaluation evidence, GSC-query feedback boundary, and Autopilot evaluation handoff.
 
 ## Goal
 
@@ -16,6 +16,11 @@ existing Autopilot runner
         │     └─ cloud projection
         │             ├─ GSC -> Firestore metricSnapshots
         │             └─ saved analytics-dashboard GA4 -> metricSnapshots
+        │
+        ├─ due optimization check
+        │     └─ evaluate_site_optimization Operation
+        │             ├─ site_optimization_evaluation_context
+        │             └─ site_optimization_record_result
         │
         └─ Sites Operator read models
                ├─ optimization_evaluation_context
@@ -118,9 +123,42 @@ ctr
 averagePosition
 ```
 
-It **does not automatically label the result improved/neutral/worsened**. The hypothesis is semantic and already persisted in `optimizationEvents`; the Agent compares the compatible deltas to that hypothesis and records the result with `optimization_event_update` only after the wait has matured.
+It **does not automatically label the result improved/neutral/worsened**. The hypothesis is semantic and already persisted in `optimizationEvents`; the Agent compares the compatible deltas to that hypothesis and records the result only after the wait has matured.
 
-This prevents a generic metric rule from silently redefining the experiment after publication.
+### Autopilot evaluation handoff
+
+The local Operator now performs a bounded Sites check for linked `existing_site` projects. When an implemented/pending optimization has reached `evaluateAfter` **and** a compatible GSC baseline/post pair exists, it emits:
+
+```text
+kind = evaluate_site_optimization
+relatedType = site_optimization
+relatedId = optimizationEvent.id
+```
+
+The ordinary Autopilot runner turns that candidate into a shared Operation. It does not create a second worker.
+
+The persistent execution Agent receives two local Keywords MCP adapters backed by the same Sites command layer:
+
+```text
+site_optimization_evaluation_context
+site_optimization_record_result
+```
+
+The first returns the persisted observation, diagnosis, hypothesis and compatible deltas. The second accepts only:
+
+```text
+result = improved | neutral | worsened | inconclusive
+notes
+expectedRevision
+```
+
+The Agent cannot submit evaluation metric numbers. `site_optimization_record_result` recomputes those numbers from the saved snapshots immediately before the optimistic write, then records them in `optimizationEvents.evaluationMetrics`. This prevents invented or stale metric values from being persisted.
+
+Evaluation is a measurement-only Operation: it must not edit the article or start a second optimization. If evidence is not ready, the Agent checkpoints the concrete missing evidence rather than manufacturing a verdict.
+
+Non-actionable due checks are cached locally for `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES` (default 30) to avoid unnecessary Firestore reads. Ready work is never cached, and the cache is invalidated after result persistence and after fresh metric projection, preventing immediate duplicate scheduling.
+
+This preserves the one-change/one-hypothesis boundary and prevents a generic metric rule from silently redefining the experiment after publication.
 
 ## GSC query feedback loop
 
@@ -156,18 +194,20 @@ The existing Operator remains responsible for scheduling.
 - sitemap/live URL inventory: 7-day freshness threshold
 - GSC measurement collection: `KEYWORDS_METRICS_CADENCE_HOURS`, default `24`
 - comparison windows: still seven-day periods, so daily capture refreshes evidence without changing the statistical comparison unit
+- optimization due-check cache: `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES`, default `30`; ready work is not cached
 - optimization evaluation: controlled by `optimizationEvents.evaluateAfter`; daily measurement does not permit daily content changes
 
 ## Failure behavior
 
-Cloud projection is additive and cannot invalidate locally captured evidence.
+Cloud projection and evaluation discovery are additive and cannot invalidate locally captured evidence.
 
-- Firestore not configured -> projection is skipped
-- no `localProjectId` mapping -> projection is skipped with a setup hint
+- Firestore not configured -> Sites evaluation discovery is skipped
+- no `localProjectId` mapping -> Sites evaluation discovery is skipped
 - GA4 saved snapshot unavailable -> GSC can still project
 - Firestore projection error -> maintenance records the projection failure while retaining successful local GSC capture
 - ambiguous mappings -> fail closed rather than infer identity
 - no exact baseline / compatible post period -> evaluation context remains not-ready instead of manufacturing a verdict
+- revision changes between read and result write -> optimistic write fails and the Agent must reread
 - no compatible site GSC pair -> query-opportunity output remains empty instead of comparing overlapping windows
 
 ## Source-of-truth boundaries
@@ -190,7 +230,8 @@ No existing SQLite migration is required for this bridge.
 
 1. Register real production sites with `localProjectId`.
 2. Register existing Git articles with `localPageId` and/or `canonicalUrl` where article-level GSC tracking is needed.
-3. Let the runner/Agent consume mature `optimization_evaluation_context` packets and persist conclusions, while retaining the one-change/one-hypothesis boundary.
+3. Run the persistent Autopilot with Firebase/Sites credentials available so mature optimizations can enter the shared evaluation queue.
 4. Let the Agent pass selected `site_query_opportunities` through Keywords Operator's Ads-first pipeline; do not directly auto-save every observed query.
-5. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
-6. Consider article-level GA4 only when a trustworthy page-scoped acquisition source exists.
+5. Add a traffic-aware evaluation-window policy for low-sample articles instead of forcing every experiment to resolve after 14 days.
+6. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
+7. Consider article-level GA4 only when a trustworthy page-scoped acquisition source exists.
