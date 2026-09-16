@@ -7,6 +7,7 @@ import {
   siteRegistryResolve
 } from './remote-site-operations.js';
 import { invalidateSiteOptimizationDueCache } from './site-operations-analysis.js';
+import { invalidateSiteQueryFeedbackCache } from './site-query-feedback.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
 const { sqlite } = getDatabase();
@@ -78,9 +79,6 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const site = resolved.site as SiteRecord | null;
   if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', projectId, nextAction: 'Set sites.localProjectId with site_registry_save.' };
 
-  // Remote list calls stay bounded. Sites with >100 tracked article records can
-  // still receive site-level metrics; additional article projection can be paged
-  // in a later scale phase without changing the source-of-truth model.
   const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
   const articles = articleResponse.items as SiteArticleRecord[];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
@@ -186,8 +184,8 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     warnings.push('GA4 portfolio snapshot is unavailable; GSC projection can still succeed.');
   }
 
-  // A fresh projection may make a previously waiting optimization evaluable.
   invalidateSiteOptimizationDueCache(projectId);
+  invalidateSiteQueryFeedbackCache(projectId);
 
   return {
     status: 'projected' as const,

@@ -8,6 +8,7 @@ import { operationControl } from './guard.js';
 import { googleAdsConfigured } from './workspace.js';
 import { recoveryContext } from './recovery-context.js';
 import { nextSiteOptimizationEvaluation } from './site-operations-analysis.js';
+import { nextSiteQueryFeedback } from './site-query-feedback.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -63,10 +64,11 @@ async function inspect(projectId: string) {
       siteOptimization = await nextSiteOptimizationEvaluation(projectId);
       if (siteOptimization.status === 'ready') {
         const event = siteOptimization.event;
+        const effectiveEvaluateAfter = siteOptimization.evaluation?.evaluationWindow?.effectiveEvaluateAfter ?? event.evaluateAfter;
         candidates.push({
           kind: 'evaluate_site_optimization', rank: 5.45,
           title: `Evaluate matured site optimization: ${event.id}`,
-          reason: `Optimization ${event.id} reached evaluateAfter ${event.evaluateAfter} and has compatible complete article-level GSC before/after evidence. Compare the persisted hypothesis to the measured deltas; do not edit the article in this evaluation operation.`,
+          reason: `Optimization ${event.id} reached its effective evaluation date ${effectiveEvaluateAfter} and has compatible complete article-level GSC before/after evidence. Compare the persisted hypothesis to the measured deltas; do not edit the article in this evaluation operation.`,
           relatedType: 'site_optimization', relatedId: event.id,
           siteId: siteOptimization.site.id, articleId: event.articleId, eventRevision: event.revision
         });
@@ -103,6 +105,35 @@ async function inspect(projectId: string) {
   const metricsStaleMs = metricsCadenceHours * 60 * 60 * 1000;
   if (project.mode === 'existing_site' && gscConfigured && (!latestSnapshot || Date.now() - new Date(latestSnapshot.createdAt).getTime() > metricsStaleMs)) candidates.push({ kind: 'capture_metrics', rank: 7, title: 'Capture fresh scoped Search Console metrics', reason: latestSnapshot ? `The latest GSC observation is older than the configured ${metricsCadenceHours}-hour collection cadence.` : 'No scoped historical GSC observation has been captured yet.', relatedType: 'metrics', relatedId: projectId });
   if ((!recovery.applicable || recovery.newContentAllowed) && unclustered[0]?.avgMonthly) candidates.push({ kind: 'structure_demand', rank: 8, title: `Resolve unclustered demand: ${unclustered[0].text}`, reason: `${unclustered[0].avgMonthly} average monthly searches are recorded with no cluster assignment.`, relatedType: 'keyword', relatedId: unclustered[0].id });
+
+  let siteQueryFeedback: any = { status: 'not_checked' };
+  if (project.mode === 'existing_site' && !review && !discovery && !session && !openTask && (!recovery.applicable || recovery.newContentAllowed)) {
+    try {
+      siteQueryFeedback = await nextSiteQueryFeedback(projectId);
+      if (siteQueryFeedback.status === 'ready') {
+        const alreadyHandled = sqlite.prepare(`SELECT id FROM operation_requests WHERE project_id=?
+          AND json_extract(constraints_json,'$.operatorKind')='research_site_queries'
+          AND json_extract(constraints_json,'$.relatedId')=? LIMIT 1`).get(projectId, siteQueryFeedback.snapshotId);
+        if (!alreadyHandled) {
+          candidates.push({
+            kind: 'research_site_queries', rank: 8.7,
+            title: `Research Search Console opportunities from ${siteQueryFeedback.snapshotId}`,
+            reason: `The bounded saved GSC query set contains ${siteQueryFeedback.candidates.length} newly observed or rising queries. Run the shared Ads-first pipeline, spend SERP only on shortlisted terms, and save only evidence-backed candidates to Keyword Treasury.`,
+            relatedType: 'site_query_snapshot', relatedId: siteQueryFeedback.snapshotId,
+            siteId: siteQueryFeedback.siteId,
+            previousSnapshotId: siteQueryFeedback.previousSnapshotId,
+            queryCoverage: siteQueryFeedback.queryCoverage,
+            feedbackCriteria: siteQueryFeedback.criteria,
+            feedbackCandidates: siteQueryFeedback.candidates,
+            maxSerpChecks: siteQueryFeedback.maxSerpChecks
+          });
+        } else siteQueryFeedback = { ...siteQueryFeedback, status: 'already_queued', operationId: alreadyHandled.id };
+      }
+    } catch (error) {
+      siteQueryFeedback = { status: 'unavailable', error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   const dueAt = project.lastDiscoveryAt ? new Date(new Date(project.lastDiscoveryAt).getTime() + project.discoveryCadenceDays * 86_400_000) : null;
   if ((!recovery.applicable || recovery.newContentAllowed) && !discovery && (!dueAt || Date.now() >= dueAt.getTime()) && (project.topic || project.domain)) {
     const providerHealthy = !adsCapability || adsCapability.status === 'available';
@@ -111,11 +142,14 @@ async function inspect(projectId: string) {
   }
   candidates.sort((a, b) => Number(a.rank) - Number(b.rank));
   const siteOptimizationSummary = siteOptimization.status === 'ready'
-    ? { status: 'ready', siteId: siteOptimization.site.id, eventId: siteOptimization.event.id, articleId: siteOptimization.event.articleId, evaluateAfter: siteOptimization.event.evaluateAfter }
-    : siteOptimization.status === 'waiting_for_compatible_metrics'
+    ? { status: 'ready', siteId: siteOptimization.site.id, eventId: siteOptimization.event.id, articleId: siteOptimization.event.articleId, evaluateAfter: siteOptimization.event.evaluateAfter, evaluationWindow: siteOptimization.evaluation?.evaluationWindow ?? null }
+    : siteOptimization.status === 'waiting_for_compatible_metrics' || siteOptimization.status === 'waiting_for_evaluation_window_or_metrics'
       ? { status: siteOptimization.status, dueEventIds: siteOptimization.dueEventIds }
       : { status: siteOptimization.status, reason: siteOptimization.reason ?? null, error: siteOptimization.error ?? null };
-  return { generatedAt: now(), project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode }, control, recovery: { state: recovery.state, newContentAllowed: recovery.newContentAllowed, reasons: recovery.reasons, summary: recovery.summary, nextObservationAt: recovery.nextObservationAt }, measurement: { ignoredUnknownScope: comparisons.ignoredUnknownScope }, siteOptimization: siteOptimizationSummary, candidates, next: candidates[0] ?? { kind: 'no_action', reason: 'No operator action is currently justified.' } };
+  const siteQueryFeedbackSummary = siteQueryFeedback.status === 'ready' || siteQueryFeedback.status === 'already_queued'
+    ? { status: siteQueryFeedback.status, siteId: siteQueryFeedback.siteId, snapshotId: siteQueryFeedback.snapshotId, candidateCount: siteQueryFeedback.candidates.length, maxSerpChecks: siteQueryFeedback.maxSerpChecks }
+    : { status: siteQueryFeedback.status, siteId: siteQueryFeedback.siteId ?? null, snapshotId: siteQueryFeedback.snapshotId ?? null, reason: siteQueryFeedback.reason ?? null, error: siteQueryFeedback.error ?? null };
+  return { generatedAt: now(), project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode }, control, recovery: { state: recovery.state, newContentAllowed: recovery.newContentAllowed, reasons: recovery.reasons, summary: recovery.summary, nextObservationAt: recovery.nextObservationAt }, measurement: { ignoredUnknownScope: comparisons.ignoredUnknownScope }, siteOptimization: siteOptimizationSummary, siteQueryFeedback: siteQueryFeedbackSummary, candidates, next: candidates[0] ?? { kind: 'no_action', reason: 'No operator action is currently justified.' } };
 }
 
 export const operatorCommands = {
@@ -130,7 +164,7 @@ export const operatorCommands = {
     const relatedType = String(next.relatedType ?? kind); const relatedId = next.relatedId ? String(next.relatedId) : null;
     const duplicate = await db.select().from(schema.tasks).where(and(eq(schema.tasks.projectId, projectId), eq(schema.tasks.assigneeType, 'agent'), ne(schema.tasks.status, 'done'), eq(schema.tasks.relatedType, relatedType), relatedId ? eq(schema.tasks.relatedId, relatedId) : isNull(schema.tasks.relatedId))).get();
     if (duplicate) return { ...state, createdTask: null, existingTaskId: duplicate.id };
-    const t = now(); const priority = ['investigate_query_drop','observe_outcome','evaluate_site_optimization'].includes(kind) ? 90 : kind === 'sync_site' || kind === 'capture_metrics' ? 70 : kind === 'discovery_due' ? 55 : 60;
+    const t = now(); const priority = ['investigate_query_drop','observe_outcome','evaluate_site_optimization'].includes(kind) ? 90 : kind === 'sync_site' || kind === 'capture_metrics' ? 70 : kind === 'research_site_queries' ? 65 : kind === 'discovery_due' ? 55 : 60;
     const task = { id: id(), projectId, title: String(next.title ?? 'Operator-selected SEO task'), description: String(next.reason ?? ''), status: 'todo', priority, assigneeType: 'agent', relatedType, relatedId, createdAt: t, updatedAt: t };
     await db.insert(schema.tasks).values(task); return { ...state, createdTask: task };
   })
