@@ -45,12 +45,16 @@ await blogCommands.receipt(agent,{projectId:p.id,receipt:event('local_verified')
 await blogCommands.receipt(agent,{projectId:p.id,receipt:event('published',{publication:{confirmed_at:new Date().toISOString(),checks:[{url:handoff.target_urls[0],http_status:200,canonical:handoff.target_urls[0]}]}})});
 // Simulate elapsed time only in the isolated fixture, then exercise real capture commands.
 sqlite.prepare('UPDATE blog_handoffs SET published_at=? WHERE id=?').run('2025-02-01T00:00:00.000Z',handoff.handoff_id);
-process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN='fixture-token';process.env.KEYWORDS_SERPER_API_KEY='fixture-token';
+process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN='fixture-token';
+process.env.BRAVE_API_KEY='fixture-token';
 const savedFetch=globalThis.fetch;let calls=0;
-globalThis.fetch=async(_url:any,options:any)=>{
- calls++;const request=JSON.parse(options.body);
- if(request.dimensions){assert.equal(request.dimensions.join(','),'query,page');assert.ok(request.dimensionFilterGroups[0].filters[0].expression.includes('example'));return new Response(JSON.stringify({rows:[{keys:['fixture query','https://example.com/a/'],clicks:request.startDate==='2025-01-01'?5:10,impressions:100,ctr:0.05,position:12}]}),{status:200});}
- return new Response(JSON.stringify({relatedSearches:[{query:'Unknown external wording'}],peopleAlsoAsk:[{question:'A new unexpected question?'}],organic:[]}),{status:200});
+globalThis.fetch=async(url:any,options:any={})=>{
+ calls++;
+ if(String(url).includes('googleapis.com')){
+  const request=JSON.parse(options.body);
+  if(request.dimensions){assert.equal(request.dimensions.join(','),'query,page');assert.ok(request.dimensionFilterGroups[0].filters[0].expression.includes('example'));return new Response(JSON.stringify({rows:[{keys:['fixture query','https://example.com/a/'],clicks:request.startDate==='2025-01-01'?5:10,impressions:100,ctr:0.05,position:12}]}),{status:200});}
+ }
+ return new Response(JSON.stringify({web:{results:[{title:'Fixture result',url:'https://example.org/result',description:'Fixture Brave result'}]}}),{status:200});
 };
 const before=await blogCommands.capture(agent,{projectId:p.id,startDate:'2025-01-01',endDate:'2025-01-28',siteUrl:'sc-domain:example.com'});
 const after=await blogCommands.capture(agent,{projectId:p.id,startDate:'2025-02-02',endDate:'2025-03-01',siteUrl:'sc-domain:example.com'});
@@ -60,10 +64,15 @@ await blogCommands.receipt(agent,{projectId:p.id,receipt:event('evaluated',{outc
 globalThis.fetch=async()=>new Response('failed',{status:403});
 await assert.rejects(()=>blogCommands.capture(agent,{projectId:p.id,startDate:'2025-01-01',endDate:'2025-01-28',siteUrl:'sc-domain:example.com'}));
 assert.ok(sqlite.prepare('SELECT id FROM blog_query_page_captures WHERE id=?').get(before.captureId));
-globalThis.fetch=async()=>new Response(JSON.stringify({relatedSearches:[{query:'Unknown external wording'}],peopleAlsoAsk:[{question:'A new unexpected question?'}],organic:[]}),{status:200});
+globalThis.fetch=async()=>new Response(JSON.stringify({web:{results:[{title:'Fixture result',url:'https://example.org/result',description:'Fixture Brave result'}]}}),{status:200});
 const {job}=await discoveryCommands.start(human,{projectId:p.id,seedKeywords:['original seed'],goal:'Fixture external discovery',demandPolicy:'surface_only',maxExternalRequests:5,maxCandidates:3});
 const claim=await discoveryCommands.claim(agent,{projectId:p.id,jobId:job.id});
-const discovered=await discoveryCommands.expand(agent,{projectId:p.id,jobId:job.id,seed:'original seed'});assert.equal(discovered.newPhrases,2);
+// Brave is the production default. A plain web response may have no related-query surface;
+// verify that the external request is still persisted safely rather than fabricating phrases.
+const discovered=await discoveryCommands.expand(agent,{projectId:p.id,jobId:job.id,seed:'original seed'});assert.equal(discovered.newPhrases,0);
+const externalSource=await commands.source.record(agent,{projectId:p.id,type:'search_observation',label:'Fixture external search phrases',metadata:{relatedSearches:['Unknown external wording'],peopleAlsoAsk:['A new unexpected question?']}});
+await discoveryCommands.observe(agent,{projectId:p.id,jobId:job.id,sourceId:externalSource.id,rawPhrase:'Unknown external wording'});
+await discoveryCommands.observe(agent,{projectId:p.id,jobId:job.id,sourceId:externalSource.id,rawPhrase:'A new unexpected question?'});
 const observations=await discoveryCommands.observations(agent,{projectId:p.id,jobId:job.id}) as any[];
 assert.equal(observations.length,2);assert.equal(observations[0].evidence_kind,'search_surface_observed');
 await discoveryCommands.expand(agent,{projectId:p.id,jobId:job.id,parentId:observations[0].id});
@@ -76,4 +85,4 @@ globalThis.fetch=savedFetch;
 await planningCommands.pageReview(human,{projectId:p.id,pageId:plan.page.id,verdict:'needs_edit'});
 assert.equal((await blogCommands.get(agent,{projectId:p.id,handoffId:handoff.handoff_id})).valid,false);
 assert.ok(calls>=2);
-console.log(JSON.stringify({passed:true,database:process.env.KEYWORDS_DB_PATH,checks:['binding isolation','local != published','evidence gate','human approval','idempotent export/receipts','ordered lifecycle','GSC pairing','failed capture preservation','external phrase discovery','lease/pause','revocation']}));
+console.log(JSON.stringify({passed:true,database:process.env.KEYWORDS_DB_PATH,checks:['binding isolation','local != published','evidence gate','human approval','idempotent export/receipts','ordered lifecycle','GSC pairing','failed capture preservation','Brave external search + exact source observations','lease/pause','revocation']}));

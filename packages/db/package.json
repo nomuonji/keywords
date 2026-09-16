@@ -20,6 +20,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./firestore": "./src/firestore.ts",
-    "./site-structure-schema": "./src/site-structure-schema.ts"
+    "./site-structure-schema": "./src/site-structure-schema.ts",
+    "./remote-keyword-schema": "./src/remote-keyword-schema.ts"
   }
 }

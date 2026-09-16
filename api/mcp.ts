@@ -6,11 +6,22 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod/v4';
 // Keep these imports relative: Vercel bundles a root-level serverless function
 // independently of npm workspace links.
-import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave } from '../packages/keyword-treasury/src/index.js';
-import { analyzeSerp, searchSerp } from '../packages/research/src/index.js';
+import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
+import { analyzeSerp } from '../packages/research/src/index.js';
 import { googleAdsDirectConfiguration, googleAdsKeywordHistoricalMetricsDirect, sanitizeGoogleAdsError } from './google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from './mcp-contract.js';
-import { siteStructureSave, siteStructureGet, siteStructureList, siteStructureSaveShape, siteStructureGetShape, siteStructureListShape } from '../packages/commands/src/site-structure.js';
+import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch, siteStructureSaveShape, siteStructureGetShape, siteStructureListShape, siteStructurePatchShape } from '../packages/commands/src/site-structure.js';
+import {
+  keywordScreenCriteriaShape,
+  researchSessionCreate, researchSessionCreateShape,
+  researchSessionGet, researchSessionGetShape,
+  researchSessionList, researchSessionListShape,
+  researchSessionUpdate, researchSessionUpdateShape,
+  screenDemandResults,
+  serpQuotaConfiguration,
+  serpResearchCached,
+  serpUsageStatus
+} from '../packages/commands/src/remote-keyword-research.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -44,7 +55,10 @@ const requireToken = async (c: any, next: any) => {
   return next();
 };
 app.use('/mcp', requireToken); app.use('/api/mcp', requireToken);
-const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] });
+const structured = (value: unknown) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
+  structuredContent: Array.isArray(value) ? { items: value } : value && typeof value === 'object' ? value as Record<string, unknown> : { value }
+});
 
 function runtimeStatus() {
   const googleAdsDirect = googleAdsDirectConfiguration();
@@ -62,48 +76,81 @@ function runtimeStatus() {
     googleAdsDemandProviderOrder: ['proxy', 'direct'],
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
-    googleAdsDirectLastError
+    googleAdsDirectLastError,
+    serpQuotaConfiguration: serpQuotaConfiguration()
   };
+}
+
+type DemandInput = { keywords: string[]; languageConstant?: string; geoTargetConstants?: string[]; includeAdultKeywords?: boolean };
+async function demandWithFallback(input: DemandInput) {
+  let proxyProviderError: string | null = null;
+  try {
+    const result = await keywordDemand(input);
+    googleAdsDirectLastError = null;
+    return { ...result, fallbackUsed: false, providerRoute: 'proxy' as const };
+  } catch (error) {
+    proxyProviderError = sanitizeGoogleAdsError(error);
+  }
+  try {
+    const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants, includeAdultKeywords: input.includeAdultKeywords });
+    googleAdsDirectLastError = null;
+    return { ...result, fallbackUsed: true, providerRoute: 'direct_fallback' as const, proxyProviderError };
+  } catch (error) {
+    const directProviderError = sanitizeGoogleAdsError(error);
+    googleAdsDirectLastError = directProviderError;
+    throw new Error(`Google Ads proxy failed: ${proxyProviderError}; direct fallback failed: ${directProviderError}`);
+  }
 }
 
 function server() {
   const mcp = new McpServer({ name: 'keywords-treasury', version: KEYWORDS_MCP_SERVER_VERSION });
   const [statusTool, demandTool, serpResearchTool, serpAnalyzeTool, saveTool, listTool] = KEYWORDS_MCP_TOOL_NAMES;
-  mcp.registerTool(statusTool, { description: 'Check the live remote MCP version, deployment, tool contract, treasury configuration, Google Ads provider order, and direct-provider readiness. No secrets are returned.' }, async () => text(runtimeStatus()));
-  mcp.registerTool(demandTool, { description: 'Get normalized Google Ads historical demand for exact supplied keywords, including the prior 12 monthly search-volume values and CPC. Uses the configured Google Ads proxy first because it owns the known-working credential set, then falls back to direct Google Ads only if the proxy request fails. This only researches; it does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
-    let proxyProviderError: string | null = null;
-    try {
-      const result = await keywordDemand(input);
-      googleAdsDirectLastError = null;
-      return text({ ...result, fallbackUsed: false, providerRoute: 'proxy' });
-    } catch (error) {
-      proxyProviderError = sanitizeGoogleAdsError(error);
-    }
-
-    try {
-      const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants, includeAdultKeywords: input.includeAdultKeywords });
-      googleAdsDirectLastError = null;
-      return text({ ...result, fallbackUsed: true, providerRoute: 'direct_fallback', proxyProviderError });
-    } catch (error) {
-      const directProviderError = sanitizeGoogleAdsError(error);
-      googleAdsDirectLastError = directProviderError;
-      throw new Error(`Google Ads proxy failed: ${proxyProviderError}; direct fallback failed: ${directProviderError}`);
-    }
-  });
-  mcp.registerTool(serpResearchTool, { description: 'Retrieve and analyze a normalized web SERP. Brave is the default provider; use Serper only when explicitly requested and configured. Accepts query or keyword and num or count. This only researches; it does not save candidates.', inputSchema: { query: z.string().min(1).max(500).optional(), keyword: z.string().min(1).max(500).optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().min(1).max(20).optional(), count: z.number().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => {
+  mcp.registerTool(statusTool, { description: 'Check the live remote MCP version, deployment, tool contract, treasury configuration, Google Ads provider order, and SERP quota configuration. No secrets are returned.' }, async () => structured(runtimeStatus()));
+  mcp.registerTool(demandTool, { description: 'Get normalized Google Ads historical demand for up to 50 exact supplied keywords. Uses the configured Google Ads proxy first, then direct Google Ads only if the proxy fails. This is the low-cost first-stage screening source and does not save candidates.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => structured(await demandWithFallback(input)));
+  mcp.registerTool(serpResearchTool, { description: 'High-cost second-stage SERP research with Firestore cache and monthly quota enforcement. Cache is used by default; forceRefresh bypasses cache and may consume reserve capacity until the hard monthly limit.', inputSchema: { query: z.string().min(1).max(500).optional(), keyword: z.string().min(1).max(500).optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().int().min(1).max(20).optional(), count: z.number().int().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional(), forceRefresh: z.boolean().optional() } }, async input => {
     const query = input.query ?? input.keyword; if (!query) throw new Error('query or keyword is required');
-    const result = await searchSerp({ ...input, query, num: input.num ?? input.count });
-    return text({ ...result, analysis: analyzeSerp(result) });
+    return structured(await serpResearchCached({ query, country: input.country, language: input.language, location: input.location, num: input.num ?? input.count, provider: input.provider, forceRefresh: input.forceRefresh }));
   });
-  mcp.registerTool(serpAnalyzeTool, { description: 'Compute a transparent screening score from a normalized SERP. Scores are signal-only, not a ranking prediction. It returns weak-domain, exact-title, forum, stale-page, and opportunity signals.', inputSchema: { snapshot: z.object({ query: z.string().min(1), country: z.string().nullable().optional(), language: z.string().nullable().optional(), provider: z.enum(['brave', 'serper']), fetchedAt: z.string(), peopleAlsoAsk: z.array(z.string()).optional(), relatedSearches: z.array(z.string()).optional(), results: z.array(z.object({ position: z.number().nullable(), title: z.string(), link: z.string(), domain: z.string().optional(), snippet: z.string().nullable() })).max(20) }) } }, async ({ snapshot }) => {
+  mcp.registerTool(serpAnalyzeTool, { description: 'Compute a transparent screening score from a normalized SERP without performing any external search.', inputSchema: { snapshot: z.object({ query: z.string().min(1), country: z.string().nullable().optional(), language: z.string().nullable().optional(), provider: z.enum(['brave', 'serper']), fetchedAt: z.string(), peopleAlsoAsk: z.array(z.string()).optional(), relatedSearches: z.array(z.string()).optional(), results: z.array(z.object({ position: z.number().nullable(), title: z.string(), link: z.string(), domain: z.string().optional(), snippet: z.string().nullable() })).max(20) }) } }, async ({ snapshot }) => {
     const results = snapshot.results.map(result => ({ ...result, position: result.position ?? null, snippet: result.snippet ?? null, domain: result.domain || (() => { try { return new URL(result.link).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; } })() }));
-    return text(analyzeSerp({ ...snapshot, country: snapshot.country ?? null, language: snapshot.language ?? null, results, peopleAlsoAsk: snapshot.peopleAlsoAsk ?? [], relatedSearches: snapshot.relatedSearches ?? [] }));
+    return structured(analyzeSerp({ ...snapshot, country: snapshot.country ?? null, language: snapshot.language ?? null, results, peopleAlsoAsk: snapshot.peopleAlsoAsk ?? [], relatedSearches: snapshot.relatedSearches ?? [] }));
   });
-  mcp.registerTool(saveTool, { description: 'Save evidence-backed niche keyword candidates to the shared Firestore treasury. Use after judging demand and competition; do not save speculative phrases without evidence.', inputSchema: { candidates: z.array(z.object({ keyword: z.string().min(1), seed: z.string().optional(), status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), notes: z.string().max(4000).optional(), volume: z.number().nullable().optional(), competition: z.union([z.string(), z.number()]).nullable().optional(), allintitle: z.number().nullable().optional(), serpWeakness: z.number().nullable().optional(), source: z.string().optional(), evidence: z.record(z.string(), z.unknown()).optional() })).min(1).max(100) } }, async ({ candidates }) => text(await treasurySave(candidates)));
-  mcp.registerTool(listTool, { description: 'List keyword candidates saved in the shared Firestore treasury.', inputSchema: { status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), query: z.string().optional(), limit: z.number().min(1).max(100).optional() } }, async input => text(await treasuryList(input)));
-  mcp.registerTool('site_structure_list', { description: 'List shared Firestore site concepts and page structures, newest first. Follow nextPageToken to retrieve more.', inputSchema: siteStructureListShape, annotations: { readOnlyHint: true } }, async input => text(await siteStructureList(input)));
-  mcp.registerTool('site_structure_get', { description: 'Read a site concept, page hierarchy, internal links, revision, and linked original treasury keywords. Use before editing.', inputSchema: siteStructureGetShape, annotations: { readOnlyHint: true } }, async input => text(await siteStructureGet(input)));
-  mcp.registerTool('site_structure_save', { description: 'Create or edit a shared site concept after keyword research. Choose a stable id and expectedRevision=0 to create (title required); read with site_structure_get and supply its revision to edit. Omitted fields are preserved. Supplied nodes/links replace the entire respective array, so retain unchanged items. Nodes have stable IDs, parentId (null for roots), title, relative path, kind, purpose, keywordIds from keyword_treasury_list/save, and notes. Links reference node IDs via from/to/label. Empty arrays clear the structure. Archive using status=archived. active means an active concept, never publication approval. Saves are atomic and audited. Drafts are visible on the public dashboard just like the keyword treasury; do not include secrets.', inputSchema: siteStructureSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } }, async input => text(await siteStructureSave(input)));
+  mcp.registerTool(saveTool, { description: 'Save evidence-backed keyword candidates to Firestore. Structured demand/SERP metrics are first-class fields while free-form evidence remains available for supplemental context.', inputSchema: { candidates: z.array(z.object({ keyword: z.string().min(1), seed: z.string().optional(), status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), notes: z.string().max(4000).optional(), volume: z.number().nullable().optional(), competition: z.union([z.string(), z.number()]).nullable().optional(), allintitle: z.number().nullable().optional(), serpWeakness: z.number().nullable().optional(), source: z.string().optional(), evidence: z.record(z.string(), z.unknown()).optional(), avgMonthlySearches: z.number().nullable().optional(), averageCpcMicros: z.number().nullable().optional(), competitionIndex: z.number().nullable().optional(), opportunityScore: z.number().nullable().optional(), weakDomainCount: z.number().nullable().optional(), forumCount: z.number().nullable().optional(), stalePageCount: z.number().nullable().optional(), exactTitleCount: z.number().nullable().optional(), demandResearchedAt: z.string().nullable().optional(), serpResearchedAt: z.string().nullable().optional(), country: z.string().nullable().optional(), language: z.string().nullable().optional() })).min(1).max(100) } }, async ({ candidates }) => structured(await treasurySave(candidates)));
+  mcp.registerTool(listTool, { description: 'Backward-compatible simple list of keyword candidates saved in Firestore.', inputSchema: { status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), query: z.string().optional(), limit: z.number().min(1).max(100).optional() } }, async input => structured(await treasuryList(input)));
+  mcp.registerTool('site_structure_list', { description: 'List shared Firestore site concepts and page structures, newest first. Follow nextPageToken to retrieve more.', inputSchema: siteStructureListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteStructureList(input)));
+  mcp.registerTool('site_structure_get', { description: 'Read a site concept, page hierarchy, data model/source/template/refresh strategy, revision, and linked treasury keywords. Use before editing.', inputSchema: siteStructureGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteStructureGet(input)));
+  mcp.registerTool('site_structure_save', { description: 'Create or full-edit a site concept. Existing nodes/links are replaced only when supplied; use site_structure_patch for normal incremental edits. Supports DB-driven SEO metadata: dataModel, sourceStrategy, pageTemplates and refreshPolicy.', inputSchema: siteStructureSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true } }, async input => structured(await siteStructureSave(input)));
+
+  mcp.registerTool('research_session_create', { description: 'Create durable Firestore research context containing objective, seed themes, hypotheses, findings and next actions so a later ChatGPT session can resume without reconstructing chat history.', inputSchema: researchSessionCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await researchSessionCreate(input)));
+  mcp.registerTool('research_session_get', { description: 'Get a research session. Omit id to resume the latest active session, falling back to the latest session of any status.', inputSchema: researchSessionGetShape, annotations: { readOnlyHint: true } }, async input => structured(await researchSessionGet(input)));
+  mcp.registerTool('research_session_list', { description: 'List recent research sessions, optionally filtered by status/query.', inputSchema: researchSessionListShape, annotations: { readOnlyHint: true } }, async input => structured(await researchSessionList(input)));
+  mcp.registerTool('research_session_update', { description: 'Update a research session with optimistic revision control. Additive fields let agents append researched/shortlisted/rejected keyword IDs, findings, next actions and site concepts without resending the full session.', inputSchema: researchSessionUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await researchSessionUpdate(input)));
+  mcp.registerTool('serp_usage_status', { description: 'Show current-month SERP actual API requests, cache hits, monthly limit, soft limit, reserve, remaining quota and whether normal/forced requests are allowed.', annotations: { readOnlyHint: true } }, async () => structured(await serpUsageStatus()));
+  mcp.registerTool('keyword_treasury_search', { description: 'Search Firestore treasury by demand, CPC, competition, opportunity, status, theme/seed, research date and whether a keyword is already linked to any site concept. Old treasury documents remain searchable through compatibility fallbacks.', inputSchema: { query: z.string().optional(), seed: z.string().optional(), status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), minVolume: z.number().min(0).optional(), maxVolume: z.number().min(0).optional(), minCpc: z.number().min(0).optional(), maxCpc: z.number().min(0).optional(), minCompetition: z.number().min(0).max(100).optional(), maxCompetition: z.number().min(0).max(100).optional(), minOpportunityScore: z.number().min(0).max(100).optional(), linkedToSite: z.boolean().optional(), researchedAfter: z.string().optional(), researchedBefore: z.string().optional(), sortBy: z.enum(['updatedAt', 'keyword', 'avgMonthlySearches', 'averageCpcMicros', 'competitionIndex', 'opportunityScore']).optional(), sortOrder: z.enum(['asc', 'desc']).optional(), pageToken: z.string().optional(), limit: z.number().int().min(1).max(100).optional() }, annotations: { readOnlyHint: true } }, async input => structured(await treasurySearch(input)));
+  mcp.registerTool('site_structure_patch', { description: 'Incrementally edit a site concept without resending the full nodes/links arrays. Supports add/update/remove node, add/remove link, and link/unlink keyword operations with optimistic revision control.', inputSchema: siteStructurePatchShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async input => structured(await siteStructurePatch(input)));
+  mcp.registerTool('keyword_screen_batch', { description: 'Low-cost first-stage screening. Fetch Google Ads demand for up to 50 keywords and return criteria-passing keywords plus a deterministic shortlist recommended for later SERP checks. This tool never calls SERP.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), criteria: z.object(keywordScreenCriteriaShape).strict().optional(), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
+    const demand = await demandWithFallback(input);
+    const screening = screenDemandResults(demand.results, input.criteria ?? {});
+    return structured({ demand, screening });
+  });
+  mcp.registerTool('keyword_research_pipeline', { description: 'Bounded staged research: Google Ads screens all supplied keywords first, then only the best passing candidates receive cached/quota-aware SERP checks. maxSerpChecks is a hard per-call cap and defaults to 5. This tool does not auto-save Treasury or Site Concepts.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), criteria: z.object(keywordScreenCriteriaShape).strict().optional(), maxSerpChecks: z.number().int().min(0).max(10).default(5), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().int().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => {
+    const demand = await demandWithFallback(input);
+    const screening = screenDemandResults(demand.results, input.criteria ?? {});
+    const selected = screening.results.filter(item => item.passed).slice(0, input.maxSerpChecks);
+    const serpChecks: Array<Record<string, unknown>> = [];
+    let stoppedReason: string | null = null;
+    for (const candidate of selected) {
+      try {
+        const result = await serpResearchCached({ query: candidate.keyword, country: input.country, language: input.language, location: input.location, num: input.num, provider: input.provider, forceRefresh: false });
+        serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, ...result });
+      } catch (error) {
+        stoppedReason = error instanceof Error ? error.message : String(error);
+        if (/SERP .*limit|quota|reserve/i.test(stoppedReason)) break;
+        serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, error: stoppedReason });
+      }
+    }
+    return structured({ demand, screening, maxSerpChecks: input.maxSerpChecks, selectedForSerp: selected.map(item => item.keyword), serpChecks, stoppedReason, usage: await serpUsageStatus() });
+  });
   return mcp;
 }
 const health = (c: any) => c.json({ ok: true, service: 'keywords-treasury-mcp', ...runtimeStatus() });

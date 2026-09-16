@@ -54,7 +54,9 @@ const registration = await operationCommands.executorRegister(agent,{executorId:
 const claim = await executorCommands.claimNext(agent,{executorId:agent.actorId,generation:registration.generation,projectId:project.id});
 assert.equal(claim.claimed,true);
 assert.equal((await executeMaintenance(agent,claim)).handled,true);
-await operationCommands.executorRelease(agent,{executorId:agent.actorId,generation:registration.generation,operationId:claim.operationId,projectId:project.id});
+const executorAfterMaintenance = sqlite.prepare('SELECT current_operation_id,current_project_id,status FROM operation_executors WHERE id=?').get(agent.actorId) as any;
+assert.equal(executorAfterMaintenance.current_operation_id,null,'Completing maintenance releases the executor claim');
+assert.equal(executorAfterMaintenance.current_project_id,null);
 const healthy = recoveryContext(project.id);
 assert.equal(healthy.newContentAllowed,true);
 assert.equal(inspections,20);
@@ -83,4 +85,4 @@ await operationCommands.checkpoint(human,{operationId:paused.operation.id,projec
 const count=inspections;
 await assert.rejects(()=>recoveryCommands.capture(agent,{projectId:project.id}),/Attach work session/);
 assert.equal(inspections,count);
-console.log('PASS: scoped fixed cohort, real command evidence, reuse, incomplete/auth failure, expansion and pause boundaries');
+console.log('PASS: scoped fixed cohort, real command evidence, automatic executor release, reuse, incomplete/auth failure, expansion and pause boundaries');

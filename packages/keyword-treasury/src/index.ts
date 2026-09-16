@@ -13,9 +13,41 @@ export type TreasuryCandidate = {
   serpWeakness?: number | null;
   source?: string;
   evidence?: Record<string, unknown>;
+  avgMonthlySearches?: number | null;
+  averageCpcMicros?: number | null;
+  competitionIndex?: number | null;
+  opportunityScore?: number | null;
+  weakDomainCount?: number | null;
+  forumCount?: number | null;
+  stalePageCount?: number | null;
+  exactTitleCount?: number | null;
+  demandResearchedAt?: string | null;
+  serpResearchedAt?: string | null;
+  country?: string | null;
+  language?: string | null;
 };
 
 export type TreasuryItem = TreasuryCandidate & { id: string; createdAt: string; updatedAt: string };
+
+export type TreasurySearchInput = {
+  query?: string;
+  seed?: string;
+  status?: TreasuryCandidate['status'];
+  minVolume?: number;
+  maxVolume?: number;
+  minCpc?: number;
+  maxCpc?: number;
+  minCompetition?: number;
+  maxCompetition?: number;
+  minOpportunityScore?: number;
+  linkedToSite?: boolean;
+  researchedAfter?: string;
+  researchedBefore?: string;
+  sortBy?: 'updatedAt' | 'keyword' | 'avgMonthlySearches' | 'averageCpcMicros' | 'competitionIndex' | 'opportunityScore';
+  sortOrder?: 'asc' | 'desc';
+  pageToken?: string;
+  limit?: number;
+};
 
 function demandProviderUrl() { return process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORDS_KEYWORD_VOLUME_API_URL?.trim() || process.env.KEYWORD_VOLUME_API_URL?.trim() || ''; }
 function demandProviderTarget() {
@@ -31,13 +63,41 @@ function demandProviderTarget() {
 
 function normalize(keyword: string) { return keyword.trim().replace(/\s+/g, ' ').toLowerCase(); }
 function idFor(keyword: string) { return createHash('sha256').update(normalize(keyword)).digest('hex').slice(0, 32); }
-function document(item: TreasuryCandidate, id: string, createdAt: string) {
+function finite(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function metric(candidate: TreasuryCandidate, key: keyof TreasuryCandidate, evidenceKey = key): number | null | undefined {
+  if (candidate[key] !== undefined) return finite(candidate[key]);
+  const evidenceValue = candidate.evidence?.[String(evidenceKey)];
+  return evidenceValue === undefined ? undefined : finite(evidenceValue);
+}
+function structured(candidate: TreasuryCandidate): TreasuryCandidate {
+  return {
+    ...candidate,
+    avgMonthlySearches: metric(candidate, 'avgMonthlySearches') ?? (candidate.volume === undefined ? undefined : finite(candidate.volume)),
+    averageCpcMicros: metric(candidate, 'averageCpcMicros'),
+    competitionIndex: metric(candidate, 'competitionIndex') ?? (typeof candidate.competition === 'number' ? finite(candidate.competition) : undefined),
+    opportunityScore: metric(candidate, 'opportunityScore'),
+    weakDomainCount: metric(candidate, 'weakDomainCount'),
+    forumCount: metric(candidate, 'forumCount'),
+    stalePageCount: metric(candidate, 'stalePageCount'),
+    exactTitleCount: metric(candidate, 'exactTitleCount'),
+    demandResearchedAt: candidate.demandResearchedAt ?? (typeof candidate.evidence?.demandResearchedAt === 'string' ? candidate.evidence.demandResearchedAt : undefined),
+    serpResearchedAt: candidate.serpResearchedAt ?? (typeof candidate.evidence?.serpResearchedAt === 'string' ? candidate.evidence.serpResearchedAt : undefined),
+    country: candidate.country ?? (typeof candidate.evidence?.country === 'string' ? candidate.evidence.country : undefined),
+    language: candidate.language ?? (typeof candidate.evidence?.language === 'string' ? candidate.evidence.language : undefined)
+  };
+}
+function document(item: TreasuryCandidate, createdAt: string) {
   const now = new Date().toISOString();
-  return { fields: Object.fromEntries(Object.entries({ ...item, keyword: item.keyword.trim(), status: item.status ?? 'inbox', source: item.source ?? 'remote_mcp', createdAt, updatedAt: now }).map(([key, item]) => [key, field(item)])) };
+  const payload = structured({ ...item, keyword: item.keyword.trim(), status: item.status ?? 'inbox', source: item.source ?? 'remote_mcp' });
+  return { fields: Object.fromEntries(Object.entries({ ...payload, createdAt, updatedAt: now }).filter(([, item]) => item !== undefined).map(([key, item]) => [key, field(item)])) };
 }
 function parseDocument(doc: any): TreasuryItem {
   const id = String(doc.name ?? '').split('/').pop() ?? '';
-  return { id, ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) } as TreasuryItem;
+  return structured({ id, ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) } as TreasuryItem) as TreasuryItem;
 }
 
 export async function treasurySave(input: TreasuryCandidate[]) {
@@ -48,8 +108,12 @@ export async function treasurySave(input: TreasuryCandidate[]) {
     const id = idFor(candidate.keyword);
     let existing: any;
     try { existing = await firestore(`/keywordTreasury/${id}`); } catch { existing = undefined; }
-    const createdAt = existing ? String(value(existing.fields?.createdAt) ?? new Date().toISOString()) : new Date().toISOString();
-    const result = await firestore(`/keywordTreasury/${id}`, { method: 'PATCH', body: JSON.stringify(document(candidate, id, createdAt)) });
+    const previous = existing ? parseDocument(existing) : null;
+    const createdAt = previous?.createdAt ?? new Date().toISOString();
+    const merged: TreasuryCandidate = previous
+      ? { ...previous, id: undefined, createdAt: undefined, updatedAt: undefined, ...candidate } as TreasuryCandidate
+      : candidate;
+    const result = await firestore(`/keywordTreasury/${id}`, { method: 'PATCH', body: JSON.stringify(document(merged, createdAt)) });
     saved.push(parseDocument(result));
   }
   return saved;
@@ -60,6 +124,88 @@ export async function treasuryList(input: { status?: string; limit?: number; que
   const query = input.query?.trim().toLowerCase();
   const items = (response.documents ?? []).map(parseDocument).filter((item: TreasuryItem) => (!input.status || item.status === input.status) && (!query || item.keyword.toLowerCase().includes(query) || item.seed?.toLowerCase().includes(query))).sort((a: TreasuryItem, b: TreasuryItem) => b.updatedAt.localeCompare(a.updatedAt));
   return items.slice(0, Math.max(1, Math.min(input.limit ?? 50, 100)));
+}
+
+async function allCollection(path: string, maxItems: number) {
+  const documents: any[] = [];
+  let pageToken: string | undefined;
+  while (documents.length < maxItems) {
+    const params = new URLSearchParams({ pageSize: String(Math.min(100, maxItems - documents.length)) });
+    if (pageToken) params.set('pageToken', pageToken);
+    const response = await firestore(`/${path}?${params}`);
+    documents.push(...(response.documents ?? []));
+    pageToken = response.nextPageToken;
+    if (!pageToken) break;
+  }
+  return documents;
+}
+
+function searchOffset(token?: string) {
+  if (!token) return 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as { offset?: unknown };
+    const offset = Number(parsed.offset);
+    if (!Number.isInteger(offset) || offset < 0) throw new Error('bad cursor');
+    return offset;
+  } catch { throw new Error('Invalid pageToken'); }
+}
+function cursor(offset: number) { return Buffer.from(JSON.stringify({ offset })).toString('base64url'); }
+function dateMetric(item: TreasuryItem) { return item.serpResearchedAt ?? item.demandResearchedAt ?? item.updatedAt; }
+
+export async function treasurySearch(input: TreasurySearchInput = {}) {
+  const maxScan = Math.max(100, Math.min(Number(process.env.KEYWORDS_TREASURY_SEARCH_SCAN_LIMIT ?? 2000) || 2000, 5000));
+  const documents = await allCollection('keywordTreasury', maxScan);
+  const siteDocuments = input.linkedToSite === undefined ? [] : await allCollection('siteStructures', 1000);
+  const linked = new Map<string, Set<string>>();
+  for (const doc of siteDocuments) {
+    const siteId = String(doc.name ?? '').split('/').pop() ?? '';
+    const fields = Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) as any;
+    for (const node of Array.isArray(fields.nodes) ? fields.nodes : []) {
+      for (const keywordId of Array.isArray(node?.keywordIds) ? node.keywordIds : []) {
+        const set = linked.get(String(keywordId)) ?? new Set<string>();
+        set.add(siteId); linked.set(String(keywordId), set);
+      }
+    }
+  }
+  const query = input.query?.trim().toLowerCase();
+  const seed = input.seed?.trim().toLowerCase();
+  const after = input.researchedAfter ? Date.parse(input.researchedAfter) : null;
+  const before = input.researchedBefore ? Date.parse(input.researchedBefore) : null;
+  if (input.researchedAfter && !Number.isFinite(after)) throw new Error('researchedAfter must be an ISO date');
+  if (input.researchedBefore && !Number.isFinite(before)) throw new Error('researchedBefore must be an ISO date');
+  const withLinks = documents.map(parseDocument).map(item => ({ ...item, linkedSiteConceptIds: [...(linked.get(item.id) ?? [])] }));
+  const filtered = withLinks.filter(item => {
+    const volume = finite(item.avgMonthlySearches ?? item.volume);
+    const cpc = finite(item.averageCpcMicros);
+    const competition = finite(item.competitionIndex ?? (typeof item.competition === 'number' ? item.competition : null));
+    const opportunity = finite(item.opportunityScore);
+    const researched = Date.parse(dateMetric(item));
+    return (!query || item.keyword.toLowerCase().includes(query) || item.seed?.toLowerCase().includes(query) || item.notes?.toLowerCase().includes(query))
+      && (!seed || item.seed?.toLowerCase().includes(seed))
+      && (!input.status || item.status === input.status)
+      && (input.minVolume === undefined || (volume !== null && volume >= input.minVolume))
+      && (input.maxVolume === undefined || (volume !== null && volume <= input.maxVolume))
+      && (input.minCpc === undefined || (cpc !== null && cpc >= input.minCpc))
+      && (input.maxCpc === undefined || (cpc !== null && cpc <= input.maxCpc))
+      && (input.minCompetition === undefined || (competition !== null && competition >= input.minCompetition))
+      && (input.maxCompetition === undefined || (competition !== null && competition <= input.maxCompetition))
+      && (input.minOpportunityScore === undefined || (opportunity !== null && opportunity >= input.minOpportunityScore))
+      && (input.linkedToSite === undefined || (item.linkedSiteConceptIds.length > 0) === input.linkedToSite)
+      && (after === null || researched >= after)
+      && (before === null || researched <= before);
+  });
+  const sortBy = input.sortBy ?? 'updatedAt';
+  const direction = input.sortOrder === 'asc' ? 1 : -1;
+  filtered.sort((a: any, b: any) => {
+    const av = sortBy === 'keyword' || sortBy === 'updatedAt' ? String(a[sortBy] ?? '') : finite(a[sortBy]) ?? -Infinity;
+    const bv = sortBy === 'keyword' || sortBy === 'updatedAt' ? String(b[sortBy] ?? '') : finite(b[sortBy]) ?? -Infinity;
+    return av < bv ? -1 * direction : av > bv ? 1 * direction : 0;
+  });
+  const offset = searchOffset(input.pageToken);
+  const limit = Math.max(1, Math.min(input.limit ?? 50, 100));
+  const items = filtered.slice(offset, offset + limit);
+  const nextOffset = offset + items.length;
+  return { items, nextPageToken: nextOffset < filtered.length ? cursor(nextOffset) : null, matched: filtered.length, scanned: documents.length, truncated: documents.length >= maxScan };
 }
 
 export async function keywordDemand(input: { keywords: string[]; languageConstant?: string; geoTargetConstants?: string[]; includeAdultKeywords?: boolean }) {
