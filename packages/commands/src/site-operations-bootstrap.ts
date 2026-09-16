@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
-import { resolve, sep } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { getDatabase } from '@keywords/db';
 import { field, firestore, value } from '../../db/src/firestore.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -71,8 +71,11 @@ function fileCommit(root: string, repoPath: string) {
 
 function pathInside(root: string, repoPath: string) {
   const absolute = resolve(root, repoPath);
-  const relative = absolute.slice(root.length).replace(/^[/\\]+/, '');
-  return Boolean(relative) && absolute !== root && !relative.startsWith(`..${sep}`) && !relative.includes(`${sep}..${sep}`) && existsSync(absolute);
+  if (!existsSync(absolute)) return false;
+  const lexical = relative(root, absolute);
+  if (!lexical || lexical === '..' || lexical.startsWith(`..${sep}`) || isAbsolute(lexical)) return false;
+  const physical = relative(root, realpathSync(absolute));
+  return Boolean(physical) && physical !== '..' && !physical.startsWith(`..${sep}`) && !isAbsolute(physical);
 }
 
 function decodeDocument(doc: any) {
@@ -119,6 +122,12 @@ function searchConsoleProperty(projectId: string, origin: string) {
     ORDER BY captured_at DESC LIMIT 1`, projectId, origin)?.property ?? null;
 }
 
+function siteStatus(current: SiteRecord | null, hasLiveEvidence: boolean) {
+  if (current?.status === 'paused' || current?.status === 'archived') return current.status;
+  if (hasLiveEvidence) return 'active' as const;
+  return current?.status ?? 'building' as const;
+}
+
 /**
  * Bootstrap Firestore Sites identity from an already human-confirmed Blog binding.
  * No name/domain/repository inference is allowed: ambiguous or missing evidence is
@@ -161,7 +170,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     productionUrl: binding.origin,
     deploymentProvider: currentSite?.deploymentProvider ?? 'other' as const,
     searchConsoleProperty: currentSite?.searchConsoleProperty ?? observedProperty,
-    status: currentSite?.status ?? (hasLiveSiteEvidence ? 'active' as const : 'building' as const)
+    status: siteStatus(currentSite, hasLiveSiteEvidence)
   };
   let site: SiteRecord;
   let siteWrite = false;
@@ -206,36 +215,40 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     }
     const repoPath = refs[0];
     if (!pathInside(root, repoPath)) {
-      skipped.push({ pageId: page.id, url: page.url, reason: 'mapped_source_file_missing' });
+      skipped.push({ pageId: page.id, url: page.url, reason: 'mapped_source_file_missing_or_unsafe' });
       continue;
     }
-    const existing = await resolveArticle(site.id, page.id, page.url);
-    const isLive = liveEvidence(projectId, page);
-    const status = existing?.status === 'paused' || existing?.status === 'archived'
-      ? existing.status
-      : isLive ? 'published' as const : existing?.status ?? 'draft' as const;
-    const articleDesired = {
-      siteId: site.id,
-      localPageId: page.id,
-      canonicalUrl: page.url,
-      repo: repository,
-      repoPath,
-      currentCommitSha: fileCommit(root, repoPath),
-      slug: String(page.slug || '__root__'),
-      title: String(page.title || page.url),
-      status
-    };
-    if (!changedArticle(existing, articleDesired)) { unchanged++; continue; }
-    await siteArticleSave({
-      id: existing?.id ?? hashId('article', `${site.id}:${page.id}`),
-      expectedRevision: existing?.revision ?? 0,
-      ...articleDesired,
-      primaryKeywordId: existing?.primaryKeywordId ?? null,
-      secondaryKeywordIds: existing?.secondaryKeywordIds ?? [],
-      publishedAt: existing?.publishedAt ?? null,
-      lastUpdatedAt: existing?.lastUpdatedAt ?? null
-    });
-    if (existing) updated++; else created++;
+    try {
+      const existing = await resolveArticle(site.id, page.id, page.url);
+      const isLive = liveEvidence(projectId, page);
+      const status = existing?.status === 'paused' || existing?.status === 'archived'
+        ? existing.status
+        : isLive ? 'published' as const : existing?.status ?? 'draft' as const;
+      const articleDesired = {
+        siteId: site.id,
+        localPageId: page.id,
+        canonicalUrl: page.url,
+        repo: repository,
+        repoPath,
+        currentCommitSha: fileCommit(root, repoPath),
+        slug: String(page.slug || '__root__'),
+        title: String(page.title || page.url),
+        status
+      };
+      if (!changedArticle(existing, articleDesired)) { unchanged++; continue; }
+      await siteArticleSave({
+        id: existing?.id ?? hashId('article', `${site.id}:${page.id}`),
+        expectedRevision: existing?.revision ?? 0,
+        ...articleDesired,
+        primaryKeywordId: existing?.primaryKeywordId ?? null,
+        secondaryKeywordIds: existing?.secondaryKeywordIds ?? [],
+        publishedAt: existing?.publishedAt ?? null,
+        lastUpdatedAt: existing?.lastUpdatedAt ?? null
+      });
+      if (existing) updated++; else created++;
+    } catch (error) {
+      skipped.push({ pageId: page.id, url: page.url, reason: `remote_article_not_safely_resolved: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500) });
+    }
   }
 
   return {
@@ -249,7 +262,8 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
       requiresConfirmedBlogBinding: true,
       requiresGitHubOriginRemote: !Boolean(process.env.KEYWORDS_SITE_REPOSITORY?.trim()),
       requiresUniqueSourceMapping: true,
-      localBuildIsNotPublicationEvidence: true
+      localBuildIsNotPublicationEvidence: true,
+      liveEvidenceMayPromoteStatus: true
     }
   };
 }
