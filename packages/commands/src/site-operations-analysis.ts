@@ -162,13 +162,15 @@ export async function localOptimizationRecordResult(input: unknown) {
     throw new Error(`Revision conflict: expected ${args.expectedRevision}, current ${context.event.revision}`);
   }
   const evidence = `Evaluation evidence: baseline=${context.baseline.id} (${context.baseline.periodStart}..${context.baseline.periodEnd}); post=${context.post.id} (${context.post.periodStart}..${context.post.periodEnd}).`;
-  return optimizationEventUpdate({
+  const updated = await optimizationEventUpdate({
     id: args.eventId,
     expectedRevision: args.expectedRevision,
     result: args.result,
     evaluationMetrics: flattenedEvaluationMetrics(context),
     notes: [args.notes, evidence].filter(Boolean).join('\n').slice(0, 4000)
   });
+  invalidateSiteOptimizationDueCache(args.projectId);
+  return updated;
 }
 
 const dueCache = new Map<string, { expiresAt: number; value: Awaited<ReturnType<typeof computeNextSiteOptimizationEvaluation>> }>();
@@ -204,12 +206,12 @@ async function computeNextSiteOptimizationEvaluation(projectId: string) {
   };
 }
 
-/** Bounded/cached probe used by the local Operator; failures remain non-blocking. */
+/** Bounded/cached probe used by the local Operator; ready work is never cached. */
 export async function nextSiteOptimizationEvaluation(projectId: string) {
   const cached = dueCache.get(projectId);
   if (cached && cached.expiresAt > Date.now()) return cached.value;
   const value = await computeNextSiteOptimizationEvaluation(projectId);
-  dueCache.set(projectId, { expiresAt: Date.now() + dueCacheMs(), value });
+  if (value.status !== 'ready') dueCache.set(projectId, { expiresAt: Date.now() + dueCacheMs(), value });
   return value;
 }
 
