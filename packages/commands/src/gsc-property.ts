@@ -13,18 +13,50 @@ export function propertyContains(property: string, origin: string) {
   } catch { return false; }
 }
 
+export function gscCredentialsConfigured() {
+  const hasAccess = Boolean(process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  const refresh = process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN || process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const clientId = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET;
+  return hasAccess || Boolean(refresh && clientId && clientSecret);
+}
+
+function projectOrigin(domain: string | null, bindingOrigin?: string | null) {
+  const source = bindingOrigin ?? domain;
+  if (!source) return null;
+  try { return new URL(source.includes('://') ? source : `https://${source}`).origin; }
+  catch { return null; }
+}
+
+/** Shared local preflight used by scheduling and readiness. It performs no external request. */
+export function gscMeasurementReadiness(projectId: string) {
+  const { sqlite } = getDatabase();
+  const project = sqlite.prepare('SELECT domain FROM projects WHERE id=?').get(projectId) as { domain: string | null } | undefined;
+  if (!project) throw new Error('Project not found');
+  const binding = sqlite.prepare('SELECT origin FROM blog_bindings WHERE project_id=?').get(projectId) as { origin: string } | undefined;
+  const origin = projectOrigin(project.domain, binding?.origin);
+  const configuredProperty = process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim() || null;
+  const credentialsConfigured = gscCredentialsConfigured();
+  return {
+    credentialsConfigured,
+    configuredProperty,
+    origin,
+    configuredPropertyPresent: Boolean(configuredProperty),
+    propertyDiscoveryAvailable: Boolean(credentialsConfigured && origin),
+    scopeResolvable: Boolean(configuredProperty || origin)
+  };
+}
+
 /** Shared property selection for multi-site measurement, with one auditable external read when needed. */
 export async function resolveGscProperty(ctx: CommandContext, projectId: string, requested?: string) {
   const { sqlite } = getDatabase();
-  const project = sqlite.prepare('SELECT domain FROM projects WHERE id=?').get(projectId) as {domain:string|null}|undefined;
-  if (!project) throw new Error('Project not found');
-  const binding = sqlite.prepare('SELECT origin FROM blog_bindings WHERE project_id=?').get(projectId) as {origin:string}|undefined;
-  const origin = binding?.origin ?? (project.domain ? new URL(project.domain.includes('://') ? project.domain : `https://${project.domain}`).origin : null);
+  const readiness = gscMeasurementReadiness(projectId);
+  const origin = readiness.origin;
   if (requested) {
     if (origin && !propertyContains(requested,origin)) throw new Error('Search Console property does not cover the project origin');
     return requested;
   }
-  const configured = process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim();
+  const configured = readiness.configuredProperty;
   if (configured && (!origin || propertyContains(configured,origin))) return configured;
   if (!origin) throw new Error('A project origin is required to discover the Search Console property');
   const cached = sqlite.prepare("SELECT metadata_json FROM sources WHERE project_id=? AND type='gsc_properties' AND created_at>? ORDER BY created_at DESC LIMIT 1").get(projectId,new Date(Date.now()-86400000).toISOString()) as {metadata_json:string}|undefined;

@@ -1,6 +1,7 @@
 import { getDatabase } from '@keywords/db';
 import { autonomyControl } from './autonomy.js';
 import { operationControl } from './guard.js';
+import { gscMeasurementReadiness } from './gsc-property.js';
 import { googleAdsConfigured } from './workspace.js';
 import { remoteSitesStatus, siteArticleList, siteRegistryResolve } from './remote-site-operations.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -8,21 +9,6 @@ import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations
 const { sqlite } = getDatabase();
 const one = (sql: string, ...args: any[]): any => sqlite.prepare(sql).get(...args);
 const rows = (sql: string, ...args: any[]): any[] => sqlite.prepare(sql).all(...args);
-
-function gscCredentialsConfigured() {
-  const hasAccess = Boolean(process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || process.env.GOOGLE_APPLICATION_CREDENTIALS);
-  const refresh = process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN || process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-  const clientId = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET;
-  return hasAccess || Boolean(refresh && clientId && clientSecret);
-}
-
-function projectOrigin(project: any, binding?: { origin: string } | null) {
-  if (binding?.origin) return binding.origin;
-  if (!project.domain) return null;
-  try { return new URL(String(project.domain).includes('://') ? String(project.domain) : `https://${project.domain}`).origin; }
-  catch { return null; }
-}
 
 function sameOrigin(a: string | null | undefined, b: string | null | undefined) {
   if (!a || !b) return false;
@@ -58,14 +44,12 @@ async function projectReadiness(project: any) {
   const operations = operationControl(project.id);
   const binding = one('SELECT blog_site_id,origin,observed_at FROM blog_bindings WHERE project_id=?', project.id) as { blog_site_id: string; origin: string; observed_at: string } | undefined;
   const bindingFresh = Boolean(binding?.observed_at && Date.now() - Date.parse(binding.observed_at) <= 7 * 86_400_000);
-  const origin = projectOrigin(project, binding);
+  const gsc = gscMeasurementReadiness(project.id);
+  const origin = gsc.origin;
   const gitPush = gitPushAllowed(binding?.blog_site_id ?? null);
-  const gscCredentials = gscCredentialsConfigured();
-  const gscSiteUrlConfigured = Boolean(process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim());
-  // The existing resolveGscProperty path can discover a matching property from
-  // accessible GSC sites when an origin exists, so a single global property env
-  // is optional in multi-site operation.
-  const gscScopeResolvable = Boolean(gscSiteUrlConfigured || origin);
+  const gscCredentials = gsc.credentialsConfigured;
+  const gscSiteUrlConfigured = gsc.configuredPropertyPresent;
+  const gscScopeResolvable = gsc.scopeResolvable;
   const agentCommandConfigured = Boolean(process.env.KEYWORDS_AGENT_COMMAND?.trim());
   const schedulerEnabled = process.env.KEYWORDS_AUTOPILOT_SCHEDULER !== '0';
   const adsConfigured = googleAdsConfigured();
@@ -164,7 +148,7 @@ async function projectReadiness(project: any) {
       firestoreConfigured: sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured,
       gscCredentialsConfigured: gscCredentials,
       gscSiteUrlConfigured,
-      gscPropertyDiscoveryAvailable: Boolean(gscCredentials && origin),
+      gscPropertyDiscoveryAvailable: gsc.propertyDiscoveryAvailable,
       gscScopeResolvable,
       googleAdsConfigured: adsConfigured,
       autoGitPush: gitPush,
