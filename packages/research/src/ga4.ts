@@ -71,7 +71,7 @@ async function serviceAccountAccessToken() {
   const claim = encode(JSON.stringify({ iss: credentials.client_email, scope: ANALYTICS_SCOPE, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
   const signer = createSign('RSA-SHA256');
   signer.update(`${header}.${claim}`);
-  const assertion = `${header}.${claim}.${signer.sign(credentials.privateKey ?? credentials.private_key, 'base64url')}`;
+  const assertion = `${header}.${claim}.${signer.sign(credentials.private_key, 'base64url')}`;
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
