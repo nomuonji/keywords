@@ -50,5 +50,40 @@ assert.equal(first.createdTask.relatedId, keywordId);
 const second = await operatorCommands.tick(ctx, projectId);
 assert.equal(second.createdTask, null);
 assert.equal((second.next as any).kind, 'existing_task');
+
+// Metric scheduling must follow the shared multi-site property resolver rather
+// than requiring one process-global GOOGLE_SEARCH_CONSOLE_SITE_URL.
+process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN = 'fixture-gsc-token';
+delete process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL;
+const multiSiteProjectId = 'project-operator-multisite-gsc';
+await db.insert(schema.projects).values({
+  id: multiSiteProjectId, name: 'Operator multisite GSC', domain: 'multisite.example.com', mode: 'existing_site', createdAt: t, updatedAt: t
+});
+const multiSite = await operatorCommands.inspect(ctx, multiSiteProjectId);
+assert.ok((multiSite.candidates as any[]).some(candidate => candidate.kind === 'capture_metrics'), 'origin + GSC credentials should schedule metric capture without a global property env');
+
+const boundProjectId = 'project-operator-binding-gsc';
+await db.insert(schema.projects).values({
+  id: boundProjectId, name: 'Operator binding GSC', domain: null, mode: 'existing_site', createdAt: t, updatedAt: t
+});
+sqlite.prepare(`INSERT INTO blog_bindings(project_id,blog_site_id,origin,language,country,snapshot_json,snapshot_hash,observed_at)
+  VALUES(?,?,?,?,?,?,?,?)`).run(boundProjectId, 'bound-site', 'https://bound.example.com', 'en', 'US', '{}', 'binding-fixture', t);
+const bound = await operatorCommands.inspect(ctx, boundProjectId);
+assert.ok((bound.candidates as any[]).some(candidate => candidate.kind === 'capture_metrics'), 'confirmed Blog origin + GSC credentials should schedule metric capture without a project domain');
+
+const noScopeProjectId = 'project-operator-no-gsc-scope';
+await db.insert(schema.projects).values({
+  id: noScopeProjectId, name: 'Operator no GSC scope', domain: null, mode: 'existing_site', createdAt: t, updatedAt: t
+});
+const noScope = await operatorCommands.inspect(ctx, noScopeProjectId);
+assert.ok(!(noScope.candidates as any[]).some(candidate => candidate.kind === 'capture_metrics'), 'credentials alone must not schedule metric capture without a project origin or configured property');
+
 sqlite.close();
-console.log(JSON.stringify({ ok: true, next: 'investigate_query_drop', taskId: first.createdTask.id }));
+console.log(JSON.stringify({
+  ok: true,
+  next: 'investigate_query_drop',
+  taskId: first.createdTask.id,
+  multiSiteMetricsScheduled: true,
+  bindingOriginMetricsScheduled: true,
+  noScopeMetricsBlocked: true
+}));
