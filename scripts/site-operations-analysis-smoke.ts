@@ -7,6 +7,9 @@ import {
   siteRegistrySave
 } from '../packages/commands/src/remote-site-operations.js';
 import {
+  localOptimizationEvaluationContext,
+  localOptimizationRecordResult,
+  nextSiteOptimizationEvaluation,
   optimizationEvaluationContext,
   siteQueryOpportunities
 } from '../packages/commands/src/site-operations-analysis.js';
@@ -84,7 +87,7 @@ try {
     metrics: { clicks: 18, impressions: 360, ctr: 0.05, averagePosition: 8.5 }, sourceVersion: 'article-post', capturedAt: '2026-07-29T00:00:00.000Z'
   });
 
-  await optimizationEventCreate({
+  const createdEvent = await optimizationEventCreate({
     id: 'opt-eval', siteId: 'site-a', articleId: 'article-a', observation: 'The page ranked around position 11 with stable impressions.',
     diagnosis: 'A missing comparison section may be limiting relevance.', hypothesis: 'Adding that one comparison section should improve ranking while preserving intent.',
     actionType: 'content_expand', baselinePeriod: { start: '2026-07-01', end: '2026-07-07' }, beforeCommit: 'a'.repeat(40), afterCommit: 'b'.repeat(40),
@@ -101,6 +104,19 @@ try {
   assert.ok(Math.abs((evaluation.deltas.averagePosition.absolute ?? 0) - (-2.5)) < 1e-9);
   assert.equal(evaluation.policy.automaticVerdict, false);
   assert.match(evaluation.nextAction, /optimization_event_update/);
+
+  const localEvaluation = await localOptimizationEvaluationContext({ projectId: 'project-a', eventId: 'opt-eval' });
+  assert.equal(localEvaluation.siteId, 'site-a');
+  assert.equal(localEvaluation.readyForAgentEvaluation, true);
+  const dueBefore = await nextSiteOptimizationEvaluation('project-a');
+  assert.equal(dueBefore.status, 'ready');
+  assert.equal(dueBefore.status === 'ready' ? dueBefore.event.id : null, 'opt-eval');
+
+  await assert.rejects(localOptimizationRecordResult({
+    projectId: 'project-a', eventId: 'opt-eval', expectedRevision: createdEvent.revision, result: 'improved',
+    notes: 'Position and clicks moved in the direction stated by the hypothesis.',
+    evaluationMetrics: { clicksDelta: 999 }
+  } as any));
 
   await metricSnapshotSave({
     siteId: 'site-a', provider: 'gsc', periodStart: '2026-08-01', periodEnd: '2026-08-07',
@@ -134,7 +150,21 @@ try {
   assert.match(String(opportunities.nextAction), /keyword_screen_batch/);
   assert.match(String(opportunities.nextAction), /keyword_research_pipeline/);
 
-  console.log('site operations analysis smoke passed: compatible optimization evaluation evidence and quota-safe bounded GSC query feedback candidates');
+  const recorded = await localOptimizationRecordResult({
+    projectId: 'project-a', eventId: 'opt-eval', expectedRevision: createdEvent.revision, result: 'improved',
+    notes: 'The persisted hypothesis expected stronger ranking while preserving intent; compatible GSC evidence moved in that direction.'
+  });
+  assert.equal(recorded.phase, 'evaluated');
+  assert.equal(recorded.result, 'improved');
+  assert.equal(recorded.evaluationMetrics.clicksDelta, 8);
+  assert.equal(recorded.evaluationMetrics.impressionsDelta, 60);
+  assert.ok(Math.abs((recorded.evaluationMetrics.averagePositionDelta ?? 0) - (-2.5)) < 1e-9);
+  assert.match(recorded.notes, /baseline=.*article-baseline|baseline=/);
+
+  const dueAfter = await nextSiteOptimizationEvaluation('project-a');
+  assert.equal(dueAfter.status, 'none_due');
+
+  console.log('site operations analysis smoke passed: compatible evaluation, runner mapping, server-derived metrics, no duplicate due work, and quota-safe bounded GSC query feedback');
 } finally {
   globalThis.fetch = originalFetch;
 }
