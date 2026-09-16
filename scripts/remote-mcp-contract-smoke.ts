@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
+import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.3.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.4.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -14,9 +15,18 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'keyword_treasury_list',
   'site_structure_list',
   'site_structure_get',
-  'site_structure_save'
+  'site_structure_save',
+  'research_session_create',
+  'research_session_get',
+  'research_session_list',
+  'research_session_update',
+  'serp_usage_status',
+  'keyword_treasury_search',
+  'site_structure_patch',
+  'keyword_screen_batch',
+  'keyword_research_pipeline'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 9);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 18);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -67,6 +77,20 @@ const ideaMetrics = normalizeGoogleAdsHistoricalResults([{
 assert.equal(ideaMetrics[0]?.averageCpcMicros, 321000);
 assert.deepEqual(ideaMetrics[0]?.monthlySearchVolumes, [{ year: 2026, month: 8, searches: 520 }]);
 
+const screening = screenDemandResults([
+  { keyword: 'high value', avgMonthlySearches: 1000, averageCpcMicros: 2_000_000, competitionIndex: 20 },
+  { keyword: 'low value', avgMonthlySearches: 10, averageCpcMicros: 50_000, competitionIndex: 80 }
+], { minVolume: 100, minCpcMicros: 100_000, maxCompetitionIndex: 60 });
+assert.deepEqual(screening.passedKeywords, ['high value']);
+assert.deepEqual(screening.serpRecommended, ['high value']);
+assert.ok(screening.results[0].screenScore > screening.results[1].screenScore);
+
+process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '2000';
+process.env.KEYWORDS_SERP_SOFT_LIMIT = '1500';
+process.env.KEYWORDS_SERP_RESERVE = '500';
+process.env.KEYWORDS_SERP_CACHE_TTL_DAYS = '30';
+assert.deepEqual(serpQuotaConfiguration(), { monthlyLimit: 2000, softLimit: 1500, reserve: 500, cacheTtlDays: 30, normalCutoff: 1500 });
+
 const analysis = analyzeSerp({
   query: 'ai 英会話 比較',
   country: 'JP',
@@ -86,17 +110,21 @@ for (const key of ['exactTitleCount', 'weakDomainCount', 'forumCount', 'stalePag
 }
 
 const mcpSource = readFileSync(new URL('../api/mcp.ts', import.meta.url), 'utf8');
-assert.match(mcpSource, /keyword:\s*z\.string\(\)/);
-assert.match(mcpSource, /count:\s*z\.number\(\)/);
-assert.match(mcpSource, /analysis:\s*analyzeSerp\(result\)/);
+assert.match(mcpSource, /forceRefresh:\s*z\.boolean\(\)/);
+assert.match(mcpSource, /serpResearchCached/);
+assert.match(mcpSource, /structuredContent/);
 assert.match(mcpSource, /googleAdsDemandProviderOrder:\s*\['proxy', 'direct'\]/);
 assert.match(mcpSource, /providerRoute:\s*'proxy'/);
 assert.match(mcpSource, /providerRoute:\s*'direct_fallback'/);
-assert.match(mcpSource, /fallbackUsed:\s*true/);
-assert.match(mcpSource, /proxyProviderError/);
-assert.match(mcpSource, /directProviderError/);
+assert.match(mcpSource, /keyword_screen_batch/);
+assert.match(mcpSource, /maxSerpChecks/);
+assert.match(mcpSource, /research_session_create/);
+assert.match(mcpSource, /keyword_treasury_search/);
+assert.match(mcpSource, /site_structure_patch/);
 
 const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
-assert.match(treasurySource, /value === null \|\| value === undefined \|\| value === ''/);
+assert.match(treasurySource, /avgMonthlySearches/);
+assert.match(treasurySource, /linkedSiteConceptIds/);
+assert.match(treasurySource, /TREASURY_SEARCH_SCAN_LIMIT/);
 
 console.log('remote MCP contract smoke passed');
