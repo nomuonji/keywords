@@ -18,6 +18,7 @@ const { sqlite } = getDatabase();
 const one = (sql: string, ...args: any[]): any => sqlite.prepare(sql).get(...args);
 const rows = (sql: string, ...args: any[]): any[] => sqlite.prepare(sql).all(...args);
 const repositoryPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const ARTICLE_PREFETCH_LIMIT = 1000;
 
 function hashId(prefix: string, value: string) {
   return `${prefix}-${createHash('sha256').update(value).digest('hex').slice(0, 24)}`;
@@ -90,23 +91,69 @@ function pathInside(root: string, repoPath: string) {
 }
 
 function decodeDocument(doc: any) {
-  return { id: String(doc.name ?? '').split('/').pop() ?? '', ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) } as SiteArticleRecord;
+  return {
+    localPageId: null,
+    canonicalUrl: null,
+    ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])),
+    id: String(doc.name ?? '').split('/').pop() ?? ''
+  } as SiteArticleRecord;
 }
 
-async function articlesByField(fieldPath: 'localPageId' | 'canonicalUrl', expected: string) {
+async function queryArticles(fieldPath: 'siteId' | 'localPageId' | 'canonicalUrl', expected: string, limit: number) {
   const result = await firestore(':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: 'articles' }],
     where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: field(expected) } },
-    limit: 10
+    limit
   } }) });
   return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [decodeDocument(row.document)] : []);
 }
 
-async function resolveArticle(siteId: string, localPageId: string, canonicalUrl: string) {
-  const localMatches = (await articlesByField('localPageId', localPageId)).filter(item => item.siteId === siteId);
+async function articlesByField(fieldPath: 'localPageId' | 'canonicalUrl', expected: string) {
+  return queryArticles(fieldPath, expected, 10);
+}
+
+type ArticleIndex = {
+  byLocalPageId: Map<string, SiteArticleRecord[]>;
+  byCanonicalUrl: Map<string, SiteArticleRecord[]>;
+  saturated: boolean;
+};
+
+function indexArticle(index: ArticleIndex, article: SiteArticleRecord) {
+  if (article.localPageId) {
+    const values = index.byLocalPageId.get(article.localPageId) ?? [];
+    if (!values.some(item => item.id === article.id)) values.push(article);
+    index.byLocalPageId.set(article.localPageId, values);
+  }
+  if (article.canonicalUrl) {
+    const values = index.byCanonicalUrl.get(article.canonicalUrl) ?? [];
+    if (!values.some(item => item.id === article.id)) values.push(article);
+    index.byCanonicalUrl.set(article.canonicalUrl, values);
+  }
+}
+
+async function articleIndex(siteId: string): Promise<ArticleIndex> {
+  const articles = await queryArticles('siteId', siteId, ARTICLE_PREFETCH_LIMIT);
+  const index: ArticleIndex = { byLocalPageId: new Map(), byCanonicalUrl: new Map(), saturated: articles.length >= ARTICLE_PREFETCH_LIMIT };
+  for (const article of articles) indexArticle(index, article);
+  return index;
+}
+
+async function resolveArticle(index: ArticleIndex, siteId: string, localPageId: string, canonicalUrl: string) {
+  // Once the bounded site prefetch is saturated, exact field queries are used so
+  // omitted documents cannot hide duplicate identity claims beyond the first page.
+  if (index.saturated) {
+    const localMatches = (await articlesByField('localPageId', localPageId)).filter(item => item.siteId === siteId);
+    if (localMatches.length > 1) throw new Error(`Multiple remote articles map localPageId ${localPageId}`);
+    if (localMatches[0]) return localMatches[0];
+    const urlMatches = (await articlesByField('canonicalUrl', canonicalUrl)).filter(item => item.siteId === siteId);
+    if (urlMatches.length > 1) throw new Error(`Multiple remote articles map canonicalUrl ${canonicalUrl}`);
+    return urlMatches[0] ?? null;
+  }
+
+  const localMatches = index.byLocalPageId.get(localPageId) ?? [];
   if (localMatches.length > 1) throw new Error(`Multiple remote articles map localPageId ${localPageId}`);
   if (localMatches[0]) return localMatches[0];
-  const urlMatches = (await articlesByField('canonicalUrl', canonicalUrl)).filter(item => item.siteId === siteId);
+  const urlMatches = index.byCanonicalUrl.get(canonicalUrl) ?? [];
   if (urlMatches.length > 1) throw new Error(`Multiple remote articles map canonicalUrl ${canonicalUrl}`);
   return urlMatches[0] ?? null;
 }
@@ -211,6 +258,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     siteWrite = true;
   } else site = currentSite!;
 
+  const remoteArticles = await articleIndex(site.id);
   const sources = new Map<string, string[]>();
   for (const source of snapshot.sources) {
     const key = canonicalKey(source.expected_url);
@@ -240,7 +288,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
       continue;
     }
     try {
-      const existing = await resolveArticle(site.id, page.id, page.url);
+      const existing = await resolveArticle(remoteArticles, site.id, page.id, page.url);
       const isLive = liveEvidence(projectId, page);
       const status = existing?.status === 'paused' || existing?.status === 'archived'
         ? existing.status
@@ -270,6 +318,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
         publishedAt: existing?.publishedAt ?? null,
         lastUpdatedAt: existing?.lastUpdatedAt ?? null
       }) as SiteArticleRecord;
+      indexArticle(remoteArticles, saved);
       articleMappings.push(mapping(saved));
       if (existing) updated++; else created++;
     } catch (error) {
@@ -282,7 +331,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     projectId,
     site: { id: site.id, revision: site.revision, repository: site.repository, productionUrl: site.productionUrl, status: site.status, searchConsoleProperty: site.searchConsoleProperty },
     siteWrite,
-    articles: { created, updated, unchanged, skipped: skipped.length },
+    articles: { created, updated, unchanged, skipped: skipped.length, remotePrefetchSaturated: remoteArticles.saturated },
     articleMappings,
     skipped: skipped.slice(0, 100),
     policy: {
