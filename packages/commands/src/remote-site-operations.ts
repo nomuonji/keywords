@@ -22,9 +22,14 @@ const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened',
 
 export const siteRegistryListShape = { status: siteStatus.optional(), limit: z.number().int().min(1).max(100).default(50), pageToken: z.string().max(4000).optional() };
 export const siteRegistryGetShape = { id: entityId };
+export const siteRegistryResolveShape = {
+  localProjectId: entityId.optional(),
+  productionUrl: webUrl.optional()
+};
+const siteResolveSchema = z.object(siteRegistryResolveShape).strict().refine(input => Boolean(input.localProjectId || input.productionUrl), 'localProjectId or productionUrl is required');
 export const siteRegistrySaveShape = {
   id: entityId, expectedRevision: z.number().int().min(0),
-  siteConceptId: entityId.nullable().optional(), name: z.string().trim().min(1).max(200).optional(),
+  siteConceptId: entityId.nullable().optional(), localProjectId: entityId.nullable().optional(), name: z.string().trim().min(1).max(200).optional(),
   repository: repository.optional(), productionUrl: webUrl.optional(), deploymentProvider: deploymentProvider.optional(),
   ga4PropertyId: z.string().trim().min(1).max(200).nullable().optional(),
   searchConsoleProperty: z.string().trim().min(1).max(500).nullable().optional(), status: siteStatus.optional()
@@ -35,7 +40,7 @@ export const siteArticleListShape = { siteId: entityId, status: articleStatus.op
 export const siteArticleGetShape = { id: entityId };
 export const siteArticleSaveShape = {
   id: entityId, expectedRevision: z.number().int().min(0), siteId: entityId,
-  repo: repository.optional(),
+  localPageId: entityId.nullable().optional(), canonicalUrl: webUrl.nullable().optional(), repo: repository.optional(),
   repoPath: z.string().trim().min(1).max(1000).refine(path => !path.startsWith('/') && !path.includes('\\') && !path.split('/').includes('..'), 'repoPath must be a safe repository-relative path').optional(),
   currentCommitSha: commitSha.nullable().optional(), slug: z.string().trim().min(1).max(300).regex(/^[^\s?#]+$/).optional(),
   title: z.string().trim().min(1).max(300).optional(), primaryKeywordId: keywordId.nullable().optional(),
@@ -84,6 +89,8 @@ export const optimizationContextShape = { siteId: entityId, articleId: entityId.
 
 const encodeFields = (data: object) => Object.fromEntries(Object.entries(data).map(([key, item]) => [key, field(item)]));
 const decoded = (doc: any) => ({ id: doc.name.split('/').pop(), ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) });
+const siteRecord = (doc: any) => ({ localProjectId: null, ...decoded(doc) }) as SiteRecord;
+const articleRecord = (doc: any) => ({ localPageId: null, canonicalUrl: null, ...decoded(doc) }) as SiteArticleRecord;
 const now = () => new Date().toISOString();
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
@@ -99,25 +106,29 @@ async function listDocuments(collection: string, input: { limit: number; pageTok
   return firestore(`/${collection}?${params}`);
 }
 
-async function queryBySite(collection: string, siteId: string, limit = 500) {
+async function queryByField(collection: string, fieldPath: string, expected: unknown, limit = 500) {
   const result = await firestore(':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: collection }],
-    where: { fieldFilter: { field: { fieldPath: 'siteId' }, op: 'EQUAL', value: field(siteId) } },
+    where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: field(expected) } },
     limit: Math.max(1, Math.min(limit, 1000))
   } }) });
-  return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [decoded(row.document)] : []);
+  return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [row.document] : []);
+}
+
+async function queryBySite(collection: string, siteId: string, limit = 500) {
+  return (await queryByField(collection, 'siteId', siteId, limit)).map(decoded);
 }
 
 async function ensureSite(siteId: string) {
   const doc = await readDocument('sites', siteId);
   if (!doc) throw new Error('Site not found: create it with site_registry_save first');
-  return decoded(doc) as SiteRecord;
+  return siteRecord(doc);
 }
 
 async function ensureArticle(articleId: string, siteId?: string) {
   const doc = await readDocument('articles', articleId);
   if (!doc) throw new Error('Article not found: create it with site_article_save first');
-  const article = decoded(doc) as SiteArticleRecord;
+  const article = articleRecord(doc);
   if (siteId && article.siteId !== siteId) throw new Error('Article does not belong to the requested site');
   return article;
 }
@@ -169,28 +180,41 @@ export function remoteSitesStatus() {
 export async function siteRegistryList(input: unknown = {}) {
   const args = z.object(siteRegistryListShape).strict().parse(input);
   const result = await listDocuments('sites', { limit: args.limit, pageToken: args.pageToken, orderBy: 'updatedAt desc' });
-  const items = (result.documents ?? []).map(decoded).filter((item: any) => !args.status || item.status === args.status) as SiteRecord[];
+  const items = (result.documents ?? []).map(siteRecord).filter((item: SiteRecord) => !args.status || item.status === args.status);
   return { items, nextPageToken: result.nextPageToken ?? null };
 }
 
 export async function siteRegistryGet(input: unknown) {
   const args = z.object(siteRegistryGetShape).strict().parse(input);
   const doc = await readDocument('sites', args.id); if (!doc) throw new Error('Site not found');
-  return decoded(doc) as SiteRecord;
+  return siteRecord(doc);
+}
+
+export async function siteRegistryResolve(input: unknown) {
+  const args = siteResolveSchema.parse(input);
+  const matches = args.localProjectId
+    ? await queryByField('sites', 'localProjectId', args.localProjectId, 3)
+    : await queryByField('sites', 'productionUrl', args.productionUrl!, 3);
+  if (matches.length > 1) throw new Error('Site registry mapping is ambiguous; each local project/production URL must map to one site');
+  return { site: matches[0] ? siteRecord(matches[0]) : null };
 }
 
 export async function siteRegistrySave(input: unknown) {
   const args = siteSaveSchema.parse(input);
-  const previous = await readDocument('sites', args.id); const current = previous ? decoded(previous) as SiteRecord : null;
+  const previous = await readDocument('sites', args.id); const current = previous ? siteRecord(previous) : null;
   if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: call site_registry_get and reapply the edit');
   if (!current && (!args.name || !args.repository || !args.productionUrl)) throw new Error('name, repository and productionUrl are required for a new site');
   if (args.siteConceptId) {
     const concept = await readDocument('siteStructures', args.siteConceptId);
     if (!concept) throw new Error('Unknown siteConceptId: create the Site Concept before registering a real site');
   }
+  if (args.localProjectId) {
+    const linked = (await queryByField('sites', 'localProjectId', args.localProjectId, 3)).map(siteRecord).find(site => site.id !== args.id);
+    if (linked) throw new Error(`localProjectId is already linked to site ${linked.id}`);
+  }
   const t = now(); const { expectedRevision, ...patch } = args;
   const base: SiteRecord = current ?? {
-    id: args.id, siteConceptId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other',
+    id: args.id, siteConceptId: null, localProjectId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other',
     ga4PropertyId: null, searchConsoleProperty: null, status: 'planned', revision: 0, createdAt: t, updatedAt: t
   };
   const record: SiteRecord = {
@@ -203,8 +227,9 @@ export async function siteRegistrySave(input: unknown) {
 
 export async function siteArticleList(input: unknown) {
   const args = z.object(siteArticleListShape).strict().parse(input); await ensureSite(args.siteId);
-  const items = (await queryBySite('articles', args.siteId, 500)).filter((item: any) => !args.status || item.status === args.status)
-    .sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit) as SiteArticleRecord[];
+  const items = (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord)
+    .filter(item => !args.status || item.status === args.status)
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
   return { items };
 }
 
@@ -214,13 +239,22 @@ export async function siteArticleGet(input: unknown) {
 
 export async function siteArticleSave(input: unknown) {
   const args = articleSaveSchema.parse(input); await ensureSite(args.siteId);
-  const previous = await readDocument('articles', args.id); const current = previous ? decoded(previous) as SiteArticleRecord : null;
+  const previous = await readDocument('articles', args.id); const current = previous ? articleRecord(previous) : null;
   if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: call site_article_get and reapply the edit');
   if (current && current.siteId !== args.siteId) throw new Error('An existing article cannot be moved to another site');
   if (!current && (!args.repo || !args.repoPath || !args.slug || !args.title)) throw new Error('repo, repoPath, slug and title are required for a new article');
+  const siblings = (args.localPageId || args.canonicalUrl) ? (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord) : [];
+  if (args.localPageId) {
+    const linked = siblings.find(article => article.id !== args.id && article.localPageId === args.localPageId);
+    if (linked) throw new Error(`localPageId is already linked to article ${linked.id}`);
+  }
+  if (args.canonicalUrl) {
+    const linked = siblings.find(article => article.id !== args.id && article.canonicalUrl === args.canonicalUrl);
+    if (linked) throw new Error(`canonicalUrl is already linked to article ${linked.id}`);
+  }
   const t = now(); const { expectedRevision, ...patch } = args;
   const base: SiteArticleRecord = current ?? {
-    id: args.id, siteId: args.siteId, repo: '', repoPath: '', currentCommitSha: null, slug: '', title: '', primaryKeywordId: null,
+    id: args.id, siteId: args.siteId, localPageId: null, canonicalUrl: null, repo: '', repoPath: '', currentCommitSha: null, slug: '', title: '', primaryKeywordId: null,
     secondaryKeywordIds: [], status: 'draft', publishedAt: null, lastUpdatedAt: null, revision: 0, createdAt: t, updatedAt: t
   };
   const record: SiteArticleRecord = {
