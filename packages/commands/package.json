@@ -37,7 +37,8 @@
     "./site-structure": "./src/site-structure.ts",
     "./site-operations-analysis": "./src/site-operations-analysis.ts",
     "./site-operations": "./src/remote-site-operations.ts",
-    "./remote-keyword-research": "./src/remote-keyword-research.ts"
+    "./remote-keyword-research": "./src/remote-keyword-research.ts",
+    "./keyword-research-pipeline": "./src/keyword-research-pipeline.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
