@@ -157,7 +157,9 @@ The local persistent Agent uses a shared research-layer direct Google Ads implem
 
 SERP is never called before Ads screening and `maxSerpChecks` remains a hard per-operation bound. Existing monthly SERP quota/cache rules still apply. If quota/reserve stops the loop, the pipeline returns the stopping reason rather than bypassing the quota.
 
-Treasury is **not** an automatic dump of GSC queries. The Agent saves only candidates it decides are worth retaining after reading the Ads/SERP evidence. GSC-derived entries must preserve provenance with `source = gsc_feedback` and evidence containing at least the real site ID, latest/previous GSC snapshot IDs, and the original GSC candidate row. The research operation does not create an article or Site Concept; those remain later decisions in the Keywords domain.
+Treasury is **not** an automatic dump of GSC queries. The Agent saves only candidates it decides are worth retaining after reading the Ads/SERP evidence. GSC-derived entries must preserve provenance with `source = gsc_feedback` and evidence containing at least the real site ID, latest/previous GSC snapshot IDs, and the original GSC candidate row. The command layer rejects `gsc_feedback` saves that omit this provenance.
+
+The feedback Operation is research-only: it reuses the existing `measurementOnly` permission boundary so Autopilot does not grant content planning or content delivery in this Operation. The dedicated Treasury write remains available through the local MCP action budget. The operation does not create or modify an article or Site Concept; those remain later decisions in the Keywords domain.
 
 ## Cadence
 
