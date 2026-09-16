@@ -1,6 +1,10 @@
 import { blogCommands } from '@keywords/commands/blog';
 import { discoveryCommands } from '@keywords/commands/discovery';
 import { headlessCommands } from '@keywords/commands/headless';
+import {
+ localOptimizationEvaluationContext,
+ localOptimizationRecordResult
+} from '@keywords/commands/site-operations-analysis';
 import type { CommandContext } from '@keywords/domain';
 const string={type:'string'},object={type:'object',additionalProperties:true};
 const boolean={type:'boolean'},stringArray={type:'array',items:{type:'string'}};
@@ -22,10 +26,20 @@ const definitions:Array<[string,string,Record<string,unknown>,string[]]>=[
  ['validateDraft','Independently validate the saved article against stored sources and run the site build. Results are cached by content/source/build revision key.',{operationId:string,articleId:string,buildCommand:string,force:boolean},['operationId']],
  ['artifactContext','Read persisted article artifacts, hashes, validation failures and build status for resume without private reasoning.',{operationId:string,pageId:string},[]]
 ];
-export const blogTools=definitions.map(([name,description,properties,required])=>({name:`blog_${name}`,description,inputSchema:{type:'object' as const,properties:{projectId:string,...properties},required:['projectId',...required]}}));
+const siteOperationTools=[
+ {name:'site_optimization_evaluation_context',description:'Read compatible persisted before/after GSC evidence for one due Sites optimization linked to this local project. This never invents a verdict.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string},required:['projectId','eventId']}},
+ {name:'site_optimization_record_result',description:'Record the semantic result of a mature Sites optimization. Numeric evaluation metrics are recomputed from saved snapshots; the agent supplies only the verdict and notes.',inputSchema:{type:'object' as const,properties:{projectId:string,eventId:string,expectedRevision:{type:'number'},result:{type:'string',enum:['improved','neutral','worsened','inconclusive']},notes:string},required:['projectId','eventId','expectedRevision','result']}}
+];
+export const blogTools=[...definitions.map(([name,description,properties,required])=>({name:`blog_${name}`,description,inputSchema:{type:'object' as const,properties:{projectId:string,...properties},required:['projectId',...required]}})),...siteOperationTools];
 export const isBlogTool=(name:string)=>blogTools.some(t=>t.name===name);
 export async function callBlogTool(name:string,args:any,ctx:CommandContext){
- const op=name.slice(5); if(!isBlogTool(name))throw new Error('Unknown Blog tool');
+ if(!isBlogTool(name))throw new Error('Unknown Blog/Sites execution tool');
+ if(name==='site_optimization_evaluation_context')return localOptimizationEvaluationContext(args);
+ if(name==='site_optimization_record_result'){
+  if(!ctx.workSessionId)throw new Error('Recording an optimization result requires an active shared Operation.');
+  return localOptimizationRecordResult(args);
+ }
+ const op=name.slice(5);
  if(op==='expand')return discoveryCommands.expand(ctx,args);
  if(op==='observations')return discoveryCommands.observations(ctx,args);
  if(op==='observe')return discoveryCommands.observe(ctx,args);
