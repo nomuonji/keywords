@@ -7,6 +7,7 @@ import {
   siteRegistrySave
 } from '../packages/commands/src/remote-site-operations.js';
 import {
+  invalidateSiteOptimizationDueCache,
   localOptimizationEvaluationContext,
   localOptimizationRecordResult,
   nextSiteOptimizationEvaluation,
@@ -207,6 +208,7 @@ try {
   assert.equal(lowEvaluation.post, null);
   assert.equal(lowEvaluation.nextAction, 'wait_for_traffic_adjusted_evaluation_window');
   assert.match(lowEvaluation.warnings.join(' '), /Traffic-aware wait is still active/);
+  invalidateSiteOptimizationDueCache('project-a');
   const lowDue = await nextSiteOptimizationEvaluation('project-a');
   assert.equal(lowDue.status, 'waiting_for_evaluation_window_or_metrics');
 
