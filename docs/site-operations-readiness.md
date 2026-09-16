@@ -11,12 +11,22 @@ With no `projectId`, it checks every local project whose mode is `existing_site`
 The result keeps readiness separate instead of collapsing everything into one misleading boolean:
 
 - `controlPlane`: Firebase/Sites configuration and explicit real-site linkage.
-- `measurement`: control plane plus usable Search Console credentials/property configuration.
+- `measurement`: control plane plus usable Search Console credentials and a resolvable project/property scope.
 - `articleOptimization`: measurement plus confirmed/fresh Blog mapping, exact production-origin agreement, mapped article registry and automatic Git delivery eligibility.
 - `queryFeedback`: measurement plus Google Ads demand access. SERP remains the existing bounded second-stage resource.
 - `autopilotExecution`: project Autopilot enabled, operations not paused, scheduler enabled and `KEYWORDS_AGENT_COMMAND` configured.
 
 `readyForClosedLoop` requires measurement, article optimization and Autopilot execution. Google Ads is intentionally not part of that boolean because an existing-page optimization loop can run without query-feedback research; its readiness is reported separately.
+
+## Multi-site Search Console scope
+
+`GOOGLE_SEARCH_CONSOLE_SITE_URL` is not a required per-process singleton for the multi-site worker. The existing `resolveGscProperty` command already behaves as follows:
+
+1. use an explicitly requested property when it covers the project origin;
+2. otherwise use `GOOGLE_SEARCH_CONSOLE_SITE_URL` when that configured property covers the project origin;
+3. otherwise, when the project has a confirmed Blog origin or valid project domain, enumerate accessible Search Console properties and select one that covers that origin.
+
+The readiness preflight therefore reports `gscPropertyDiscoveryAvailable` and treats the global property env as optional when an origin exists. `gsc_property_scope_unresolvable` is emitted only when neither a configured property nor a valid project origin is available. Search Console credentials are still required.
 
 ## Explicit registration remains explicit
 
@@ -38,7 +48,7 @@ blog_binding_missing
 blog_binding_stale
 blog_site_origin_mismatch
 gsc_credentials_not_configured
-gsc_site_url_not_configured
+gsc_property_scope_unresolvable
 mapped_article_registry_empty
 auto_git_push_disabled
 blog_site_not_allowed_for_git_push
