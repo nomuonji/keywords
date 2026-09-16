@@ -36,6 +36,8 @@
     "./dashboard": "./src/dashboard.ts",
     "./site-structure": "./src/site-structure.ts",
     "./site-operations-analysis": "./src/site-operations-analysis.ts",
+    "./site-optimization-workflow": "./src/site-optimization-workflow.ts",
+    "./site-optimization-delivery-proof": "./src/site-optimization-delivery-proof.ts",
     "./site-operations": "./src/remote-site-operations.ts",
     "./remote-keyword-research": "./src/remote-keyword-research.ts",
     "./keyword-research-pipeline": "./src/keyword-research-pipeline.ts"
