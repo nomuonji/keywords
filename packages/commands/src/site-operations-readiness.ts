@@ -17,6 +17,13 @@ function gscCredentialsConfigured() {
   return hasAccess || Boolean(refresh && clientId && clientSecret);
 }
 
+function projectOrigin(project: any, binding?: { origin: string } | null) {
+  if (binding?.origin) return binding.origin;
+  if (!project.domain) return null;
+  try { return new URL(String(project.domain).includes('://') ? String(project.domain) : `https://${project.domain}`).origin; }
+  catch { return null; }
+}
+
 function sameOrigin(a: string | null | undefined, b: string | null | undefined) {
   if (!a || !b) return false;
   try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
@@ -36,7 +43,7 @@ function unique(values: Array<string | null | undefined>) {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
-function capability(blockers: string[]) {
+function capability(blockers: Array<string | null | undefined>) {
   const normalized = unique(blockers);
   return { ready: normalized.length === 0, blockers: normalized };
 }
@@ -51,9 +58,14 @@ async function projectReadiness(project: any) {
   const operations = operationControl(project.id);
   const binding = one('SELECT blog_site_id,origin,observed_at FROM blog_bindings WHERE project_id=?', project.id) as { blog_site_id: string; origin: string; observed_at: string } | undefined;
   const bindingFresh = Boolean(binding?.observed_at && Date.now() - Date.parse(binding.observed_at) <= 7 * 86_400_000);
+  const origin = projectOrigin(project, binding);
   const gitPush = gitPushAllowed(binding?.blog_site_id ?? null);
   const gscCredentials = gscCredentialsConfigured();
   const gscSiteUrlConfigured = Boolean(process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL?.trim());
+  // The existing resolveGscProperty path can discover a matching property from
+  // accessible GSC sites when an origin exists, so a single global property env
+  // is optional in multi-site operation.
+  const gscScopeResolvable = Boolean(gscSiteUrlConfigured || origin);
   const agentCommandConfigured = Boolean(process.env.KEYWORDS_AGENT_COMMAND?.trim());
   const schedulerEnabled = process.env.KEYWORDS_AUTOPILOT_SCHEDULER !== '0';
   const adsConfigured = googleAdsConfigured();
@@ -74,7 +86,7 @@ async function projectReadiness(project: any) {
   const publishedMappedArticles = mappedArticles.filter(article => article.status === 'published');
   const originMatches = Boolean(site && binding && sameOrigin(site.productionUrl, binding.origin));
 
-  const controlPlaneBlockers = [
+  const controlPlaneBlockers: Array<string | null> = [
     !sitesRuntime.firestoreConfigured ? 'firebase_project_not_configured' : null,
     !sitesRuntime.projectConfigured ? 'firebase_service_account_not_configured' : null,
     siteLookupError ? 'site_registry_unavailable' : null,
@@ -83,12 +95,12 @@ async function projectReadiness(project: any) {
     site && !site.productionUrl ? 'site_production_url_missing' : null,
     site && ['paused','archived'].includes(site.status) ? `site_status_${site.status}` : null
   ];
-  const measurementBlockers = [
+  const measurementBlockers: Array<string | null> = [
     ...controlPlaneBlockers,
     !gscCredentials ? 'gsc_credentials_not_configured' : null,
-    !gscSiteUrlConfigured ? 'gsc_site_url_not_configured' : null
+    !gscScopeResolvable ? 'gsc_property_scope_unresolvable' : null
   ];
-  const articleOptimizationBlockers = [
+  const articleOptimizationBlockers: Array<string | null> = [
     ...measurementBlockers,
     !binding ? 'blog_binding_missing' : null,
     binding && !bindingFresh ? 'blog_binding_stale' : null,
@@ -97,11 +109,11 @@ async function projectReadiness(project: any) {
     !gitPush.enabled ? 'auto_git_push_disabled' : null,
     gitPush.enabled && !gitPush.allowed ? 'blog_site_not_allowed_for_git_push' : null
   ];
-  const queryFeedbackBlockers = [
+  const queryFeedbackBlockers: Array<string | null> = [
     ...measurementBlockers,
     !adsConfigured ? 'google_ads_not_configured' : null
   ];
-  const autopilotBlockers = [
+  const autopilotBlockers: Array<string | null> = [
     !autonomy.enabled ? 'autopilot_disabled_for_project' : null,
     operations.paused ? 'project_operations_paused' : null,
     !schedulerEnabled ? 'autopilot_scheduler_disabled' : null,
@@ -125,7 +137,7 @@ async function projectReadiness(project: any) {
   else if (!bindingFresh) nextActions.push(action('refresh_blog_binding', 'Refresh the confirmed Blog binding; the saved snapshot is older than seven days.', 'blog_importContext'));
   if (site && binding && !originMatches) nextActions.push(action('repair_origin_mapping', `Registered productionUrl (${site.productionUrl}) and Blog origin (${binding.origin}) must have the same origin.`));
   if (!gscCredentials) nextActions.push(action('configure_gsc_credentials', 'Configure Search Console credentials for autonomous measurement.'));
-  if (!gscSiteUrlConfigured) nextActions.push(action('configure_gsc_property', 'Configure GOOGLE_SEARCH_CONSOLE_SITE_URL for the local measurement worker.'));
+  if (!gscScopeResolvable) nextActions.push(action('configure_project_origin_or_gsc_property', 'Set a valid project domain / confirmed Blog origin, or configure GOOGLE_SEARCH_CONSOLE_SITE_URL, so the shared property resolver can select the correct Search Console property.'));
   if (site && binding && originMatches && mappedArticles.length === 0) nextActions.push(action('project_article_registry', 'Run a fresh metrics projection after the confirmed Blog binding so mapped article metadata can sync into Sites.'));
   if (!gitPush.enabled) nextActions.push(action('enable_git_delivery', 'Set KEYWORDS_AUTO_GIT_PUSH=1 when autonomous verified article delivery is desired.'));
   else if (!gitPush.allowed) nextActions.push(action('allow_blog_site_git_delivery', `Add Blog site ${binding?.blog_site_id ?? '(missing)'} to KEYWORDS_AUTO_GIT_PUSH_SITES, or leave the allowlist empty to allow all confirmed Blog sites.`));
@@ -150,6 +162,8 @@ async function projectReadiness(project: any) {
       firestoreConfigured: sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured,
       gscCredentialsConfigured: gscCredentials,
       gscSiteUrlConfigured,
+      gscPropertyDiscoveryAvailable: Boolean(gscCredentials && origin),
+      gscScopeResolvable,
       googleAdsConfigured: adsConfigured,
       autoGitPush: gitPush,
       autopilot: { enabled: autonomy.enabled, autoApprove: autonomy.autoApprove, autoPublish: autonomy.autoPublish, cadenceMinutes: autonomy.cadenceMinutes },
@@ -190,6 +204,7 @@ export async function siteOperationsReadiness(input: { projectId?: string } = {}
       readOnly: true,
       noSecretsReturned: true,
       siteRegistrationRemainsExplicit: true,
+      globalGscPropertyOptionalWhenProjectOriginCanBeDiscovered: true,
       articleBodySourceOfTruth: 'git_repository',
       cloudControlPlane: 'firestore',
       localExecutionPlane: 'sqlite'
