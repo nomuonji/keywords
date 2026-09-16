@@ -1,9 +1,16 @@
 import { z } from 'zod';
-import { metricSnapshotList, optimizationEventList } from './remote-site-operations.js';
-import type { MetricSnapshot, OptimizationEvent } from '../../db/src/site-operations-schema.js';
+import {
+  metricSnapshotList,
+  optimizationEventList,
+  optimizationEventUpdate,
+  remoteSitesStatus,
+  siteRegistryResolve
+} from './remote-site-operations.js';
+import type { MetricSnapshot, OptimizationEvent, SiteRecord } from '../../db/src/site-operations-schema.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const positiveInteger = z.number().int().min(1);
+const evaluationResult = z.enum(['improved', 'neutral', 'worsened', 'inconclusive']);
 
 export const optimizationEvaluationContextShape = {
   siteId: entityId,
@@ -15,6 +22,19 @@ export const siteQueryOpportunitiesShape = {
   minImpressions: z.number().int().min(1).max(1_000_000).default(20),
   minGrowthRatio: z.number().min(1).max(100).default(1.5),
   limit: positiveInteger.max(100).default(30)
+};
+
+export const localOptimizationEvaluationShape = {
+  projectId: entityId,
+  eventId: entityId
+};
+
+export const localOptimizationRecordShape = {
+  projectId: entityId,
+  eventId: entityId,
+  expectedRevision: z.number().int().min(1),
+  result: evaluationResult,
+  notes: z.string().trim().max(3000).default('')
 };
 
 function dateDays(start: string, end: string) {
@@ -100,6 +120,99 @@ export async function optimizationEvaluationContext(input: unknown) {
     warnings,
     nextAction: !matured ? 'wait' : !baseline || !post ? 'collect_more_compatible_gsc' : 'compare_deltas_to_the_persisted_hypothesis_then_record_result_with_optimization_event_update'
   };
+}
+
+async function siteForLocalProject(projectId: string) {
+  const status = remoteSitesStatus();
+  if (!status.firestoreConfigured || !status.projectConfigured) return null;
+  const resolved = await siteRegistryResolve({ localProjectId: projectId });
+  return resolved.site as SiteRecord | null;
+}
+
+/** Local runner/MCP adapter: resolve the Firestore site from the SQLite project. */
+export async function localOptimizationEvaluationContext(input: unknown) {
+  const args = z.object(localOptimizationEvaluationShape).strict().parse(input);
+  const site = await siteForLocalProject(args.projectId);
+  if (!site) throw new Error('No Sites Operator site is linked to this local project');
+  return optimizationEvaluationContext({ siteId: site.id, eventId: args.eventId });
+}
+
+function flattenedEvaluationMetrics(context: Awaited<ReturnType<typeof optimizationEvaluationContext>>) {
+  const result: Record<string, number | null> = {};
+  for (const [name, delta] of Object.entries(context.deltas)) {
+    result[`${name}Before`] = delta.before;
+    result[`${name}After`] = delta.after;
+    result[`${name}Delta`] = delta.absolute;
+    result[`${name}Relative`] = delta.relative;
+  }
+  return result;
+}
+
+/**
+ * Persist only the semantic verdict chosen by the Agent. Numerical evidence is
+ * recomputed from the compatible saved snapshots so the Agent cannot invent it.
+ */
+export async function localOptimizationRecordResult(input: unknown) {
+  const args = z.object(localOptimizationRecordShape).strict().parse(input);
+  const context = await localOptimizationEvaluationContext({ projectId: args.projectId, eventId: args.eventId });
+  if (!context.readyForAgentEvaluation || !context.baseline || !context.post) {
+    throw new Error(`Optimization is not ready for evaluation: ${context.warnings.join(' ') || context.nextAction}`);
+  }
+  if (context.event.revision !== args.expectedRevision) {
+    throw new Error(`Revision conflict: expected ${args.expectedRevision}, current ${context.event.revision}`);
+  }
+  const evidence = `Evaluation evidence: baseline=${context.baseline.id} (${context.baseline.periodStart}..${context.baseline.periodEnd}); post=${context.post.id} (${context.post.periodStart}..${context.post.periodEnd}).`;
+  const updated = await optimizationEventUpdate({
+    id: args.eventId,
+    expectedRevision: args.expectedRevision,
+    result: args.result,
+    evaluationMetrics: flattenedEvaluationMetrics(context),
+    notes: [args.notes, evidence].filter(Boolean).join('\n').slice(0, 4000)
+  });
+  invalidateSiteOptimizationDueCache(args.projectId);
+  return updated;
+}
+
+const dueCache = new Map<string, { expiresAt: number; value: Awaited<ReturnType<typeof computeNextSiteOptimizationEvaluation>> }>();
+
+function dueCacheMs() {
+  const configured = Number(process.env.KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES ?? 30);
+  const minutes = Number.isFinite(configured) ? Math.max(1, Math.min(configured, 360)) : 30;
+  return minutes * 60_000;
+}
+
+export function invalidateSiteOptimizationDueCache(projectId: string) {
+  dueCache.delete(projectId);
+}
+
+async function computeNextSiteOptimizationEvaluation(projectId: string) {
+  const site = await siteForLocalProject(projectId);
+  if (!site) return { status: 'skipped' as const, reason: 'site_not_linked_or_firestore_unavailable', projectId };
+  const events = (await optimizationEventList({ siteId: site.id, phase: 'implemented', result: 'pending', limit: 100 })).items as OptimizationEvent[];
+  const due = events
+    .filter(event => event.evaluateAfter && Date.parse(event.evaluateAfter) <= Date.now())
+    .sort((a, b) => Date.parse(a.evaluateAfter ?? '') - Date.parse(b.evaluateAfter ?? ''));
+  for (const event of due) {
+    const evaluation = await optimizationEvaluationContext({ siteId: site.id, eventId: event.id });
+    if (evaluation.readyForAgentEvaluation) {
+      return { status: 'ready' as const, projectId, site, event, evaluation };
+    }
+  }
+  return {
+    status: due.length ? 'waiting_for_compatible_metrics' as const : 'none_due' as const,
+    projectId,
+    site,
+    dueEventIds: due.map(event => event.id)
+  };
+}
+
+/** Bounded/cached probe used by the local Operator; ready work is never cached. */
+export async function nextSiteOptimizationEvaluation(projectId: string) {
+  const cached = dueCache.get(projectId);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const value = await computeNextSiteOptimizationEvaluation(projectId);
+  if (value.status !== 'ready') dueCache.set(projectId, { expiresAt: Date.now() + dueCacheMs(), value });
+  return value;
 }
 
 type QueryMetric = {

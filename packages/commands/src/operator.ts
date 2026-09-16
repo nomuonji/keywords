@@ -7,6 +7,7 @@ import { measurementComparisonContext } from './measurement.js';
 import { operationControl } from './guard.js';
 import { googleAdsConfigured } from './workspace.js';
 import { recoveryContext } from './recovery-context.js';
+import { nextSiteOptimizationEvaluation } from './site-operations-analysis.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -56,6 +57,25 @@ async function inspect(projectId: string) {
     candidates.push({ kind: 'investigate_query_drop', rank: 5, title: `Investigate search decline: ${query}`, reason: `Comparable scoped GSC observations changed from position ${previous.position.toFixed(1)} / ${previous.clicks} clicks to ${latest.position.toFixed(1)} / ${latest.clicks} clicks.`, measurement: { sourceVersion: latest.sourceVersion, targetOrigin: latest.targetOrigin, periodDays: (drop as any).periodDays }, relatedType: 'keyword', relatedId: keyword?.id ?? null });
   }
 
+  let siteOptimization: any = { status: 'not_checked' };
+  if (project.mode === 'existing_site') {
+    try {
+      siteOptimization = await nextSiteOptimizationEvaluation(projectId);
+      if (siteOptimization.status === 'ready') {
+        const event = siteOptimization.event;
+        candidates.push({
+          kind: 'evaluate_site_optimization', rank: 5.45,
+          title: `Evaluate matured site optimization: ${event.id}`,
+          reason: `Optimization ${event.id} reached evaluateAfter ${event.evaluateAfter} and has compatible complete article-level GSC before/after evidence. Compare the persisted hypothesis to the measured deltas; do not edit the article in this evaluation operation.`,
+          relatedType: 'site_optimization', relatedId: event.id,
+          siteId: siteOptimization.site.id, articleId: event.articleId, eventRevision: event.revision
+        });
+      }
+    } catch (error) {
+      siteOptimization = { status: 'unavailable', error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   const dueOutcome = sqlite.prepare("SELECT * FROM operation_outcomes WHERE project_id=? AND outcome_status='pending' AND evaluation_due_at IS NOT NULL AND evaluation_due_at<=? ORDER BY evaluation_due_at LIMIT 1").get(projectId, now()) as any;
   if (dueOutcome) candidates.push({ kind: 'observe_outcome', rank: 5.5, title: 'Evaluate a due operation outcome', reason: `Outcome ${dueOutcome.id} reached its evaluation time ${dueOutcome.evaluation_due_at}.`, relatedType: 'operation_outcome', relatedId: dueOutcome.id });
 
@@ -90,7 +110,12 @@ async function inspect(projectId: string) {
     else candidates.push({ kind: 'await_demand_provider', rank: 9, title: 'Search-volume provider configuration is required', reason: !googleAdsConfigured() ? 'New keyword discovery is paused because Google Ads Keyword Planner credentials or the keyword-volume proxy are not configured. SERP related searches are observations, not search-volume evidence.' : `New keyword discovery is paused because the last Google Ads demand request is ${adsCapability?.status ?? 'unhealthy'}: ${adsCapability?.lastErrorMessage ?? 'repair the provider before retrying.'}`, relatedType: 'provider_capability', relatedId: `${projectId}:google_ads` });
   }
   candidates.sort((a, b) => Number(a.rank) - Number(b.rank));
-  return { generatedAt: now(), project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode }, control, recovery: { state: recovery.state, newContentAllowed: recovery.newContentAllowed, reasons: recovery.reasons, summary: recovery.summary, nextObservationAt: recovery.nextObservationAt }, measurement: { ignoredUnknownScope: comparisons.ignoredUnknownScope }, candidates, next: candidates[0] ?? { kind: 'no_action', reason: 'No operator action is currently justified.' } };
+  const siteOptimizationSummary = siteOptimization.status === 'ready'
+    ? { status: 'ready', siteId: siteOptimization.site.id, eventId: siteOptimization.event.id, articleId: siteOptimization.event.articleId, evaluateAfter: siteOptimization.event.evaluateAfter }
+    : siteOptimization.status === 'waiting_for_compatible_metrics'
+      ? { status: siteOptimization.status, dueEventIds: siteOptimization.dueEventIds }
+      : { status: siteOptimization.status, reason: siteOptimization.reason ?? null, error: siteOptimization.error ?? null };
+  return { generatedAt: now(), project: { id: project.id, name: project.name, domain: project.domain, mode: project.mode }, control, recovery: { state: recovery.state, newContentAllowed: recovery.newContentAllowed, reasons: recovery.reasons, summary: recovery.summary, nextObservationAt: recovery.nextObservationAt }, measurement: { ignoredUnknownScope: comparisons.ignoredUnknownScope }, siteOptimization: siteOptimizationSummary, candidates, next: candidates[0] ?? { kind: 'no_action', reason: 'No operator action is currently justified.' } };
 }
 
 export const operatorCommands = {
@@ -105,7 +130,7 @@ export const operatorCommands = {
     const relatedType = String(next.relatedType ?? kind); const relatedId = next.relatedId ? String(next.relatedId) : null;
     const duplicate = await db.select().from(schema.tasks).where(and(eq(schema.tasks.projectId, projectId), eq(schema.tasks.assigneeType, 'agent'), ne(schema.tasks.status, 'done'), eq(schema.tasks.relatedType, relatedType), relatedId ? eq(schema.tasks.relatedId, relatedId) : isNull(schema.tasks.relatedId))).get();
     if (duplicate) return { ...state, createdTask: null, existingTaskId: duplicate.id };
-    const t = now(); const priority = kind === 'investigate_query_drop' || kind === 'observe_outcome' ? 90 : kind === 'sync_site' || kind === 'capture_metrics' ? 70 : kind === 'discovery_due' ? 55 : 60;
+    const t = now(); const priority = ['investigate_query_drop','observe_outcome','evaluate_site_optimization'].includes(kind) ? 90 : kind === 'sync_site' || kind === 'capture_metrics' ? 70 : kind === 'discovery_due' ? 55 : 60;
     const task = { id: id(), projectId, title: String(next.title ?? 'Operator-selected SEO task'), description: String(next.reason ?? ''), status: 'todo', priority, assigneeType: 'agent', relatedType, relatedId, createdAt: t, updatedAt: t };
     await db.insert(schema.tasks).values(task); return { ...state, createdTask: task };
   })

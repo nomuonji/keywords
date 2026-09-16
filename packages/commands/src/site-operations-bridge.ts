@@ -6,6 +6,7 @@ import {
   siteArticleList,
   siteRegistryResolve
 } from './remote-site-operations.js';
+import { invalidateSiteOptimizationDueCache } from './site-operations-analysis.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
 const { sqlite } = getDatabase();
@@ -184,6 +185,9 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   } else {
     warnings.push('GA4 portfolio snapshot is unavailable; GSC projection can still succeed.');
   }
+
+  // A fresh projection may make a previously waiting optimization evaluable.
+  invalidateSiteOptimizationDueCache(projectId);
 
   return {
     status: 'projected' as const,
