@@ -145,8 +145,8 @@ function assertAutopilotMutationPreflightState(operation: any, projectId: string
   const constraints = parse<Record<string, unknown>>(operation.constraints_json, {});
   const source = String(constraints.source ?? '');
   if (source !== 'autopilot' && source !== 'autopilot_delivery') return;
-  const state = one("SELECT stage,decision_json FROM autopilot_state WHERE project_id=? AND stage='preflight_blocked'", projectId);
-  if (!state) return;
+  const state = one("SELECT operation_id,decision_json FROM autopilot_state WHERE project_id=? AND stage='preflight_blocked'", projectId);
+  if (!state || state.operation_id !== operation.id) return;
   const decision = parse<any>(state.decision_json, {});
   const blockers = Array.isArray(decision?.preflight?.blockers) ? decision.preflight.blockers.map(String).filter(Boolean) : [];
   const suffix = blockers.length ? `: ${blockers.join(', ')}` : '';
