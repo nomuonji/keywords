@@ -6,6 +6,7 @@ import {
   siteArticleList,
   siteRegistryResolve
 } from './remote-site-operations.js';
+import { bootstrapSiteOperationsRegistry } from './site-operations-bootstrap.js';
 import { invalidateSiteOptimizationDueCache } from './site-operations-analysis.js';
 import { invalidateSiteQueryFeedbackCache } from './site-query-feedback.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -71,13 +72,32 @@ function firestoreReady() {
  * existing metrics.capture command and GA4 remains owned by the existing
  * analytics-dashboard snapshot producer. The bridge only normalizes and
  * persists already-observed data, keeping one scheduler and one collection path.
+ *
+ * Before projection, the bridge opportunistically bootstraps Sites registry
+ * identity from the already human-confirmed Blog binding. Bootstrap failure is
+ * non-destructive: a previously registered site can still receive metrics.
  */
 export async function projectSiteOperationsMetrics(projectId: string) {
   if (!firestoreReady()) return { status: 'skipped' as const, reason: 'firestore_not_configured', projectId };
 
+  let bootstrap: any = null;
+  try {
+    bootstrap = await bootstrapSiteOperationsRegistry(projectId);
+  } catch (error) {
+    bootstrap = { status: 'failed', projectId, error: error instanceof Error ? error.message : String(error) };
+  }
+
   const resolved = await siteRegistryResolve({ localProjectId: projectId });
   const site = resolved.site as SiteRecord | null;
-  if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', projectId, nextAction: 'Set sites.localProjectId with site_registry_save.' };
+  if (!site) return {
+    status: 'skipped' as const,
+    reason: 'site_not_linked',
+    projectId,
+    bootstrap,
+    nextAction: bootstrap?.reason === 'blog_binding_missing'
+      ? 'Import and human-confirm a Blog site context first.'
+      : 'Provide an unambiguous bound Git repository or register the site explicitly with site_registry_save.'
+  };
 
   const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
   const articles = articleResponse.items as SiteArticleRecord[];
@@ -87,6 +107,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     return key ? [[key, article] as const] : [];
   }));
   const warnings: string[] = [];
+  if (bootstrap?.status === 'failed') warnings.push(`Sites registry bootstrap failed: ${bootstrap.error}`);
   const gscSite: ProjectionCounter = { saved: 0, reused: 0 };
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
@@ -190,6 +211,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   return {
     status: 'projected' as const,
     projectId,
+    bootstrap,
     siteId: site.id,
     siteName: site.name,
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
