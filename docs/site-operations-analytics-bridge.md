@@ -13,11 +13,11 @@ existing Autopilot runner
         │
         ├─ capture_metrics
         │     ├─ GSC previous/current 7-day periods -> SQLite
-        │     ├─ GA4 previous/current 7-day periods -> SQLite
+        │     ├─ GA4 totals + bounded landingPage rows -> SQLite
         │     └─ Firestore projection
         │             ├─ confirmed Blog mapping -> article registry
-        │             ├─ GSC -> metricSnapshots
-        │             └─ GA4 -> metricSnapshots
+        │             ├─ GSC site/article -> metricSnapshots
+        │             └─ GA4 site/article -> metricSnapshots
         │
         ├─ due optimization check
         │     └─ evaluate_site_optimization
@@ -42,7 +42,7 @@ Duplicate or ambiguous mappings fail closed.
 
 ## Confirmed Blog article registry sync
 
-After a real site has been explicitly registered, the bridge can reuse the already confirmed `blog_bindings` snapshot to mirror article metadata before page-level GSC projection.
+After a real site has been explicitly registered, the bridge can reuse the already confirmed `blog_bindings` snapshot to mirror article metadata before page-level metric projection.
 
 The sync requires exact agreement among:
 
@@ -68,20 +68,47 @@ Site-level GSC projection includes clicks, impressions, CTR, average position, a
 
 ## Direct GA4 acquisition
 
-GA4 is now collected directly inside `keywords` through the Google Analytics Data API. It no longer depends on `analytics-dashboard/data/latest.json` for normal operation.
+GA4 is collected directly inside `keywords` through the Google Analytics Data API. It no longer depends on `analytics-dashboard/data/latest.json` for normal operation.
 
-The exact property must be registered on the real site as `sites.ga4PropertyId`. Hostname-to-property guessing is deliberately not implemented.
+The exact property must be registered as `sites.ga4PropertyId`. Hostname-to-property guessing is deliberately not implemented.
 
-The direct report collects site-level totals for:
+Each period performs two bounded reports:
 
 ```text
-sessions
-activeUsers
-engagementRate -> normalized as engagement
-screenPageViews -> normalized as views
+site totals:
+  sessions
+  activeUsers
+  engagementRate -> engagement
+  screenPageViews -> views
+
+landing-page rows:
+  landingPage
+  + the same four metrics
 ```
 
-The current implementation does not create article-level GA4 metrics because no trustworthy page-scoped acquisition/mapping contract has been established yet.
+`KEYWORDS_GA4_LANDING_PAGE_LIMIT` defaults to `25000` and is capped at `250000`. One bounded Data API request is used per period; if Google reports more rows than were returned, the landing-page set is marked partial rather than silently treated as complete.
+
+### Exact article mapping
+
+Article-level GA4 is projected only from a **complete** landing-page set.
+
+The mapping is deterministic:
+
+```text
+registered production origin
+        +
+GA4 landingPage path
+        ↓
+normalized canonical URL
+        ↓ exact match
+articles.canonicalUrl
+```
+
+The mapper accepts only an origin-relative path beginning with a single `/`. Protocol-relative values, foreign origins, malformed paths, and unmapped URLs are rejected. Query parameters are not used for identity; trailing slash normalization matches the existing article canonical-key rule.
+
+If multiple GA4 landing paths collapse onto the same normalized article identity, that article is skipped for the period. In particular, `activeUsers` is not naively summed across overlapping rows.
+
+The legacy analytics-dashboard fallback remains site-level only and never fabricates article metrics.
 
 ### GA4 credential resolution
 
@@ -99,18 +126,23 @@ The credential or service account must have Analytics read access. Secret values
 
 ### Shared measurement contract
 
-Direct GA4 observations are persisted as:
+Direct GA4 observations remain in the existing versioned table:
 
 ```text
 measurement_imports.provider = ga4
 property = properties/{id}
 completeness = complete | failed
-payload.metrics = normalized site-level metrics
+payload.metrics = normalized site totals
+payload.landingPages = {
+  status: complete | partial | failed,
+  rowCount,
+  rows
+}
 ```
 
-This uses the existing versioned measurement table; no new SQLite migration is needed.
+The overall observation can be complete for site totals while the landing-page sub-observation is partial/failed. This distinction lets site-level analytics continue without incorrectly promoting incomplete article evidence.
 
-The successful source version is derived from property, period and normalized metrics. Repeated projection is therefore idempotent.
+No SQLite migration is required.
 
 ### Failure isolation
 
@@ -119,11 +151,12 @@ GA4 collection is additive to GSC. The maintenance sequence is:
 1. persist previous GSC period;
 2. persist current GSC period;
 3. attempt previous/current GA4 periods;
-4. project all available complete evidence to Firestore.
+4. within each successful GA4 site-total capture, attempt bounded landing-page collection;
+5. project all trustworthy evidence to Firestore.
 
-A missing GA4 credential, unregistered property or Data API failure does not delete or invalidate already captured GSC evidence and does not prevent GSC cloud projection.
+A landing-page failure does not invalidate its site-level GA4 total. A full GA4 failure does not delete or invalidate already captured GSC evidence and does not prevent GSC cloud projection.
 
-Failed GA4 imports persist a generic failure marker rather than credential values or response bodies.
+Failed provider observations store generic failure markers rather than credential values or response bodies.
 
 ## Legacy analytics-dashboard compatibility
 
@@ -131,24 +164,29 @@ Failed GA4 imports persist a generic failure marker rather than credential value
 
 Projection policy is direct-first:
 
-- if complete direct GA4 imports exist for the project, project those imports;
-- validate their property identity against `sites.ga4PropertyId`;
-- do not mix them with dashboard-derived GA4 snapshots;
-- if no complete direct GA4 import exists, the bridge may use the legacy saved dashboard snapshot.
+- if complete direct GA4 imports exist, project those imports;
+- validate property identity against `sites.ga4PropertyId`;
+- project article GA4 only from complete direct landing-page evidence;
+- do not mix direct and dashboard-derived GA4 in one pass;
+- if no complete direct GA4 import exists, the bridge may use the legacy saved dashboard snapshot at site level only.
 
 The fallback can therefore be removed later without changing the Firestore `metricSnapshots` contract.
 
 ## Firestore projection
 
-All normalized metrics are saved through the existing metric snapshot write path, keeping projection idempotent by source version.
+All normalized metrics are saved through the existing metric snapshot path, keeping projection idempotent by source version.
 
-The bridge fails closed when a registered property does not match the persisted observation. Fresh metric projection invalidates the optimization-due and query-feedback probe caches so newly available evidence can enter the existing runner.
+A direct site-level snapshot has `articleId = null`. An exact landing-page match creates a separate GA4 snapshot with the registered article ID. Therefore existing `optimizationContext(articleId)` can expose `latestMetrics.ga4` without a special side channel or a changed MCP contract.
+
+The bridge fails closed when property identity does not match or article mapping is ambiguous. Fresh projection invalidates optimization-due and query-feedback probe caches so newly available evidence can enter the existing runner.
 
 ## Optimization evaluation evidence
 
-Optimization evaluation remains GSC-driven because current optimization hypotheses concern organic search performance and article-level GA4 is not yet available.
+The optimization trigger and formal before/after result remain GSC-driven because the persisted optimization policy currently evaluates organic search hypotheses against compatible article-level GSC windows.
 
-The evaluation context requires compatible complete article-level GSC periods. The baseline/post periods must be equal length and the post period must occur after the implemented change.
+Article-level GA4 is now additional diagnosis/context evidence. The Agent can inspect sessions, active users, engagement and views for the exact mapped article, but the system does not automatically convert those signals into an `improved`/`worsened` verdict or substitute them for the persisted GSC baseline.
+
+The GSC evaluation context requires compatible complete article-level periods. The baseline/post periods must be equal length and the post period must occur after the implemented change.
 
 The command returns metric deltas but never invents the semantic verdict. The Agent records one of `improved`, `neutral`, `worsened`, or `inconclusive` after comparing persisted evidence to the persisted hypothesis.
 
@@ -201,6 +239,7 @@ SERP checks remain hard-bounded by `KEYWORDS_SITE_QUERY_MAX_SERP_CHECKS`; GSC qu
 
 - sitemap/live URL inventory: 7-day freshness threshold;
 - GSC/GA4 measurement scheduling: `KEYWORDS_METRICS_CADENCE_HOURS`, default `24`;
+- GA4 landing-page row limit: `KEYWORDS_GA4_LANDING_PAGE_LIMIT`, default `25000`;
 - each maintenance measurement run compares equal seven-day periods;
 - Blog article registry sync occurs immediately before cloud metric projection;
 - optimization due-check cache: `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES`, default `30`;
@@ -211,15 +250,18 @@ SERP checks remain hard-bounded by `KEYWORDS_SITE_QUERY_MAX_SERP_CHECKS`; GSC qu
 
 The bridge is deliberately additive and fail-closed:
 
-- Firestore not configured -> local GSC evidence still persists; Sites projection is skipped;
+- Firestore not configured -> local evidence still persists; Sites projection is skipped;
 - real site not linked -> cloud projection is skipped rather than guessing;
-- confirmed Blog binding absent -> article sync is skipped; explicit existing article mappings can still be used;
+- confirmed Blog binding absent -> article sync is skipped; explicit article mappings can still be used;
 - Blog/registered origins disagree -> automatic article sync is rejected;
-- article identity is ambiguous -> page-level projection skips that article;
+- article identity is ambiguous -> article-level projection skips that article;
 - GSC capture fails/partial -> prior successful materialized evidence is preserved;
 - GA4 credentials missing -> GA4 is skipped, GSC continues;
 - GA4 property missing -> GA4 is skipped, property is never inferred;
-- GA4 Data API fails -> failed observation is recorded generically, GSC continues;
+- GA4 site-total request fails -> generic failed observation; GSC continues;
+- GA4 landing request fails/partial -> site GA4 persists; no article GA4 is promoted for that period;
+- GA4 landing path does not exactly match a registered article -> row remains unprojected;
+- multiple landing rows collapse to one normalized article -> that article is skipped rather than aggregating unique-user metrics incorrectly;
 - GA4 observation property differs from Sites registry -> snapshot is not projected;
 - Firestore projection fails -> successful local acquisitions remain persisted;
 - no exact optimization baseline/post pair -> evaluation remains not-ready;
@@ -237,7 +279,7 @@ SQLite
      materialized GSC page/query state, local observability
 
 Firestore
-  -> real-site/article registry, normalized metricSnapshots,
+  -> real-site/article registry, site/article metricSnapshots,
      optimization hypotheses/outcomes, Keyword Treasury, Site Concepts
 ```
 
@@ -258,7 +300,7 @@ For full search + behavior analytics operation, configure each site explicitly:
 ## Remaining work
 
 1. Register actual production sites and their GA4 properties explicitly; no automatic deployment/property guessing is planned.
-2. Run real credential-backed GSC + GA4 maintenance against at least one production site and verify resulting Firestore snapshots end to end.
-3. Consider article-level GA4 only after a trustworthy page-scoped acquisition and canonical mapping contract exists.
+2. Run real credential-backed GSC + GA4 maintenance against at least one production site and verify site/article Firestore snapshots end to end.
+3. Decide later whether specific optimization hypothesis types should incorporate compatible article-level GA4 deltas into formal evaluation; do not broaden verdict semantics implicitly.
 4. Remove the legacy analytics-dashboard fallback only after all active sites have direct GA4 imports.
 5. Consolidate the separate Vercel `/mcp` Ads/provider wrapper later if serverless bundling can preserve the production contract cleanly.
