@@ -36,9 +36,11 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
   const property = `properties/${propertyId}`;
   const capturedAt = now();
   const siteReservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:site:${property}:${input.startDate}:${input.endDate}`);
+  let siteRequestSucceeded = false;
   try {
     const report = await ga4RunReport({ propertyId, startDate: input.startDate, endDate: input.endDate });
     settleOperationBudget(siteReservation?.id, 'succeeded');
+    siteRequestSucceeded = true;
     const metrics = normalizeGa4Metrics(report.metrics);
 
     let landingPages: {
@@ -47,8 +49,9 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       rows: Array<{ landingPage: string; metrics: ReturnType<typeof normalizeGa4Metrics> }>;
       error?: string;
     };
-    const landingReservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:landing:${property}:${input.startDate}:${input.endDate}`);
+    let landingReservation: ReturnType<typeof reserveOperationBudget> | null = null;
     try {
+      landingReservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:landing:${property}:${input.startDate}:${input.endDate}`);
       const landingReport = await ga4RunLandingPageReport({ propertyId, startDate: input.startDate, endDate: input.endDate, maxRows: landingPageLimit() });
       settleOperationBudget(landingReservation?.id, 'succeeded');
       landingPages = {
@@ -105,7 +108,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       capturedAt
     };
   } catch (error) {
-    settleOperationBudget(siteReservation?.id, 'failed', error);
+    if (!siteRequestSucceeded) settleOperationBudget(siteReservation?.id, 'failed', error);
     const message = error instanceof Error ? error.message : String(error);
     const failedVersion = fingerprint({ provider: 'ga4', property, startDate: input.startDate, endDate: input.endDate, capturedAt, error: message });
     recordMeasurementImport({
