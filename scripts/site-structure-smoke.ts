@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { siteStructureSave, siteStructureGet, siteStructureList } from '../packages/commands/src/site-structure.js';
+import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch } from '../packages/commands/src/site-structure.js';
 import { field } from '../packages/db/src/firestore.js';
 
 // Exercise command + transport + MCP against a deterministic Firestore double.
@@ -46,19 +46,53 @@ globalThis.fetch = async (input, init) => {
 };
 
 try {
-  const home = { id: 'home', parentId: null, title: 'トップ', path: '/', kind: 'home' as const, keywordIds: [keywordId] };
+  const home = { id: 'home', parentId: null, title: 'トップ', path: '/', kind: 'home' as const, keywordIds: [keywordId], keywordRoles: { [keywordId]: 'primary' as const } };
   const article = { id: 'article', parentId: 'home', title: '記事', path: '/article', kind: 'article' as const };
-  const created = await siteStructureSave({ id: 'test-site', expectedRevision: 0, title: '構想', audience: '読者', nodes: [home, article], links: [{ from: 'home', to: 'article', label: '詳しく' }] });
+  const created = await siteStructureSave({
+    id: 'test-site', expectedRevision: 0, title: '構想', audience: '読者', nodes: [home, article], links: [{ from: 'home', to: 'article', label: '詳しく' }],
+    dataModel: [{ entity: 'product', fields: [{ name: 'price', type: 'number', description: '月額', required: true }] }],
+    sourceStrategy: [{ name: '公式料金', sourceType: 'official_pricing', urlPattern: '/pricing', fields: ['price'] }],
+    pageTemplates: [{ id: 'detail', titlePattern: '{product} 料金・機能', kind: 'detail', dataRequirements: ['price'] }],
+    refreshPolicy: [{ scope: 'price', ttlDays: 30, trigger: 'scheduled' }]
+  });
   assert.equal(created.revision, 1);
   assert.ok(docs.has(`${root}runs/${created.runId}`));
-  assert.equal((await siteStructureGet({ id: 'test-site' })).keywords[0]?.keyword, '調査済みKW');
+  const initial = await siteStructureGet({ id: 'test-site' });
+  assert.equal(initial.keywords[0]?.keyword, '調査済みKW');
+  assert.equal(initial.dataModel[0]?.entity, 'product');
+  assert.equal(initial.nodes[0]?.keywordRoles[keywordId], 'primary');
+
   const edited = await siteStructureSave({ id: 'test-site', expectedRevision: 1, concept: '編集した構想' });
   assert.equal(edited.title, '構想'); assert.equal(edited.nodes.length, 2); assert.equal(edited.audience, '読者');
   assert.equal(edited.createdAt, created.createdAt); assert.equal(edited.revision, 2);
+  assert.equal(edited.dataModel[0]?.entity, 'product');
+
+  const patched = await siteStructurePatch({ id: 'test-site', expectedRevision: 2, operations: [
+    { op: 'addNode', node: { id: 'pricing', parentId: 'home', title: '料金比較', path: '/pricing', kind: 'category' } },
+    { op: 'addLink', link: { from: 'home', to: 'pricing', label: '料金' } },
+    { op: 'linkKeyword', nodeId: 'pricing', keywordId, role: 'monetization' }
+  ] });
+  assert.equal(patched.revision, 3);
+  assert.equal(patched.nodes.length, 3);
+  assert.equal(patched.nodes.find(node => node.id === 'pricing')?.keywordRoles[keywordId], 'monetization');
+  assert.equal(patched.title, '構想');
+  assert.equal(patched.dataModel[0]?.entity, 'product');
+
+  const patchedAgain = await siteStructurePatch({ id: 'test-site', expectedRevision: 3, operations: [
+    { op: 'updateNode', id: 'pricing', title: '料金・プラン比較' },
+    { op: 'unlinkKeyword', nodeId: 'pricing', keywordId },
+    { op: 'removeLink', from: 'home', to: 'pricing' },
+    { op: 'removeNode', id: 'pricing' }
+  ] });
+  assert.equal(patchedAgain.revision, 4);
+  assert.equal(patchedAgain.nodes.length, 2);
+  assert.equal(patchedAgain.title, '構想');
+  assert.equal(patchedAgain.dataModel[0]?.entity, 'product');
+
   await assert.rejects(siteStructureSave({ id: 'test-site', expectedRevision: 1, title: '古い更新' }), /Revision conflict/);
   await assert.rejects(siteStructureSave({ id: '../bad', expectedRevision: 0, title: 'bad' }));
   await assert.rejects(siteStructureSave({ id: 'missing-title', expectedRevision: 0 }), /title is required/);
-  const edit = (patch: object) => siteStructureSave({ id: 'test-site', expectedRevision: 2, ...patch });
+  const edit = (patch: object) => siteStructureSave({ id: 'test-site', expectedRevision: 4, ...patch });
   await assert.rejects(edit({ nodes: [home, home] }), /IDs must be unique/);
   await assert.rejects(edit({ nodes: [home, { ...article, path: '/' }] }), /paths must be unique/);
   await assert.rejects(edit({ nodes: [home, { ...article, parentId: 'missing' }] }), /Unknown parent/);
@@ -73,14 +107,14 @@ try {
   await assert.rejects(edit({ concept: '失敗' }), /503/);
   failCommit = false;
   assert.equal(commits, beforeFailure);
-  assert.equal((await siteStructureGet({ id: 'test-site' })).revision, 2);
+  assert.equal((await siteStructureGet({ id: 'test-site' })).revision, 4);
   failRead = true;
   await assert.rejects(edit({ concept: '権限なし' }), /403/);
   failRead = false;
   const concurrent = await Promise.allSettled([edit({ concept: 'A' }), edit({ concept: 'B' })]);
   assert.equal(concurrent.filter(result => result.status === 'fulfilled').length, 1);
-  assert.equal((await siteStructureGet({ id: 'test-site' })).revision, 3);
-  await siteStructureSave({ id: 'test-site', expectedRevision: 3, status: 'archived', nodes: [], links: [] });
+  assert.equal((await siteStructureGet({ id: 'test-site' })).revision, 5);
+  await siteStructureSave({ id: 'test-site', expectedRevision: 5, status: 'archived', nodes: [], links: [] });
   assert.equal((await siteStructureGet({ id: 'test-site' })).nodes.length, 0);
   await siteStructureSave({ id: 'second', title: '2', expectedRevision: 0 });
   const page = await siteStructureList({ limit: 1 });
@@ -102,15 +136,16 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 9);
-  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_save' && tool.inputSchema.properties.expectedRevision));
+  assert.equal(listing.tools.length, 18);
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_patch' && tool.inputSchema.properties.expectedRevision));
   const saved = await call('tools/call', { name: 'site_structure_save', arguments: { id: 'via-mcp', title: 'MCPから作成', expectedRevision: 0 } });
   assert.ok(!saved.isError, JSON.stringify(saved));
   assert.equal(JSON.parse(saved.content[0].text).revision, 1);
+  assert.equal(saved.structuredContent.revision, 1);
   const read = await call('tools/call', { name: 'site_structure_get', arguments: { id: 'via-mcp' } });
   assert.equal(JSON.parse(read.content[0].text).title, 'MCPから作成');
   const conflict = await call('tools/call', { name: 'site_structure_save', arguments: { id: 'via-mcp', title: 'overwrite', expectedRevision: 0 } });
   assert.equal(conflict.isError, true);
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}runs/`)).length, commits);
-  console.log('site structure smoke passed: graph validation, keyword references, atomic audit, revision races, pagination, read-only API and authenticated MCP');
+  console.log('site structure smoke passed: rich concept metadata, patch operations, graph validation, audit, revisions, pagination and structured MCP output');
 } finally { globalThis.fetch = originalFetch; }
