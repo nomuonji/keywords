@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { SITES_MCP_SERVER_VERSION, SITES_MCP_TOOL_NAMES } from './sites-mcp-contract.js';
@@ -21,14 +21,20 @@ const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*'
 
 app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
 function origin(c: any) { return new URL(c.req.url).origin; }
+function unb64(value: string) { return Buffer.from(value, 'base64url').toString('utf8'); }
+function verified(value: string, kind: string) {
+  const [body, signature] = value.split('.'); if (!body || !signature) return null;
+  const expected = createHmac('sha256', token).update(body).digest('base64url');
+  if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
+  try { const payload = JSON.parse(unb64(body)); return payload.kind === kind && typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000) ? payload : null; } catch { return null; }
+}
 function sameSecret(value: string) { return value.length === token.length && timingSafeEqual(Buffer.from(value), Buffer.from(token)); }
+function isAuthorized(value: string) { return sameSecret(value) || Boolean(verified(value, 'access')); }
 const requireToken = async (c: any, next: any) => {
   const supplied = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  // OAuth access tokens are issued by the existing Keywords endpoint. They are
-  // signed rather than equal to the root token, so this endpoint delegates
-  // OAuth clients through the same authorization server by accepting only the
-  // shared root token directly. ChatGPT can also connect with that bearer.
-  if (!sameSecret(supplied)) {
+  // Reuse the existing Keywords OAuth authorization server and its signed access
+  // tokens. This keeps one secret and one Firebase project while MCP duties stay separate.
+  if (!isAuthorized(supplied)) {
     c.header('WWW-Authenticate', `Bearer resource_metadata="${origin(c)}/.well-known/oauth-protected-resource"`);
     return c.json({ error: 'Unauthorized' }, 401);
   }
