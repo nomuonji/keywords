@@ -19,7 +19,33 @@ The result keeps readiness separate instead of collapsing everything into one mi
 
 `readyForClosedLoop` requires Search Console measurement, article optimization and Autopilot execution. GA4 and Google Ads are intentionally not required for that existing-page SEO loop.
 
-`readyForFullAnalyticsClosedLoop` additionally requires `behaviorAnalytics`, meaning the same project can collect both search-performance evidence and direct GA4 site-level behavior metrics without depending on the legacy dashboard snapshot.
+`readyForFullAnalyticsClosedLoop` additionally requires `behaviorAnalytics`, meaning the same project can collect both search-performance evidence and direct GA4 behavior metrics without depending on the legacy dashboard snapshot. When a complete GA4 landing-page report maps exactly to a registered article canonical URL, the same acquisition pipeline can also expose article-level landing-session context; formal SEO evaluation remains GSC-driven.
+
+## Staged Autopilot enforcement
+
+Readiness is not used as a global Autopilot on/off switch. Doing that would create a deadlock: the worker could be prevented from running the measurement and inventory work needed to clear its own blockers.
+
+For `existing_site` projects, Autopilot therefore reuses the `articleOptimization` capability as a **content-mutation gate** only. The gate is checked immediately before:
+
+- creating an autonomous Blog handoff from a proposed/approved page;
+- starting delivery for an already authorized Blog handoff;
+- starting an Operator operation that can modify existing site content.
+
+If the capability is not ready, Autopilot fails closed with `stage=preflight_blocked`, records a secret-safe `autopilot_content_preflight_blocked` event, and returns the relevant blocker codes / setup actions. It does not create a delivery Operation or claim publication progress.
+
+The following work remains available because it can establish evidence or clear readiness without mutating deployed content:
+
+- Search Console / GA4 measurement capture;
+- sitemap/live inventory synchronization;
+- optimization evaluation;
+- GSC-query feedback research;
+- keyword discovery and demand structuring.
+
+`discovery_due` and `structure_demand` are intentionally allowed to run before article-mutation readiness, but their Operation permissions set `contentDelivery=false`. Research may therefore progress without accidentally crossing the publication boundary.
+
+This gate is deliberately narrower than `readyForClosedLoop`. It does **not** require `behaviorAnalytics`, `queryFeedback`, or `autopilotExecution` to be ready. Requiring the Autopilot-execution capability from inside a running Autopilot tick would be circular, while GA4/Ads are optional to the core GSC-driven existing-page loop.
+
+`new_site` projects do not use this deployed-site mutation gate; their planning/publishing controls remain governed by their existing lifecycle and quality gates.
 
 ## Multi-site Search Console scope
 
