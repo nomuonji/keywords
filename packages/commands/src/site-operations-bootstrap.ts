@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { getDatabase } from '@keywords/db';
 import { field, firestore, value } from '../../db/src/firestore.js';
@@ -40,7 +40,10 @@ export function repositoryFromGitRemote(remote: string | null | undefined) {
   const raw = remote?.trim();
   if (!raw) return null;
   const scp = raw.match(/^git@github\.com:([^/\s]+)\/([^/\s]+?)(?:\.git)?$/i);
-  if (scp) return `${scp[1]}/${scp[2]}`;
+  if (scp) {
+    const candidate = `${scp[1]}/${scp[2]}`;
+    return repositoryPattern.test(candidate) ? candidate : null;
+  }
   try {
     const url = new URL(raw);
     if (!['github.com', 'www.github.com', 'ssh.github.com'].includes(url.hostname.toLowerCase())) return null;
@@ -81,8 +84,9 @@ function pathInside(root: string, repoPath: string) {
   if (!existsSync(absolute)) return false;
   const lexical = relative(root, absolute);
   if (!lexical || lexical === '..' || lexical.startsWith(`..${sep}`) || isAbsolute(lexical)) return false;
-  const physical = relative(root, realpathSync(absolute));
-  return Boolean(physical) && physical !== '..' && !physical.startsWith(`..${sep}`) && !isAbsolute(physical);
+  const physicalPath = realpathSync(absolute);
+  const physical = relative(root, physicalPath);
+  return Boolean(physical) && physical !== '..' && !physical.startsWith(`..${sep}`) && !isAbsolute(physical) && statSync(physicalPath).isFile();
 }
 
 function decodeDocument(doc: any) {
@@ -133,6 +137,10 @@ function siteStatus(current: SiteRecord | null, hasLiveEvidence: boolean) {
   if (current?.status === 'paused' || current?.status === 'archived') return current.status;
   if (hasLiveEvidence) return 'active' as const;
   return current?.status ?? 'building' as const;
+}
+
+function mapping(article: SiteArticleRecord) {
+  return { id: article.id, localPageId: article.localPageId, canonicalUrl: article.canonicalUrl };
 }
 
 /**
@@ -210,6 +218,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
   let updated = 0;
   let unchanged = 0;
   const skipped: Array<{ pageId: string; url: string; reason: string }> = [];
+  const articleMappings: Array<{ id: string; localPageId: string | null; canonicalUrl: string | null }> = [];
   const localPages = rows("SELECT id,title,slug,status,url,source,last_seen_at FROM pages WHERE project_id=? AND url IS NOT NULL AND url!='' ORDER BY updated_at DESC", projectId);
   for (const page of localPages) {
     let key: string;
@@ -242,8 +251,12 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
         title: String(page.title || page.url),
         status
       };
-      if (!changedArticle(existing, articleDesired)) { unchanged++; continue; }
-      await siteArticleSave({
+      if (!changedArticle(existing, articleDesired)) {
+        unchanged++;
+        articleMappings.push(mapping(existing!));
+        continue;
+      }
+      const saved = await siteArticleSave({
         id: existing?.id ?? hashId('article', `${site.id}:${page.id}`),
         expectedRevision: existing?.revision ?? 0,
         ...articleDesired,
@@ -251,7 +264,8 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
         secondaryKeywordIds: existing?.secondaryKeywordIds ?? [],
         publishedAt: existing?.publishedAt ?? null,
         lastUpdatedAt: existing?.lastUpdatedAt ?? null
-      });
+      }) as SiteArticleRecord;
+      articleMappings.push(mapping(saved));
       if (existing) updated++; else created++;
     } catch (error) {
       skipped.push({ pageId: page.id, url: page.url, reason: `remote_article_not_safely_resolved: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500) });
@@ -264,6 +278,7 @@ export async function bootstrapSiteOperationsRegistry(projectId: string) {
     site: { id: site.id, revision: site.revision, repository: site.repository, productionUrl: site.productionUrl, status: site.status, searchConsoleProperty: site.searchConsoleProperty },
     siteWrite,
     articles: { created, updated, unchanged, skipped: skipped.length },
+    articleMappings,
     skipped: skipped.slice(0, 100),
     policy: {
       requiresConfirmedBlogBinding: true,
