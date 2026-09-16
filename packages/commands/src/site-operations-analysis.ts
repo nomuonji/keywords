@@ -126,9 +126,10 @@ function compatibleSitePair(snapshots: MetricSnapshot[]) {
 }
 
 /**
- * Surface new/rising GSC queries from compatible, non-overlapping site periods.
- * This is a candidate feed only. It deliberately does not call Google Ads/SERP
- * and does not write Keyword Treasury; Keywords Operator owns those budgets.
+ * Surface newly-observed/rising GSC query candidates from compatible,
+ * non-overlapping site periods. Site snapshots retain a bounded top-query set,
+ * so absence from the previous snapshot is not proof that a query never existed.
+ * This tool deliberately does not call Google Ads/SERP or write Treasury.
  */
 export async function siteQueryOpportunities(input: unknown) {
   const args = z.object(siteQueryOpportunitiesShape).strict().parse(input);
@@ -151,17 +152,18 @@ export async function siteQueryOpportunities(input: unknown) {
     const before = previous.get(key);
     const previousImpressions = before?.impressions ?? 0;
     const growthRatio = previousImpressions > 0 ? impressions / previousImpressions : null;
-    const isNew = !before;
+    const newlyObserved = !before;
     const isRising = Boolean(before && growthRatio !== null && growthRatio >= args.minGrowthRatio);
-    if (!isNew && !isRising) continue;
+    if (!newlyObserved && !isRising) continue;
     candidates.push({
       query: row.query,
-      kind: isNew ? 'new_query' : 'rising_query',
+      kind: newlyObserved ? 'newly_observed_query' : 'rising_query',
       current: row,
       previous: before ?? null,
       impressionGrowthRatio: growthRatio,
       impressionDelta: impressions - previousImpressions,
-      clickDelta: (row.clicks ?? 0) - (before?.clicks ?? 0)
+      clickDelta: (row.clicks ?? 0) - (before?.clicks ?? 0),
+      observationCaveat: newlyObserved ? 'Absent from the bounded previous saved query set; this is not proof the query never existed in Search Console.' : null
     });
   }
   candidates.sort((a: any, b: any) => Number(b.impressionDelta) - Number(a.impressionDelta));
@@ -173,6 +175,7 @@ export async function siteQueryOpportunities(input: unknown) {
     latest: { id: pair.latest.id, periodStart: pair.latest.periodStart, periodEnd: pair.latest.periodEnd, sourceVersion: pair.latest.sourceVersion },
     previous: { id: pair.previous.id, periodStart: pair.previous.periodStart, periodEnd: pair.previous.periodEnd, sourceVersion: pair.previous.sourceVersion },
     criteria: { minImpressions: args.minImpressions, minGrowthRatio: args.minGrowthRatio },
+    queryCoverage: 'bounded_saved_top_queries',
     candidates: candidates.slice(0, args.limit),
     nextAction: 'Pass selected query strings to Keywords Operator keyword_screen_batch (Google Ads first), then use keyword_research_pipeline only for shortlisted terms. This tool never spends SERP quota or writes Treasury.'
   };
