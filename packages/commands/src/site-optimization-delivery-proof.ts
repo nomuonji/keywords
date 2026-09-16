@@ -13,17 +13,17 @@ type ValidatorResult = {
 };
 
 /**
- * Prove that the current shared Operation actually validated, pushed and live-verified
+ * Prove that the caller's shared Operation actually validated, pushed and live-verified
  * the mapped existing-page artifact before a Sites optimization may become implemented.
  */
-export function assertSiteOptimizationDeliveryProof(input: { projectId: string; pageId: string; afterCommit: string }) {
+export function assertSiteOptimizationDeliveryProof(input: { projectId: string; workSessionId: string; pageId: string; afterCommit: string }) {
   const active = one(`SELECT o.id AS operation_id,op.work_session_id
     FROM operation_requests o
     JOIN operation_projects op ON op.operation_id=o.id
     JOIN work_sessions ws ON ws.id=op.work_session_id
-    WHERE op.project_id=? AND o.status='active' AND ws.status='running'
-    ORDER BY o.updated_at DESC LIMIT 1`, input.projectId) as { operation_id: string; work_session_id: string } | undefined;
-  if (!active) throw new Error('Implementation proof requires the active shared Operation.');
+    WHERE op.project_id=? AND op.work_session_id=? AND o.status='active' AND ws.status='running'
+    LIMIT 1`, input.projectId, input.workSessionId) as { operation_id: string; work_session_id: string } | undefined;
+  if (!active) throw new Error('Implementation proof requires the caller active shared Operation/work session.');
 
   const artifact = one(`SELECT id,validator_status,validator_result_json,build_status,verified_at,updated_at
     FROM operation_artifacts
@@ -36,21 +36,21 @@ export function assertSiteOptimizationDeliveryProof(input: { projectId: string; 
       verified_at: string | null;
       updated_at: string;
     } | undefined;
-  if (!artifact) throw new Error('No artifact for the mapped article was validated in the active Operation.');
+  if (!artifact) throw new Error('No artifact for the mapped article was validated in the caller Operation.');
   if (artifact.validator_status !== 'passed' || artifact.build_status !== 'passed' || !artifact.verified_at) {
-    throw new Error('Mapped article artifact is not fully validated and build-verified in the active Operation.');
+    throw new Error('Mapped article artifact is not fully validated and build-verified in the caller Operation.');
   }
 
   const result = parse<ValidatorResult>(artifact.validator_result_json, {});
   if (result.status !== 'passed') throw new Error('Persisted validator result does not prove a passed artifact validation.');
   if (result.delivery?.status !== 'pushed' || !result.delivery.commit) {
-    throw new Error('Optimization implementation requires a real Git push from the active artifact validation.');
+    throw new Error('Optimization implementation requires a real Git push from the caller artifact validation.');
   }
   if (result.delivery.commit.toLowerCase() !== input.afterCommit.toLowerCase()) {
     throw new Error(`afterCommit does not match the persisted pushed commit (${result.delivery.commit}).`);
   }
   if (result.publication?.status !== 'published') {
-    throw new Error('Optimization implementation requires successful live publication verification from the active artifact validation.');
+    throw new Error('Optimization implementation requires successful live publication verification from the caller artifact validation.');
   }
 
   return {
