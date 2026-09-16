@@ -25,6 +25,7 @@ async function compute(projectId: string) {
   const minImpressions = Math.round(numberEnv('KEYWORDS_SITE_QUERY_MIN_IMPRESSIONS', 20, 1, 1_000_000));
   const minGrowthRatio = numberEnv('KEYWORDS_SITE_QUERY_MIN_GROWTH_RATIO', 1.5, 1, 100);
   const limit = Math.round(numberEnv('KEYWORDS_SITE_QUERY_FEEDBACK_LIMIT', 20, 1, 50));
+  const maxSerpChecks = Math.round(numberEnv('KEYWORDS_SITE_QUERY_MAX_SERP_CHECKS', 5, 0, 10));
   const result = await siteQueryOpportunities({ siteId: site.id, minImpressions, minGrowthRatio, limit });
   if (!result.comparable) {
     return { status: 'waiting_for_compatible_metrics' as const, projectId, siteId: site.id, result };
@@ -41,7 +42,8 @@ async function compute(projectId: string) {
     periodDays: result.periodDays,
     queryCoverage: result.queryCoverage,
     candidates: result.candidates,
-    criteria: result.criteria
+    criteria: result.criteria,
+    maxSerpChecks
   };
 }
 
