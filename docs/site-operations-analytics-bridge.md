@@ -124,16 +124,18 @@ This prevents a generic metric rule from silently redefining the experiment afte
 
 ## GSC query feedback loop
 
-`site_query_opportunities` compares only complete, equal-length, non-overlapping **site-level** GSC snapshots. It surfaces:
+`site_query_opportunities` compares only complete, equal-length, non-overlapping **site-level** GSC snapshots. The snapshots retain a bounded saved top-query set, so the tool distinguishes:
 
 ```text
-new_query
+newly_observed_query
 rising_query
 ```
 
-using configurable minimum impressions and impression-growth ratio.
+`newly_observed_query` means the query is present in the current saved query set but absent from the previous saved query set. It is **not** proof that the query never existed in Search Console before. The output includes this caveat and `queryCoverage = bounded_saved_top_queries`.
 
-It does not spend SERP quota and does not write Keyword Treasury. The intended handoff is:
+Candidates use configurable minimum impressions and impression-growth ratio.
+
+The tool does not spend SERP quota and does not write Keyword Treasury. The intended handoff is:
 
 ```text
 Sites Operator site_query_opportunities
