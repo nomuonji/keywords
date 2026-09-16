@@ -18,6 +18,8 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
 let serpRequests = 0;
+let directRequests = 0;
+let proxyShouldFail = false;
 const originalFetch = globalThis.fetch;
 
 const decodeField = (input: any): any => {
@@ -36,11 +38,26 @@ globalThis.fetch = async (input, init) => {
   const url = String(input);
   if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'test-access-token', expires_in: 3600 });
   if (url === 'https://keyword-proxy.test/demand') {
+    if (proxyShouldFail) return Response.json({ error: 'fixture proxy failure' }, { status: 503 });
     const body = JSON.parse(String(init?.body ?? '{}'));
     const results = (body.keywords ?? []).map((keyword: string) => keyword === 'rising query'
       ? { keyword, avgMonthlySearches: 500, averageCpcMicros: 1_800_000, competitionIndex: 40, competition: 'MEDIUM' }
       : { keyword, avgMonthlySearches: 10, averageCpcMicros: 300_000, competitionIndex: 20, competition: 'LOW' });
     return Response.json({ results });
+  }
+  if (url.includes('googleads.googleapis.com/')) {
+    directRequests++;
+    const body = JSON.parse(String(init?.body ?? '{}'));
+    return Response.json({ results: (body.keywords ?? []).map((keyword: string) => ({
+      text: keyword,
+      keywordMetrics: {
+        avgMonthlySearches: 320,
+        competition: 'LOW',
+        competitionIndex: 25,
+        averageCpcMicros: 900_000,
+        monthlySearchVolumes: [{ year: 2026, month: 'AUGUST', monthlySearches: 350 }]
+      }
+    })) });
   }
   if (url.includes('api.search.brave.com') || url.includes('serper.dev')) {
     serpRequests++;
@@ -92,6 +109,7 @@ try {
   const { metricSnapshotSave, siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
   const { nextSiteQueryFeedback } = await import('../packages/commands/src/site-query-feedback.js');
   const { keywordResearchPipeline, keywordTreasurySave } = await import('../packages/commands/src/keyword-research-pipeline.js');
+  const { operatorInstructions } = await import('../packages/commands/src/operator-instructions.js');
 
   await siteRegistrySave({
     id: 'site-feedback', expectedRevision: 0, localProjectId: 'project-feedback', name: 'Feedback Site',
@@ -124,6 +142,22 @@ try {
   assert.equal(feedback.maxSerpChecks, 5);
   assert.deepEqual(feedback.candidates.map((item: any) => item.query).sort(), ['new query', 'rising query']);
 
+  const operationSpec = operatorInstructions({
+    kind: 'research_site_queries',
+    title: 'Research Search Console opportunities',
+    reason: 'fixture',
+    relatedId: feedback.snapshotId,
+    siteId: feedback.siteId,
+    previousSnapshotId: feedback.previousSnapshotId,
+    feedbackCandidates: feedback.candidates,
+    maxSerpChecks: feedback.maxSerpChecks
+  });
+  assert.match(operationSpec.instructions, new RegExp(feedback.snapshotId));
+  assert.match(operationSpec.instructions, /rising query/);
+  assert.match(operationSpec.instructions, /new query/);
+  assert.match(operationSpec.instructions, /maxSerpChecks=5/);
+  assert.match(operationSpec.instructions, /Do not create an article or Site Concept/);
+
   const pipeline = await keywordResearchPipeline({
     keywords: feedback.candidates.map((item: any) => item.query),
     criteria: { minVolume: 50 },
@@ -134,6 +168,25 @@ try {
   assert.deepEqual(pipeline.selectedForSerp, []);
   assert.equal(pipeline.serpChecks.length, 0);
   assert.equal(serpRequests, 0);
+  assert.equal(directRequests, 0);
+
+  process.env.GOOGLE_ADS_DEVELOPER_TOKEN = 'fixture-developer-token';
+  process.env.GOOGLE_ADS_ACCESS_TOKEN = 'fixture-access-token';
+  process.env.GOOGLE_ADS_CUSTOMER_ID = '1234567890';
+  process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID = '1234567890';
+  proxyShouldFail = true;
+  const fallback = await keywordResearchPipeline({ keywords: ['fallback query'], criteria: { minVolume: 50 }, maxSerpChecks: 0 });
+  proxyShouldFail = false;
+  assert.equal(fallback.demand.providerRoute, 'direct_fallback');
+  assert.equal(fallback.demand.fallbackUsed, true);
+  assert.equal(fallback.screening.passedKeywords[0], 'fallback query');
+  assert.equal(directRequests, 1);
+  assert.equal(serpRequests, 0);
+
+  await assert.rejects(
+    () => keywordTreasurySave({ candidates: [{ keyword: 'missing provenance', source: 'gsc_feedback', status: 'shortlisted' }] }),
+    /require evidence\.siteId, snapshotId, previousSnapshotId/
+  );
 
   const saved = await keywordTreasurySave({ candidates: [{
     keyword: 'rising query',
@@ -156,7 +209,7 @@ try {
   assert.equal(saved[0].avgMonthlySearches, 500);
   assert.equal((saved[0].evidence as any).snapshotId, feedback.snapshotId);
 
-  console.log('site query feedback smoke passed: bounded GSC opportunities -> Ads-first screening -> zero unrequested SERP -> selected Treasury save with provenance');
+  console.log('site query feedback smoke passed: pinned GSC batch -> proxy/direct Ads routes -> bounded zero-SERP path -> provenance-enforced Treasury save');
 } finally {
   globalThis.fetch = originalFetch;
 }
