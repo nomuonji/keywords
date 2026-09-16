@@ -153,7 +153,7 @@ cached / quota-aware SERP
 Keyword Treasury
 ```
 
-The direct Google Ads implementation was moved out of the Vercel API-specific module into the shared research layer. The local persistent Agent therefore does not need to call the remote MCP over HTTP to reuse the Ads provider logic.
+The local persistent Agent uses a shared research-layer direct Google Ads implementation and therefore does not call the remote `/mcp` endpoint over HTTP to reuse Ads credentials/provider behavior. The Vercel `/mcp` entrypoint keeps its existing self-contained direct-Ads implementation for serverless bundling/backward compatibility; the provider semantics remain the same, while the local feedback execution path is shared through the command layer.
 
 SERP is never called before Ads screening and `maxSerpChecks` remains a hard per-operation bound. Existing monthly SERP quota/cache rules still apply. If quota/reserve stops the loop, the pipeline returns the stopping reason rather than bypassing the quota.
 
@@ -208,6 +208,6 @@ No existing SQLite migration is required for this bridge.
 1. Register real production sites with `localProjectId`.
 2. Register existing Git articles with `localPageId` and/or `canonicalUrl` where article-level GSC tracking is needed.
 3. Run the persistent Autopilot with Firebase/Sites/Ads credentials available so optimization evaluation and query feedback can enter the shared queue.
-4. Consolidate the thin Vercel `/mcp` orchestration wrappers further if desired; the direct Ads provider and local feedback pipeline are already shared, while the remote contract remains backward compatible.
+4. Consolidate the Vercel `/mcp` Ads/provider wrapper with the local shared implementation only if a later serverless bundling pass can preserve the existing production contract cleanly.
 5. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
 6. Consider article-level GA4 only when a trustworthy page-scoped acquisition source exists.
