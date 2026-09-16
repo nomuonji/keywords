@@ -2,7 +2,7 @@
 
 Updated: 2026-09-16
 
-This document is the implementation addendum to `site-operations-architecture.md`. It records the implemented analytics projection, optimization-evaluation evidence, traffic-aware waits, and GSC-to-Keywords feedback loop.
+This document is the implementation addendum to `site-operations-architecture.md`. It records the implemented analytics projection, optimization-evaluation evidence, traffic-aware waits, GSC-to-Keywords feedback loop, and confirmed Blog-article registry synchronization.
 
 ## Goal
 
@@ -14,6 +14,7 @@ existing Autopilot runner
         ├─ capture_metrics
         │     ├─ existing GSC capture -> SQLite
         │     └─ cloud projection
+        │             ├─ confirmed Blog source mapping -> Firestore article registry
         │             ├─ GSC -> Firestore metricSnapshots
         │             └─ saved analytics-dashboard GA4 -> metricSnapshots
         │
@@ -40,6 +41,16 @@ Cloud records do not infer local identity from names.
 `sites` adds `localProjectId`. `articles` adds `localPageId` and `canonicalUrl`. `site_registry_resolve` resolves a real site by explicit `localProjectId` or exact `productionUrl`; duplicate mappings are rejected.
 
 Article-level GSC projection uses `localPageId` first and `canonicalUrl` second. If neither matches, the bridge skips that page rather than guessing.
+
+### Confirmed Blog article registry sync
+
+Real-site registration remains explicit: repository, production URL and deployment identity are not inferred. After a real site has been linked to a local project with `localProjectId`, the bridge can reuse the already human-confirmed `blog_bindings` snapshot to register article metadata before page-level GSC projection.
+
+The sync requires exact agreement between the registered production origin, `blog_bindings.origin`, and the Blog snapshot `canonical_origin`. Each `snapshot.sources[].expected_url` must resolve to exactly one local page. The Firestore record mirrors only identity fields already established by that binding: `localPageId`, exact canonical URL, registered repository, `source_ref` as `repoPath`, title and URL-derived slug.
+
+The bridge fails closed on origin mismatch, ambiguous local pages, or conflicting existing article mappings. It never treats a local build as proof of publication. Newly mirrored records therefore remain `draft` unless publication state was already established through another trusted path. Existing article status is preserved on metadata refresh.
+
+Automatic article synchronization is bounded by `KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT`, default `100`, per projection. Excess confirmed sources are deferred to a later projection rather than making one maintenance operation unbounded.
 
 ## GSC flow
 
@@ -165,6 +176,7 @@ The feedback Operation is research-only: it reuses the existing `measurementOnly
 
 - sitemap/live URL inventory: 7-day freshness threshold
 - GSC measurement collection: `KEYWORDS_METRICS_CADENCE_HOURS`, default `24`
+- Blog article registry sync: immediately before metric projection, bounded by `KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT`, default `100`
 - GSC comparison windows: equal-length saved periods
 - optimization due-check cache: `KEYWORDS_SITE_OPTIMIZATION_CHECK_MINUTES`, default `30`; ready work is not cached
 - optimization evaluation: persisted minimum plus derived 14/21/28-day traffic wait
@@ -177,6 +189,10 @@ Cloud projection and remote analysis are additive and cannot invalidate locally 
 
 - Firestore not configured -> Sites evaluation/query-feedback discovery is skipped
 - no `localProjectId` mapping -> Sites discovery is skipped
+- no confirmed Blog binding -> article registry sync is skipped; existing explicit article mappings still work
+- Blog origin differs from the registered production origin -> article registry sync fails closed
+- a Blog source URL maps to zero or multiple local pages -> that article is skipped rather than guessed
+- localPageId and canonicalUrl point to different Firestore articles -> that article is skipped with a conflict warning
 - GA4 saved snapshot unavailable -> GSC can still project
 - Firestore projection error -> maintenance retains successful local GSC capture
 - ambiguous mappings -> fail closed rather than infer identity
@@ -207,8 +223,8 @@ No existing SQLite migration is required for this bridge.
 
 ## Remaining work
 
-1. Register real production sites with `localProjectId`.
-2. Register existing Git articles with `localPageId` and/or `canonicalUrl` where article-level GSC tracking is needed.
+1. Register each real production site once with an explicit `localProjectId`, repository and production URL. The system deliberately does not guess deployment identity.
+2. For confirmed Blog-bound sources, article registry metadata now syncs automatically before metric projection. Non-Blog/custom articles still need explicit `localPageId` and/or `canonicalUrl` registration when article-level GSC tracking is required.
 3. Run the persistent Autopilot with Firebase/Sites/Ads credentials available so optimization evaluation and query feedback can enter the shared queue.
 4. Consolidate the Vercel `/mcp` Ads/provider wrapper with the local shared implementation only if a later serverless bundling pass can preserve the existing production contract cleanly.
 5. Add direct GA4 Data API collection only if the existing analytics-dashboard acquisition path should be consolidated into this repository.
