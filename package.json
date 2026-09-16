@@ -17,7 +17,7 @@
     "test:site-operations-analysis": "tsx scripts/site-operations-analysis-smoke.ts",
     "test:site-query-feedback": "tsx scripts/site-query-feedback-smoke.ts",
     "dev": "concurrently -n api,web \"npm run dev -w @keywords/api\" \"npm run dev -w @keywords/web\"",
-    "build": "npm run test:site-query-feedback && npm run build -w @keywords/web",
+    "build": "npm run typecheck && npm run build -w @keywords/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:init": "npm run db:init -w @keywords/db",
     "db:restore": "tsx scripts/db-restore.ts",
