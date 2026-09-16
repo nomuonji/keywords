@@ -5,6 +5,7 @@ import { discoveryCommands } from './discovery.js';
 import { blogNextActions } from './blog.js';
 import { measurementComparisonContext } from './measurement.js';
 import { operationControl } from './guard.js';
+import { gscMeasurementReadiness } from './gsc-property.js';
 import { googleAdsConfigured } from './workspace.js';
 import { recoveryContext } from './recovery-context.js';
 import { nextSiteOptimizationEvaluation } from './site-operations-analysis.js';
@@ -99,7 +100,8 @@ async function inspect(projectId: string) {
 
   const siteInventoryStaleMs = 7 * 24 * 60 * 60 * 1000;
   if (project.mode === 'existing_site' && project.domain && (!livePage || !latestSitemap || Date.now() - new Date(latestSitemap.createdAt).getTime() > siteInventoryStaleMs)) candidates.push({ kind: 'sync_site', rank: 5.4, title: 'Refresh live site URL inventory', reason: livePage ? 'A fresh live sitemap inventory is required before selecting a recovery sample.' : 'No live site URL inventory has been imported yet.', relatedType: 'site', relatedId: projectId });
-  const gscConfigured = Boolean((process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN || process.env.GOOGLE_OAUTH_ACCESS_TOKEN || process.env.GOOGLE_APPLICATION_CREDENTIALS || (process.env.GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN || process.env.GOOGLE_OAUTH_REFRESH_TOKEN) && (process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || process.env.GOOGLE_ADS_CLIENT_ID || process.env.ADS_CLIENT_ID) && (process.env.GOOGLE_SEARCH_CONSOLE_CLIENT_SECRET || process.env.GOOGLE_OAUTH_CLIENT_SECRET || process.env.GOOGLE_ADS_CLIENT_SECRET || process.env.ADS_CLIENT_SECRET)) && process.env.GOOGLE_SEARCH_CONSOLE_SITE_URL);
+  const gsc = gscMeasurementReadiness(projectId);
+  const gscConfigured = gsc.credentialsConfigured && gsc.scopeResolvable;
   const configuredMetricsCadenceHours = Number(process.env.KEYWORDS_METRICS_CADENCE_HOURS ?? 24);
   const metricsCadenceHours = Number.isFinite(configuredMetricsCadenceHours) ? Math.max(1, Math.min(configuredMetricsCadenceHours, 168)) : 24;
   const metricsStaleMs = metricsCadenceHours * 60 * 60 * 1000;
