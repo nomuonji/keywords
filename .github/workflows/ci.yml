@@ -73,6 +73,7 @@ jobs:
             npm run test:site-structure
             npm run test:site-operations
             npm run test:site-operations-bridge
+            npx tsx scripts/site-article-scale-smoke.ts
             npm run test:site-operations-analysis
             npm run test:site-optimization-workflow
             npm run test:site-optimization-delivery-proof
