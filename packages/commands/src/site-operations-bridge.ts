@@ -5,6 +5,7 @@ import { hostOf, readPortfolio } from '@keywords/research/portfolio';
 import {
   metricSnapshotSave,
   remoteSitesStatus,
+  siteArticleGet,
   siteArticleList,
   siteArticleSave,
   siteRegistryResolve
@@ -91,9 +92,9 @@ function articleSlug(url: string) {
   return pathname || 'index';
 }
 
-function articleSyncLimit() {
-  const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 100);
-  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
+export function articleSyncLimit() {
+  const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 500);
+  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 500)) : 500;
 }
 
 function parseJson(value: unknown) {
@@ -125,22 +126,31 @@ function completeGa4LandingPages(payload: any) {
   });
 }
 
+function notFound(error: unknown) {
+  return error instanceof Error && /Article not found/i.test(error.message);
+}
+
 /**
  * Register exact Blog source mappings in the Sites article registry before
  * projecting page-level metrics. This only uses the already human-confirmed
  * Blog binding and exact local page URLs; it never guesses a repository, site,
  * source path, canonical URL, or publication state.
+ *
+ * The returned article records are the exact complete set considered during
+ * this sync, so downstream metric projection does not re-truncate the registry
+ * through the public bounded listing tool.
  */
 async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
+  const emptyArticles: SiteArticleRecord[] = [];
   const binding = sqlite.prepare('SELECT * FROM blog_bindings WHERE project_id=?').get(projectId) as any;
-  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: [] as string[] };
+  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: [] as string[], articles: emptyArticles };
 
   const warnings: string[] = [];
   let snapshot;
   try {
     snapshot = snapshotSchema.parse(JSON.parse(String(binding.snapshot_json)));
   } catch {
-    return { status: 'skipped' as const, reason: 'invalid_blog_snapshot', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: ['Blog binding snapshot is invalid; article registry sync was skipped.'] };
+    return { status: 'skipped' as const, reason: 'invalid_blog_snapshot', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: ['Blog binding snapshot is invalid; article registry sync was skipped.'], articles: emptyArticles };
   }
 
   let siteOrigin: string | null = null;
@@ -150,7 +160,19 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
       status: 'skipped' as const,
       reason: 'binding_origin_mismatch',
       considered: 0, created: 0, updated: 0, reused: 0, skipped: 0,
-      warnings: ['Blog binding origin does not exactly match the registered production site; article identities were not inferred.']
+      warnings: ['Blog binding origin does not exactly match the registered production site; article identities were not inferred.'],
+      articles: emptyArticles
+    };
+  }
+
+  const limit = articleSyncLimit();
+  if (snapshot.sources.length > limit) {
+    return {
+      status: 'skipped' as const,
+      reason: 'article_sync_limit_exceeded',
+      considered: 0, created: 0, updated: 0, reused: 0, skipped: 0,
+      warnings: [`Blog article registry contains ${snapshot.sources.length} sources, above the safe per-projection limit of ${limit}; partial synchronization was refused.`],
+      articles: emptyArticles
     };
   }
 
@@ -160,12 +182,10 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
     const key = canonicalKey(article.canonicalUrl);
     return key ? [[key, article] as const] : [];
   }));
-  const limit = articleSyncLimit();
-  const sources = snapshot.sources.slice(0, limit);
-  if (snapshot.sources.length > limit) warnings.push(`Blog article registry sync is bounded to ${limit} sources per projection; ${snapshot.sources.length - limit} source mappings were deferred.`);
+  const syncedArticles: SiteArticleRecord[] = [];
 
   let created = 0, updated = 0, reused = 0, skipped = 0;
-  for (const source of sources) {
+  for (const source of snapshot.sources) {
     const localPages = rows('SELECT id,url FROM pages WHERE project_id=? AND url=? LIMIT 2', projectId, source.expected_url);
     if (localPages.length !== 1) {
       skipped++;
@@ -181,7 +201,17 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
       warnings.push(`Skipped ${source.source_ref}: localPageId and canonicalUrl resolve to different registered articles.`);
       continue;
     }
-    const current = pageMatch ?? urlMatch;
+
+    const deterministicId = articleId(site.id, source.source_ref);
+    let current = pageMatch ?? urlMatch;
+    if (!current) {
+      try {
+        current = await siteArticleGet({ id: deterministicId }) as SiteArticleRecord;
+      } catch (error) {
+        if (!notFound(error)) throw error;
+      }
+    }
+
     const desired = {
       localPageId,
       canonicalUrl: source.expected_url,
@@ -193,24 +223,29 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
     if (current) {
       const changed = Object.entries(desired).some(([field, value]) => (current as any)[field] !== value);
       if (!changed) {
+        syncedArticles.push(current);
+        byPage.set(localPageId, current);
+        if (key) byUrl.set(key, current);
         reused++;
         continue;
       }
       const saved = await siteArticleSave({ id: current.id, expectedRevision: current.revision, siteId: site.id, ...desired }) as SiteArticleRecord;
+      syncedArticles.push(saved);
       byPage.set(localPageId, saved);
       if (key) byUrl.set(key, saved);
       updated++;
       continue;
     }
     const saved = await siteArticleSave({
-      id: articleId(site.id, source.source_ref), expectedRevision: 0, siteId: site.id, ...desired
+      id: deterministicId, expectedRevision: 0, siteId: site.id, ...desired
     }) as SiteArticleRecord;
+    syncedArticles.push(saved);
     byPage.set(localPageId, saved);
     if (key) byUrl.set(key, saved);
     created++;
   }
 
-  return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings };
+  return { status: 'synced' as const, reason: null, considered: snapshot.sources.length, created, updated, reused, skipped, warnings, articles: syncedArticles };
 }
 
 /**
@@ -227,9 +262,13 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', projectId, nextAction: 'Set sites.localProjectId with site_registry_save.' };
 
   const warnings: string[] = [];
-  let articleRegistrySync: Awaited<ReturnType<typeof syncBoundBlogArticles>>;
+  let syncedArticles: SiteArticleRecord[] = [];
+  let articleRegistrySync: Omit<Awaited<ReturnType<typeof syncBoundBlogArticles>>, 'articles'>;
   try {
-    articleRegistrySync = await syncBoundBlogArticles(projectId, site);
+    const syncResult = await syncBoundBlogArticles(projectId, site);
+    syncedArticles = syncResult.articles;
+    const { articles: _articles, ...syncSummary } = syncResult;
+    articleRegistrySync = syncSummary;
     warnings.push(...articleRegistrySync.warnings);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -237,8 +276,8 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     warnings.push(...articleRegistrySync.warnings);
   }
 
-  const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
-  const articles = articleResponse.items as SiteArticleRecord[];
+  const articleResponse = syncedArticles.length ? null : await siteArticleList({ siteId: site.id, limit: 100 });
+  const articles = syncedArticles.length ? syncedArticles : articleResponse!.items as SiteArticleRecord[];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const articleByUrl = new Map(articles.flatMap(article => {
     const key = canonicalKey(article.canonicalUrl);
