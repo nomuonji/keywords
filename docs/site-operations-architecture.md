@@ -1,254 +1,287 @@
 # Agent-native Site Operations Architecture
 
-Updated: 2026-09-16
+Updated: 2026-09-17
 
-This document records the code-level inventory of the existing `nomuonji/keywords` article/SEO operating system and the migration path toward a continuous Agent-native site operations platform.
+This document describes the **current implemented architecture** of `nomuonji/keywords` and the remaining operational work required to prove the full SEO loop on real sites over time.
 
-The main rule is **evolution, not replacement**. The existing local SQLite/UI/runner/article-artifact workflow remains the execution plane. Firestore adds a cloud control plane that ChatGPT can safely reach through a separate Sites Operator MCP.
+The governing rule remains **evolution, not replacement**: the existing SQLite/UI/runner/article-artifact workflow is the local execution plane, Git owns deployable article content, and Firestore provides the durable remote Agent control plane.
 
-## 1. What actually exists today
+## 1. Current system boundary
 
-The older mental model of a standalone `Article` CRUD CMS with `articles_*` MCP tools is no longer accurate.
-
-### Article/content model
-
-There is no single database row that owns article body text.
-
-- `pages`: planning and live-page identity, keyword targeting, intent, evidence and URL state.
-- `operation_artifacts`: manifest for a real article file, including `artifact_path`, SHA-256, source IDs, validator/build results, before/after hash, revision counters and verification state.
-- Markdown/MDX files under the configured Blog root: **actual article body source of truth**.
-- `blog_handoffs` / `blog_receipts`: publication transport and evidence.
-- `operation_outcomes`: local operation-level hypothesis/publication/evaluation state.
-
-The Articles UI scans real `.md`/`.mdx` files and combines unregistered local files with persisted `operation_artifacts`. A verified artifact may be committed/pushed as the single target file when auto Git delivery is enabled.
-
-### SQLite
-
-Default database: `data/keywords.sqlite`.
-
-The database bootstrap is additive and preserves legacy data. Before the Blog integration tables are first added to an existing DB, a consistent `VACUUM INTO` pre-integration backup is created.
-
-Important tables include:
-
-- `projects`, `topics`, `keywords`, `clusters`, `pages`, `page_keywords`
-- `keyword_metric_snapshots`, `page_metric_snapshots`
-- `sources`, `source_links`, `insights`, `tasks`, `decisions`, `policy_rules`
-- `work_sessions`, `work_checkpoints`, `review_requests`
-- `discovery_jobs`, `discovery_request_reservations`, `discovery_candidates`
-- `runs`
-- `blog_bindings`, `blog_briefs`, `blog_handoffs`, `blog_receipts`
-- `operation_requests`, `operation_projects`, `operation_controls`, `operation_delegations`
-- `operation_executors`, `operation_budget_reservations`, `operation_events`, `operation_outcomes`
-- `autopilot_controls`, `autopilot_state`
-- `measurement_imports`
-- `operation_artifacts`
-
-The old generic `jobs` / `schedules` / `events` picture has evolved into domain-specific operation/discovery queues, `operation_events`, per-project Autopilot cadence/state, and the persistent runner.
-
-### Local API and UI
-
-- Local API defaults to `127.0.0.1:8787`.
-- Vite local UI uses the existing `5173` development origin.
-- API writes from an Agent are forced through the delegated `/operations` lane; human and agent bearer tokens are distinct when configured.
-- The Local UI already includes article, operations, sites, keyword treasury and site structure views.
-
-### CLI / local MCP
-
-The local MCP is broader than the remote Keywords Operator. It exposes work/operation/research/page/site/measurement and Blog tools.
-
-Current Blog tools include:
-
-- `blog_context`, `blog_contract`, `blog_prepare`, `blog_export`, `blog_get`
-- `blog_writeDraft`, `blog_validateDraft`, `blog_artifactContext`
-- `blog_receipt`, `blog_verifyPublished`
-- `blog_capture`, `blog_evaluate`
-- discovery/observation helpers
-
-The old `articles_list/articles_add/...` MCP contract is not the current implementation.
-
-### Runner / scheduling
-
-`scripts/autopilot-runner.ts` is the persistent execution worker.
-
-It already handles:
-
-- executor registration, generation and leases
-- heartbeat / stale recovery
-- per-project due work
-- Autopilot ticks
-- operation claiming
-- deterministic maintenance execution
-- external Agent process execution
-- artifact completion reconciliation
-- revision reconciliation
-- provider/executor failure cooldown
-
-Scheduling intentionally belongs to this persistent worker, not the HTTP API. Per-project cadence lives in `autopilot_controls`; `autopilot_state.next_tick_at` records the next due time.
-
-### Public-site linkage and Git
-
-The existing Blog integration already has the right direction for content ownership:
-
-1. local Markdown/MDX is written atomically under the configured Blog root;
-2. an artifact manifest is persisted;
-3. source validation and the real site build run;
-4. an allowed site can commit/push only that verified artifact;
-5. Keywords directly checks HTTP 200 and canonical after delivery;
-6. publication and later observation are recorded.
-
-This mechanism should be reused rather than replaced by Firestore article-body storage.
-
-### GSC / GA4
-
-GSC is already a first-class local measurement provider:
-
-- API capture with bounded pagination;
-- query and page snapshots;
-- complete/partial/failed capture state;
-- versioned `measurement_imports`;
-- failed or partial captures do not overwrite prior successful materialized metrics;
-- comparisons require compatible property/origin/filter/timezone/search-type and equal non-overlapping periods.
-
-GA4 is **not yet fetched directly by this repository**. Portfolio GA4 currently comes from `analytics-dashboard/data/latest.json`, where the reader expects sessions, active users, engagement and views alongside GSC totals. The new cloud schema therefore accepts GA4 snapshots now, while direct GA4 collection remains a later migration step.
-
-## 2. Current architecture
+The system is intentionally split by responsibility rather than by repository or Firebase project.
 
 ```text
-                         ┌────────────────────────────┐
-                         │ Remote Keywords Operator   │
-                         │ /mcp                       │
-                         │ Firestore research plane   │
-                         └─────────────┬──────────────┘
-                                       │
-                    keywordTreasury / researchSessions /
-                    siteStructures / SERP cache + usage
-                                       │
-                                       ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    nomuonji/keywords local plane                    │
-│                                                                     │
-│  Local UI ──► API/CLI/local MCP ──► Commands/Core                   │
-│                                      │                              │
-│                                      ▼                              │
-│                     SQLite data/keywords.sqlite                     │
-│   pages / jobs / work / operations / events / outcomes / metrics   │
-│                                      │                              │
-│                                      ▼                              │
-│                          Autopilot Runner                           │
-│                       operation + executor leases                   │
-│                                      │                              │
-│                  ┌───────────────────┴──────────────────┐           │
-│                  ▼                                      ▼           │
-│        Markdown/MDX article files               GSC / SERP / Ads    │
-│        + validation/build                       measurement/research │
-│                  │                                                  │
-│                  ▼                                                  │
-│             Git commit/push                                             │
-└──────────────────┼──────────────────────────────────────────────────┘
-                   ▼
-              Published site
-                   │
-                   └────► HTTP/canonical verification ──► outcomes
+Discovery / planning                     Real-site operations
+────────────────────                    ──────────────────────────
+Keywords Operator /mcp                  Sites Operator /sites-mcp
+
+keywordTreasury                         sites
+researchSessions                        articles (registry only)
+siteStructures = Site Concepts          metricSnapshots
+SERP cache / usage                      optimizationEvents
+Ads-first research                      query opportunities
+        │                                      │
+        └──────────────┬───────────────────────┘
+                       ▼
+              Same Firestore project
+                       │
+                       ▼
+          Local execution / persistent Agent
+     SQLite + local MCP + Autopilot runner
+                       │
+          ┌────────────┼──────────────┐
+          ▼            ▼              ▼
+      GSC / GA4   Markdown/MDX     Ads / SERP
+                       │
+                       ▼
+                 Git + deploy
+                       │
+                       ▼
+                 Published site
 ```
 
-## 3. Reuse classification
+There is no need for a second repository, second Firebase project, second scheduler, or Firestore article-body CMS.
 
-| Existing capability | Decision | Reason |
-|---|---|---|
-| `pages` planning/live identity | **Extend** | Already links intent, URLs and keyword evidence. Do not invent a parallel local article model. |
-| Markdown/MDX body files | **Use as-is** | Correct source of truth; Git provides diff/revision/rollback. |
-| `operation_artifacts` | **Use as-is locally** | Already records file hash, source evidence, validation/build and revisions. |
-| `operation_outcomes` | **Extend/bridge** | Good local operation outcome; cloud cross-session SEO hypothesis history needs a dedicated Firestore projection. |
-| SQLite | **Keep** | Required by UI, local execution, offline/dev and deterministic runner state. |
-| Local UI | **Keep and later enrich** | Already provides operational visibility and article file inspection. |
-| Commands/Core | **Use as service layer** | Existing write policy/auditing should remain the local execution boundary. |
-| Local API/CLI/MCP | **Keep** | Mature delegated execution interface; no need to recreate it in the cloud. |
-| Autopilot runner | **Use as scheduler/executor** | Avoid a second queue/scheduler. Future analytics sync jobs should become deterministic maintenance work here. |
-| GSC capture | **Use/bridge** | Already handles scope, completeness, pagination and safe comparison correctly. |
-| GA4 portfolio JSON | **Temporary compatibility path** | Useful read model, but direct GA4 API capture still needs implementation. |
-| Firestore keyword/site-concept state | **Use as-is** | Already supports cross-session remote Agent work. |
-| Old article CRUD MCP idea | **Do not recreate** | Current artifact/file workflow is safer and richer. |
-| New repository | **Not needed now** | Responsibilities can be split at MCP/domain level without splitting deployment or source tree. |
-
-## 4. Target architecture
-
-The repository stays unified, while responsibilities are separated by remote MCP boundary.
-
-```text
-Keywords domain                           Sites / Operations domain
-────────────────────                     ───────────────────────────
-Keywords Operator /mcp                   Sites Operator /sites-mcp
-
-keywordTreasury                          sites
-researchSessions                         articles (registry only)
-siteStructures = Site Concepts           metricSnapshots
-SERP cache / quota                       optimizationEvents
-
-"What should we build?"                 "How is the real site doing?"
-                │                                      │
-                └──────────────┬───────────────────────┘
-                               ▼
-                     Same Firestore project
-                               │
-                     cloud control / memory
-                               │
-                               ▼
-                 Existing local operation plane
-              SQLite + runner + article artifacts
-                               │
-                               ▼
-                  Git repository / deployment
-```
-
-This deliberately separates **MCP responsibility** without forcing **repository separation**.
-
-## 5. Source-of-truth rules
-
-### Firestore
-
-Cloud/Agent-operable durable state:
-
-- research and keyword treasury
-- Site Concepts
-- real-site registry
-- article registry metadata
-- normalized GSC/GA4 metric snapshots
-- optimization hypotheses and results
+## 2. Source-of-truth rules
 
 ### Git repository
 
-Canonical article/page body and deployable code/data:
+Git is the source of truth for deployable site/article content:
 
-- Markdown / MDX / structured content
-- revision history and diffs
-- commit attribution
-- rollback point
+- Markdown / MDX / structured content;
+- page code and site configuration;
+- revision history and diffs;
+- commit attribution;
+- rollback points.
 
-Firestore article rows point to `repo`, `repoPath`, and `currentCommitSha`; they do **not** duplicate body text.
+Firestore article records point to `repo`, `repoPath`, and `currentCommitSha`; article body text is not duplicated into Firestore.
 
 ### SQLite
 
-Local execution source of truth:
+SQLite is the local execution source of truth for:
 
-- Local UI read/write state
-- work sessions / queues / leases
-- operation and evidence state
-- artifact validation/build state
-- local GSC measurement materialization
-- offline/development workflows
+- Local UI state;
+- projects/pages/keyword planning;
+- work sessions, operations, leases and runner state;
+- Blog bindings/handoffs/receipts;
+- artifact validation and build state;
+- local GSC/GA4 measurement imports;
+- Autopilot controls/state;
+- offline and development workflows.
 
-SQLite is not migrated away in this phase.
+The persistent worker is `scripts/autopilot-runner.ts`. Scheduling belongs to that worker rather than the public HTTP APIs.
 
-## 6. Firestore collections added by Sites Operator
+### Firestore
+
+Firestore is the durable remote Agent-facing control plane for:
+
+- keyword research and Treasury;
+- Site Concepts (`siteStructures`);
+- instantiated real sites (`sites`);
+- article registry metadata (`articles`);
+- normalized GSC/GA4 aggregates (`metricSnapshots`);
+- causal SEO experiment history (`optimizationEvents`).
+
+## 3. Article and publication model
+
+There is no standalone CRUD CMS row that owns article content.
+
+The local content workflow uses:
+
+- `pages` for planning/live-page identity and keyword intent;
+- Markdown/MDX files for the actual body;
+- `operation_artifacts` for artifact path/hash/source/build/revision evidence;
+- `blog_handoffs` / `blog_receipts` for publication transport and evidence;
+- `operation_outcomes` for local operation outcomes.
+
+A content mutation is not considered delivered merely because a file was written. The delivery path requires the relevant operation/session, successful validation/build, Git evidence, and live publication proof before the optimization can be marked implemented.
+
+For existing sites, autonomous content mutation is also gated by site-operations readiness. Measurement/research work is allowed to continue so an unready site can recover; mutation/delivery fails closed until the required operational state is restored.
+
+## 4. Identity rules
+
+Site and article identity are explicit and normalized.
+
+### Real sites
+
+`sites.productionUrl` is normalized before persistence/resolution. Equivalent variants such as default ports, query/hash noise and trailing-slash variants resolve to the same site identity. `localProjectId` remains the preferred explicit local-to-cloud mapping.
+
+Normalized-equivalent production URLs are rejected as duplicates. Legacy unnormalized records are included in bounded identity checks. If the registry grows beyond the current bounded full-scan safety limit, the system fails closed rather than guessing uniqueness; at that scale an indexed normalized identity key should replace the scan.
+
+### Articles
+
+`articles.canonicalUrl` uses the same normalized web identity rules. Equivalent canonical variants cannot be registered as separate articles, preventing GA4/GSC projection ambiguity.
+
+## 5. Remote MCP contracts
+
+### Keywords Operator `/mcp`
+
+The public discovery/planning MCP currently exposes 18 tools, including:
+
+- keyword demand/SERP research;
+- Treasury save/list/search;
+- Site Concept list/get/save/patch;
+- resumable research sessions;
+- SERP quota/usage status;
+- `keyword_screen_batch`;
+- `keyword_research_pipeline`.
+
+Google Ads screening is low-cost first-stage research. The shared bounded pipeline screens the batch with Ads first and spends SERP quota only on shortlisted candidates.
+
+### Sites Operator `/sites-mcp`
+
+The public real-site control-plane MCP currently exposes 16 tools:
+
+- `remote_sites_status`;
+- `site_registry_list`, `site_registry_get`, `site_registry_resolve`, `site_registry_save`;
+- `site_article_list`, `site_article_get`, `site_article_save`;
+- `site_metric_snapshot_save`, `site_metric_snapshot_list`;
+- `optimization_event_create`, `optimization_event_list`, `optimization_event_update`;
+- `optimization_context`;
+- `optimization_evaluation_context`;
+- `site_query_opportunities`.
+
+### Local / persistent-Agent MCP
+
+The local MCP is intentionally broader than either public remote MCP because it can see SQLite, Blog bindings, runner state and the local Git delivery environment.
+
+It includes the Blog execution tools plus real-site optimization/readiness tools such as `site_operations_readiness` and the local optimization workflow. The absence of these execution/readiness tools from public `/sites-mcp` is deliberate, not an omission.
+
+## 6. GSC and GA4 acquisition
+
+### Search Console
+
+GSC is a first-class local measurement provider with:
+
+- bounded pagination;
+- query and page snapshots;
+- complete/partial/failed capture state;
+- versioned `measurement_imports`;
+- safe materialization rules so failed/partial captures do not overwrite prior complete evidence;
+- compatibility checks for property/origin/filter/timezone/search type and equal non-overlapping comparison periods.
+
+### Direct GA4
+
+Direct GA4 Data API acquisition is implemented.
+
+Supported authentication paths include configured access tokens, refresh credentials and `GOOGLE_APPLICATION_CREDENTIALS` service-account JWT exchange. Secret values are not returned through MCP/status responses.
+
+Two report shapes are used:
+
+1. **Site totals** — sessions, active users, engagement rate and screen/page views.
+2. **Landing-page report** — bounded `landingPage` rows for exact article attribution.
+
+Article-level GA4 is interpreted as sessions whose landing page maps to that registered canonical article. Query-string noise is excluded and ambiguous canonical mapping is skipped rather than summed.
+
+GA4 is diagnostic/context evidence. The formal causal optimization evaluation remains GSC-driven so the before/after rule is consistent and comparable.
+
+## 7. Deterministic measurement maintenance
+
+The persistent runner already executes deterministic maintenance work. Current maintenance kinds are:
+
+```text
+capture_recovery
+sync_site
+capture_metrics
+```
+
+For `capture_metrics`, the worker currently:
+
+1. captures two equal, non-overlapping complete GSC weekly periods;
+2. persists them locally through shared measurement commands;
+3. attempts direct GA4 collection for the same periods;
+4. keeps GSC evidence even if GA4 collection fails;
+5. projects normalized site/article metrics to Firestore;
+6. treats Firestore projection as additive so local evidence survives cloud-projection failure.
+
+This means the earlier proposed `sync_search_console` / `sync_ga4` / `project_metric_snapshots_to_firestore` migration is no longer future work; those responsibilities are implemented through the existing `capture_metrics` maintenance path.
+
+## 8. Optimization PDCA
+
+The implemented loop is:
+
+```text
+Observation
+   │ GSC + GA4 snapshots
+   ▼
+Diagnosis
+   ▼
+Explicit hypothesis
+   ▼
+Exactly one content change
+   ▼
+Validation / build / Git / publication proof
+   ▼
+Implemented optimizationEvent
+   ▼
+Traffic-aware wait
+   ▼
+Compatible post-change GSC evidence
+   ▼
+Agent semantic verdict
+   ▼
+Persist result + next action
+```
+
+Important invariants:
+
+- only one implemented + unevaluated optimization may exist per article;
+- daily/periodic measurement collection may continue during the wait;
+- a second implemented content change is blocked until the active hypothesis is evaluated or cancelled;
+- numerical evaluation metrics are recomputed server-side from saved compatible snapshots and are not accepted from an Agent as invented evidence;
+- the Agent chooses the semantic result (`improved`, `neutral`, `worsened`, `inconclusive`) against the persisted hypothesis.
+
+### Traffic-aware evaluation window
+
+The default minimum is 14 days, but the effective wait is traffic-aware:
+
+- high traffic: 14 days;
+- medium traffic: 21 days;
+- low traffic: 28 days.
+
+Traffic class changes the wait only. It does not automatically decide whether an optimization succeeded.
+
+Evaluation requires a complete article-level GSC baseline exactly matching the persisted baseline period and an equal-length complete post period that starts after the change and reaches the effective evaluation date.
+
+## 9. Keywords ↔ Sites feedback loop
+
+The GSC feedback path is implemented as an Agent-native, quota-safe sequence:
+
+```text
+compatible site-level GSC snapshots
+          │
+          ▼
+site_query_opportunities
+(newly observed / rising queries)
+          │
+          ▼
+keyword_screen_batch
+(Google Ads first; no SERP)
+          │
+          ▼
+keyword_research_pipeline
+(bounded SERP only for shortlisted terms)
+          │
+          ▼
+keyword_treasury_save
+(explicit, evidence/provenance-preserving write)
+```
+
+`site_query_opportunities` itself deliberately does not spend SERP quota or write Treasury. Likewise, `keyword_research_pipeline` does not blindly auto-save. The final Treasury write remains an explicit Agent action so provenance and selection remain auditable while still being executable end-to-end by an Agent without bypassing Ads-first/SERP-budget policy.
+
+Because GSC stores a bounded top-query set, a query absent from the previous snapshot is described as **newly observed**, not asserted to have never existed.
+
+## 10. Firestore real-site schema
 
 ### `sites`
 
-Real, instantiated sites; separate from `siteStructures` Site Concepts.
+Real instantiated sites, separate from Site Concepts. Important fields include:
 
 ```ts
 {
   id,
   siteConceptId,
+  localProjectId,
   name,
   repository,
   productionUrl,
@@ -264,12 +297,14 @@ Real, instantiated sites; separate from `siteStructures` Site Concepts.
 
 ### `articles`
 
-Registry only; no article body.
+Registry only; no body text:
 
 ```ts
 {
   id,
   siteId,
+  localPageId,
+  canonicalUrl,
   repo,
   repoPath,
   currentCommitSha,
@@ -288,7 +323,7 @@ Registry only; no article body.
 
 ### `metricSnapshots`
 
-Provider-neutral period observations.
+Provider-neutral aggregate observations:
 
 ```ts
 {
@@ -307,11 +342,11 @@ Provider-neutral period observations.
 }
 ```
 
-`sourceVersion` + deterministic IDs make ingestion idempotent. Partial/failed states are explicit.
+Deterministic IDs + `sourceVersion` make projection idempotent.
 
 ### `optimizationEvents`
 
-Dedicated causal SEO experiment history.
+Durable causal SEO history:
 
 ```ts
 {
@@ -337,138 +372,70 @@ Dedicated causal SEO experiment history.
 }
 ```
 
-Invariant: **only one implemented + unevaluated optimization may exist per article**. Implemented changes default to a 14-day wait. Daily metric collection remains allowed during the wait.
+## 11. CI and deployment safety
 
-## 7. Remote MCP split
+Current repository safeguards include:
 
-### Keywords Operator `/mcp`
+- Node runtime pinned to `22.x` for project builds;
+- runtime acceptance suite plus per-workspace TypeScript checks;
+- `npm audit --audit-level=high` security gate with JSON audit artifact;
+- patched direct Drizzle ORM dependency at `0.45.2` after the SQL-identifier injection advisory;
+- Vercel Git deployments restricted to `main` using a recursive `**` catch-all denial, preventing slash-named feature branches from consuming preview-build quota;
+- production health endpoints expose deployed Git SHA for verification.
 
-Unchanged contract. It remains the discovery/planning side and retains the existing 18 tools.
+## 12. Implemented migration status
 
-### Sites Operator `/sites-mcp`
+The original migration plan is now mostly complete at code level:
 
-Initial tools:
+1. **Inventory / no-destructive-change** — complete.
+2. **Cloud control-plane foundation** — complete.
+3. **Explicit real-site/local-project mapping** — implemented; actual per-site registration remains an operational onboarding task.
+4. **Article registry projection** — implemented for confirmed Blog articles; Git remains body source of truth.
+5. **GSC analytics bridge** — complete.
+6. **Direct GA4 site + article landing-page acquisition** — complete.
+7. **Runner measurement/projection maintenance** — complete through `capture_metrics`.
+8. **Existing-page optimization PDCA** — complete at code/workflow level.
+9. **Readiness-gated autonomous mutation** — complete at code/workflow level.
+10. **Traffic-aware 14/21/28-day evaluation** — complete at code level; real elapsed-time evaluations still require production data and time.
+11. **GSC query feedback → Ads-first → bounded SERP → Treasury** — Agent-operable end-to-end path complete; Treasury save intentionally remains explicit rather than blind automatic persistence.
+12. **BigQuery/raw analytics warehouse** — intentionally deferred until Firestore aggregate volume justifies it.
 
-- `remote_sites_status`
-- `site_registry_list`, `site_registry_get`, `site_registry_save`
-- `site_article_list`, `site_article_get`, `site_article_save`
-- `site_metric_snapshot_save`, `site_metric_snapshot_list`
-- `optimization_event_create`, `optimization_event_list`, `optimization_event_update`
-- `optimization_context`
+## 13. What is still not complete
 
-The two MCPs share the same Vercel project, Firebase project and existing OAuth signing secret. Tool responsibility is separate; infrastructure is not duplicated.
+The remaining work is primarily operational proof and scale hardening, not another replacement architecture.
 
-## 8. PDCA model
+### Real-world operational proof
 
-```text
-Observation
-   │ metricSnapshots
-   ▼
-Diagnosis
-   │ optimizationEvent.diagnosis
-   ▼
-Hypothesis
-   │ exactly one explicit hypothesis
-   ▼
-Action
-   │ Git beforeCommit -> afterCommit
-   ▼
-Deploy
-   │ existing artifact/build/Git/publish verification path
-   ▼
-Wait
-   │ evaluateAfter / no second implemented change
-   ▼
-Evaluation
-   │ improved | neutral | worsened | inconclusive
-   ▼
-Next action
-```
+For each real production site that should participate in the loop:
 
-The cloud event is not a replacement for local `operation_events` or `operation_outcomes`. It is the durable cross-session causal record that links analytics to Git revisions and can be consumed by a remote Agent.
+- register/verify the explicit `site` ↔ local project ↔ repository ↔ production URL mapping;
+- verify the actual GSC property and GA4 property/credentials;
+- run the persistent runner continuously with real credentials;
+- observe real `capture_metrics` cycles and Firestore projections;
+- execute at least one real existing-page optimization through build/deploy/publication proof;
+- allow the required 14/21/28-day interval to elapse;
+- evaluate against compatible post-change GSC data and record the result;
+- feed resulting GSC query opportunities through the bounded keyword research path.
 
-## 9. Analytics migration
+A smoke test cannot substitute for this elapsed-time production proof.
 
-### Phase 1 — implemented foundation
+### Scale / reproducibility hardening
 
-- Keep existing local GSC collection untouched.
-- Accept idempotent GSC and GA4 snapshots into Firestore via Sites Operator.
-- Preserve completeness/source version metadata.
-- Let `optimization_context` surface latest GSC + GA4 observations and the active cooldown.
+Potential later improvements, only when justified:
 
-### Phase 2 — next
+- replace bounded production-URL full scans with an indexed normalized identity key if the real-site registry grows beyond the safe scan bound;
+- introduce BigQuery/raw analytics storage when aggregate Firestore snapshots cease to be sufficient;
+- improve package-install reproducibility with a committed lockfile/`npm ci` workflow if the repository adopts a lockfile policy;
+- continue tightening observability around persistent-runner liveness and real-site execution outcomes.
 
-Add deterministic runner maintenance work:
-
-```text
-sync_search_console
-sync_ga4
-project_metric_snapshots_to_firestore
-```
-
-The runner should call existing local GSC capture, normalize the result, then project it to Firestore. GA4 should be collected with a service account/OAuth credential stored only in the runtime secret store, never Firestore or MCP responses.
-
-### Phase 3 — scale
-
-When raw analytics volume makes Firestore inefficient:
-
-```text
-GA4 ─┐
-     ├─► BigQuery/raw analytics
-GSC ─┘
-          │
-          ▼ aggregate
-     Firestore control state
-```
-
-`metricSnapshots` remains the small Agent-facing aggregate, so Sites Operator contracts do not need to change.
-
-## 10. Keywords ↔ Sites feedback loop
-
-Site Concepts and real Sites remain separate:
-
-```text
-keywordTreasury
-     │
-     ▼
-siteStructures (concept)
-     │ siteConceptId
-     ▼
-sites (real deployment)
-     │
-     ▼
-articles
-     │
-     ▼
-metricSnapshots + optimizationEvents
-     │
-     └──── discovered GSC queries ───► keywordTreasury
-                                      │
-                                      ├─► Google Ads screening
-                                      └─► SERP only for shortlisted terms
-```
-
-The final feedback write from new GSC query to Keyword Treasury is intentionally not automated in this first slice. Existing Keywords Operator screening/quota logic should own that step, so Sites Operator does not bypass Google Ads-first / SERP-budget policy.
-
-## 11. Migration plan
-
-1. **Inventory / no-destructive-change** — complete. Keep SQLite schema, local UI, local MCP and runner untouched.
-2. **Cloud control-plane foundation** — add `sites`, `articles`, `metricSnapshots`, `optimizationEvents` and `/sites-mcp`.
-3. **Register existing production sites** — create `sites` rows linked to the relevant Site Concept when one exists; do not invent concepts for legacy sites.
-4. **Project existing local article metadata** — map verified/published `operation_artifacts` to Firestore article registry records with repo path + current Git SHA. Do not upload body text.
-5. **Analytics bridge** — reuse local GSC capture and add GA4 collection; project normalized daily/period snapshots to Firestore.
-6. **Runner maintenance kinds** — schedule collection/evaluation through the existing persistent runner rather than a new scheduler.
-7. **Optimization execution** — initially generate candidates only. Automatic article edits should require an active event, respect cooldown, use the existing artifact/build/Git flow, then write `afterCommit`.
-8. **Keyword feedback** — send genuinely new GSC queries back through Keywords Operator Treasury → Ads → bounded SERP research.
-9. **BigQuery only when justified by volume** — keep Firestore as the Agent-facing aggregate/control plane.
-
-## 12. Explicit non-goals in this migration
+## 14. Explicit non-goals
 
 - No second Firebase project.
-- No new repository solely to host Sites Operator.
+- No separate repository solely for Sites Operator.
 - No Firestore article-body duplication.
 - No replacement of SQLite or the Local UI.
-- No second queue/scheduler beside the existing runner.
+- No second queue/scheduler beside the persistent runner.
 - No daily blind article rewriting.
 - No direct SERP calls from Sites Operator that bypass Keywords Operator quota policy.
-- No credentials in Firestore records, logs returned to MCP, or tool status responses.
+- No automatic optimization verdict based only on a numeric threshold.
+- No credentials in Firestore records, MCP-returned logs or public status responses.
