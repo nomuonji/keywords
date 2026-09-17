@@ -92,8 +92,8 @@ function articleSlug(url: string) {
 }
 
 function articleSyncLimit() {
-  const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 100);
-  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
+  const configured = Number(process.env.KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT ?? 500);
+  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 500)) : 500;
 }
 
 function parseJson(value: unknown) {
@@ -154,15 +154,32 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
     };
   }
 
-  const existing = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
+  const limit = articleSyncLimit();
+  if (snapshot.sources.length > limit) {
+    return {
+      status: 'blocked' as const,
+      reason: 'blog_source_limit_exceeded',
+      considered: 0, created: 0, updated: 0, reused: 0, skipped: 0,
+      warnings: [`Blog snapshot contains ${snapshot.sources.length} sources, exceeding the safe ${limit}-article cloud registry bound. No partial article sync was attempted; migrate to indexed/paginated article identities before increasing the bound.`]
+    };
+  }
+
+  const existingResponse = await siteArticleList({ siteId: site.id, limit: 500 });
+  if (existingResponse.truncated) {
+    return {
+      status: 'blocked' as const,
+      reason: 'article_registry_limit_exceeded',
+      considered: 0, created: 0, updated: 0, reused: 0, skipped: 0,
+      warnings: ['The Sites article registry contains more than 500 records for this site. No partial identity sync was attempted; migrate to indexed/paginated article identities first.']
+    };
+  }
+  const existing = existingResponse.items as SiteArticleRecord[];
   const byPage = new Map(existing.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const byUrl = new Map(existing.flatMap(article => {
     const key = canonicalKey(article.canonicalUrl);
     return key ? [[key, article] as const] : [];
   }));
-  const limit = articleSyncLimit();
-  const sources = snapshot.sources.slice(0, limit);
-  if (snapshot.sources.length > limit) warnings.push(`Blog article registry sync is bounded to ${limit} sources per projection; ${snapshot.sources.length - limit} source mappings were deferred.`);
+  const sources = snapshot.sources;
 
   let created = 0, updated = 0, reused = 0, skipped = 0;
   for (const source of sources) {
@@ -236,8 +253,15 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     articleRegistrySync = { status: 'skipped', reason: 'sync_failed', considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, warnings: [`Blog article registry sync failed: ${message.slice(0, 300)}`] };
     warnings.push(...articleRegistrySync.warnings);
   }
+  if (articleRegistrySync.status === 'blocked') {
+    return { status: 'skipped' as const, reason: articleRegistrySync.reason, projectId, siteId: site.id, articleRegistrySync, warnings };
+  }
 
-  const articleResponse = await siteArticleList({ siteId: site.id, limit: 100 });
+  const articleResponse = await siteArticleList({ siteId: site.id, limit: 500 });
+  if (articleResponse.truncated) {
+    warnings.push('The Sites article registry exceeds 500 records; metric projection stopped rather than using a partial article identity map.');
+    return { status: 'skipped' as const, reason: 'article_registry_limit_exceeded', projectId, siteId: site.id, articleRegistrySync, warnings };
+  }
   const articles = articleResponse.items as SiteArticleRecord[];
   const articleByPage = new Map(articles.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const articleByUrl = new Map(articles.flatMap(article => {
