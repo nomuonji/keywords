@@ -51,6 +51,6 @@
     "@keywords/db": "0.1.0",
     "@keywords/domain": "0.1.0",
     "@keywords/research": "0.1.0",
-    "drizzle-orm": "^0.44.5"
+    "drizzle-orm": "0.45.2"
   }
 }
