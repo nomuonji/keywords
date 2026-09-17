@@ -88,6 +88,14 @@ try {
   assert.equal(article.localPageId, 'local-page-a');
   await assert.rejects(siteArticleSave({ id: 'bad-path', expectedRevision: 0, siteId: 'site-a', repo: 'nomuonji/site-a', repoPath: '../secret', slug: 'bad', title: 'bad' }));
   await assert.rejects(siteArticleSave({ id: 'article-b', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', repo: 'nomuonji/site-a', repoPath: 'content/posts/b.mdx', slug: 'b', title: 'B' }), /already linked/);
+  const normalizedArticle = await siteArticleSave({
+    id: 'article-a', expectedRevision: article.revision, siteId: 'site-a', canonicalUrl: 'https://EXAMPLE.com:443/article-a/?utm_source=smoke#fragment'
+  });
+  assert.equal(normalizedArticle.canonicalUrl, 'https://example.com/article-a');
+  await assert.rejects(siteArticleSave({
+    id: 'article-c', expectedRevision: 0, siteId: 'site-a', canonicalUrl: 'https://example.com/article-a/',
+    repo: 'nomuonji/site-a', repoPath: 'content/posts/c.mdx', slug: 'c', title: 'C'
+  }), /canonicalUrl is already linked/);
 
   const gscInput = {
     siteId: 'site-a', articleId: 'article-a', provider: 'gsc' as const, periodStart: '2026-09-01', periodEnd: '2026-09-07',
@@ -158,7 +166,7 @@ try {
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
   assert.equal(oauthStatus.structuredContent.serverVersion, '0.3.0');
 
-  console.log('site operations smoke passed: explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
+  console.log('site operations smoke passed: explicit local mappings, normalized canonical identity, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }
