@@ -124,7 +124,7 @@ async function queryByField(collection: string, fieldPath: string, expected: unk
   return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [row.document] : []);
 }
 
-async function sitesByProductionUrl(productionUrl: string) {
+async function sitesByProductionUrl(productionUrl: string): Promise<SiteRecord[]> {
   const result = await listDocuments('sites', { limit: 500 });
   if (result.nextPageToken) throw new Error('Site registry is too large for a complete productionUrl identity check; resolve by localProjectId or migrate to an indexed identity key');
   return (result.documents ?? []).map(siteRecord).filter((site: SiteRecord) => site.productionUrl && normalizeWebIdentity(site.productionUrl) === productionUrl);
@@ -211,7 +211,7 @@ export async function siteRegistryResolve(input: unknown) {
     ? (await queryByField('sites', 'localProjectId', args.localProjectId, 3)).map(siteRecord)
     : await sitesByProductionUrl(normalizeWebIdentity(args.productionUrl!));
   if (matches.length > 1) throw new Error('Site registry mapping is ambiguous; each local project/production URL must map to one site');
-  return { site: matches[0] ? ('fields' in matches[0] ? siteRecord(matches[0]) : matches[0]) : null };
+  return { site: matches[0] ?? null };
 }
 
 export async function siteRegistrySave(input: unknown) {
