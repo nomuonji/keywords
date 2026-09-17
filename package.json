@@ -14,7 +14,7 @@
     "test:mcp": "tsx scripts/remote-mcp-contract-smoke.ts",
     "test:remote-keyword": "tsx scripts/remote-keyword-workflow-smoke.ts",
     "test:site-operations": "tsx scripts/site-operations-smoke.ts",
-    "test:site-operations-bridge": "tsx scripts/site-operations-bridge-smoke.ts",
+    "test:site-operations-bridge": "tsx scripts/site-operations-bridge-smoke.ts && tsx scripts/site-operations-bridge-overflow-smoke.ts",
     "test:site-operations-analysis": "tsx scripts/site-operations-analysis-smoke.ts",
     "test:site-optimization-workflow": "tsx scripts/site-optimization-workflow-smoke.ts",
     "test:site-optimization-delivery-proof": "tsx scripts/site-optimization-delivery-proof-smoke.ts",
