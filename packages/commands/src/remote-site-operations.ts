@@ -94,6 +94,15 @@ const articleRecord = (doc: any) => ({ localPageId: null, canonicalUrl: null, ..
 const now = () => new Date().toISOString();
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+function normalizeCanonicalUrl(value: string) {
+  const url = new URL(value);
+  url.hash = '';
+  url.search = '';
+  if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) url.port = '';
+  if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '') || '/';
+  return url.toString();
+}
+
 async function readDocument(collection: string, idValue: string) {
   try { return await firestore(`/${collection}/${entityId.parse(idValue)}`); }
   catch (error) { if (error instanceof FirestoreError && error.status === 404) return null; throw error; }
@@ -243,16 +252,18 @@ export async function siteArticleSave(input: unknown) {
   if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: call site_article_get and reapply the edit');
   if (current && current.siteId !== args.siteId) throw new Error('An existing article cannot be moved to another site');
   if (!current && (!args.repo || !args.repoPath || !args.slug || !args.title)) throw new Error('repo, repoPath, slug and title are required for a new article');
-  const siblings = (args.localPageId || args.canonicalUrl) ? (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord) : [];
+  const canonicalUrl = typeof args.canonicalUrl === 'string' ? normalizeCanonicalUrl(args.canonicalUrl) : args.canonicalUrl;
+  const siblings = (args.localPageId || canonicalUrl) ? (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord) : [];
   if (args.localPageId) {
     const linked = siblings.find(article => article.id !== args.id && article.localPageId === args.localPageId);
     if (linked) throw new Error(`localPageId is already linked to article ${linked.id}`);
   }
-  if (args.canonicalUrl) {
-    const linked = siblings.find(article => article.id !== args.id && article.canonicalUrl === args.canonicalUrl);
+  if (canonicalUrl) {
+    const linked = siblings.find(article => article.id !== args.id && article.canonicalUrl && normalizeCanonicalUrl(article.canonicalUrl) === canonicalUrl);
     if (linked) throw new Error(`canonicalUrl is already linked to article ${linked.id}`);
   }
-  const t = now(); const { expectedRevision, ...patch } = args;
+  const t = now(); const { expectedRevision, ...rawPatch } = args;
+  const patch = args.canonicalUrl === undefined ? rawPatch : { ...rawPatch, canonicalUrl };
   const base: SiteArticleRecord = current ?? {
     id: args.id, siteId: args.siteId, localPageId: null, canonicalUrl: null, repo: '', repoPath: '', currentCommitSha: null, slug: '', title: '', primaryKeywordId: null,
     secondaryKeywordIds: [], status: 'draft', publishedAt: null, lastUpdatedAt: null, revision: 0, createdAt: t, updatedAt: t
