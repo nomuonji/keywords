@@ -8,6 +8,27 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+      - name: Audit dependencies
+        shell: bash
+        run: |
+          npm audit --json | tee npm-audit.json || true
+          npm audit --audit-level=high
+      - name: Upload dependency audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-${{ github.run_attempt }}
+          path: npm-audit.json
+          if-no-files-found: ignore
+          retention-days: 7
   typecheck:
     strategy:
       fail-fast: false
