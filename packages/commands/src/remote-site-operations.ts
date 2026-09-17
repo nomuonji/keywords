@@ -36,7 +36,7 @@ export const siteRegistrySaveShape = {
 };
 const siteSaveSchema = z.object(siteRegistrySaveShape).strict();
 
-export const siteArticleListShape = { siteId: entityId, status: articleStatus.optional(), limit: z.number().int().min(1).max(100).default(50) };
+export const siteArticleListShape = { siteId: entityId, status: articleStatus.optional(), limit: z.number().int().min(1).max(500).default(50) };
 export const siteArticleGetShape = { id: entityId };
 export const siteArticleSaveShape = {
   id: entityId, expectedRevision: z.number().int().min(0), siteId: entityId,
@@ -248,10 +248,11 @@ export async function siteRegistrySave(input: unknown) {
 
 export async function siteArticleList(input: unknown) {
   const args = z.object(siteArticleListShape).strict().parse(input); await ensureSite(args.siteId);
-  const items = (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord)
+  const all = (await queryBySite('articles', args.siteId, 501)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord);
+  const filtered = all
     .filter(item => !args.status || item.status === args.status)
-    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
-  return { items };
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  return { items: filtered.slice(0, args.limit), truncated: all.length > 500 };
 }
 
 export async function siteArticleGet(input: unknown) {
@@ -265,7 +266,9 @@ export async function siteArticleSave(input: unknown) {
   if (current && current.siteId !== args.siteId) throw new Error('An existing article cannot be moved to another site');
   if (!current && (!args.repo || !args.repoPath || !args.slug || !args.title)) throw new Error('repo, repoPath, slug and title are required for a new article');
   const canonicalUrl = typeof args.canonicalUrl === 'string' ? normalizeWebIdentity(args.canonicalUrl) : args.canonicalUrl;
-  const siblings = (args.localPageId || canonicalUrl) ? (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord) : [];
+  const siblingResponse = (args.localPageId || canonicalUrl) ? await siteArticleList({ siteId: args.siteId, limit: 500 }) : { items: [] as SiteArticleRecord[], truncated: false };
+  if (siblingResponse.truncated) throw new Error('Article registry is too large for a complete identity check; migrate to indexed article identity keys before adding or remapping articles');
+  const siblings = siblingResponse.items as SiteArticleRecord[];
   if (args.localPageId) {
     const linked = siblings.find(article => article.id !== args.id && article.localPageId === args.localPageId);
     if (linked) throw new Error(`localPageId is already linked to article ${linked.id}`);
