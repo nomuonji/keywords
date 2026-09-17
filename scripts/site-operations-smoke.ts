@@ -71,13 +71,18 @@ try {
     searchConsoleProperty: 'sc-domain:example.com', status: 'active'
   });
   assert.equal(site.revision, 1);
+  assert.equal(site.productionUrl, 'https://example.com/');
   assert.equal((await siteRegistryGet({ id: 'site-a' })).siteConceptId, 'concept-a');
   assert.equal((await siteRegistryResolve({ localProjectId: 'local-project-a' })).site?.id, 'site-a');
-  assert.equal((await siteRegistryResolve({ productionUrl: 'https://example.com' })).site?.id, 'site-a');
+  assert.equal((await siteRegistryResolve({ productionUrl: 'https://EXAMPLE.com:443/?utm_source=smoke#fragment' })).site?.id, 'site-a');
   assert.equal((await siteRegistryResolve({ localProjectId: 'missing-project' })).site, null);
   await assert.rejects(siteRegistrySave({ id: 'site-a', expectedRevision: 0, status: 'paused' }), /Revision conflict/);
   await assert.rejects(siteRegistrySave({ id: 'site-b', expectedRevision: 0, siteConceptId: 'missing', name: 'x', repository: 'nomuonji/x', productionUrl: 'https://x.example' }), /Unknown siteConceptId/);
   await assert.rejects(siteRegistrySave({ id: 'site-b', expectedRevision: 0, localProjectId: 'local-project-a', name: 'x', repository: 'nomuonji/x', productionUrl: 'https://x.example' }), /already linked/);
+  await assert.rejects(siteRegistrySave({
+    id: 'site-c', expectedRevision: 0, localProjectId: 'local-project-c', name: 'Duplicate Site', repository: 'nomuonji/site-c',
+    productionUrl: 'https://example.com/?utm_source=duplicate#fragment'
+  }), /productionUrl is already linked/);
 
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
@@ -166,7 +171,7 @@ try {
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
   assert.equal(oauthStatus.structuredContent.serverVersion, '0.3.0');
 
-  console.log('site operations smoke passed: explicit local mappings, normalized canonical identity, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
+  console.log('site operations smoke passed: normalized site/article identities, explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }

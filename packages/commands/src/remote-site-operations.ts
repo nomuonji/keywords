@@ -94,7 +94,7 @@ const articleRecord = (doc: any) => ({ localPageId: null, canonicalUrl: null, ..
 const now = () => new Date().toISOString();
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
-function normalizeCanonicalUrl(value: string) {
+function normalizeWebIdentity(value: string) {
   const url = new URL(value);
   url.hash = '';
   url.search = '';
@@ -122,6 +122,12 @@ async function queryByField(collection: string, fieldPath: string, expected: unk
     limit: Math.max(1, Math.min(limit, 1000))
   } }) });
   return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [row.document] : []);
+}
+
+async function sitesByProductionUrl(productionUrl: string): Promise<SiteRecord[]> {
+  const result = await listDocuments('sites', { limit: 500 });
+  if (result.nextPageToken) throw new Error('Site registry is too large for a complete productionUrl identity check; resolve by localProjectId or migrate to an indexed identity key');
+  return (result.documents ?? []).map(siteRecord).filter((site: SiteRecord) => site.productionUrl && normalizeWebIdentity(site.productionUrl) === productionUrl);
 }
 
 async function queryBySite(collection: string, siteId: string, limit = 500) {
@@ -202,10 +208,10 @@ export async function siteRegistryGet(input: unknown) {
 export async function siteRegistryResolve(input: unknown) {
   const args = siteResolveSchema.parse(input);
   const matches = args.localProjectId
-    ? await queryByField('sites', 'localProjectId', args.localProjectId, 3)
-    : await queryByField('sites', 'productionUrl', args.productionUrl!, 3);
+    ? (await queryByField('sites', 'localProjectId', args.localProjectId, 3)).map(siteRecord)
+    : await sitesByProductionUrl(normalizeWebIdentity(args.productionUrl!));
   if (matches.length > 1) throw new Error('Site registry mapping is ambiguous; each local project/production URL must map to one site');
-  return { site: matches[0] ? siteRecord(matches[0]) : null };
+  return { site: matches[0] ?? null };
 }
 
 export async function siteRegistrySave(input: unknown) {
@@ -221,7 +227,13 @@ export async function siteRegistrySave(input: unknown) {
     const linked = (await queryByField('sites', 'localProjectId', args.localProjectId, 3)).map(siteRecord).find(site => site.id !== args.id);
     if (linked) throw new Error(`localProjectId is already linked to site ${linked.id}`);
   }
-  const t = now(); const { expectedRevision, ...patch } = args;
+  const productionUrl = typeof args.productionUrl === 'string' ? normalizeWebIdentity(args.productionUrl) : args.productionUrl;
+  if (productionUrl) {
+    const linked = (await sitesByProductionUrl(productionUrl)).find(site => site.id !== args.id);
+    if (linked) throw new Error(`productionUrl is already linked to site ${linked.id}`);
+  }
+  const t = now(); const { expectedRevision, ...rawPatch } = args;
+  const patch = args.productionUrl === undefined ? rawPatch : { ...rawPatch, productionUrl };
   const base: SiteRecord = current ?? {
     id: args.id, siteConceptId: null, localProjectId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other',
     ga4PropertyId: null, searchConsoleProperty: null, status: 'planned', revision: 0, createdAt: t, updatedAt: t
@@ -252,14 +264,14 @@ export async function siteArticleSave(input: unknown) {
   if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: call site_article_get and reapply the edit');
   if (current && current.siteId !== args.siteId) throw new Error('An existing article cannot be moved to another site');
   if (!current && (!args.repo || !args.repoPath || !args.slug || !args.title)) throw new Error('repo, repoPath, slug and title are required for a new article');
-  const canonicalUrl = typeof args.canonicalUrl === 'string' ? normalizeCanonicalUrl(args.canonicalUrl) : args.canonicalUrl;
+  const canonicalUrl = typeof args.canonicalUrl === 'string' ? normalizeWebIdentity(args.canonicalUrl) : args.canonicalUrl;
   const siblings = (args.localPageId || canonicalUrl) ? (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord) : [];
   if (args.localPageId) {
     const linked = siblings.find(article => article.id !== args.id && article.localPageId === args.localPageId);
     if (linked) throw new Error(`localPageId is already linked to article ${linked.id}`);
   }
   if (canonicalUrl) {
-    const linked = siblings.find(article => article.id !== args.id && article.canonicalUrl && normalizeCanonicalUrl(article.canonicalUrl) === canonicalUrl);
+    const linked = siblings.find(article => article.id !== args.id && article.canonicalUrl && normalizeWebIdentity(article.canonicalUrl) === canonicalUrl);
     if (linked) throw new Error(`canonicalUrl is already linked to article ${linked.id}`);
   }
   const t = now(); const { expectedRevision, ...rawPatch } = args;
