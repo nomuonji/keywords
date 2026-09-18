@@ -1,0 +1,122 @@
+# On-demand site measurement for the Sites Operator loop.
+#
+# No resident daemon: this workflow runs measurement only when triggered,
+# either manually (workflow_dispatch) or on the staggered weekly schedule
+# below. Each job handles a small site group so Firestore quota is spread
+# across days instead of bursting.
+#
+# Runs on github-hosted runners with a fresh database every time. Projects
+# are recreated with their stable registry-linked ids, captures are window
+# independent, and snapshots are idempotent, so no workspace state carries
+# over. Without Blog snapshots the projection degrades gracefully to
+# site-level snapshots (article sync needs the Blog binding, which stays
+# local). Raw measurement rows are never mirrored to Firestore; only site
+# totals, top queries, mapped article metrics, and one site digest per site.
+#
+# Required repository secrets:
+#   FIREBASE_SERVICE_ACCOUNT_JSON   Service account JSON (Sites control plane)
+#   GOOGLE_APPLICATION_CREDENTIALS  Same service account JSON (written to a temp
+#                                   file first, because the runners expect a path)
+#   GOOGLE_SEARCH_CONSOLE_SITE_URL  Global Search Console property fallback
+# Optional: KEYWORDS_AGENT_ID (defaults to site-measurement-batch)
+name: site-measurement
+on:
+  workflow_dispatch:
+    inputs:
+      group:
+        description: 'Site group (a, b, c, or all)'
+        required: false
+        default: 'all'
+  schedule:
+    - cron: '0 18 * * 2'
+    - cron: '0 18 * * 4'
+    - cron: '0 18 * * 6'
+permissions:
+  contents: read
+concurrency:
+  group: site-measurement
+  cancel-in-progress: false
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - group: a
+            cron_day: '2'
+            jobs: >-
+              [{"projectId":"116982be-0439-436f-892f-d80cd6de67e5","name":"Bloom Life","domain":"bloom.antonbase.com","sitemapUrl":"https://bloom.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"e931d1ae-be4f-4ae0-a20a-0ad7734d830f","name":"BUNGU","domain":"bungu.antonbase.com","sitemapUrl":"https://bungu.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"a812f27c-fa49-4fe2-8437-fe63eafe754a","name":"kaerimichi","domain":"kaerimichi.antonbase.com","sitemapUrl":"https://kaerimichi.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"604494fd-70b3-41d1-965a-308e0c0d0627","name":"kampo-wiki","domain":"kampo.antonbase.com","sitemapUrl":"https://kampo.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"}]
+          - group: b
+            cron_day: '4'
+            jobs: >-
+              [{"projectId":"c387a1dd-044b-412f-a1e1-176728b2527c","name":"book-discovery","domain":"books.antonbase.com","sitemapUrl":"https://books.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"a0cf137d-ef6c-40af-8588-a2d446062fe0","name":"free-consult","domain":"consult.antonbase.com","sitemapUrl":"https://consult.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"25781e0a-4f7b-4ba6-ad0f-d32c2c30b673","name":"job-world","domain":"job.antonbase.com","sitemapUrl":"https://job.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"07700130-25ef-4901-b66d-cd02e72f2753","name":"miai-no-atode","domain":"miai.antonbase.com","sitemapUrl":"https://miai.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"7239a9be-f9a6-4b67-a407-5348190696d3","name":"omiyage","domain":"omiyage.antonbase.com","sitemapUrl":"https://omiyage.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"}]
+          - group: c
+            cron_day: '6'
+            jobs: >-
+              [{"projectId":"051456ec-4926-4a06-89bb-37cc2248ba93","name":"shikaku-wiki","domain":"shikaku.antonbase.com","sitemapUrl":"https://shikaku.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"9f67bc5e-4f37-4b4d-b7ce-35ef2ffdbf27","name":"whisky-media-en","domain":"whisky-en.antonbase.com","sitemapUrl":"https://whisky-en.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"2b7fde33-a334-4411-8a71-d2eb97ab7288","name":"yohaku","domain":"yohaku.antonbase.com","sitemapUrl":"https://yohaku.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"0c85b689-ac06-4576-be1f-c999855422af","name":"whisky-media-jp","domain":"whisky-jp.antonbase.com","sitemapUrl":"https://whisky-jp.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"6bf30465-4d7c-449e-a291-a963f7916791","name":"otonano_reset","domain":"otonano.antonbase.com","sitemapUrl":"https://otonano.antonbase.com/sitemap-index.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"7d0a29ed-9a74-4b4a-868e-19af53e2bee6","name":"chonmage-en","domain":"en.chon-mage.com","sitemapUrl":"https://en.chon-mage.com/sitemap-index.xml","gscProperty":"sc-domain:chon-mage.com"},
+              {"projectId":"26f0b0f7-6e78-4d8e-9b6a-050513822f03","name":"chonmage-ja","domain":"ja.chon-mage.com","sitemapUrl":"https://ja.chon-mage.com/sitemap-index.xml","gscProperty":"sc-domain:chon-mage.com"}]
+    env:
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
+      KEYWORDS_AGENT_ID: site-measurement-actions
+    steps:
+      - name: Select scheduled group
+        id: select
+        shell: bash
+        run: |
+          day=$(date -u +%w)
+          want="${{ inputs.group }}"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            case "$day" in
+              2) want="a" ;;
+              4) want="b" ;;
+              6) want="c" ;;
+              *) want="none" ;;
+            esac
+          fi
+          if [ "$want" != "all" ] && [ "$want" != "${{ matrix.group }}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.select.outputs.run == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.select.outputs.run == 'true'
+        with:
+          node-version: 22
+      - name: Install dependencies and init database
+        if: steps.select.outputs.run == 'true'
+        shell: bash
+        run: |
+          npm install
+          npm run db:init
+      - name: Write Google service account file
+        # GOOGLE_APPLICATION_CREDENTIALS must be a file path for the runners.
+        if: steps.select.outputs.run == 'true' && secrets.GOOGLE_APPLICATION_CREDENTIALS != ''
+        shell: bash
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS" > "$RUNNER_TEMP/google-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
+      - name: Run measurement batch
+        if: steps.select.outputs.run == 'true'
+        shell: bash
+        env:
+          SITE_JOBS_JSON: ${{ matrix.jobs }}
+        run: npx tsx scripts/site-measurement-batch.ts

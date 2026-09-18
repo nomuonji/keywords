@@ -46,12 +46,18 @@ function projectCtx(ctx: CommandContext, projectId: string): CommandContext { re
 export const commands = {
   project: {
     list: async (ctx: CommandContext) => withRun(ctx, 'project.list', {}, async () => db.select().from(schema.projects).orderBy(desc(schema.projects.updatedAt))),
-    create: async (ctx: CommandContext, input: { name: string; domain?: string; environment?: 'production' | 'planning' | 'test' }) => withRun(ctx, 'project.create', input, async () => {
+    create: async (ctx: CommandContext, input: { name: string; domain?: string; environment?: 'production' | 'planning' | 'test'; id?: string }) => withRun(ctx, 'project.create', input, async () => {
       const createdAt = now();
       const domain = normalizeDomain(input.domain);
       const environment = input.environment ?? (domain ? 'production' : 'planning');
       if (!['production','planning','test'].includes(environment)) throw new Error('Project environment must be production, planning, or test');
-      const row = { id: id(), name: input.name.trim(), domain, environment, createdAt, updatedAt: createdAt };
+      const requestedId = input.id?.trim() ?? '';
+      if (requestedId && !/^[A-Za-z0-9_-]{1,100}$/.test(requestedId)) throw new Error('Project id must match /^[A-Za-z0-9_-]{1,100}$/');
+      if (requestedId) {
+        const clash = await db.select({ id: schema.projects.id }).from(schema.projects).where(eq(schema.projects.id, requestedId)).get();
+        if (clash) throw new Error(`A project already exists with id ${requestedId}`);
+      }
+      const row = { id: requestedId || id(), name: input.name.trim(), domain, environment, createdAt, updatedAt: createdAt };
       if (!row.name) throw new Error('Project name is required');
       if (domain) { const existing = await db.select({ id: schema.projects.id }).from(schema.projects).where(sql`lower(trim(${schema.projects.domain})) = ${domain}`).get(); if (existing) throw new Error(`A project already exists for ${domain}`); }
       await db.insert(schema.projects).values(row);

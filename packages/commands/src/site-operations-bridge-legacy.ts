@@ -4,6 +4,7 @@ import { normalizeGa4PropertyId } from '@keywords/research/ga4';
 import { hostOf, readPortfolio } from '@keywords/research/portfolio';
 import {
   metricSnapshotSave,
+  paceCloudWrite,
   remoteSitesStatus,
   siteArticleList,
   siteArticleSave,
@@ -73,7 +74,10 @@ type ProjectionCounter = { saved: number; reused: number };
 async function persist(counter: ProjectionCounter, input: Parameters<typeof metricSnapshotSave>[0]) {
   const result: any = await metricSnapshotSave(input);
   if (result.reused) counter.reused++;
-  else counter.saved++;
+  else {
+    counter.saved++;
+    await paceCloudWrite();
+  }
   return result;
 }
 
@@ -200,6 +204,7 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
       byPage.set(localPageId, saved);
       if (key) byUrl.set(key, saved);
       updated++;
+      await paceCloudWrite();
       continue;
     }
     const saved = await siteArticleSave({
@@ -208,6 +213,7 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
     byPage.set(localPageId, saved);
     if (key) byUrl.set(key, saved);
     created++;
+    await paceCloudWrite();
   }
 
   return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings };
@@ -248,6 +254,10 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4Articles: ProjectionCounter = { saved: 0, reused: 0 };
+  // Latest site-level snapshot bodies, captured for the site digest so remote
+  // readers get a bounded fast path instead of scanning snapshot history.
+  let latestSiteGsc: Record<string, unknown> | null = null;
+  let latestSiteGa4: Record<string, unknown> | null = null;
 
   const configuredImportLimit = Number(process.env.KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT ?? 4);
   const importLimit = Number.isFinite(configuredImportLimit) ? Math.max(1, Math.min(configuredImportLimit, 20)) : 4;
@@ -272,7 +282,9 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       ctr: finite(row.ctr),
       averagePosition: finite(row.position)
     }));
-    await persist(gscSite, {
+    // Imports are ordered newest-first, so the first site persist is the latest.
+    // The persist call must always run; only the capture is conditional.
+    const savedSiteGsc = await persist(gscSite, {
       siteId: site.id,
       articleId: null,
       provider: 'gsc',
@@ -284,6 +296,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       sourceVersion: `sqlite:gsc:${observation.source_version}`,
       capturedAt: observation.captured_at
     });
+    latestSiteGsc ??= savedSiteGsc;
 
     const pageRows = rows(`SELECT page_id,url,clicks,impressions,ctr,position FROM page_metric_snapshots
       WHERE project_id=? AND site_url=? AND start_date=? AND end_date=? AND COALESCE(search_type,'web')=? AND observed_at=?
@@ -342,7 +355,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       warnings.push(`Skipped direct GA4 source ${observation.source_version}: no normalized site metrics were persisted.`);
       continue;
     }
-    await persist(ga4, {
+    const savedSiteGa4 = await persist(ga4, {
       siteId: site.id,
       articleId: null,
       provider: 'ga4',
@@ -354,6 +367,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
       sourceVersion: `sqlite:ga4:${observation.source_version}`,
       capturedAt: observation.captured_at
     });
+    latestSiteGa4 ??= savedSiteGa4;
     directGa4Projected++;
 
     const landingPages = completeGa4LandingPages(payload);
@@ -422,7 +436,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
         ];
         for (const item of periods) {
           if (!item.start || !item.end || !item.metrics) continue;
-          await persist(ga4, {
+          const savedFallbackGa4 = await persist(ga4, {
             siteId: site.id,
             articleId: null,
             provider: 'ga4',
@@ -434,6 +448,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
             sourceVersion: `analytics-dashboard:${portfolio.generatedAt}:${productionHost}:${item.key}:${item.start}:${item.end}`,
             capturedAt: portfolio.generatedAt
           });
+          latestSiteGa4 ??= savedFallbackGa4;
           ga4Acquisition.projected++;
         }
       } else if (productionHost) {
@@ -458,6 +473,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     ga4,
     ga4Articles,
     ga4Acquisition,
+    latestSiteSnapshots: { gsc: latestSiteGsc, ga4: latestSiteGa4 },
     warnings
   };
 }

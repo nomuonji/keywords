@@ -72,6 +72,8 @@ jobs:
             npm run test:remote-keyword
             npm run test:site-structure
             npm run test:site-operations
+            npm run test:firestore-retry
+            npm run test:site-digest
             npm run test:site-operations-bridge
             npm run test:site-operations-analysis
             npm run test:site-optimization-workflow

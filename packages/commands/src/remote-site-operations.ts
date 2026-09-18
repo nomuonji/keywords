@@ -164,6 +164,21 @@ async function auditWrite(command: string, targetId: string, data: object, previ
   return runId;
 }
 
+function cloudWriteDelayMs() {
+  const configured = Number(process.env.KEYWORDS_FIRESTORE_WRITE_DELAY_MS ?? 400);
+  return Number.isFinite(configured) ? Math.max(0, Math.min(Math.floor(configured), 10_000)) : 400;
+}
+
+/**
+ * Space out bulk control-plane writes so article-registry/projection bursts
+ * stay under Firestore throttling. Reads are unaffected; throttled responses
+ * still surface as errors after the bounded retry in the Firestore client.
+ */
+export async function paceCloudWrite() {
+  const delay = cloudWriteDelayMs();
+  if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
+}
+
 function assertPeriod(start: string, end: string) {
   if (Date.parse(`${start}T00:00:00Z`) > Date.parse(`${end}T00:00:00Z`)) throw new Error('Period start must be on or before period end');
 }
@@ -180,6 +195,55 @@ async function assertNoPendingImplementedChange(siteId: string, articleId: strin
   const events = await queryBySite('optimizationEvents', siteId, 500);
   const pending = events.find((event: any) => event.id !== excludeId && event.articleId === articleId && event.phase === 'implemented' && event.result === 'pending');
   if (pending) throw new Error(`Article has an unevaluated optimization (${pending.id}); evaluate or cancel it before another implemented change`);
+}
+
+export interface SiteDigest {
+  siteId: string;
+  generatedAt: string;
+  latestSiteGsc: MetricSnapshot | null;
+  latestSiteGa4: MetricSnapshot | null;
+  activeOptimizations: OptimizationEvent[];
+  articleCount: number;
+  warnings: string[];
+}
+
+const decodeRecord = (doc: any) => ({ id: doc.name.split('/').pop(), ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) }) as unknown as SiteDigest;
+
+/**
+ * Refresh the one-document site digest after a projection. The digest is a
+ * derived cache (not a separate command), so it is written with a single
+ * commit and no extra audit record; the calling projection is already
+ * audited. Remote readers use it to answer site status in a bounded number
+ * of reads instead of scanning snapshot/event history on every call.
+ */
+export async function refreshSiteDigest(input: { site: { id: string }; latestSiteGsc?: unknown; latestSiteGa4?: unknown; articleCount: number; warnings?: string[] }): Promise<SiteDigest> {
+  const events = (await queryBySite('optimizationEvents', input.site.id, 500)) as OptimizationEvent[];
+  const active = events
+    .filter(event => event.phase === 'implemented' && event.result === 'pending')
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  const digest: SiteDigest = {
+    siteId: input.site.id,
+    generatedAt: now(),
+    latestSiteGsc: (input.latestSiteGsc as MetricSnapshot | undefined) ?? null,
+    latestSiteGa4: (input.latestSiteGa4 as MetricSnapshot | undefined) ?? null,
+    activeOptimizations: active,
+    articleCount: input.articleCount,
+    warnings: (input.warnings ?? []).slice(0, 10)
+  };
+  await firestore(`/siteDigests/${input.site.id}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(digest) }) });
+  await paceCloudWrite();
+  return digest;
+}
+
+export async function readSiteDigest(siteId: string): Promise<SiteDigest | null> {
+  try {
+    const doc = await firestore(`/siteDigests/${entityId.parse(siteId)}`);
+    if (!doc?.fields) return null;
+    return decodeRecord(doc) as SiteDigest;
+  } catch (error) {
+    if (error instanceof FirestoreError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 export function remoteSitesStatus() {
@@ -355,6 +419,27 @@ export async function optimizationEventUpdate(input: unknown) {
 export async function optimizationContext(input: unknown) {
   const args = z.object(optimizationContextShape).strict().parse(input); const site = await ensureSite(args.siteId);
   if (args.articleId) await ensureArticle(args.articleId, args.siteId);
+  // Site-level status is served from the projection digest when available:
+  // two bounded reads instead of scanning snapshot/event history.
+  if (!args.articleId) {
+    try {
+      const digest = await readSiteDigest(args.siteId);
+      if (digest) {
+        const snapshots = [digest.latestSiteGsc, digest.latestSiteGa4].filter((item): item is MetricSnapshot => Boolean(item));
+        const active = digest.activeOptimizations[0] ?? null;
+        return {
+          site, articleId: null, changeAllowed: digest.activeOptimizations.length === 0, activeOptimization: active,
+          cooldownUntil: active?.evaluateAfter ?? null,
+          latestMetrics: { gsc: digest.latestSiteGsc, ga4: digest.latestSiteGa4 },
+          metricSnapshots: snapshots.slice(0, args.metricLimit), optimizationEvents: digest.activeOptimizations.slice(0, args.eventLimit),
+          servedFrom: 'digest' as const, digestGeneratedAt: digest.generatedAt,
+          policy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14, note: 'Daily collection is allowed; content changes remain blocked until the active hypothesis is evaluated or cancelled.' }
+        };
+      }
+    } catch {
+      // Fall through to the full scan when the digest cannot be served.
+    }
+  }
   const [metricRows, eventRows] = await Promise.all([queryBySite('metricSnapshots', args.siteId, 1000), queryBySite('optimizationEvents', args.siteId, 1000)]);
   const metricsForTarget = metricRows.filter((item: any) => !args.articleId || item.articleId === args.articleId).sort((a: any, b: any) => String(b.capturedAt).localeCompare(String(a.capturedAt))).slice(0, args.metricLimit);
   const eventsForTarget = eventRows.filter((item: any) => !args.articleId || item.articleId === args.articleId).sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.eventLimit);
@@ -367,6 +452,7 @@ export async function optimizationContext(input: unknown) {
       ga4: metricsForTarget.find((snapshot: any) => snapshot.provider === 'ga4') ?? null
     },
     metricSnapshots: metricsForTarget, optimizationEvents: eventsForTarget,
+    servedFrom: 'scan' as const,
     policy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14, note: 'Daily collection is allowed; content changes remain blocked until the active hypothesis is evaluated or cancelled.' }
   };
 }

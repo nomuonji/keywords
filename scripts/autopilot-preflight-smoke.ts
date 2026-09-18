@@ -9,18 +9,6 @@ for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
 process.env.KEYWORDS_DB_PATH = dbPath;
 process.env.KEYWORDS_AUTOPILOT_SCHEDULER = '1';
 process.env.KEYWORDS_AGENT_COMMAND = 'fixture-agent';
-delete process.env.FIREBASE_PROJECT_ID;
-delete process.env.GOOGLE_CLOUD_PROJECT;
-delete process.env.GCP_PROJECT_ID;
-delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-delete process.env.FIREBASE_SERVICE_ACCOUNT;
-delete process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
-delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-delete process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
-delete process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
-delete process.env.GOOGLE_ADS_ACCESS_TOKEN;
-delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
-delete process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL;
 
 try {
   const { getDatabase, schema } = await import('../packages/db/src/index.js');
@@ -29,6 +17,20 @@ try {
   const { operationCommands } = await import('../packages/commands/src/operation.js');
   const { assertOperationAllowed } = await import('../packages/commands/src/guard.js');
   const { autopilotContentMutationPreflight } = await import('../packages/commands/src/autopilot-site-preflight.js');
+  // The research layer auto-loads the repository .env on import when keys are
+  // missing, so hermetic assertions must clear the environment after imports.
+  delete process.env.FIREBASE_PROJECT_ID;
+  delete process.env.GOOGLE_CLOUD_PROJECT;
+  delete process.env.GCP_PROJECT_ID;
+  delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  delete process.env.FIREBASE_SERVICE_ACCOUNT;
+  delete process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
+  delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  delete process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+  delete process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  delete process.env.GOOGLE_ADS_ACCESS_TOKEN;
+  delete process.env.GOOGLE_ADS_REFRESH_TOKEN;
+  delete process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL;
   const { db, sqlite } = getDatabase();
   const now = new Date().toISOString();
   const human = { actor: 'human' as const, actorId: 'autopilot-preflight-human' };

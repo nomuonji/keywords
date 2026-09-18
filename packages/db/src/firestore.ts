@@ -36,10 +36,40 @@ async function accessToken() {
 
 function projectId() { return process.env.FIREBASE_PROJECT_ID?.trim() || process.env.GOOGLE_CLOUD_PROJECT?.trim() || process.env.GCP_PROJECT_ID?.trim() || serviceAccount().project_id || env('FIREBASE_PROJECT_ID'); }
 function baseUrl() { return `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId())}/databases/(default)/documents`; }
+
+const RETRYABLE_STATUS = new Set([429, 503]);
+const RETRY_BASE_DELAY_MS = 1000;
+const RETRY_MAX_DELAY_MS = 30_000;
+
+function retryAttempts() {
+  const configured = Number(process.env.KEYWORDS_FIRESTORE_RETRY_ATTEMPTS ?? 3);
+  return Number.isFinite(configured) ? Math.max(0, Math.min(Math.floor(configured), 10)) : 3;
+}
+
+function retryDelayMs(attempt: number, retryAfter: string | null) {
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.max(0, Math.min(Math.floor(seconds * 1000), RETRY_MAX_DELAY_MS));
+    const date = Date.parse(retryAfter);
+    if (Number.isFinite(date)) return Math.max(0, Math.min(date - Date.now(), RETRY_MAX_DELAY_MS));
+  }
+  const backoff = RETRY_BASE_DELAY_MS * 2 ** attempt;
+  return Math.min(backoff, RETRY_MAX_DELAY_MS) + Math.floor(Math.random() * 250);
+}
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function firestore(path: string, init?: RequestInit) {
-  const response = await fetch(`${baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${await accessToken()}`, 'content-type': 'application/json', ...(init?.headers ?? {}) } });
-  if (!response.ok) throw new FirestoreError(response.status);
-  return response.json() as Promise<any>;
+  const attempts = retryAttempts();
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(`${baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${await accessToken()}`, 'content-type': 'application/json', ...(init?.headers ?? {}) } });
+    if (response.ok) return response.json() as Promise<any>;
+    // Throttling and transient unavailability are retried with backoff so bulk
+    // onboarding/projection bursts survive quota bursts; local evidence never
+    // depends on a single cloud attempt succeeding.
+    if (!RETRYABLE_STATUS.has(response.status) || attempt >= attempts) throw new FirestoreError(response.status);
+    await sleep(retryDelayMs(attempt, response.headers.get('retry-after')));
+  }
 }
 
 export function field(value: unknown): any {

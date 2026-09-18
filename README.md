@@ -385,6 +385,8 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 - scheduler: `KEYWORDS_OPERATOR_INTERVAL_MINUTES`, `KEYWORDS_OPERATOR_RUN_ON_START`
 - GSC collection cadence: `KEYWORDS_METRICS_CADENCE_HOURS` (default `24`, bounded to 1–168)
 - cloud projection depth: `KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT` (default `4`, bounded to 1–20)
+- Firestore retry budget: `KEYWORDS_FIRESTORE_RETRY_ATTEMPTS` (default `3`, bounded to 0–10; `0` disables retries on throttled `429`/`503` responses)
+- Firestore bulk write pacing: `KEYWORDS_FIRESTORE_WRITE_DELAY_MS` (default `400`, bounded to 0–10000; delay between article-registry/snapshot writes during projection)
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
@@ -401,6 +403,8 @@ GitHub Actions / build verification includes:
 - remote keyword cache/quota/research-session smoke
 - site concept full-save + patch + revision smoke
 - Sites Operator registry/optimization/MCP smoke
+- Firestore 429/503 retry/backoff smoke
+- site digest bounded-read smoke
 - local GSC + saved GA4 -> Firestore idempotent bridge smoke
 - SQLite initialization
 - legacy SQLite migration into work/review/live-page/GSC-history schema
@@ -416,6 +420,8 @@ CI cancels superseded runs on the same branch.
 # Current autonomy boundary
 
 The local SEO OS remains authoritative for execution, evidence, scheduling, artifact validation and publication safeguards. Remote Keywords Operator adds persistent exploratory research and Site Concept planning. Remote Sites Operator adds durable real-site analytics/optimization state without treating a screening score or a short-term metric move as an automatic rewrite instruction.
+
+Operating model for the Blog portfolio: remote-MCP-first, on-demand measurement, no resident daemon. The persistent maintenance worker stays stopped; measurement runs when needed through an agent or the staggered weekly `site-measurement` GitHub Actions workflow (self-hosted runner, groups spread across days to respect Firestore quota). SQLite remains the archival measurement history; Firestore keeps the registry, idempotent snapshots, and one site digest per site so remote readers get site status in bounded reads instead of scanning history.
 
 Agents may research, synchronize evidence/site state, organize keywords/clusters, create tasks/insights/policy candidates, propose pages and persist optimization hypotheses. Existing human/review/publication boundaries remain in force. **Daily measurement is allowed; an implemented optimization blocks another implemented change on that article until it is evaluated or cancelled.**
 

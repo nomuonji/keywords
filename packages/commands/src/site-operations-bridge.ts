@@ -1,5 +1,6 @@
 import { projectSiteOperationsMetrics as projectLegacySiteOperationsMetrics } from './site-operations-bridge-legacy.js';
 import { completeSiteArticleProjection } from './site-operations-bridge-overflow.js';
+import { refreshSiteDigest } from './remote-site-operations.js';
 
 type Counter = { saved: number; reused: number };
 
@@ -28,8 +29,28 @@ function staleScaleWarning(message: string) {
 export async function projectSiteOperationsMetrics(projectId: string) {
   const legacy: any = await projectLegacySiteOperationsMetrics(projectId);
   if (legacy.status !== 'projected') return legacy;
-
   const completion = await completeSiteArticleProjection(projectId);
+
+  // Refresh the one-document site digest so remote readers get site status in
+  // bounded reads. Best effort: local evidence is already persisted above.
+  // This runs on both the legacy-only and the completed paths so small sites
+  // get a digest too.
+  const digestWarnings = [
+    ...(legacy.warnings ?? []).filter((message: string) => !staleScaleWarning(message)),
+    ...(completion.applied ? [...completion.articleRegistrySync.warnings, ...completion.warnings] : [])
+  ];
+  try {
+    await refreshSiteDigest({
+      site: { id: legacy.siteId },
+      latestSiteGsc: legacy.latestSiteSnapshots?.gsc,
+      latestSiteGa4: legacy.latestSiteSnapshots?.ga4,
+      articleCount: completion.applied ? completion.articleMappings.registered : legacy.articleMappings.registered,
+      warnings: digestWarnings
+    });
+  } catch (error) {
+    digestWarnings.push(`Site digest refresh failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}; snapshot history remains available through the full scan path.`);
+  }
+
   if (!completion.applied) return legacy;
 
   const legacySync = legacy.articleRegistrySync ?? {};

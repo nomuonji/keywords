@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import { field, firestore, value } from '@keywords/db/firestore';
 import { normalizeGa4PropertyId } from '@keywords/research/ga4';
-import { metricSnapshotSave, siteArticleSave, siteRegistryResolve } from './remote-site-operations.js';
+import { metricSnapshotSave, paceCloudWrite, siteArticleSave, siteRegistryResolve } from './remote-site-operations.js';
 import { snapshotSchema } from './blog-contract.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
@@ -121,7 +121,10 @@ async function allSiteArticles(siteId: string) {
 async function persist(counter: Counter, input: Parameters<typeof metricSnapshotSave>[0]) {
   const saved: any = await metricSnapshotSave(input);
   if (saved.reused) counter.reused++;
-  else counter.saved++;
+  else {
+    counter.saved++;
+    await paceCloudWrite();
+  }
 }
 
 async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord, existing: SiteArticleRecord[]) {
@@ -202,6 +205,7 @@ async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord
     if (key) byUrl.set(key, saved);
     if (current) updated++;
     else created++;
+    await paceCloudWrite();
   }
 
   return {
