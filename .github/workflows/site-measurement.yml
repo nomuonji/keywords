@@ -107,11 +107,12 @@ jobs:
           npm run db:init
       - name: Write Google service account file
         # GOOGLE_APPLICATION_CREDENTIALS must be a file path for the runners.
-        if: steps.select.outputs.run == 'true' && secrets.GOOGLE_APPLICATION_CREDENTIALS != ''
+        if: steps.select.outputs.run == 'true'
         shell: bash
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
         run: |
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS" ]; then echo "no service account secret; runners fall back to machine configuration"; exit 0; fi
           printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS" > "$RUNNER_TEMP/google-sa.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
       - name: Run measurement batch
