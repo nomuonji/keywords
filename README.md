@@ -406,6 +406,7 @@ GitHub Actions / build verification includes:
 - Firestore 429/503 retry/backoff smoke
 - site digest bounded-read smoke
 - remote sites read-only endpoint smoke
+- remote articles read-only endpoint smoke
 - local GSC + saved GA4 -> Firestore idempotent bridge smoke
 - SQLite initialization
 - legacy SQLite migration into work/review/live-page/GSC-history schema

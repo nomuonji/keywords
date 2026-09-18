@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { api, isRemoteBackend } from './api';
+import { RemoteOperationsOverview } from './RemoteOperations';
 import { ReviewPanel } from './ReviewPanel';
 
 type AutoProject={
@@ -68,7 +69,7 @@ export function OperationsOverview({focusedProjectId,onFocusProject,onOpenArticl
   const choices=useMemo(()=>(portfolio?.keywordChoices??[]).filter(x=>!focusedProjectId||x.projectId===focusedProjectId).slice(0,5),[portfolio,focusedProjectId]);
   const outcomes=useMemo(()=>(ops?.outcomes??[]).filter(x=>!focusedProjectId||x.projectId===focusedProjectId).slice(0,5),[ops,focusedProjectId]);
   const primary=queue[0];
-  if (isRemoteBackend()) return <div className="corePage"><div className="coreTitleRow"><div><p className="coreEyebrow">DAILY CONTROL</p><h1>今日のSEO運用</h1><p>この画面はローカル専用です。リモートでは「サイト」タブのdigest一覧とMCPを使って運用します。</p></div></div></div>;
+  if (isRemoteBackend()) return <RemoteOperationsOverview/>;
   return <div className="corePage">
     <div className="coreTitleRow"><div><p className="coreEyebrow">DAILY CONTROL</p><h1>{selected?selected.name:'今日のSEO運用'}</h1><p>止まっている理由と次の一手を、優先度順に確認します。</p></div><div className="coreLive"><span/>{loading?'更新中':updatedAt?`${when(updatedAt)} 更新`:'30秒更新'}</div></div>
     <section className="dailyCommand" aria-labelledby="daily-command-title"><div><p className="coreEyebrow">COMMAND</p><h2 id="daily-command-title">今日の作業を指示</h2><p>「今日のSEO作業を進めて」を送ると、Autopilotが有効なサイトの次の作業をキューに入れます。</p></div><form onSubmit={runToday}><label htmlFor="daily-instruction">指示文</label><div className="dailyCommandRow"><input id="daily-instruction" value={instruction} onChange={event=>setInstruction(event.target.value)} aria-describedby="daily-command-help"/><button className="primaryCommand" disabled={commandBusy}>{commandBusy?'起動中…':'指示を実行'}</button></div><small id="daily-command-help">対象サイトを絞り込んでいる場合は、そのサイトだけを対象にします。</small></form>{commandNotice&&<div className="commandNotice" role="status">{commandNotice}</div>}</section>

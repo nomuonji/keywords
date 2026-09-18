@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, isRemoteBackend } from './api';
+import { RemoteArticlesOverview } from './RemoteArticles';
 
 type Project = { id: string; name: string; domain?: string | null; mode?: string; environment?: 'production' | 'planning' | 'test' };
 type Outcome = { status: string; publishedAt?: string | null; evaluationDueAt?: string | null; metrics?: Record<string, unknown>; nextAction?: string | null; updatedAt: string } | null;
@@ -94,7 +95,7 @@ export function ArticlesOverview({focusedProjectId,onFocusProject,onOpenOperatio
   const selectedProject = projects.find(project => project.id === projectId);
   const includePlanning = showPlanning || Boolean(selectedProject && !isOperationalSite(selectedProject));
   const projectOptions = projects.filter(project => includePlanning || isOperationalSite(project));
-  if (isRemoteBackend()) return <div className="corePage"><div className="coreTitleRow"><div><p className="coreEyebrow">ARTICLE WORKSPACE</p><h1>記事管理</h1><p>この画面はローカル専用です。記事本文はGitHubのサイトリポジトリ、登録情報は「サイト」タブのdigest一覧で確認します。</p></div></div></div>;
+  if (isRemoteBackend()) return <RemoteArticlesOverview/>;
   return <div className="corePage">
     <div className="coreTitleRow"><div><p className="coreEyebrow">ARTICLE WORKSPACE</p><h1>記事管理</h1><p>管理対象とBlog上の未登録ファイルを分け、必要な集合だけ読み込みます。</p></div><span className="countBadge">{data?.total ?? 0} {listLabel[status]}</span></div>
     {error && <div className="coreError">{error}</div>}
