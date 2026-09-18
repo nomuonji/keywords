@@ -70,6 +70,7 @@ jobs:
               {"projectId":"7d0a29ed-9a74-4b4a-868e-19af53e2bee6","name":"chonmage-en","domain":"en.chon-mage.com","sitemapUrl":"https://en.chon-mage.com/sitemap-index.xml","gscProperty":"sc-domain:chon-mage.com"},
               {"projectId":"26f0b0f7-6e78-4d8e-9b6a-050513822f03","name":"chonmage-ja","domain":"ja.chon-mage.com","sitemapUrl":"https://ja.chon-mage.com/sitemap-index.xml","gscProperty":"sc-domain:chon-mage.com"}]
     env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
       KEYWORDS_AGENT_ID: site-measurement-actions
