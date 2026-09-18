@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isRemoteBackend } from './api';
 import { OperationsOverview } from './OperationsOverview';
 import { ArticlesOverview } from './ArticlesOverview';
 import { SitesOverview } from './SitesOverview';
@@ -17,8 +18,10 @@ const views:Array<{id:View;label:string;hint:string}>=[
 function readLocation(){
   const params=new URLSearchParams(window.location.search);
   const requested=params.get('view');
+  // Remote backends serve digest-backed views; the operations queue is local-only.
+  const fallback = isRemoteBackend() ? 'sites' as View : 'operations' as View;
   return {
-    view:views.some(item=>item.id===requested)?requested as View:'operations' as View,
+    view:views.some(item=>item.id===requested)?requested as View:fallback,
     projectId:params.get('project')??''
   };
 }
@@ -41,7 +44,7 @@ export function App(){
     <header className="coreTopbar">
       <button className="coreBrand" onClick={()=>navigate('operations','')} aria-label="今日の運用へ"><span/>KEYWORDS</button>
       <nav className="coreNav" aria-label="メインナビゲーション">{views.map(item=><button key={item.id} className={view===item.id?'active':''} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id)}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav>
-      <div className="coreTopMeta"><span className="stateDot live"/>local workspace</div>
+      <div className="coreTopMeta"><span className="stateDot live"/>{isRemoteBackend() ? 'remote · Firestore' : 'local workspace'}</div>
     </header>
     <main className="coreMain" id="main-content">
       {view==='operations'&&<OperationsOverview focusedProjectId={projectId} onFocusProject={id=>navigate('operations',id,true)} onOpenArticles={id=>navigate('articles',id??projectId)} onOpenSites={id=>navigate('sites',id??projectId)}/>}

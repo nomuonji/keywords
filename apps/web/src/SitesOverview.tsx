@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { api } from './api';
+import { api, isRemoteBackend } from './api';
+import { RemoteSitesOverview } from './RemoteSites';
 
 type Site={name:string;host:string;signal:string;error:boolean;clickChange?:number|null;sessionChange?:number|null;openTasks:number;openReviews:number;articleCount:number;verifiedArticles:number;publishedArticles:number;pendingEvaluations:number;improved:number;regressed:number;projects:Array<{id:string;name:string}>};
 type Portfolio={sites:Site[];stale?:boolean;generatedAt?:string};
@@ -12,6 +13,7 @@ const pct=(value?:number|null)=>value==null?'—':`${value>0?'+':''}${value.toFi
 const when=(value?:string|null)=>value?new Date(value).toLocaleString('ja-JP',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}):'—';
 
 export function SitesOverview({focusedProjectId,onClearProject,onOpenArticles,onOpenOperations}:{focusedProjectId:string;onClearProject:()=>void;onOpenArticles:(id:string)=>void;onOpenOperations:(id:string)=>void}){
+  if (isRemoteBackend()) return <RemoteSitesOverview/>;
   const [portfolio,setPortfolio]=useState<Portfolio|null>(null),[auto,setAuto]=useState<AutoPortfolio|null>(null),[query,setQuery]=useState(''),[filter,setFilter]=useState('active'),[busy,setBusy]=useState(''),[errors,setErrors]=useState<Array<{section:string;message:string}>>([]),[loading,setLoading]=useState(true),[loaded,setLoaded]=useState(false),[updatedAt,setUpdatedAt]=useState(''),[pending,setPending]=useState<PendingConfig|null>(null),[notice,setNotice]=useState('');
   const load=async()=>{try{setLoading(true);const dashboard=await api<Dashboard>('/dashboard');if(dashboard.portfolio)setPortfolio(dashboard.portfolio);if(dashboard.autopilot)setAuto(dashboard.autopilot);setErrors(dashboard.errors.filter(item=>item.section!=='operations'));setUpdatedAt(dashboard.generatedAt)}catch(e){setErrors([{section:'dashboard',message:String(e)}])}finally{setLoading(false);setLoaded(true)}};
   useEffect(()=>{void load();const timer=setInterval(()=>{if(document.visibilityState==='visible')void load()},30000);return()=>clearInterval(timer)},[]);
