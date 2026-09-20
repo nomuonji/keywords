@@ -46,6 +46,20 @@ no resident daemon, no human in the loop. Quota-safe by construction.
    reason and the next action. Do not change the article again in the same
    run; pick the next target next time.
 
+## Start-today interim rules (while Firestore is throttled)
+
+- Reads and event writes may fail. When they do, keep working and keep
+  notes in the chat: site, article URL, hypothesis, before/after commit
+  SHAs, push date. Backfill the `optimization_event` after recovery with
+  the real `changedAt` and baseline period (late recording is supported).
+- Enforce one-pending-per-article manually until events work again: never
+  touch an article twice before its wait matures.
+- Thin-data guidance: most sites currently have near-zero query and
+  session volume. Prefer content expansion and indexation basics over
+  micro-optimization, and expect `inconclusive` verdicts. The 2026-09-18
+  local snapshot (SQLite) holds the latest complete weeks per site; ask
+  the local agent for top queries/landings when the digest is unavailable.
+
 ## Quota hygiene (hard rules)
 
 - Site status always comes from `optimization_context` without `articleId`
