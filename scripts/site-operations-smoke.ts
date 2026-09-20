@@ -146,6 +146,44 @@ try {
   const evaluated = await optimizationEventUpdate({ id: 'opt-mature', expectedRevision: mature.revision, result: 'improved', evaluationMetrics: { positionDelta: -2.4 } });
   assert.equal(evaluated.phase, 'evaluated');
 
+  const { siteArticleCreateMany } = await import('../packages/commands/src/remote-site-operations.js');
+  let commitCalls = 0;
+  const countingFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: any, init?: any) => {
+    if (String(input).endsWith(':commit')) commitCalls++;
+    return countingFetch(input, init);
+  }) as typeof fetch;
+  try {
+    const batched = await siteArticleCreateMany({
+      siteId: 'site-a',
+      records: [
+        { id: 'article-batch-1', localPageId: 'local-batch-1', canonicalUrl: 'https://example.com/batch-1', repo: 'nomuonji/site-a', repoPath: 'content/b1.mdx', slug: 'batch-1', title: 'Batch 1' },
+        { id: 'article-batch-2', localPageId: 'local-batch-2', canonicalUrl: 'https://example.com/batch-2', repo: 'nomuonji/site-a', repoPath: 'content/b2.mdx', slug: 'batch-2', title: 'Batch 2' },
+        { id: 'article-batch-3', localPageId: 'local-batch-3', canonicalUrl: 'https://example.com/batch-3', repo: 'nomuonji/site-a', repoPath: 'content/b3.mdx', slug: 'batch-3', title: 'Batch 3' }
+      ]
+    });
+    assert.equal(batched.created.length, 3);
+    assert.ok(batched.created.every(article => article.revision === 1 && article.status === 'draft'));
+    assert.equal(commitCalls, 1);
+    await assert.rejects(siteArticleCreateMany({
+      siteId: 'site-a',
+      records: [
+        { id: 'article-batch-4', localPageId: 'local-batch-4', canonicalUrl: 'https://example.com/batch-4', repo: 'nomuonji/site-a', repoPath: 'content/b4.mdx', slug: 'batch-4', title: 'Batch 4' },
+        { id: 'article-batch-5', localPageId: 'local-batch-5', canonicalUrl: 'https://example.com/batch-4', repo: 'nomuonji/site-a', repoPath: 'content/b5.mdx', slug: 'batch-5', title: 'Batch 5' }
+      ]
+    }), /already linked/);
+    await assert.rejects(siteArticleCreateMany({
+      siteId: 'site-a',
+      records: [{ id: 'article-batch-6', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/batch-6', repo: 'nomuonji/site-a', repoPath: 'content/b6.mdx', slug: 'batch-6', title: 'Batch 6' }]
+    }), /already linked/);
+    await assert.rejects(siteArticleCreateMany({
+      siteId: 'site-a',
+      records: [{ id: 'x'.repeat(101), localPageId: 'local-batch-7', canonicalUrl: 'https://example.com/batch-7', repo: 'nomuonji/site-a', repoPath: 'content/b7.mdx', slug: 'batch-7', title: 'Batch 7' }]
+    }));
+  } finally {
+    globalThis.fetch = countingFetch;
+  }
+
   const { default: mcp } = await import('../api/sites-mcp.js');
   assert.equal((await mcp.request('/sites-mcp', { method: 'POST' })).status, 401);
   assert.equal((await mcp.request('/sites-mcp/health')).status, 200);

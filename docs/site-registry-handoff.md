@@ -22,13 +22,14 @@ Do not record secrets here. IDs are local project UUIDs (stable, registry-linked
 Local evidence is complete and preserved; only cloud projection is queued.
 Next scheduled run (Tue 18:00 UTC, group A) retries idempotently. Verify Wed AM:
 
-- [ ] whisky-jp: projection (import/sync/GA4 done 9/18)
+- [ ] whisky-jp: projection (import/sync/GA4 done 9/18, articles ~291)
 - [ ] otonano_reset: projection (import/sync done 9/18; GA4 property missing)
-- [ ] book-discovery / free-consult / job-world: projection with records bindings
+- [ ] book-discovery / free-consult / job-world: projection with records bindings (465/70/150 sources)
 - [ ] chonmage-en/ja: GA4 capture + projection (GSC weeks complete 9/18)
 - [ ] shikaku: GA4 retry (article registry deferred by design, 623 > 500 bound)
-- [ ] bungu / omiyage: register GA4 property IDs, then capture + project
-      (bungu 549938997, omiyage 549962224; resolved from on-page G-IDs via Admin API)
+- [x] bungu / omiyage: GA4 property IDs resolved and registered
+      (bungu 549938997, omiyage 549962224; from on-page G-IDs via Admin API)
+- [ ] bungu / omiyage: capture + projection
 - [ ] Verify digests: `optimization_context` returns `servedFrom: digest` per site
 
 Verify with (reads only):
@@ -64,3 +65,13 @@ and window maturity; keywords gates are bypassed on direct pushes.
 - bungu/omiyage GA4 properties now known (see Phase 1); kampo/shikaku-style
   `github_pages` mentions in docs are unverified, registry uses `other`
   except whisky-jp (`cloudflare_pages`, README-evidenced).
+
+## Modeling decisions
+
+- Articles stay one-document-per-article (2026-09-18). Bundling all of a
+  site's articles into one document was rejected: whole-doc conflicts on
+  concurrent writes, 1MB cap risk at shikaku scale, lost server-side
+  queryability, and steady-state writes are already ~zero via idempotent
+  reuse. Transport is bundled instead (`auditWriteBatch`, max 200
+  records/commit, one audit record per batch, single-save fallback on
+  conflict), which captures nearly all backfill savings without model churn.

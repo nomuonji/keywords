@@ -148,20 +148,44 @@ async function ensureArticle(articleId: string, siteId?: string) {
   return article;
 }
 
-async function auditWrite(command: string, targetId: string, data: object, previous?: any | null) {
+async function commitAuditWrites(command: string, targetId: string, items: Array<{ data: object; previous?: any | null }>, auditDetail?: object) {
   const runId = randomUUID();
   const createdAt = now();
-  const writes: any[] = [
-    { update: { name: firestoreDocumentName(`runs/${runId}`), fields: encodeFields({ id: runId, command, targetId, actor: 'sites_remote_mcp', createdAt, outcome: 'succeeded' }) }, currentDocument: { exists: false } }
-  ];
-  const update = (data as any).__write as { collection: string; id: string; fields: object };
-  writes.unshift({ update: { name: firestoreDocumentName(`${update.collection}/${update.id}`), fields: encodeFields(update.fields) }, currentDocument: previous ? { updateTime: previous.updateTime } : { exists: false } });
+  const writes: any[] = items.map(item => {
+    const update = (item.data as any).__write as { collection: string; id: string; fields: object };
+    return { update: { name: firestoreDocumentName(`${update.collection}/${update.id}`), fields: encodeFields(update.fields) }, currentDocument: item.previous ? { updateTime: item.previous.updateTime } : { exists: false } };
+  });
+  writes.push({ update: { name: firestoreDocumentName(`runs/${runId}`), fields: encodeFields({ id: runId, command, targetId, actor: 'sites_remote_mcp', createdAt, outcome: 'succeeded', ...(auditDetail ?? {}) }) }, currentDocument: { exists: false } });
   try { await firestore(':commit', { method: 'POST', body: JSON.stringify({ writes }) }); }
   catch (error) {
     if (error instanceof FirestoreError && [400, 409, 412].includes(error.status)) throw new Error('Save failed or revision changed: read the current record and retry with its revision');
     throw error;
   }
   return runId;
+}
+
+async function auditWrite(command: string, targetId: string, data: object, previous?: any | null) {
+  return commitAuditWrites(command, targetId, [{ data, previous }]);
+}
+
+const MAX_BATCH_WRITES = 200;
+
+/**
+ * Persist several records in one commit to survive tight Firestore quotas
+ * during backfills. Records keep their individual documents, revisions, and
+ * preconditions; only the transport is shared, with one audit record for the
+ * batch. On a batch-level conflict the caller should retry items singly so
+ * each record still fails honestly on its own revision.
+ */
+export async function auditWriteBatch(command: string, targetId: string, items: Array<{ data: object; previous?: any | null }>): Promise<string[]> {
+  const runIds: string[] = [];
+  for (let offset = 0; offset < items.length; offset += MAX_BATCH_WRITES) {
+    const chunk = items.slice(offset, offset + MAX_BATCH_WRITES);
+    const runId = await commitAuditWrites(command, `${targetId}+${chunk.length}`, chunk, { batched: chunk.length });
+    await paceCloudWrite();
+    runIds.push(runId);
+  }
+  return runIds;
 }
 
 function cloudWriteDelayMs() {
@@ -350,6 +374,69 @@ export async function siteArticleSave(input: unknown) {
   } as SiteArticleRecord;
   const runId = await auditWrite('site_article_save', record.id, { __write: { collection: 'articles', id: record.id, fields: record } }, previous);
   return { ...record, runId };
+}
+
+const articleCreateManyShape = {
+  siteId: entityId,
+  records: z.array(z.object({
+    id: entityId,
+    localPageId: entityId.nullable().optional(),
+    canonicalUrl: webUrl.nullable().optional(),
+    repo: repository,
+    repoPath: z.string().trim().min(1).max(1000).refine(path => !path.startsWith('/') && !path.includes('\\') && !path.split('/').includes('..'), 'repoPath must be a safe repository-relative path'),
+    slug: z.string().trim().min(1).max(300).regex(/^[^\s?#]+$/),
+    title: z.string().trim().min(1).max(300),
+    status: articleStatus.optional()
+  }).strict()).min(1).max(500)
+};
+
+/**
+ * Create many new articles in as few commits as possible (backfills).
+ * Records keep individual documents and exists-preconditions; only transport
+ * is shared. Validation mirrors siteArticleSave for new records, checked
+ * against the current registry plus within-batch duplicates. On a batch
+ * conflict the caller should retry items singly so each record still fails
+ * honestly on its own revision.
+ */
+export async function siteArticleCreateMany(input: unknown) {
+  const args = z.object(articleCreateManyShape).strict().parse(input);
+  await ensureSite(args.siteId);
+  const t = now();
+  const siblings = (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord);
+  if (siblings.some(article => args.records.some(record => record.id === article.id))) {
+    throw new Error('Article already exists: create it with site_article_save first or retry with its revision');
+  }
+  const seenPage = new Set<string>();
+  const seenUrl = new Set<string>();
+  const prepared = args.records.map(record => {
+    if (!record.repo || !record.repoPath || !record.slug || !record.title) throw new Error('repo, repoPath, slug and title are required for a new article');
+    const canonicalUrl = typeof record.canonicalUrl === 'string' ? normalizeWebIdentity(record.canonicalUrl) : record.canonicalUrl;
+    if (record.localPageId) {
+      if (siblings.some(article => article.localPageId === record.localPageId) || seenPage.has(record.localPageId)) {
+        throw new Error(`localPageId is already linked to article ${record.localPageId}`);
+      }
+      seenPage.add(record.localPageId);
+    }
+    if (canonicalUrl) {
+      const key = canonicalUrl;
+      if (siblings.some(article => article.canonicalUrl && normalizeWebIdentity(article.canonicalUrl) === key) || seenUrl.has(key)) {
+        throw new Error(`canonicalUrl is already linked to article ${key}`);
+      }
+      seenUrl.add(key);
+    }
+    const entry: SiteArticleRecord = {
+      id: record.id, siteId: args.siteId, localPageId: record.localPageId ?? null, canonicalUrl: canonicalUrl ?? null,
+      repo: record.repo, repoPath: record.repoPath, currentCommitSha: null, slug: record.slug, title: record.title,
+      primaryKeywordId: null, secondaryKeywordIds: [], status: record.status ?? 'draft',
+      publishedAt: null, lastUpdatedAt: null, revision: 1, createdAt: t, updatedAt: t
+    } as SiteArticleRecord;
+    return { entry, previous: null as null };
+  });
+  const runIds = await auditWriteBatch('site_article_save', args.siteId, prepared.map(item => ({
+    data: { __write: { collection: 'articles', id: item.entry.id, fields: item.entry } },
+    previous: item.previous
+  })));
+  return { created: prepared.map(item => item.entry), runIds };
 }
 
 export async function metricSnapshotSave(input: unknown) {

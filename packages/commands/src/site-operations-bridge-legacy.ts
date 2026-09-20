@@ -6,6 +6,7 @@ import {
   metricSnapshotSave,
   paceCloudWrite,
   remoteSitesStatus,
+  siteArticleCreateMany,
   siteArticleList,
   siteArticleSave,
   siteRegistryResolve
@@ -169,6 +170,7 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
   if (snapshot.sources.length > limit) warnings.push(`Blog article registry sync is bounded to ${limit} sources per projection; ${snapshot.sources.length - limit} source mappings were deferred.`);
 
   let created = 0, updated = 0, reused = 0, skipped = 0;
+  const pendingNew: Array<{ id: string; localPageId: string; key: string | null; desired: { localPageId: string; canonicalUrl: string; repo: string; repoPath: string; slug: string; title: string } }> = [];
   for (const source of sources) {
     const localPages = rows('SELECT id,url FROM pages WHERE project_id=? AND url=? LIMIT 2', projectId, source.expected_url);
     if (localPages.length !== 1) {
@@ -207,13 +209,33 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
       await paceCloudWrite();
       continue;
     }
-    const saved = await siteArticleSave({
-      id: articleId(site.id, source.source_ref), expectedRevision: 0, siteId: site.id, ...desired
-    }) as SiteArticleRecord;
-    byPage.set(localPageId, saved);
-    if (key) byUrl.set(key, saved);
-    created++;
-    await paceCloudWrite();
+    pendingNew.push({ id: articleId(site.id, source.source_ref), localPageId, key, desired });
+  }
+  if (pendingNew.length) {
+    try {
+      const batched = await siteArticleCreateMany({
+        siteId: site.id,
+        records: pendingNew.map(item => ({ id: item.id, ...item.desired }))
+      });
+      for (const saved of batched.created as SiteArticleRecord[]) {
+        const item = pendingNew.find(entry => entry.id === saved.id);
+        if (item) {
+          byPage.set(item.localPageId, saved);
+          if (item.key) byUrl.set(item.key, saved);
+        }
+        created++;
+      }
+      await paceCloudWrite();
+    } catch {
+      // Fall back to single saves so each record still fails honestly.
+      for (const item of pendingNew) {
+        const saved = await siteArticleSave({ id: item.id, expectedRevision: 0, siteId: site.id, ...item.desired }) as SiteArticleRecord;
+        byPage.set(item.localPageId, saved);
+        if (item.key) byUrl.set(item.key, saved);
+        created++;
+        await paceCloudWrite();
+      }
+    }
   }
 
   return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings };

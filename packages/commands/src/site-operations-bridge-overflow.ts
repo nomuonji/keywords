@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { getDatabase } from '@keywords/db';
 import { field, firestore, value } from '@keywords/db/firestore';
 import { normalizeGa4PropertyId } from '@keywords/research/ga4';
-import { metricSnapshotSave, paceCloudWrite, siteArticleSave, siteRegistryResolve } from './remote-site-operations.js';
+import { metricSnapshotSave, paceCloudWrite, siteArticleCreateMany, siteArticleSave, siteRegistryResolve } from './remote-site-operations.js';
 import { snapshotSchema } from './blog-contract.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
@@ -165,6 +165,7 @@ async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord
   }));
   const warnings: string[] = [];
   let created = 0, updated = 0, reused = 0, skipped = 0;
+  const pendingNew: Array<{ id: string; localPageId: string; key: string | null; desired: { localPageId: string; canonicalUrl: string; repo: string; repoPath: string; slug: string; title: string } }> = [];
 
   for (const source of snapshot.sources) {
     const localPages = rows('SELECT id,url FROM pages WHERE project_id=? AND url=? LIMIT 2', projectId, source.expected_url);
@@ -195,17 +196,46 @@ async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord
       reused++;
       continue;
     }
-    if (!current && existing.length + created >= 500) {
+    if (!current && existing.length + created + pendingNew.length >= 500) {
       throw new Error('Creating another article would exceed the 500-article complete-read safety bound; add indexed pagination before continuing automatic article sync');
     }
-    const saved = await siteArticleSave(current
-      ? { id: current.id, expectedRevision: current.revision, siteId: site.id, ...desired }
-      : { id: articleId(site.id, source.source_ref), expectedRevision: 0, siteId: site.id, ...desired }) as SiteArticleRecord;
+    if (!current) {
+      pendingNew.push({ id: articleId(site.id, source.source_ref), localPageId, key, desired });
+      continue;
+    }
+    const saved = await siteArticleSave(
+      { id: current.id, expectedRevision: current.revision, siteId: site.id, ...desired }) as SiteArticleRecord;
     byPage.set(localPageId, saved);
     if (key) byUrl.set(key, saved);
-    if (current) updated++;
-    else created++;
+    updated++;
     await paceCloudWrite();
+  }
+  if (pendingNew.length) {
+    try {
+      const batched = await siteArticleCreateMany({
+        siteId: site.id,
+        records: pendingNew.map(item => ({ id: item.id, ...item.desired }))
+      });
+      for (const saved of batched.created as SiteArticleRecord[]) {
+        const item = pendingNew.find(entry => entry.id === saved.id);
+        if (item) {
+          byPage.set(item.localPageId, saved);
+          if (item.key) byUrl.set(item.key, saved);
+        }
+        created++;
+      }
+      await paceCloudWrite();
+    } catch {
+      // Fall back to single saves so each record still fails honestly.
+      for (const item of pendingNew) {
+        const saved = await siteArticleSave(
+          { id: item.id, expectedRevision: 0, siteId: site.id, ...item.desired }) as SiteArticleRecord;
+        byPage.set(item.localPageId, saved);
+        if (item.key) byUrl.set(item.key, saved);
+        created++;
+        await paceCloudWrite();
+      }
+    }
   }
 
   return {
