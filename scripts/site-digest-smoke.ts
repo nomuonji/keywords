@@ -67,9 +67,10 @@ try {
   assert.equal(await readSiteDigest('site-d'), null);
 
   const gsc = { id: 'snap-gsc', siteId: 'site-d', articleId: null, provider: 'gsc', periodStart: '2026-09-01', periodEnd: '2026-09-07', metrics: { clicks: 9 }, queries: [], completeness: 'complete', sourceVersion: 'v1', capturedAt: '2026-09-10T00:00:00.000Z' };
-  const digest = await refreshSiteDigest({ site: { id: 'site-d' }, latestSiteGsc: gsc, articleCount: 3, warnings: [] });
+  const digest = await refreshSiteDigest({ site: { id: 'site-d' }, latestSiteGsc: gsc, articleCount: 3, warnings: ['Deferred content/x.mdx: lazy sync test'] });
   assert.equal(digest.siteId, 'site-d');
   assert.equal(digest.articleCount, 3);
+  assert.equal(digest.deferredCount, 1);
   assert.deepEqual(digest.latestSiteGsc, gsc);
   assert.deepEqual(digest.activeOptimizations, []);
 
@@ -82,6 +83,7 @@ try {
   assert.equal(fast.servedFrom, 'digest');
   assert.equal(fast.changeAllowed, true);
   assert.equal(fast.activeOptimization, null);
+  assert.equal((fast as { deferredCount: number }).deferredCount, 1);
   assert.deepEqual((fast.latestMetrics as any).gsc?.id, 'snap-gsc');
   assert.ok(calls <= 3, `digest fast path should stay bounded (used ${calls} calls)`);
 

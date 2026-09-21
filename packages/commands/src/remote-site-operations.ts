@@ -228,6 +228,7 @@ export interface SiteDigest {
   latestSiteGa4: MetricSnapshot | null;
   activeOptimizations: OptimizationEvent[];
   articleCount: number;
+  deferredCount: number;
   warnings: string[];
 }
 
@@ -252,6 +253,7 @@ export async function refreshSiteDigest(input: { site: { id: string }; latestSit
     latestSiteGa4: (input.latestSiteGa4 as MetricSnapshot | undefined) ?? null,
     activeOptimizations: active,
     articleCount: input.articleCount,
+    deferredCount: (input.warnings ?? []).filter(message => message.startsWith('Deferred ')).length,
     warnings: (input.warnings ?? []).slice(0, 10)
   };
   await firestore(`/siteDigests/${input.site.id}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(digest) }) });
@@ -519,6 +521,7 @@ export async function optimizationContext(input: unknown) {
           cooldownUntil: active?.evaluateAfter ?? null,
           latestMetrics: { gsc: digest.latestSiteGsc, ga4: digest.latestSiteGa4 },
           metricSnapshots: snapshots.slice(0, args.metricLimit), optimizationEvents: digest.activeOptimizations.slice(0, args.eventLimit),
+          articleCount: digest.articleCount, deferredCount: digest.deferredCount,
           servedFrom: 'digest' as const, digestGeneratedAt: digest.generatedAt,
           policy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14, note: 'Daily collection is allowed; content changes remain blocked until the active hypothesis is evaluated or cancelled.' }
         };
