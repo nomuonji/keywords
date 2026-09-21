@@ -13,64 +13,54 @@ no resident daemon, no human in the loop. Quota-safe by construction.
 - Never write credentials, tokens, or measurement IDs anywhere except the
   GitHub repo files that already contain them.
 
-## Every run: read cheap, change one article at most
+## Every run: read cheap, process every safely actionable independent item
 
 1. `optimization_context({siteId})` for each operated site. This is served
    from the projection digest (bounded reads). Note `changeAllowed`,
    `activeOptimization`, and `latestMetrics` per site.
-2. `site_query_opportunities({siteId})` for sites with no active optimization.
-   These are newly observed or rising queries from saved snapshots.
-3. Pick at most ONE target per run: a declining query mapped to a
-   registered article (`site_article_list`), or a rising query worth a
-   bounded improvement. Skip sites where `changeAllowed` is false.
-   Unregistered articles are registered on demand here: when you open an
-   optimization event for one, or when you publish a new article, create
-   its record with `site_article_save` (one write) so later evaluations
-   can attribute metrics to it.
-4. Read the article file in the site repo. Make the smallest edit that
-   tests your hypothesis (title/snippet, one section, internal links, or
-   freshness). One implemented change per article, never two.
-5. Commit and push. Sites deploy automatically.
-6. Fetch the live URL yourself: expect HTTP 200 and a canonical URL that
-   exactly matches the article URL. If it does not match, do not record
-   the change as implemented; note it and stop.
-7. `optimization_event_create` with phase implemented (set `changedAt` to
-   the push time and it becomes implemented automatically): observation
-   (the numbers you saw), diagnosis, hypothesis, actionType, before/after
-   commit SHAs, and `baselinePeriod` copied from the latest saved snapshot
-   periods in step 1. Never invent demand, numbers, or facts.
+5. For each selected target, read the article file in the site repo. Make the
+   smallest edit that tests one explicit hypothesis (title/snippet, one
+   section, internal links, freshness, indexation, or similar bounded work).
+   One implemented hypothesis/change type per article, never two concurrent
+   unevaluated changes on the same article. Unregistered articles are
+   registered on demand here: when you open an optimization event for one,
+   or when you publish a new article, create its record with
+   `site_article_save` (one write) so later evaluations can attribute
+   metrics to it.
 
-## Evaluation runs (only after the wait matures)
+## Evaluation rules
 
-8. If an event's `evaluateAfter` has passed, call
-   `optimization_evaluation_context` for that article. The server recomputes
-   baseline-vs-post deltas from saved snapshots; use those numbers only.
-9. Record exactly one verdict with `optimization_event_update`:
-   `improved`, `neutral`, `worsened`, or `inconclusive`, with a one-line
-   reason and the next action. Do not change the article again in the same
-   run; pick the next target next time.
+- A matured optimization may be evaluated in the same scheduled run as other
+  independent work, but the evaluated article is not edited again in that run.
+- Use only server-recomputed baseline-vs-post evidence from
+  `optimization_evaluation_context`.
+- Record exactly one verdict: `improved`, `neutral`, `worsened`, or
+  `inconclusive`, with a concise reason and next action.
 
 ## Start-today interim rules (while Firestore is throttled)
 
-- Reads and event writes may fail. When they do, keep working and keep
-  notes in the chat: site, article URL, hypothesis, before/after commit
-  SHAs, push date. Backfill the `optimization_event` after recovery with
-  the real `changedAt` and baseline period (late recording is supported).
+- Reads and event writes may fail. When they do, keep working only on
+  independent Git changes whose safety can still be established, and keep
+  notes in the chat: site, article URL, hypothesis, before/after commit SHAs,
+  push date. Backfill the `optimization_event` after recovery with the real
+  `changedAt` and baseline period (late recording is supported).
 - Enforce one-pending-per-article manually until events work again: never
   touch an article twice before its wait matures.
-- Thin-data guidance: most sites currently have near-zero query and
-  session volume. Prefer content expansion and indexation basics over
+- Thin-data guidance: most sites currently have near-zero query and session
+  volume. Prefer content expansion and indexation basics over
   micro-optimization, and expect `inconclusive` verdicts. The 2026-09-18
-  local snapshot (SQLite) holds the latest complete weeks per site; ask
-  the local agent for top queries/landings when the digest is unavailable.
+  local snapshot (SQLite) holds the latest complete weeks per site; ask the
+  local agent for top queries/landings when the digest is unavailable.
 
 ## Quota hygiene (hard rules)
 
 - Site status always comes from `optimization_context` without `articleId`
   (digest-backed). Never scan full snapshot or article history to "check".
-- Read one article's history only when you are about to evaluate it.
+- Read one article's detailed history only when you are about to evaluate or
+  modify that article.
 - Metric captures run on the weekly staggered schedule outside this task;
-  never re-capture from here. If data looks stale, note it and continue
-  with what is saved; missing data is never treated as zero.
-- If a write fails with throttling, stop the run and leave everything for
-  the next scheduled execution. Retries are built into the backend.
+  never re-capture from here. If data looks stale, note it and continue with
+  what is saved; missing data is never treated as zero.
+- If a Firestore write fails with throttling, stop further Firestore writes for
+  the run instead of retrying aggressively. Continue Git-only work only when
+  it does not risk violating one-pending-per-article state.

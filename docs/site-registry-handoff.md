@@ -1,6 +1,6 @@
 # Site registry handoff (phased onboarding → remote operation)
 
-Updated: 2026-09-18. Owner: agent Vega (local) + ChatGPT (remote MCP).
+Updated: 2026-09-20. Owner: agent Vega (local) + ChatGPT (remote MCP).
 Source of truth for registry state is Firestore; this file tracks PHASES only.
 Do not record secrets here. IDs are local project UUIDs (stable, registry-linked).
 
@@ -35,17 +35,24 @@ Next scheduled run (Tue 18:00 UTC, group A) retries idempotently. Verify Wed AM:
 Verify with (reads only):
 `optimization_context({siteId})` → servedFrom, changeAllowed, latestMetrics.
 
-## Phase 2 — first ChatGPT-driven PDCA cycle (remote)
+## Phase 2 — ChatGPT-driven scheduled PDCA (remote)
 
 Needs: ChatGPT scheduled task + connected GitHub site repos + MCP auth.
-Playbook (TBD as pastable instructions): digest read → diagnose →
-one-article edit + push in the site repo → live URL check →
-`optimization_event_create` (implemented, real SHAs, baseline = saved
-snapshot periods) → wait 14/28d → `optimization_evaluation_context` →
-`optimization_event_update` verdict. Server enforces one-pending-per-article
-and window maturity; keywords gates are bypassed on direct pushes.
+The scheduled task is not limited to one article per day or one article per
+run. Each execution should evaluate matured events first, then process as many
+independent, safely actionable targets as can be completed. The hard boundary
+is per article: never create a second implemented, unevaluated optimization on
+the same article.
 
-- [ ] Write the playbook and run one pilot article improvement end to end
+Flow: digest read → matured-event evaluation → build independent work queue →
+bounded article edits + pushes → live URL/canonical verification →
+`optimization_event_create` with real SHAs/baseline periods. Server enforces
+one-pending-per-article and window maturity; direct Git changes must preserve
+the same invariant.
+
+- [x] Write the remote scheduled-operation playbook
+- [x] Create the ChatGPT scheduled Site SEO Operations task
+- [ ] Run first production improvements end to end and confirm event persistence
 - [ ] shikaku scope decision: site-level only, or bounded article subset
 
 ## Phase 3 — optional hardening (only if quota still bites)
@@ -62,6 +69,9 @@ and window maturity; keywords gates are bypassed on direct pushes.
 - Raw rows live in SQLite only; Firestore keeps registry, idempotent
   snapshots, top-200 queries embedded, and one digest per site.
 - Article bodies live in GitHub site repos; keywords never owns them.
+- There is no fixed daily article quota for ChatGPT operations. Throughput is
+  bounded by evidence quality, deploy verification, Firestore health, and the
+  one-pending-per-article invariant.
 - bungu/omiyage GA4 properties now known (see Phase 1); kampo/shikaku-style
   `github_pages` mentions in docs are unverified, registry uses `other`
   except whisky-jp (`cloudflare_pages`, README-evidenced).
