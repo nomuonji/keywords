@@ -23,6 +23,10 @@ no resident daemon, no human in the loop. Quota-safe by construction.
 3. Pick at most ONE target per run: a declining query mapped to a
    registered article (`site_article_list`), or a rising query worth a
    bounded improvement. Skip sites where `changeAllowed` is false.
+   Unregistered articles are registered on demand here: when you open an
+   optimization event for one, or when you publish a new article, create
+   its record with `site_article_save` (one write) so later evaluations
+   can attribute metrics to it.
 4. Read the article file in the site repo. Make the smallest edit that
    tests your hypothesis (title/snippet, one section, internal links, or
    freshness). One implemented change per article, never two.

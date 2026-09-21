@@ -101,6 +101,18 @@ function articleSyncLimit() {
   return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
 }
 
+/**
+ * Backfill mode mirrors every snapshot source into the registry (one-time
+ * inventory builds). Lazy mode only refreshes already-registered articles
+ * and defers new ones: the registry then means "articles under PDCA
+ * management", and new records are created explicitly when an optimization
+ * event opens or an article publishes (site_article_save). Lazy keeps
+ * scheduled projections cheap under tight Firestore quotas.
+ */
+export function articleSyncLazy() {
+  return (process.env.KEYWORDS_ARTICLE_SYNC_MODE ?? 'backfill').trim().toLowerCase() === 'lazy';
+}
+
 function parseJson(value: unknown) {
   try { return typeof value === 'string' ? JSON.parse(value) : null; } catch { return null; }
 }
@@ -207,6 +219,11 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
       if (key) byUrl.set(key, saved);
       updated++;
       await paceCloudWrite();
+      continue;
+    }
+    if (articleSyncLazy()) {
+      skipped++;
+      warnings.push(`Deferred ${source.source_ref}: lazy sync only refreshes registered articles; register it explicitly when opening an optimization event or publishing.`);
       continue;
     }
     pendingNew.push({ id: articleId(site.id, source.source_ref), localPageId, key, desired });

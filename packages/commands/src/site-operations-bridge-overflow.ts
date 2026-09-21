@@ -4,6 +4,7 @@ import { field, firestore, value } from '@keywords/db/firestore';
 import { normalizeGa4PropertyId } from '@keywords/research/ga4';
 import { metricSnapshotSave, paceCloudWrite, siteArticleCreateMany, siteArticleSave, siteRegistryResolve } from './remote-site-operations.js';
 import { snapshotSchema } from './blog-contract.js';
+import { articleSyncLazy } from './site-operations-bridge-legacy.js';
 import type { SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
 const { sqlite } = getDatabase();
@@ -194,6 +195,11 @@ async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord
     };
     if (current && !Object.entries(desired).some(([fieldName, expected]) => (current as any)[fieldName] !== expected)) {
       reused++;
+      continue;
+    }
+    if (!current && articleSyncLazy()) {
+      skipped++;
+      warnings.push(`Deferred ${source.source_ref}: lazy sync only refreshes registered articles; register it explicitly when opening an optimization event or publishing.`);
       continue;
     }
     if (!current && existing.length + created + pendingNew.length >= 500) {

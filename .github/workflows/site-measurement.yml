@@ -74,6 +74,10 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
       KEYWORDS_AGENT_ID: site-measurement-actions
+      # Lazy article sync: refresh registered articles only. New records are
+      # created explicitly when an optimization event opens or an article
+      # publishes, so scheduled projections stay cheap under tight quotas.
+      KEYWORDS_ARTICLE_SYNC_MODE: lazy
     steps:
       - name: Select scheduled group
         id: select

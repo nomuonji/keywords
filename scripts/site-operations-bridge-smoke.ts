@@ -251,7 +251,31 @@ try {
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 7);
 
-  console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, and Firestore stays idempotent');
+  // Lazy mode refreshes registered articles but defers new ones to explicit
+  // registration (optimization event or publication).
+  sqlite.prepare('INSERT INTO pages(id,project_id,title,slug,kind,status,url,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+    .run('page-b', 'project-a', 'Article B', 'article-b', 'existing', 'local', 'https://example.com/article-b', 'blog_local', t, t);
+  const snapshotRow = sqlite.prepare('SELECT snapshot_json FROM blog_bindings WHERE project_id=?').get('project-a') as { snapshot_json: string };
+  const snapshotDoc = JSON.parse(snapshotRow.snapshot_json);
+  snapshotDoc.sources.push({
+    source_ref: 'content/posts/article-b.mdx', source_sha256: '3'.repeat(64), title: 'Article B',
+    expected_url: 'https://example.com/article-b', draft: false, declared_date: null, headings: [], local_build_present: false
+  });
+  sqlite.prepare('UPDATE blog_bindings SET snapshot_json=?,snapshot_hash=?,observed_at=? WHERE project_id=?')
+    .run(JSON.stringify(snapshotDoc), 'fixture-hash-2', t, 'project-a');
+  process.env.KEYWORDS_ARTICLE_SYNC_MODE = 'lazy';
+  try {
+    const lazy = await projectSiteOperationsMetrics('project-a');
+    assert.equal(lazy.articleRegistrySync.status, 'synced');
+    assert.equal(lazy.articleRegistrySync.created, 0);
+    assert.equal(lazy.articleRegistrySync.reused, 1);
+    assert.ok(lazy.articleRegistrySync.warnings.some(message => message.includes('Deferred content/posts/article-b.mdx')));
+    assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
+  } finally {
+    delete process.env.KEYWORDS_ARTICLE_SYNC_MODE;
+  }
+
+  console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, lazy sync defers new articles, and Firestore stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {

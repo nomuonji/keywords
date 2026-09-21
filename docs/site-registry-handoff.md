@@ -75,3 +75,9 @@ and window maturity; keywords gates are bypassed on direct pushes.
   reuse. Transport is bundled instead (`auditWriteBatch`, max 200
   records/commit, one audit record per batch, single-save fallback on
   conflict), which captures nearly all backfill savings without model churn.
+- Registry means "articles under PDCA management" (2026-09-19,
+  `KEYWORDS_ARTICLE_SYNC_MODE=lazy` in scheduled runs). New records are
+  created explicitly via `site_article_save` when an optimization event
+  opens or an article publishes; scheduled projections only refresh
+  registered articles and defer the rest. Backfill-all upfront was
+  abandoned: it burned the shared quota with no operational benefit.
