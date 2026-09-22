@@ -28,6 +28,32 @@ no resident daemon, no human in the loop. Quota-safe by construction.
    `site_article_save` (one write) so later evaluations can attribute
    metrics to it.
 
+
+## Content quality and SEO-learning policy
+
+The canonical cross-site content-quality policy is maintained in:
+
+`nomuonji/site-monitor / ops/seo-content-quality-policy.md`
+
+Read it before selecting new-article work or substantial content expansion.
+
+Key operating rules:
+
+- AI use itself is not treated as a proven ranking penalty.
+- Low-effort, interchangeable, SERP-rephrasing content is treated as strategically weak.
+- Optimize for defensible non-commodity information value, not for "looking human" or defeating AI detectors.
+- Never fabricate first-hand experience, tests, visits, purchases, expertise, measurements, or sources.
+- External SEO claims, leaks, social posts, case studies, and industry consensus are hypothesis inputs, not permanent rules.
+- Validate performance hypotheses against this portfolio's own compatible GSC evidence, with GA4 as supporting context.
+- Preserve negative and inconclusive experiments.
+- Repeated first-party evidence may promote a hypothesis into a default rule; mixed/rejected evidence should narrow or retire it.
+- Keep quality/safety guardrails separate from performance hypotheses that should be experimentally validated.
+
+The long-term learning loop is:
+
+`external observation -> explicit hypothesis -> bounded site experiment -> persisted result -> cross-site synthesis -> policy update`
+
+
 ## Evaluation rules
 
 - A matured optimization may be evaluated in the same scheduled run as other
