@@ -271,6 +271,32 @@ keyword_treasury_save
 
 Because GSC stores a bounded top-query set, a query absent from the previous snapshot is described as **newly observed**, not asserted to have never existed.
 
+
+## SEO policy-learning layer
+
+Cross-site content-quality policy is maintained outside transient chat state in:
+
+`nomuonji/site-monitor / ops/seo-content-quality-policy.md`
+
+Machine-readable hypotheses and accumulated portfolio evidence are maintained in:
+
+`nomuonji/site-monitor / ops/seo-hypotheses.json`
+
+This layer separates three things that must not be conflated:
+
+1. **quality/safety guardrails** — e.g. do not fabricate experience, metrics, sources, or canonical identity;
+2. **external SEO hypotheses** — claims from official guidance, research, leaks, case studies, or social discussion;
+3. **first-party portfolio evidence** — persisted results from compatible GSC/GA4 optimization experiments.
+
+External claims can generate tests, but do not become permanent defaults automatically. Repeated first-party evidence may promote a hypothesis to supported, narrow it to a site/query class, mark it mixed, or reject it.
+
+The long-term learning loop is:
+
+`external observation -> hypothesis -> bounded optimization -> persisted result -> cross-site synthesis -> policy update`
+
+This is intentionally separate from any single article's optimization event: article events establish local causal history; the SEO hypothesis ledger synthesizes repeated results across independent pages/sites.
+
+
 ## 10. Firestore real-site schema
 
 ### `sites`
