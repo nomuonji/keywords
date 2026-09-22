@@ -11,7 +11,7 @@ const GLOBAL_ISSUER = 'https://oidc.vercel.com';
 const AUDIENCE = `https://vercel.com/${TEAM_SLUG}`;
 const SUBJECT = `owner:${TEAM_SLUG}:project:${SOURCE_PROJECT}:environment:${SOURCE_ENVIRONMENT}`;
 const JWKS = new Map<string, ReturnType<typeof jose.createRemoteJWKSet>>();
-const SCHEDULED_CAPABILITY_SHA256 = process.env.KEYWORDS_SCHEDULED_BRIDGE_CAPABILITY_SHA256 || 'ab93c07b3130db5131f3517d09260b8fd1b2648628e12088ffc3d8a96e0941e7';
+const SCHEDULED_CAPABILITY_SHA256 = process.env.KEYWORDS_SCHEDULED_BRIDGE_CAPABILITY_SHA256 || 'bfbcab35bbc59b4a74cc5d288ee7a6d404720c6ba1d371ddda116f1ab7147d29';
 
 function jwksFor(issuer: string) {
   let value = JWKS.get(issuer);

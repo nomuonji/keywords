@@ -145,9 +145,17 @@ export async function keywordResearchPipeline(input: unknown) {
       serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, ...result });
     } catch (error) {
       stoppedReason = error instanceof Error ? error.message : String(error);
-      if (/SERP .*limit|quota|reserve/i.test(stoppedReason)) break;
+      if (/SERP .*limit|quota|reserve|Firestore request failed \(429\)/i.test(stoppedReason)) break;
       serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, error: stoppedReason });
     }
+  }
+  let usage: Awaited<ReturnType<typeof serpUsageStatus>> | null = null;
+  let usageError: string | null = null;
+  try {
+    usage = await serpUsageStatus();
+  } catch (error) {
+    usageError = (error instanceof Error ? error.message : String(error)).slice(0, 700);
+    if (!stoppedReason) stoppedReason = usageError;
   }
   return {
     demand,
@@ -156,7 +164,8 @@ export async function keywordResearchPipeline(input: unknown) {
     selectedForSerp: selected.map(item => item.keyword),
     serpChecks,
     stoppedReason,
-    usage: await serpUsageStatus()
+    usage,
+    usageError
   };
 }
 
