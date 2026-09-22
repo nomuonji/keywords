@@ -104,6 +104,7 @@ function inputFromQuery(query: any = {}) {
 }
 
 function boundedInput(body: any) {
+  if (body?.mode === 'status') return { mode: 'status' };
   const keywords = Array.isArray(body?.keywords)
     ? body.keywords.filter((value: unknown) => typeof value === 'string' && value.trim()).slice(0, 50)
     : [];
