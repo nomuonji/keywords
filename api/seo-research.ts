@@ -5,16 +5,32 @@ import { serpUsageStatus } from '../packages/commands/src/remote-keyword-researc
 const TEAM_SLUG = process.env.KEYWORDS_BRIDGE_ALLOWED_TEAM || 'nomuonjis-projects';
 const SOURCE_PROJECT = process.env.KEYWORDS_BRIDGE_ALLOWED_PROJECT || 'analytics-dashboard';
 const SOURCE_ENVIRONMENT = process.env.KEYWORDS_BRIDGE_ALLOWED_ENVIRONMENT || 'production';
-const ISSUER = `https://oidc.vercel.com/${TEAM_SLUG}`;
+const TEAM_ISSUER = `https://oidc.vercel.com/${TEAM_SLUG}`;
+const GLOBAL_ISSUER = 'https://oidc.vercel.com';
 const AUDIENCE = `https://vercel.com/${TEAM_SLUG}`;
 const SUBJECT = `owner:${TEAM_SLUG}:project:${SOURCE_PROJECT}:environment:${SOURCE_ENVIRONMENT}`;
-const JWKS = jose.createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks`));
+const JWKS = new Map<string, ReturnType<typeof jose.createRemoteJWKSet>>();
+
+function jwksFor(issuer: string) {
+  let value = JWKS.get(issuer);
+  if (!value) {
+    value = jose.createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks`));
+    JWKS.set(issuer, value);
+  }
+  return value;
+}
 
 async function authorize(authHeader: string) {
   const token = authHeader.replace(/^Bearer\s+/i, '');
   if (!token) throw new Error('Missing bearer token');
-  return jose.jwtVerify(token, JWKS, {
-    issuer: ISSUER,
+
+  const issuer = String(jose.decodeJwt(token).iss || '');
+  if (![TEAM_ISSUER, GLOBAL_ISSUER].includes(issuer)) {
+    throw new Error('Unexpected OIDC issuer');
+  }
+
+  return jose.jwtVerify(token, jwksFor(issuer), {
+    issuer,
     audience: AUDIENCE,
     subject: SUBJECT
   });
