@@ -10,9 +10,8 @@ const AUDIENCE = `https://vercel.com/${TEAM_SLUG}`;
 const SUBJECT = `owner:${TEAM_SLUG}:project:${SOURCE_PROJECT}:environment:${SOURCE_ENVIRONMENT}`;
 const JWKS = jose.createRemoteJWKSet(new URL(`${ISSUER}/.well-known/jwks`));
 
-async function authorize(req: Request) {
-  const auth = req.headers.get('authorization') || '';
-  const token = auth.replace(/^Bearer\s+/i, '');
+async function authorize(authHeader: string) {
+  const token = authHeader.replace(/^Bearer\s+/i, '');
   if (!token) throw new Error('Missing bearer token');
   return jose.jwtVerify(token, JWKS, {
     issuer: ISSUER,
@@ -51,17 +50,18 @@ function boundedInput(body: any) {
   throw new Error('mode must be screen or pipeline');
 }
 
-export default async function handler(req: Request) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
-    return Response.json({ error: 'Method not allowed' }, { status: 405 });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { payload } = await authorize(req);
-    const body = await req.json();
+    const { payload } = await authorize(String(req.headers?.authorization || ''));
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
 
     if (body?.mode === 'status') {
-      return Response.json({
+      res.setHeader('cache-control', 'no-store');
+      return res.status(200).json({
         ok: true,
         source: {
           subject: payload.sub,
@@ -69,7 +69,7 @@ export default async function handler(req: Request) {
           environment: SOURCE_ENVIRONMENT
         },
         usage: await serpUsageStatus()
-      }, { headers: { 'cache-control': 'no-store' } });
+      });
     }
 
     const bounded = boundedInput(body);
@@ -77,7 +77,8 @@ export default async function handler(req: Request) {
       ? await keywordScreenBatch(bounded.input)
       : await keywordResearchPipeline(bounded.input);
 
-    return Response.json({
+    res.setHeader('cache-control', 'no-store');
+    return res.status(200).json({
       ok: true,
       mode: bounded.mode,
       source: {
@@ -86,13 +87,14 @@ export default async function handler(req: Request) {
         environment: SOURCE_ENVIRONMENT
       },
       result
-    }, { headers: { 'cache-control': 'no-store' } });
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const authError = /token|jwt|issuer|audience|subject|signature|jwks|bearer/i.test(message);
-    return Response.json({ ok: false, error: authError ? 'Unauthorized bridge request' : message }, {
-      status: authError ? 401 : 400,
-      headers: { 'cache-control': 'no-store' }
+    res.setHeader('cache-control', 'no-store');
+    return res.status(authError ? 401 : 400).json({
+      ok: false,
+      error: authError ? 'Unauthorized bridge request' : message
     });
   }
 }
