@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { getDatabase } from '../packages/db/src/index.js';
 import { commands } from '../packages/commands/src/index.js';
 import { operationCommands } from '../packages/commands/src/operation.js';
 import { siteCommands } from '../packages/commands/src/site.js';
@@ -29,6 +30,20 @@ import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/
  */
 const jobs = JSON.parse(process.env.SITE_JOBS_JSON ?? '[]') as Array<{ projectId: string; name?: string; domain?: string; snapshotFile?: string; sitemapUrl?: string; gscProperty?: string }>;
 const ctx = { actor: 'system' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'site-measurement-batch' };
+const { sqlite } = getDatabase();
+
+function capturedGscRowCounts(projectId: string, siteUrl: string, periods: Array<{ startDate: string; endDate: string }>) {
+  const periodFilter = periods.map(() => '(start_date=? AND end_date=?)').join(' OR ');
+  const periodParams = periods.flatMap(period => [period.startDate, period.endDate]);
+  const query = sqlite.prepare(`SELECT COUNT(*) AS count FROM keyword_metric_snapshots
+    WHERE project_id=? AND site_url=? AND (${periodFilter})`);
+  const page = sqlite.prepare(`SELECT COUNT(*) AS count FROM page_metric_snapshots
+    WHERE project_id=? AND site_url=? AND (${periodFilter})`);
+  return {
+    queries: Number((query.get(projectId, siteUrl, ...periodParams) as { count: number }).count),
+    pages: Number((page.get(projectId, siteUrl, ...periodParams) as { count: number }).count)
+  };
+}
 
 async function ensureProject(job: { projectId: string; name?: string; domain?: string }) {
   const projects = (await commands.project.list(ctx)) as Array<{ id: string }>;
@@ -80,16 +95,25 @@ async function main() {
         ga4 = { status: 'failed', reason: 'ga4_collection_failed' };
       }
       let projection: unknown;
+      let projectionError: string | null = null;
       try {
         projection = await projectSiteOperationsMetrics(job.projectId);
       } catch (error) {
-        projection = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+        projectionError = error instanceof Error ? error.message : String(error);
+        projection = { status: 'failed', error: projectionError };
       }
+      const projectionStatus = String((projection as any)?.status ?? 'unknown');
+      const projectionFailed = projectionStatus !== 'projected';
+      const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), [previousPeriod, currentPeriod]);
+      const projectionFailure = projectionFailed
+        ? projectionError ?? `projection returned status=${projectionStatus}`
+        : null;
       await operationCommands.complete({ ...sctx, workSessionId: undefined }, {
         operationId: started.operation.id,
-        summary: `On-demand measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 200)}; sitemap ${sync.discovered} URLs; GSC captured; GA4 ${(ga4 as any)?.status}; projection ${JSON.stringify(projection)?.slice(0, 300)}.`,
+        summary: `On-demand measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 200)}; sitemap ${sync.discovered} URLs; GSC captured; GA4 ${(ga4 as any)?.status}; projection ${JSON.stringify(projection)?.slice(0, 300)}; GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.${projectionFailure ? ` Projection failure: ${projectionFailure}` : ''}`,
       });
-      summary.push({ projectId: label, ok: true, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, projection });
+      summary.push({ projectId: label, ok: !projectionFailed, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, projection, projectionRows: capturedRows, ...(projectionFailure ? { projectionError: projectionFailure } : {}) });
+      if (projectionFailure) console.error(`Measurement projection failed for ${label}: ${projectionFailure}; captured GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.`);
     } catch (error) {
       summary.push({ projectId: label, ok: false, error: error instanceof Error ? error.message : String(error) });
     }

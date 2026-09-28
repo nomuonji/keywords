@@ -251,6 +251,20 @@ try {
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 7);
 
+  // Page-level GSC evidence remains projectable when the matching import has
+  // no query rows (a valid Search Console response can have this shape).
+  const pageOnlyAt = '2026-09-22T00:00:00.000Z';
+  sqlite.prepare(`INSERT INTO measurement_imports(id,project_id,provider,property,target_origin,filters_json,start_date,end_date,timezone,search_type,dimensions_json,status,completeness,source_label,source_version,captured_at,payload_json,created_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run('page-only-import', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-15', '2026-09-21', 'America/Los_Angeles', 'web', '["query","page"]', 'succeeded', 'complete', 'GSC page-only fixture', 'page-only-source-v1', pageOnlyAt, '{}', pageOnlyAt);
+  sqlite.prepare(`INSERT INTO page_metric_snapshots(id,project_id,page_id,url,site_url,start_date,end_date,search_type,clicks,impressions,ctr,position,observed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run('page-only-metric', 'project-a', 'page-a', 'https://example.com/article-a', 'sc-domain:example.com', '2026-09-15', '2026-09-21', 'web', 3, 40, 0.075, 6.4, pageOnlyAt);
+  const pageOnlyProjection: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(pageOnlyProjection.status, 'projected');
+  assert.equal(pageOnlyProjection.gsc.articles.saved, 1, 'page metrics project even when queryRows is empty');
+  assert.ok([...docs.values()].some(doc => doc.name.startsWith(`${root}metricSnapshots/`)
+    && decodeField(doc.fields?.sourceVersion) === `sqlite:gsc:page-only-source-v1:article:${articleId}`));
+
   // Lazy mode refreshes registered articles but defers new ones to explicit
   // registration (optimization event or publication).
   sqlite.prepare('INSERT INTO pages(id,project_id,title,slug,kind,status,url,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')

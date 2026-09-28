@@ -155,7 +155,7 @@ async function syncCompleteBoundBlogArticles(projectId: string, site: SiteRecord
       warnings: ['Blog binding origin does not exactly match the registered production site; article identities were not inferred.']
     };
   }
-  if (snapshot.sources.length > 500) {
+  if (snapshot.sources.length > 500 && !articleSyncLazy()) {
     throw new Error(`Blog snapshot has ${snapshot.sources.length} sources; automatic Sites registry completion is bounded to 500 until indexed pagination is implemented`);
   }
 
