@@ -5,7 +5,7 @@ import { screenDemandResults, serpQuotaConfiguration } from '../packages/command
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.4.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.5.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -24,9 +24,12 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'keyword_treasury_search',
   'site_structure_patch',
   'keyword_screen_batch',
-  'keyword_research_pipeline'
+  'keyword_research_pipeline',
+  'theme_kodoku_context',
+  'theme_candidate_upsert',
+  'theme_candidate_challenge'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 18);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 21);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -121,6 +124,15 @@ assert.match(mcpSource, /maxSerpChecks/);
 assert.match(mcpSource, /research_session_create/);
 assert.match(mcpSource, /keyword_treasury_search/);
 assert.match(mcpSource, /site_structure_patch/);
+assert.match(mcpSource, /theme_kodoku_context/);
+assert.match(mcpSource, /theme_candidate_upsert/);
+assert.match(mcpSource, /theme_candidate_challenge/);
+
+const crucibleSource = readFileSync(new URL('../packages/commands/src/theme-kodoku.ts', import.meta.url), 'utf8');
+assert.match(crucibleSource, /whyStillAlive/);
+assert.match(crucibleSource, /fatalRisks/);
+assert.match(crucibleSource, /challengeHistory/);
+assert.doesNotMatch(crucibleSource, /compositeScore|totalScore|rankingScore/);
 
 const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
 assert.match(treasurySource, /avgMonthlySearches/);
