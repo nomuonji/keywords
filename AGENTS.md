@@ -16,7 +16,7 @@
 
 ## 収益テーマ継続リサーチ
 
-商品制作なしの新規SEO収益テーマを継続探索する場合は、過去チャットを推測で再構築せず、まず remote MCP の `theme_research_context` を読み、正本 research session `seo-theme-research` の続きから進める。詳細は `docs/theme-research.md`。
+商品制作なしの新規SEO収益テーマを継続探索する場合は、過去チャットを推測で再構築せず、まず remote MCP の `theme_research_context` を読み、正本 research session `seo-theme-research` の続きから進める。`bootstrapRequired: true` の場合は、新しい調査を始める前に `legacyFindings` を候補台帳へ移す。詳細は `docs/theme-research.md`。
 
 このリサーチでは総合スコア・自動ランキング・単一指標による勝者選定を作らない。検索量、成果単価、EPC、確定率、SERP観測などの数値は証拠として保存し、残存理由、致命傷、未確認点、次の反証を文章で更新する。候補を落とした理由は保持し、新しい証拠なしに killed 候補を再提案しない。スケジュール実行でも各回最低1件の批判検証結果を記録し、次のセッションがチャット履歴なしで再開できる状態を残す。
 
