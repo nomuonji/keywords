@@ -16,7 +16,7 @@ import { registerBlogRoutes } from './blog.js';
 import { dashboardCommands } from '@keywords/commands/dashboard';
 import { treasuryList } from '@keywords/keyword-treasury';
 import { siteStructureGet, siteStructureList } from '@keywords/commands/site-structure';
-import { themeResearchContext } from '../../../packages/commands/src/theme-research.js';
+import { themeResearchContext } from '@keywords/commands/theme-research';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
