@@ -63,6 +63,7 @@ function parseDoc<T>(doc: any): T {
 }
 function unique<T>(items: T[]) { return [...new Set(items)]; }
 function nowIso() { return new Date().toISOString(); }
+
 async function readDocument(path: string) {
   try { return await firestore(path); }
   catch (error) { if (error instanceof FirestoreError && error.status === 404) return null; throw error; }
@@ -72,38 +73,20 @@ async function readSession(sessionId: string) {
   if (!doc) throw new Error('Theme research session not found. Create or restore seo-theme-research first.');
   return { doc, session: parseDoc<ResearchSession>(doc) };
 }
-function candidates(session: ResearchSession): ThemeCandidate[] {
-  return Array.isArray(session.themeCandidates) ? session.themeCandidates : [];
+function candidatePath(sessionId: string, candidateId: string) {
+  return `researchSessions/${id.parse(sessionId)}/themeCandidates/${id.parse(candidateId)}`;
+}
+async function readCandidate(sessionId: string, candidateId: string) {
+  const doc = await readDocument(`/${candidatePath(sessionId, candidateId)}`);
+  return doc ? { doc, candidate: normalizeCandidate(parseDoc<ThemeCandidate>(doc)) } : null;
+}
+async function listCandidates(sessionId: string) {
+  const result = await firestore(`/researchSessions/${id.parse(sessionId)}/themeCandidates?pageSize=100&orderBy=updatedAt%20desc`);
+  return (result.documents ?? []).map((doc: any) => normalizeCandidate(parseDoc<ThemeCandidate>(doc)));
 }
 function compactDigest(previous: string, overflow: ThemeChallenge[]) {
   const additions = overflow.map(item => `- ${item.createdAt}: ${item.conclusion} [${item.statusAfter}]`);
   return [previous, ...additions].filter(Boolean).join('\n').slice(-12000);
-}
-async function commitSession(session: ResearchSession, previousDoc: any, command: string, targetId?: string) {
-  const runId = randomUUID();
-  const now = nowIso();
-  await firestore(':commit', { method: 'POST', body: JSON.stringify({ writes: [
-    {
-      update: { name: firestoreDocumentName(`researchSessions/${session.id}`), fields: fields(session) },
-      currentDocument: { updateTime: previousDoc.updateTime }
-    },
-    {
-      update: {
-        name: firestoreDocumentName(`runs/${runId}`),
-        fields: fields({
-          id: runId,
-          command,
-          targetId: targetId ?? session.id,
-          actor: 'remote_mcp',
-          revision: session.revision,
-          createdAt: now,
-          outcome: 'succeeded'
-        })
-      },
-      currentDocument: { exists: false }
-    }
-  ] }) });
-  return { ...session, runId };
 }
 function requireRevision(session: ResearchSession, expectedRevision: number) {
   if (session.revision !== expectedRevision) throw new Error('Revision conflict: call theme_research_context and reapply your update');
@@ -111,6 +94,7 @@ function requireRevision(session: ResearchSession, expectedRevision: number) {
 function normalizeCandidate(candidate: ThemeCandidate): ThemeCandidate {
   return {
     ...candidate,
+    sessionId: candidate.sessionId ?? DEFAULT_SESSION_ID,
     fatalRisks: unique(candidate.fatalRisks ?? []),
     unknowns: unique(candidate.unknowns ?? []),
     observedFacts: Array.isArray(candidate.observedFacts) ? candidate.observedFacts : [],
@@ -119,14 +103,59 @@ function normalizeCandidate(candidate: ThemeCandidate): ThemeCandidate {
     historyDigest: candidate.historyDigest ?? '',
     currentVerdict: candidate.currentVerdict ?? '',
     whyStillAlive: candidate.whyStillAlive ?? '',
-    nextChallenge: candidate.nextChallenge ?? ''
+    nextChallenge: candidate.nextChallenge ?? '',
+    revision: Number(candidate.revision ?? 0)
   };
+}
+async function commitCandidate(
+  sessionDoc: any,
+  session: ResearchSession,
+  candidateDoc: any,
+  candidate: ThemeCandidate,
+  command: string
+) {
+  const runId = randomUUID();
+  const now = nowIso();
+  const nextSession: ResearchSession = {
+    ...session,
+    themeLedgerVersion: 1,
+    revision: session.revision + 1,
+    updatedAt: now
+  };
+  const candidateWrite: Record<string, unknown> = {
+    update: { name: firestoreDocumentName(candidatePath(session.id, candidate.id)), fields: fields(candidate) },
+    currentDocument: candidateDoc ? { updateTime: candidateDoc.updateTime } : { exists: false }
+  };
+  await firestore(':commit', { method: 'POST', body: JSON.stringify({ writes: [
+    {
+      update: { name: firestoreDocumentName(`researchSessions/${session.id}`), fields: fields(nextSession) },
+      currentDocument: { updateTime: sessionDoc.updateTime }
+    },
+    candidateWrite,
+    {
+      update: {
+        name: firestoreDocumentName(`runs/${runId}`),
+        fields: fields({
+          id: runId,
+          command,
+          targetId: candidate.id,
+          actor: 'remote_mcp',
+          revision: nextSession.revision,
+          candidateRevision: candidate.revision,
+          createdAt: now,
+          outcome: 'succeeded'
+        })
+      },
+      currentDocument: { exists: false }
+    }
+  ] }) });
+  return { session: nextSession, candidate, runId };
 }
 
 export async function themeResearchContext(input: unknown = {}) {
   const args = z.object(themeResearchContextShape).strict().parse(input);
   const { session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
-  const all = candidates(session).map(normalizeCandidate);
+  const all = await listCandidates(session.id);
   const visible = args.includeKilled ? all : all.filter(item => item.status !== 'killed');
   const groups = Object.fromEntries(
     (['pilot_ready', 'surviving', 'challenged', 'parked', 'killed'] as ThemeCandidateStatus[])
@@ -147,25 +176,26 @@ export async function themeResearchContext(input: unknown = {}) {
     guidance: [
       'This research ledger is qualitative. Do not create or infer a composite score or automatic winner.',
       'Treat search volume, payout, EPC, conversion conditions and SERP observations as evidence, not verdicts.',
-      'Each round should try to falsify survivors, introduce a genuinely stronger alternative when found, and preserve why killed ideas died.',
-      'Do not resurrect a killed candidate without materially new evidence.'
+      'Each research pass should actively look for disconfirming evidence, add genuinely stronger alternatives when found, and preserve why rejected ideas were rejected.',
+      'Do not revive a killed candidate without materially new evidence.'
     ]
   };
 }
 
 export async function themeCandidateUpsert(input: unknown) {
   const args = z.object(themeCandidateUpsertShape).strict().parse(input);
-  const { doc, session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
+  const { doc: sessionDoc, session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
   requireRevision(session, args.expectedRevision);
-  const list = candidates(session).map(normalizeCandidate);
-  const index = list.findIndex(item => item.id === args.candidateId);
+  const found = await readCandidate(session.id, args.candidateId);
   const now = nowIso();
 
-  if (index < 0 && (!args.title || !args.thesis)) throw new Error('New candidates require title and thesis');
+  if (!found && (!args.title || !args.thesis)) throw new Error('New candidates require title and thesis');
+  if (!found && (await listCandidates(session.id)).length >= 100) throw new Error('Theme research ledger supports at most 100 candidates per research session');
 
-  const previous = index >= 0 ? list[index] : null;
+  const previous = found?.candidate ?? null;
   const next: ThemeCandidate = normalizeCandidate({
     id: args.candidateId,
+    sessionId: session.id,
     title: args.title ?? previous?.title ?? args.candidateId,
     thesis: args.thesis ?? previous?.thesis ?? '',
     status: (args.status ?? previous?.status ?? 'surviving') as ThemeCandidateStatus,
@@ -178,35 +208,24 @@ export async function themeCandidateUpsert(input: unknown) {
     nextChallenge: args.nextChallenge ?? previous?.nextChallenge ?? '',
     challengeHistory: previous?.challengeHistory ?? [],
     historyDigest: previous?.historyDigest ?? '',
+    revision: (previous?.revision ?? 0) + 1,
     createdAt: previous?.createdAt ?? now,
     updatedAt: now
   });
-  if (index >= 0) list[index] = next; else {
-    if (list.length >= 100) throw new Error('Theme research ledger supports at most 100 live ledger entries');
-    list.push(next);
-  }
 
-  const updated: ResearchSession = {
-    ...session,
-    themeLedgerVersion: 1,
-    themeCandidates: list,
-    revision: session.revision + 1,
-    updatedAt: now
-  };
-  const saved = await commitSession(updated, doc, 'theme_candidate_upsert', args.candidateId);
-  return { sessionId: saved.id, revision: saved.revision, candidate: next, runId: saved.runId };
+  const saved = await commitCandidate(sessionDoc, session, found?.doc ?? null, next, 'theme_candidate_upsert');
+  return { sessionId: saved.session.id, revision: saved.session.revision, candidate: saved.candidate, runId: saved.runId };
 }
 
 export async function themeCandidateChallenge(input: unknown) {
   const args = z.object(themeCandidateChallengeShape).strict().parse(input);
-  const { doc, session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
+  const { doc: sessionDoc, session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
   requireRevision(session, args.expectedRevision);
-  const list = candidates(session).map(normalizeCandidate);
-  const index = list.findIndex(item => item.id === args.candidateId);
-  if (index < 0) throw new Error('Theme candidate not found');
-  const current = list[index];
-  const now = nowIso();
+  const found = await readCandidate(session.id, args.candidateId);
+  if (!found) throw new Error('Theme candidate not found');
 
+  const current = found.candidate;
+  const now = nowIso();
   const resolved = new Set(args.resolveUnknowns ?? []);
   const challenge: ThemeChallenge = {
     id: `challenge-${Date.now().toString(36)}-${randomUUID().slice(0, 6)}`,
@@ -233,17 +252,10 @@ export async function themeCandidateChallenge(input: unknown) {
     nextChallenge: args.nextChallenge,
     challengeHistory: keptHistory,
     historyDigest: compactDigest(current.historyDigest, overflow),
+    revision: current.revision + 1,
     updatedAt: now
   });
-  list[index] = updatedCandidate;
 
-  const updated: ResearchSession = {
-    ...session,
-    themeLedgerVersion: 1,
-    themeCandidates: list,
-    revision: session.revision + 1,
-    updatedAt: now
-  };
-  const saved = await commitSession(updated, doc, 'theme_candidate_challenge', args.candidateId);
-  return { sessionId: saved.id, revision: saved.revision, candidate: updatedCandidate, challenge, runId: saved.runId };
+  const saved = await commitCandidate(sessionDoc, session, found.doc, updatedCandidate, 'theme_candidate_challenge');
+  return { sessionId: saved.session.id, revision: saved.session.revision, candidate: saved.candidate, challenge, runId: saved.runId };
 }
