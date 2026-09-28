@@ -34,6 +34,7 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
 const ga4RequestBodies: any[] = [];
+const bearerErrorFixture = 'fixture-bearer-secret-value';
 const originalFetch = globalThis.fetch;
 const decodeField = (input: any): any => {
   if (!input || typeof input !== 'object') return null;
@@ -58,6 +59,7 @@ globalThis.fetch = async (input, init) => {
     const startDate = body.dateRanges?.[0]?.startDate;
     if (startDate === '2026-08-25') return Response.json({ error: { message: 'fixture failure' } }, { status: 503 });
     const organic = body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup';
+    if (organic && startDate === '2026-08-11') throw new Error(`Synthetic GA4 failure: Authorization: Bearer ${bearerErrorFixture}`);
     const landing = body.dimensions?.[0]?.name === 'landingPage';
     const current = startDate === '2026-09-08';
     const partial = startDate === '2026-08-18';
@@ -352,6 +354,13 @@ try {
   } finally {
     delete process.env.KEYWORDS_ARTICLE_SYNC_MODE;
   }
+
+  const bearerFailureCapture = await captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-11', endDate: '2026-08-17' });
+  assert.equal(bearerFailureCapture.status, 'captured', 'an Organic Search failure must not discard all-channel data');
+  assert.equal(bearerFailureCapture.organicStatus, 'failed');
+  assert.equal(bearerFailureCapture.organicError, 'Synthetic GA4 failure: Authorization: Bearer [redacted]');
+  assert.ok(!bearerFailureCapture.organicError?.includes(bearerErrorFixture), 'organic error summaries must redact Bearer credentials');
+  assert.deepEqual(bearerFailureCapture.metrics, { sessions: 25, activeUsers: 22, engagement: 0.68, views: 56 });
 
   console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, lazy sync defers new articles, and Firestore stays idempotent');
 } finally {
