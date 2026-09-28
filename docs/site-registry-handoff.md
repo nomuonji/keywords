@@ -55,6 +55,29 @@ the same invariant.
 - [ ] Run first production improvements end to end and confirm event persistence
 - [ ] shikaku scope decision: site-level only, or bounded article subset
 
+### Runtime evidence (2026-09-28)
+
+- Scheduled Manager runs using Methods v22, v25, and v26 completed their
+  start/claim/finish cycle. The v26 run (`pZX3aGfEWTowHliXGebT`) read all five
+  ready candidates, recorded why each lacked sufficient material evidence,
+  and dispatched **zero** Worker changes. This proves scheduled Manager
+  execution and honest no-action handling; it does not prove the SEO work loop.
+- Measurement coverage improved from the earlier v22 observation of GSC
+  snapshots on 1/14 registered sites to 14/14 registered sites in a later v25
+  run. The portfolio still has only 14/16 sites registered; GA4 completeness
+  and aligned periods remain insufficient for a 16-site comparison.
+- No scheduled production change has yet been followed through from evidence
+  selection to Worker claim, repository delivery, live verification, persisted
+  optimization event, and matured outcome evaluation. Phase 2 remains open.
+- The separate Luna Worker recurrence later failed before method resolution
+  and queue claim when My Portal returned `Quota exceeded`. This is a current
+  execution blocker, but it does not explain the earlier zero dispatches: the
+  v26 Manager run completed and chose zero because the five candidates did not
+  meet its material-evidence gate.
+- `nomuonji/keywords` PR #50 adds safe, idempotent publication-receipt
+  registration for article-level measurement. It is open and CI-green, but
+  has not been merged, deployed, or production-readback verified.
+
 ## Phase 3 — optional hardening (only if quota still bites)
 
 - [ ] Firestore jobQueue: ChatGPT writes measurement requests, scheduled

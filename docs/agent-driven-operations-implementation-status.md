@@ -2,6 +2,32 @@
 
 最終更新: 2026-09-29
 
+## Remote scheduled SEO loop — evidence and remaining gap (2026-09-29)
+
+This repository's GitHub measurement workflow is not the Agent HQ SEO Manager
+or Luna Worker scheduler. Scheduled Manager Methods v22/v25/v26 have completed
+their own control-plane runs. In the latest recorded v26 run, the Manager read
+five ready candidates, wrote per-candidate no-action reasons, and dispatched
+zero Worker changes because the evidence did not justify a material edit. A
+later Worker attempt could not resolve its active Method or claim work because
+My Portal returned `Quota exceeded`.
+
+The manager's safe no-action behavior and scheduled claim/finish path are
+verified. The requested autonomous outcome loop is **not** verified: no one
+scheduled production run has been evidenced from actionable task selection
+through Worker execution, repository delivery, live acceptance, persisted
+optimization event, and a matured evaluation. The first end-to-end production
+improvement remains pending under Phase 2 in `site-registry-handoff.md`.
+
+The later v25 measurement read improved GSC snapshot coverage from 1/14 to
+14/14 registered sites. The portfolio remains 14/16 registered, and this
+measurement improvement alone does not demonstrate an optimization or its
+effect. PR #50 (`Sync verified Blog publication receipts`) adds a prerequisite
+for newly published pages to enter the exact article registry; it is open and
+CI-green, not merged or deployed. My Portal's SystemChangeSet could not be
+updated during the quota incident, so this repository record preserves the
+code and runtime evidence pending control-plane reconciliation.
+
 ## 2026-09-29 publication registry handoff
 
 Verified Blog publication receipts can now create a missing Sites article record when the approved handoff ID/version/origin, published HTTP 200 + canonical evidence, unique local page, and one exact source path+SHA in the confirmed Blog snapshot agree. Deterministic IDs make retries idempotent; paused/archived records and ambiguous or incomplete source mappings remain unchanged. This closes the gap where newly published pages never entered article-level SEO measurement. It does not mass-backfill snapshot content or make measurement jobs run optimization work.
