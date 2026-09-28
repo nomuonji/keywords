@@ -132,6 +132,18 @@ function normalizedDirectGa4Metrics(payload: any) {
   return normalizedGa4Metrics(payload?.metrics);
 }
 
+function normalizedOrganicGa4Metrics(payload: any) {
+  const value = payload?.organicMetrics;
+  if (!value || typeof value !== 'object' || payload?.organicStatus !== 'complete') return null;
+  const metric = (input: unknown) => input === null || input === undefined ? null : finite(input);
+  return {
+    organicSessions: metric(value.sessions),
+    organicActiveUsers: metric(value.activeUsers),
+    organicEngagement: metric(value.engagement),
+    organicViews: metric(value.views)
+  };
+}
+
 function completeGa4LandingPages(payload: any) {
   const landingPages = payload?.landingPages;
   if (!landingPages || landingPages.status !== 'complete' || !Array.isArray(landingPages.rows)) return null;
@@ -292,6 +304,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
   const gscSite: ProjectionCounter = { saved: 0, reused: 0 };
   const gscArticle: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4: ProjectionCounter = { saved: 0, reused: 0 };
+  const ga4Organic: ProjectionCounter = { saved: 0, reused: 0 };
   const ga4Articles: ProjectionCounter = { saved: 0, reused: 0 };
   // Latest site-level snapshot bodies, captured for the site digest so remote
   // readers get a bounded fast path instead of scanning snapshot history.
@@ -411,6 +424,22 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     latestSiteGa4 ??= savedSiteGa4;
     directGa4Projected++;
 
+    const organicMetrics = normalizedOrganicGa4Metrics(payload);
+    if (organicMetrics) {
+      await persist(ga4Organic, {
+        siteId: site.id,
+        articleId: null,
+        provider: 'ga4',
+        periodStart: observation.start_date,
+        periodEnd: observation.end_date,
+        metrics: organicMetrics,
+        queries: [],
+        completeness: 'complete',
+        sourceVersion: `sqlite:ga4:${observation.source_version}:channel=Organic%20Search`,
+        capturedAt: observation.captured_at
+      });
+    }
+
     const landingPages = completeGa4LandingPages(payload);
     if (!landingPages) {
       if (payload?.landingPages) warnings.push(`Direct GA4 source ${observation.source_version} has no complete landing-page set; site metrics were projected without article GA4.`);
@@ -512,6 +541,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
     gsc: { importsConsidered: imports.length, site: gscSite, articles: gscArticle },
     ga4,
+    ga4Organic,
     ga4Articles,
     ga4Acquisition,
     latestSiteSnapshots: { gsc: latestSiteGsc, ga4: latestSiteGa4 },
