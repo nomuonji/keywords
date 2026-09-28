@@ -44,6 +44,10 @@ const decodeField = (input: any): any => {
   if ('nullValue' in input) return null;
   return null;
 };
+const decodeMap = (input: any) => {
+  const fields = input?.mapValue?.fields ?? {};
+  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, decodeField(value)]));
+};
 
 globalThis.fetch = async (input, init) => {
   const url = String(input);
@@ -256,9 +260,9 @@ try {
   const directGa4Docs = metricDocsAfterFirst.filter(doc => decodeField(doc.fields?.provider) === 'ga4');
   assert.equal(directGa4Docs.length, 8);
   assert.ok(directGa4Docs.every(doc => String(decodeField(doc.fields?.sourceVersion)).startsWith('sqlite:ga4:')), 'direct GA4 must win over analytics-dashboard fallback');
-  const organicGa4Docs = directGa4Docs.filter(doc => decodeField(doc.fields?.sourceVersion) === 'sqlite:ga4:' + decodeField(doc.fields?.sourceVersion).split('sqlite:ga4:')[1].split(':channel=')[0] + ':channel=Organic%20Search');
+  const organicGa4Docs = directGa4Docs.filter(doc => String(decodeField(doc.fields?.sourceVersion)).endsWith(':channel=Organic%20Search'));
   assert.equal(organicGa4Docs.length, 3);
-  assert.ok(organicGa4Docs.some(doc => decodeField(doc.fields?.metrics)?.organicSessions === 17), 'organic snapshot has its own organicSessions field');
+  assert.ok(organicGa4Docs.some(doc => decodeMap(doc.fields?.metrics).organicSessions === 17), 'organic snapshot has its own organicSessions field');
   const articleGa4Docs = directGa4Docs.filter(doc => decodeField(doc.fields?.articleId) === articleId);
   assert.equal(articleGa4Docs.length, 2, 'only complete landing-page periods should project article GA4');
 
