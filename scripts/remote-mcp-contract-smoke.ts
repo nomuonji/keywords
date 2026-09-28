@@ -25,7 +25,7 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'site_structure_patch',
   'keyword_screen_batch',
   'keyword_research_pipeline',
-  'theme_kodoku_context',
+  'theme_research_context',
   'theme_candidate_upsert',
   'theme_candidate_challenge'
 ]);
@@ -124,15 +124,15 @@ assert.match(mcpSource, /maxSerpChecks/);
 assert.match(mcpSource, /research_session_create/);
 assert.match(mcpSource, /keyword_treasury_search/);
 assert.match(mcpSource, /site_structure_patch/);
-assert.match(mcpSource, /theme_kodoku_context/);
+assert.match(mcpSource, /theme_research_context/);
 assert.match(mcpSource, /theme_candidate_upsert/);
 assert.match(mcpSource, /theme_candidate_challenge/);
 
-const crucibleSource = readFileSync(new URL('../packages/commands/src/theme-kodoku.ts', import.meta.url), 'utf8');
-assert.match(crucibleSource, /whyStillAlive/);
-assert.match(crucibleSource, /fatalRisks/);
-assert.match(crucibleSource, /challengeHistory/);
-assert.doesNotMatch(crucibleSource, /compositeScore|totalScore|rankingScore/);
+const researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
+assert.match(researchLedgerSource, /whyStillAlive/);
+assert.match(researchLedgerSource, /fatalRisks/);
+assert.match(researchLedgerSource, /challengeHistory/);
+assert.doesNotMatch(researchLedgerSource, /compositeScore|totalScore|rankingScore/);
 
 const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
 assert.match(treasurySource, /avgMonthlySearches/);
