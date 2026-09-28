@@ -210,7 +210,7 @@ try {
   assert.equal(currentGa4.landingPages.status, 'complete');
   assert.equal(partialLandingGa4.landingPages.status, 'partial');
   assert.deepEqual(currentGa4.organicMetrics, { sessions: 17, activeUsers: 15, engagement: 0.71, views: 39 });
-  assert.equal(currentGa4.organicStatus, 'complete');
+  assert.equal(currentGa4.organicStatus, 'complete', currentGa4.organicError ?? undefined);
   assert.deepEqual(currentGa4.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' });
   assert.equal(ga4RequestBodies.filter(body => body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup').length, 3);
   const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
