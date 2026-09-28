@@ -110,7 +110,6 @@ try {
       local_build_present: true
     });
   }
-
   const snapshot = {
     schema_version: 1,
     kind: 'blog_site_context',
@@ -186,7 +185,51 @@ try {
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 101 });
   assert.ok(!second.warnings.some((message: string) => /bounded to 100|deferred|sync failed/i.test(message)));
 
-  console.log('site operations overflow smoke: ok');
+  for (let index = 102; index <= 623; index++) {
+    const suffix = String(index).padStart(3, '0');
+    pageInsert.run(`page-${suffix}`, 'project-overflow', `Article ${suffix}`, `article-${suffix}`, 'article', 'published', 'existing_page_improvement', `https://example.com/article-${suffix}`, 'blog_local', t, t, t);
+    sources.push({
+      source_ref: `content/posts/article-${suffix}.mdx`,
+      source_sha256: String(index).padStart(64, '0').slice(-64),
+      title: `Article ${suffix}`,
+      expected_url: `https://example.com/article-${suffix}`,
+      draft: false,
+      declared_date: null,
+      headings: [`Article ${suffix}`],
+      local_build_present: true
+    });
+  }
+  const expandedSnapshot = JSON.parse((sqlite.prepare('SELECT snapshot_json FROM blog_bindings WHERE project_id=?').get('project-overflow') as { snapshot_json: string }).snapshot_json);
+  expandedSnapshot.sources = sources;
+  expandedSnapshot.coverage.source_count = sources.length;
+  expandedSnapshot.coverage.local_build_page_count = sources.length;
+  sqlite.prepare('UPDATE blog_bindings SET snapshot_json=?,snapshot_hash=? WHERE project_id=?')
+    .run(JSON.stringify(expandedSnapshot), 'fixture-hash-623', 'project-overflow');
+
+  process.env.KEYWORDS_ARTICLE_SYNC_MODE = 'lazy';
+  try {
+    const lazy: any = await projectSiteOperationsMetrics('project-overflow');
+    assert.equal(lazy.status, 'projected');
+    assert.equal(lazy.articleRegistrySync.created, 0);
+    assert.equal(lazy.articleRegistrySync.reused, 101);
+    assert.ok(lazy.articleRegistrySync.warnings.some((message: string) => message.includes('Deferred content/posts/article-623.mdx')));
+    const lazyArticles = [...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`));
+    assert.equal(lazyArticles.length, 101);
+    assert.ok(lazyArticles.every(doc => decodeField(doc.fields?.status) === 'draft'), 'lazy sync preserves draft status for every registered article');
+  } finally {
+    delete process.env.KEYWORDS_ARTICLE_SYNC_MODE;
+  }
+
+  await assert.rejects(
+    () => projectSiteOperationsMetrics('project-overflow'),
+    /623 sources.*bounded to 500/,
+    'backfill mode must fail closed above the complete-read safety bound'
+  );
+  const afterBackfillRejection = [...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`));
+  assert.equal(afterBackfillRejection.length, 101, 'rejected backfill must not create or alter article records');
+  assert.ok(afterBackfillRejection.every(doc => decodeField(doc.fields?.status) === 'draft'));
+
+  console.log('site operations overflow smoke: 101-article backfill, 623-source lazy sync, draft preservation, and bounded backfill rejection passed');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
