@@ -23,6 +23,7 @@ export type ThemeChallenge = {
 
 export type ThemeCandidate = {
   id: string;
+  sessionId: string;
   title: string;
   thesis: string;
   status: ThemeCandidateStatus;
@@ -35,6 +36,7 @@ export type ThemeCandidate = {
   nextChallenge: string;
   challengeHistory: ThemeChallenge[];
   historyDigest: string;
+  revision: number;
   createdAt: string;
   updatedAt: string;
 };
@@ -57,7 +59,6 @@ export type ResearchSession = {
   createdAt: string;
   updatedAt: string;
   themeLedgerVersion?: number;
-  themeCandidates?: ThemeCandidate[];
 };
 
 export type SerpCacheEntry = {
