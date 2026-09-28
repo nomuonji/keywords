@@ -57,7 +57,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       organicStatus = 'complete';
     } catch (error) {
       settleOperationBudget(organicReservation?.id, 'failed', error);
-      organicError = (error instanceof Error ? error.message : String(error)).replace(/Bearer\\s+\\S+/gi, 'Bearer [redacted]').slice(0, 200);
+      organicError = (error instanceof Error ? error.message : String(error)).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').slice(0, 200);
     }
 
     let landingPages: {
