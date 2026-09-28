@@ -14,6 +14,12 @@
 
 アプリの起動確認、状態同期、調査、構造化されたworkspace変更、build検証、監査記録は、この「作業」に含まれる。ユーザーに「何をしますか」「どのサイトですか」と聞き返すのは、対象を安全に特定できる情報が本当にない場合を除き禁止する。
 
+## 収益テーマ蟲毒モード
+
+商品制作なしの新規SEO収益テーマを継続探索する場合は、過去チャットを推測で再構築せず、まず remote MCP の `theme_kodoku_context` を読み、正本 research session `seo-theme-kodoku` の続きから進める。詳細は `docs/theme-kodoku.md`。
+
+このモードでは総合スコア・自動ランキング・単一指標による勝者選定を作らない。検索量、成果単価、EPC、確定率、SERP観測などの数値は証拠として保存し、残存理由、致命傷、未確認点、次の反証を文章で更新する。候補を落とした理由は保持し、新しい証拠なしに killed 候補を再提案しない。スケジュール実行でも各回最低1件の adversarial challenge を記録し、次のセッションがチャット履歴なしで再開できる状態を残す。
+
 ## Product principle
 
 This repository is an agent-native SEO workspace. Do not add a second, agent-only state model. Human UI actions, CLI operations, MCP tool calls, and scheduled operator ticks must execute the same commands against the same SQL database.
