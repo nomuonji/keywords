@@ -47,6 +47,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
     // separately so historical `sessions` values are never relabeled.
     let organicMetrics: ReturnType<typeof normalizeGa4Metrics> | null = null;
     let organicStatus: 'complete' | 'failed' = 'failed';
+    let organicError: string | null = null;
     let organicReservation: ReturnType<typeof reserveOperationBudget> | null = null;
     try {
       organicReservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:organic:${property}:${input.startDate}:${input.endDate}`);
@@ -56,6 +57,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       organicStatus = 'complete';
     } catch (error) {
       settleOperationBudget(organicReservation?.id, 'failed', error);
+      organicError = (error instanceof Error ? error.message : String(error)).replace(/Bearer\\s+\\S+/gi, 'Bearer [redacted]').slice(0, 200);
     }
 
     let landingPages: {
@@ -81,7 +83,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
 
     const metricScopes = { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' };
     const filters = [{ groupType: 'and', filters: [{ dimension: 'sessionDefaultChannelGroup', operator: 'equals', expression: 'Organic Search' }] }];
-    const sourceVersion = fingerprint({ provider: 'ga4', property, startDate: input.startDate, endDate: input.endDate, metrics, organicMetrics, organicStatus, metricScopes, landingPages });
+    const sourceVersion = fingerprint({ provider: 'ga4', property, startDate: input.startDate, endDate: input.endDate, metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages });
     const observation = recordMeasurementImport({
       projectId: input.projectId,
       provider: 'ga4',
@@ -98,14 +100,14 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       sourceLabel: `GA4 all-channel + Organic Search snapshot: ${input.startDate} → ${input.endDate}`,
       sourceVersion,
       capturedAt,
-      payload: { metrics, organicMetrics, organicStatus, metricScopes, landingPages, api: 'analyticsdata.googleapis.com/v1beta', rowCount: report.rowCount }
+      payload: { metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages, api: 'analyticsdata.googleapis.com/v1beta', rowCount: report.rowCount }
     });
     const source = {
       id: randomUUID(), projectId: input.projectId, type: 'ga4_snapshot',
       label: `GA4 snapshot: ${input.startDate} → ${input.endDate}`,
       url: input.targetOrigin ?? null,
       metadataJson: JSON.stringify({
-        measurementImportId: observation.id, sourceVersion, property, metrics, organicMetrics, organicStatus, metricScopes,
+        measurementImportId: observation.id, sourceVersion, property, metrics, organicMetrics, organicStatus, organicError, metricScopes,
         landingPages: { status: landingPages.status, rowCount: landingPages.rowCount, storedRows: landingPages.rows.length },
         api: 'analyticsdata.googleapis.com/v1beta'
       }),
@@ -123,6 +125,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       metrics,
       organicMetrics,
       organicStatus,
+      organicError,
       metricScopes,
       landingPages: { status: landingPages.status, rowCount: landingPages.rowCount, storedRows: landingPages.rows.length },
       capturedAt
