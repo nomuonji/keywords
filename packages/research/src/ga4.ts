@@ -140,12 +140,16 @@ async function runReport(input: { propertyId: string; body: Record<string, unkno
 }
 
 /** Direct GA4 site-total acquisition. No secret values are returned or logged. */
-export async function ga4RunReport(input: { propertyId: string; startDate: string; endDate: string }): Promise<Ga4ReportResult> {
+export async function ga4RunReport(input: { propertyId: string; startDate: string; endDate: string; channel?: 'Organic Search' }): Promise<Ga4ReportResult> {
   assertDates(input.startDate, input.endDate);
   const { propertyId, resourceName, raw } = await runReport({
     propertyId: input.propertyId,
     body: {
       dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
+      ...(input.channel ? {
+        dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+        dimensionFilter: { filter: { fieldName: 'sessionDefaultChannelGroup', stringFilter: { value: input.channel, matchType: 'EXACT' } } }
+      } : {}),
       metrics: metricNames.map(name => ({ name })),
       limit: '1'
     }
