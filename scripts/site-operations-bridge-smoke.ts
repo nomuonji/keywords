@@ -33,6 +33,7 @@ writeFileSync(analyticsPath, JSON.stringify({
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
+const ga4RequestBodies: any[] = [];
 const originalFetch = globalThis.fetch;
 const decodeField = (input: any): any => {
   if (!input || typeof input !== 'object') return null;
@@ -49,12 +50,30 @@ globalThis.fetch = async (input, init) => {
   if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'test-access-token', expires_in: 3600 });
   if (url.startsWith('https://analyticsdata.googleapis.com/v1beta/properties/123:runReport')) {
     const body = init?.body ? JSON.parse(String(init.body)) : {};
+    ga4RequestBodies.push(body);
     const startDate = body.dateRanges?.[0]?.startDate;
     if (startDate === '2026-08-25') return Response.json({ error: { message: 'fixture failure' } }, { status: 503 });
+    const organic = body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup';
     const landing = body.dimensions?.[0]?.name === 'landingPage';
     const current = startDate === '2026-09-08';
     const partial = startDate === '2026-08-18';
+    if (organic) {
+      assert.deepEqual(body.dimensions, [{ name: 'sessionDefaultChannelGroup' }]);
+      assert.deepEqual(body.dimensionFilter, { filter: { fieldName: 'sessionDefaultChannelGroup', stringFilter: { value: 'Organic Search', matchType: 'EXACT' } } });
+      return Response.json({
+        dimensionHeaders: [{ name: 'sessionDefaultChannelGroup' }],
+        metricHeaders: [{ name: 'sessions' }, { name: 'activeUsers' }, { name: 'engagementRate' }, { name: 'screenPageViews' }],
+        rows: [{ dimensionValues: [{ value: 'Organic Search' }], metricValues: [
+          { value: current ? '17' : partial ? '4' : '12' },
+          { value: current ? '15' : partial ? '4' : '10' },
+          { value: current ? '0.71' : partial ? '0.49' : '0.62' },
+          { value: current ? '39' : partial ? '9' : '24' }
+        ] }],
+        rowCount: 1
+      });
+    }
     if (landing) {
+      assert.equal(body.dimensionFilter, undefined, 'landing-page report remains an explicitly all-channel series');
       const pageMetrics = current
         ? ['13', '11', '0.66', '29']
         : partial ? ['3', '3', '0.50', '7'] : ['9', '8', '0.61', '21'];
@@ -186,8 +205,16 @@ try {
   assert.equal(previousGa4.landingPages.status, 'complete');
   assert.equal(currentGa4.landingPages.status, 'complete');
   assert.equal(partialLandingGa4.landingPages.status, 'partial');
+  assert.deepEqual(currentGa4.organicMetrics, { sessions: 17, activeUsers: 15, engagement: 0.71, views: 39 });
+  assert.equal(currentGa4.organicStatus, 'complete');
+  assert.deepEqual(currentGa4.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' });
+  assert.equal(ga4RequestBodies.filter(body => body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup').length, 3);
   const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
   assert.equal(ga4Payloads.length, 3);
+  const capturedPayload = JSON.parse(ga4Payloads.find(row => JSON.parse(row.payload_json).organicStatus === 'complete')!.payload_json);
+  assert.equal(capturedPayload.metrics.sessions, 31, 'the existing sessions field remains all-channel');
+  assert.equal(capturedPayload.organicMetrics.sessions, 17, 'Organic Search has a separate field');
+  assert.deepEqual(capturedPayload.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' });
   assert.ok(!JSON.stringify(ga4Payloads).includes('ga4-secret-fixture-token'), 'measurement persistence must not contain credentials');
 
   await assert.rejects(() => captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-25', endDate: '2026-08-31' }), /GA4 collection failed/);
@@ -204,6 +231,7 @@ try {
   assert.deepEqual(first.gsc.site, { saved: 1, reused: 0 });
   assert.deepEqual(first.gsc.articles, { saved: 1, reused: 0 });
   assert.deepEqual(first.ga4, { saved: 3, reused: 0 });
+  assert.deepEqual(first.ga4Organic, { saved: 3, reused: 0 });
   assert.deepEqual(first.ga4Articles, { saved: 2, reused: 0 });
   assert.deepEqual(first.ga4Acquisition, {
     source: 'direct_data_api', importsConsidered: 3, projected: 3, articleProjected: 2, unmappedLandingRows: 1, ambiguousArticleRows: 0
@@ -221,13 +249,16 @@ try {
   const articleId = articleDocs[0].name.split('/').at(-1)!;
 
   const metricDocsAfterFirst = [...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`));
-  assert.equal(metricDocsAfterFirst.length, 7);
+  assert.equal(metricDocsAfterFirst.length, 10);
   const siteGsc = metricDocsAfterFirst.find(doc => decodeField(doc.fields?.provider) === 'gsc' && decodeField(doc.fields?.articleId) === null);
   assert.ok(siteGsc, 'site-level GSC snapshot should be projected');
   assert.equal(decodeField(siteGsc.fields?.sourceVersion), 'sqlite:gsc:local-source-v1');
   const directGa4Docs = metricDocsAfterFirst.filter(doc => decodeField(doc.fields?.provider) === 'ga4');
-  assert.equal(directGa4Docs.length, 5);
+  assert.equal(directGa4Docs.length, 8);
   assert.ok(directGa4Docs.every(doc => String(decodeField(doc.fields?.sourceVersion)).startsWith('sqlite:ga4:')), 'direct GA4 must win over analytics-dashboard fallback');
+  const organicGa4Docs = directGa4Docs.filter(doc => decodeField(doc.fields?.sourceVersion) === 'sqlite:ga4:' + decodeField(doc.fields?.sourceVersion).split('sqlite:ga4:')[1].split(':channel=')[0] + ':channel=Organic%20Search');
+  assert.equal(organicGa4Docs.length, 3);
+  assert.ok(organicGa4Docs.some(doc => decodeField(doc.fields?.metrics)?.organicSessions === 17), 'organic snapshot has its own organicSessions field');
   const articleGa4Docs = directGa4Docs.filter(doc => decodeField(doc.fields?.articleId) === articleId);
   assert.equal(articleGa4Docs.length, 2, 'only complete landing-page periods should project article GA4');
 
@@ -244,12 +275,13 @@ try {
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
   assert.deepEqual(second.ga4, { saved: 0, reused: 3 });
+  assert.deepEqual(second.ga4Organic, { saved: 0, reused: 3 });
   assert.deepEqual(second.ga4Articles, { saved: 0, reused: 2 });
   assert.deepEqual(second.ga4Acquisition, {
     source: 'direct_data_api', importsConsidered: 3, projected: 3, articleProjected: 2, unmappedLandingRows: 1, ambiguousArticleRows: 0
   });
   assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}articles/`)).length, 1);
-  assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 7);
+  assert.equal([...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`)).length, 10);
 
   // Page-level GSC evidence remains projectable when the matching import has
   // no query rows (a valid Search Console response can have this shape).
