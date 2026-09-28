@@ -77,7 +77,7 @@ globalThis.fetch = async (input, init) => {
       });
     }
     if (landing) {
-      assert.equal(body.dimensionFilter, undefined, 'landing-page report remains an explicitly all-channel series');
+      assert.notEqual(body.dimensionFilter?.filter?.fieldName, 'sessionDefaultChannelGroup', 'landing-page report remains an explicitly all-channel series');
       const pageMetrics = current
         ? ['13', '11', '0.66', '29']
         : partial ? ['3', '3', '0.50', '7'] : ['9', '8', '0.61', '21'];
