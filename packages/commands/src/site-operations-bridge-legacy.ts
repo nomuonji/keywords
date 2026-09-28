@@ -312,33 +312,36 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     const queryRows = rows(`SELECT query,clicks,impressions,ctr,position FROM keyword_metric_snapshots
       WHERE project_id=? AND site_url=? AND start_date=? AND end_date=? AND COALESCE(search_type,'web')=? AND observed_at=?
       ORDER BY impressions DESC LIMIT 10000`, projectId, observation.property, observation.start_date, observation.end_date, observation.search_type ?? 'web', observation.captured_at);
-    if (queryRows.length) {
-      const topQueries = queryRows.slice(0, 200).map(row => ({
-        query: String(row.query),
-        clicks: finite(row.clicks),
-        impressions: finite(row.impressions),
-        ctr: finite(row.ctr),
-        averagePosition: finite(row.position)
-      }));
-      // Imports are ordered newest-first, so the first site persist is the latest.
-      const savedSiteGsc = await persist(gscSite, {
-        siteId: site.id,
-        articleId: null,
-        provider: 'gsc',
-        periodStart: observation.start_date,
-        periodEnd: observation.end_date,
-        metrics: aggregateGsc(queryRows),
-        queries: topQueries,
-        completeness: 'complete',
-        sourceVersion: `sqlite:gsc:${observation.source_version}`,
-        capturedAt: observation.captured_at
-      });
-      latestSiteGsc ??= savedSiteGsc;
-    }
-
     const pageRows = rows(`SELECT page_id,url,clicks,impressions,ctr,position FROM page_metric_snapshots
       WHERE project_id=? AND site_url=? AND start_date=? AND end_date=? AND COALESCE(search_type,'web')=? AND observed_at=?
       ORDER BY impressions DESC LIMIT 10000`, projectId, observation.property, observation.start_date, observation.end_date, observation.search_type ?? 'web', observation.captured_at);
+
+    // A complete Search Console import is evidence even when Google returns no
+    // query rows (for privacy suppression), only page rows, or neither. Prefer
+    // query totals when available; otherwise use page totals, and record an
+    // explicit complete zero snapshot only when both complete result sets are empty.
+    const siteMetricRows = queryRows.length ? queryRows : pageRows;
+    const topQueries = queryRows.slice(0, 200).map(row => ({
+      query: String(row.query),
+      clicks: finite(row.clicks),
+      impressions: finite(row.impressions),
+      ctr: finite(row.ctr),
+      averagePosition: finite(row.position)
+    }));
+    // Imports are ordered newest-first, so the first site persist is the latest.
+    const savedSiteGsc = await persist(gscSite, {
+      siteId: site.id,
+      articleId: null,
+      provider: 'gsc',
+      periodStart: observation.start_date,
+      periodEnd: observation.end_date,
+      metrics: aggregateGsc(siteMetricRows),
+      queries: topQueries,
+      completeness: 'complete',
+      sourceVersion: `sqlite:gsc:${observation.source_version}`,
+      capturedAt: observation.captured_at
+    });
+    latestSiteGsc ??= savedSiteGsc;
     const seenArticles = new Set<string>();
     for (const row of pageRows) {
       const key = canonicalKey(row.url);
