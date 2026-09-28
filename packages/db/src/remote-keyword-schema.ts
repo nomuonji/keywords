@@ -1,6 +1,46 @@
 /** Firestore-backed state used by the remote Keywords Operator MCP. */
 export type ResearchSessionStatus = 'active' | 'paused' | 'completed' | 'archived';
 
+export type ThemeCandidateStatus = 'surviving' | 'challenged' | 'killed' | 'parked' | 'pilot_ready';
+
+export type ThemeObservedFact = {
+  label: string;
+  value: string;
+  source?: string;
+  observedAt?: string;
+};
+
+export type ThemeChallenge = {
+  id: string;
+  createdAt: string;
+  attack: string;
+  evidence: string[];
+  defense: string;
+  conclusion: string;
+  statusAfter: ThemeCandidateStatus;
+  nextChallenge: string;
+};
+
+export type ThemeCandidate = {
+  id: string;
+  sessionId: string;
+  title: string;
+  thesis: string;
+  status: ThemeCandidateStatus;
+  currentVerdict: string;
+  whyStillAlive: string;
+  fatalRisks: string[];
+  unknowns: string[];
+  observedFacts: ThemeObservedFact[];
+  alternatives: string[];
+  nextChallenge: string;
+  challengeHistory: ThemeChallenge[];
+  historyDigest: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ResearchSession = {
   id: string;
   title: string;
@@ -18,6 +58,7 @@ export type ResearchSession = {
   revision: number;
   createdAt: string;
   updatedAt: string;
+  themeLedgerVersion?: number;
 };
 
 export type SerpCacheEntry = {
