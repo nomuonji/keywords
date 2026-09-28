@@ -32,7 +32,7 @@ Keyword Operator で、収益化候補テーマを「一度スコアリングし
 
 ## 1回のリサーチの基本
 
-1. `theme_research_context` を読む。
+1. `theme_research_context` を読む。`bootstrapRequired: true` なら、新規調査より先に `legacyFindings` を候補ドキュメントへ移す。分からない項目は推測で埋めない。
 2. 前回未解決の `nextChallenge` を優先して調査する。
 3. 少なくとも1候補に対して、前回とは異なる角度の反証を行う。
 4. 有力な代替テーマが見つかった場合は `theme_candidate_upsert` で追加する。
@@ -55,5 +55,5 @@ Keyword Operator で、収益化候補テーマを「一度スコアリングし
 
 タスク本文には最低限、次を含める。
 
-> Keyword Operator の `theme_research_context` を最初に読み、正本 `seo-theme-research` の続きから作業する。既存候補を批判検証し、必要なら新規候補を加える。総合スコアや固定ランキングを作らず、観測事実・致命傷・未確認点・次の反証を更新する。各実行で最低1件は `theme_candidate_challenge` を残す。新しい証拠なしに killed 候補を復活させない。
+> Keyword Operator の `theme_research_context` を最初に読み、正本 `seo-theme-research` の続きから作業する。`bootstrapRequired` の場合は `legacyFindings` から候補台帳を初期化してから、既存候補を批判検証し、必要なら新規候補を加える。総合スコアや固定ランキングを作らず、観測事実・致命傷・未確認点・次の反証を更新する。各実行で最低1件は `theme_candidate_challenge` を残す。新しい証拠なしに killed 候補を復活させない。
 

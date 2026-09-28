@@ -157,6 +157,7 @@ export async function themeResearchContext(input: unknown = {}) {
   const { session } = await readSession(args.sessionId ?? DEFAULT_SESSION_ID);
   const all = await listCandidates(session.id);
   const visible = args.includeKilled ? all : all.filter(item => item.status !== 'killed');
+  const bootstrapRequired = all.length === 0 && session.findings.length > 0;
   const groups = Object.fromEntries(
     (['pilot_ready', 'surviving', 'challenged', 'parked', 'killed'] as ThemeCandidateStatus[])
       .map(key => [key, visible.filter(item => item.status === key)])
@@ -171,9 +172,11 @@ export async function themeResearchContext(input: unknown = {}) {
     nextActions: session.nextActions,
     notes: session.notes,
     themeLedgerVersion: session.themeLedgerVersion ?? 0,
+    bootstrapRequired,
     candidates: visible,
     groups,
     guidance: [
+      ...(bootstrapRequired ? ['Candidate documents are not initialized yet. Bootstrap them from legacyFindings with theme_candidate_upsert before new research; preserve uncertainty and do not invent missing facts.'] : []),
       'This research ledger is qualitative. Do not create or infer a composite score or automatic winner.',
       'Treat search volume, payout, EPC, conversion conditions and SERP observations as evidence, not verdicts.',
       'Each research pass should actively look for disconfirming evidence, add genuinely stronger alternatives when found, and preserve why rejected ideas were rejected.',
