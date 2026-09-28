@@ -62,29 +62,33 @@ the same invariant.
   ready candidates, recorded why each lacked sufficient material evidence,
   and dispatched **zero** Worker changes. This proves scheduled Manager
   execution and honest no-action handling; it does not prove the SEO work loop.
-- The Worker history does contain **one material delivery** (`YG4rXEQAgmNF2UU8xdCa`)
-  marked `live_verified`. Its first seven-day outcome evaluation is due
-  **2026-10-05 09:00 JST**, so publication/acceptance is proven for that item,
-  while the result evaluation is not yet mature. This means the number of
-  production deliveries is not zero; the number with a matured outcome result
-  is currently zero.
+- The Worker history contains a separate chonmage-en delivery Work Item
+  (`YG4rXEQAgmNF2UU8xdCa`), marked `live_verified` for Shinjuku Nightlife and
+  Golden Gai. Its first seven-day outcome evaluation is due **2026-10-05
+  09:00 JST**. This is distinct from BUNGU; its implementation commit was not
+  identified in the available record. Publication acceptance is proven for
+  that item, but the result evaluation is not yet mature.
 - The Worker also archived at least four read-only analysis tasks, including
   the ja.chon-mage exposure diagnosis, en.chon-mage internal-link audit,
   multi-site thin/rich cohort analysis, and shikaku thin-content cohort review.
   These are completed investigations, not content changes.
-- A BUNGU Custom 823 content rewrite reached GitHub main at
-  `3201f1f63a82db6589d0953084bd24b93960f0c5` but was returned for review because
-  repo-specific build/site-quality and live verification were unavailable. A
-  later verification-marker commit (`6767cd7336c12585af52a9355922e12d9a83bc8d`)
-  also reached main but was blocked at hosting verification; it is not counted
-  as a completed SEO change.
+- The BUNGU Custom 823 rewrite reached GitHub main at
+  `3201f1f63a82db6589d0953084bd24b93960f0c5`; its verification marker reached
+  main at `6767cd7336c12585af52a9355922e12d9a83bc8d`. A later Manager Run
+  (`WqgLm6F2krTg1wBuxx87`) verified the Custom 823 page and marker plus two
+  Stationery Awards pages in production (HTTP 200, canonical, index/follow,
+  expected content). However, safety checks rejected the state reconciliation
+  writes, so the two BUNGU Work Items and related Incident were not archived or
+  resolved in Agent HQ. Production delivery is verified; control-plane task
+  completion is not.
 - Measurement coverage improved from the earlier v22 observation of GSC
   snapshots on 1/14 registered sites to 14/14 registered sites in a later v25
   run. The portfolio still has only 14/16 sites registered; GA4 completeness
   and aligned periods remain insufficient for a 16-site comparison.
-- The full repeatable loop is not yet proven: the one `live_verified` delivery
-  is still awaiting its matured outcome readback, and the latest v26 Manager
-  run dispatched no new Worker change. Phase 2 remains open.
+- One chonmage-en delivery is awaiting matured outcome readback; three BUNGU
+  production pages were verified but their Work Item state reconciliation did
+  not persist. The latest v26 Manager run dispatched no new Worker change, so
+  repeatable end-to-end completion remains unproven. Phase 2 remains open.
 - The separate Luna Worker recurrence later failed before method resolution
   and queue claim when My Portal returned `Quota exceeded`. This is a current
   execution blocker, but it does not explain the earlier zero dispatches: the
@@ -93,6 +97,15 @@ the same invariant.
 - `nomuonji/keywords` PR #50 adds safe, idempotent publication-receipt
   registration for article-level measurement. It is open and CI-green, but
   has not been merged, deployed, or production-readback verified.
+- A separate candidate-selection defect was confirmed in code: the Manager
+  inspected only the first 100 article/metric/event rows, while explicit article
+  context and proposal writes also searched only that first page. This could
+  hide actionable pages on larger sites. The branch now reads up to 1,000 rows
+  for selection and fetches explicitly named articles by ID; the regression
+  smoke places a qualified article beyond row 100. Targeted smoke, typecheck,
+  and full build pass. The Firestore query is still bounded at 1,000 rows, so
+  cursor pagination remains open for larger registries. This fix is code- and
+  CI-pending, not yet deployed.
 
 ## Phase 3 — optional hardening (only if quota still bites)
 

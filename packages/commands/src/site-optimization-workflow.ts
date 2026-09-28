@@ -9,6 +9,7 @@ import {
   optimizationEventList,
   optimizationEventUpdate,
   remoteSitesStatus,
+  siteArticleGet,
   siteArticleList,
   siteRegistryResolve
 } from './remote-site-operations.js';
@@ -152,9 +153,8 @@ export async function localSiteOptimizationContext(input: unknown) {
   const args = z.object(localSiteOptimizationContextShape).strict().parse(input);
   const site = await linkedSite(args.projectId);
   if (!site) throw new Error('No Sites Operator site is linked to this local project.');
-  const articles = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
-  const article = articles.find(item => item.id === args.articleId);
-  if (!article) throw new Error('Article is not registered on the linked site.');
+  const article = await siteArticleGet({ id: args.articleId }) as SiteArticleRecord;
+  if (article.siteId !== site.id) throw new Error('Article is not registered on the linked site.');
   const context = await optimizationContext({ siteId: site.id, articleId: article.id, metricLimit: 30, eventLimit: 30 });
   const pendingProposed = (context.optimizationEvents as OptimizationEvent[]).find(event => event.phase === 'proposed' && event.result === 'pending') ?? null;
   return {
@@ -183,9 +183,9 @@ async function computeNextSiteOptimizationCandidate(projectId: string) {
   if (!site) return { status: 'skipped' as const, reason: 'site_not_linked_or_firestore_unavailable', projectId };
   const policy = proposalPolicy();
   const [articleResponse, metricResponse, eventResponse] = await Promise.all([
-    siteArticleList({ siteId: site.id, limit: 100 }),
-    metricSnapshotList({ siteId: site.id, provider: 'gsc', limit: 100 }),
-    optimizationEventList({ siteId: site.id, limit: 100 })
+    siteArticleList({ siteId: site.id, limit: 1000 }),
+    metricSnapshotList({ siteId: site.id, provider: 'gsc', limit: 1000 }),
+    optimizationEventList({ siteId: site.id, limit: 1000 })
   ]);
   const articles = articleResponse.items as SiteArticleRecord[];
   const metrics = (metricResponse.items as MetricSnapshot[]).filter(item => item.articleId && item.completeness === 'complete');
@@ -289,9 +289,8 @@ export async function localSiteOptimizationCreate(input: unknown) {
   return auditedWrite(args.projectId, 'site_optimization.create', args, async () => {
     const site = await linkedSite(args.projectId);
     if (!site) throw new Error('No Sites Operator site is linked to this local project.');
-    const articles = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
-    const article = articles.find(item => item.id === args.articleId);
-    if (!article) throw new Error('Article is not registered on the linked site.');
+    const article = await siteArticleGet({ id: args.articleId }) as SiteArticleRecord;
+    if (article.siteId !== site.id) throw new Error('Article is not registered on the linked site.');
     const snapshots = (await metricSnapshotList({ siteId: site.id, articleId: article.id, provider: 'gsc', limit: 100 })).items as MetricSnapshot[];
     const baseline = snapshots.find(item => item.id === args.baselineSnapshotId);
     if (!baseline || baseline.completeness !== 'complete') throw new Error('Pinned baselineSnapshotId must be a complete article-level GSC snapshot.');
