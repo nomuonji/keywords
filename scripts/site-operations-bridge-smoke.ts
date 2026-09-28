@@ -109,6 +109,11 @@ globalThis.fetch = async (input, init) => {
       rowCount: 1
     });
   }
+  if (url === 'https://example.com/article-a') {
+    return new Response('<html><head><link rel="canonical" href="https://example.com/article-a"></head><body>verified fixture</body></html>', {
+      status: 200, headers: { 'content-type': 'text/html' }
+    });
+  }
   assert.ok(url.startsWith('https://firestore.googleapis.com/'), `Unexpected network request: ${url}`);
   const parsed = new URL(url);
   const path = parsed.pathname.replace('/v1/', '');
@@ -149,6 +154,7 @@ try {
   const { getDatabase } = await import('../packages/db/src/index.js');
   const { optimizationContext, siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
   const { captureGa4Period } = await import('../packages/commands/src/ga4-metrics.js');
+  const { blogCommands } = await import('../packages/commands/src/blog.js');
   const { projectSiteOperationsMetrics } = await import('../packages/commands/src/site-operations-bridge.js');
   const { sqlite } = getDatabase();
   const t = '2026-09-15T00:00:00.000Z';
@@ -262,9 +268,9 @@ try {
     status: 'published', occurred_at: publishedAt, evidence_refs: ['fixture:published'], final_urls: [targetUrl],
     publication: { confirmed_at: publishedAt, checks: [{ url: targetUrl, http_status: httpStatus, canonical }] }
   });
-  const insertHandoff = (id: string, withReceipt: boolean, httpStatus = 200, canonical = targetUrl) => {
+  const insertHandoff = (id: string, withReceipt: boolean, httpStatus = 200, canonical = targetUrl, status = 'published') => {
     sqlite.prepare(`INSERT INTO blog_handoffs(id,project_id,page_id,version_hash,payload_json,status,published_at,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?)`).run(id, 'project-a', 'page-a', `${id}-version`, JSON.stringify(handoffPayload), 'published', withReceipt ? publishedAt : null, publishedAt, publishedAt);
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(id, 'project-a', 'page-a', `${id}-version`, JSON.stringify(handoffPayload), status, withReceipt ? publishedAt : null, publishedAt, publishedAt);
     if (withReceipt) sqlite.prepare(`INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)`)
       .run(id, id, `${id}-hash`, JSON.stringify(receiptPayload(id, httpStatus, canonical)), publishedAt);
   };
@@ -280,7 +286,8 @@ try {
   assert.ok(rejectedPublication.publicationReceiptSync.warnings.some((message: string) => message.includes('evidence is incomplete')));
   assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.status), 'draft');
 
-  insertHandoff('handoff-valid-publication', true);
+  insertHandoff('handoff-valid-publication', false, 200, targetUrl, 'accepted');
+  insertHandoff('handoff-ambiguous-publication', true);
   const articleDuplicate = JSON.parse(JSON.stringify(docs.get(`${root}articles/${articleId}`)));
   articleDuplicate.name = `${root}articles/${articleId}-duplicate`;
   articleDuplicate.fields.id = { stringValue: `${articleId}-duplicate` };
@@ -295,16 +302,20 @@ try {
   docs.delete(articleDuplicate.name);
 
   const auditRunsBeforePublish = [...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length;
-  const syncedPublication: any = await projectSiteOperationsMetrics('project-a');
-  assert.equal(syncedPublication.publicationReceiptSync.updated, 1);
-  assert.equal(syncedPublication.publicationReceiptSync.reused, 0);
-  assert.equal(syncedPublication.publicationReceiptSync.auditRunIds.length, 1);
+  const verifiedPublication: any = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-valid-publication', source: 'fixture:headless-publish'
+  });
+  assert.equal(verifiedPublication.status, 'published');
+  assert.equal(verifiedPublication.articleRegistrySync.status, 'synced', 'publication verification immediately syncs the remote article registry');
+  assert.equal(verifiedPublication.articleRegistrySync.updated, 1);
+  assert.equal(verifiedPublication.articleRegistrySync.reused, 0);
+  assert.equal(verifiedPublication.articleRegistrySync.auditRunIds.length, 1);
   const publishedArticle = docs.get(`${root}articles/${articleId}`);
   assert.equal(decodeField(publishedArticle.fields?.status), 'published');
-  assert.equal(decodeField(publishedArticle.fields?.publishedAt), publishedAt);
+  assert.equal(decodeField(publishedArticle.fields?.publishedAt), verifiedPublication.publishedAt);
   assert.equal(decodeField(publishedArticle.fields?.repoPath), 'content/posts/article-a.mdx', 'receipt sync preserves article source metadata');
   assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
-  assert.ok(docs.has(`${root}runs/${syncedPublication.publicationReceiptSync.auditRunIds[0]}`), 'publication update writes a durable audit run');
+  assert.ok(docs.has(`${root}runs/${verifiedPublication.articleRegistrySync.auditRunIds[0]}`), 'publication update writes a durable audit run');
   assert.ok([...docs.values()].some(doc => doc.name.startsWith(`${root}metricSnapshots/`)
     && decodeField(doc.fields?.sourceVersion) === `sqlite:gsc:local-source-v1:article:${articleId}`),
     'the exact registered article remains the downstream GSC projection target');
@@ -334,7 +345,8 @@ try {
   assert.equal(second.articleRegistrySync.created, 0);
   assert.equal(second.articleRegistrySync.reused, 1);
   assert.equal(second.publicationReceiptSync.updated, 0);
-  assert.equal(second.publicationReceiptSync.reused, 1, 'repeated projection is idempotent');
+  assert.equal(second.publicationReceiptSync.reused, 2, 'repeated and stale receipts do not create writes or move publication time backwards');
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.publishedAt), verifiedPublication.publishedAt);
   assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });

@@ -124,7 +124,7 @@ function verifiedPublishedReceipt(row: any, expectedOrigin: string) {
   }
 }
 
-async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, binding: any, existing: SiteArticleRecord[]) {
+async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, binding: any, existing: SiteArticleRecord[], onlyHandoffId?: string) {
   const warnings: string[] = [];
   const result = { considered: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings };
   // siteArticleList is bounded to 100; at the limit, uniqueness cannot be
@@ -134,9 +134,10 @@ async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, bi
     return result;
   }
 
-  const receipts = rows(`SELECT h.id AS handoff_id,h.page_id,h.version_hash,h.published_at,h.payload_json AS handoff_payload_json,r.payload_json AS receipt_json
+  const receiptQuery = `SELECT h.id AS handoff_id,h.page_id,h.version_hash,h.published_at,h.payload_json AS handoff_payload_json,r.payload_json AS receipt_json
     FROM blog_handoffs h JOIN blog_receipts r ON r.handoff_id=h.id
-    WHERE h.project_id=? ORDER BY r.created_at DESC`, projectId);
+    WHERE h.project_id=?${onlyHandoffId ? ' AND h.id=?' : ''} ORDER BY r.created_at DESC`;
+  const receipts = rows(receiptQuery, ...(onlyHandoffId ? [projectId, onlyHandoffId] : [projectId]));
   for (const row of receipts) {
     const proof = verifiedPublishedReceipt(row, binding.origin);
     if (!proof) {
@@ -165,7 +166,12 @@ async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, bi
       continue;
     }
     const current = pageMatches[0];
-    if (current.status === 'published' && current.publishedAt === proof.publishedAt) {
+    if (current.status === 'paused' || current.status === 'archived') {
+      result.skipped++;
+      warnings.push(`Skipped published receipt ${row.handoff_id}: the matching article is ${current.status} and must not be reactivated automatically.`);
+      continue;
+    }
+    if (current.status === 'published' && current.publishedAt && current.publishedAt >= proof.publishedAt) {
       result.reused++;
       continue;
     }
@@ -180,6 +186,22 @@ async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, bi
     await paceCloudWrite();
   }
   return result;
+}
+
+/** Promote one just-verified local Blog publication into its exact remote article record. */
+export async function syncVerifiedBlogPublication(projectId: string, handoffId: string) {
+  if (!firestoreReady()) return { status: 'skipped' as const, reason: 'firestore_not_configured', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: [] as string[] };
+  const resolved = await siteRegistryResolve({ localProjectId: projectId });
+  const site = resolved.site as SiteRecord | null;
+  if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the local project has no unique registered site.'] };
+  const binding = sqlite.prepare('SELECT * FROM blog_bindings WHERE project_id=?').get(projectId) as any;
+  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the project has no confirmed Blog binding.'] };
+  let siteOrigin: string | null = null;
+  try { siteOrigin = new URL(site.productionUrl).origin; } catch {}
+  if (!siteOrigin || siteOrigin !== binding.origin) return { status: 'skipped' as const, reason: 'binding_origin_mismatch', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the Blog origin does not exactly match the registered production site.'] };
+  const existing = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
+  const sync = await syncPublishedBlogReceipts(projectId, site, binding, existing, handoffId);
+  return { status: sync.updated ? 'synced' as const : sync.reused ? 'reused' as const : sync.skipped ? 'skipped' as const : 'unchanged' as const, reason: null, ...sync };
 }
 
 /**
