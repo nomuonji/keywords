@@ -13,11 +13,22 @@ later Worker attempt could not resolve its active Method or claim work because
 My Portal returned `Quota exceeded`.
 
 The manager's safe no-action behavior and scheduled claim/finish path are
-verified. The requested autonomous outcome loop is **not** verified: no one
-scheduled production run has been evidenced from actionable task selection
-through Worker execution, repository delivery, live acceptance, persisted
-optimization event, and a matured evaluation. The first end-to-end production
-improvement remains pending under Phase 2 in `site-registry-handoff.md`.
+verified. The Worker history also contains one material delivery
+(`YG4rXEQAgmNF2UU8xdCa`) marked `live_verified`; its first seven-day outcome
+evaluation is due 2026-10-05 09:00 JST. Therefore there is **one verified
+production delivery**, not zero, but no matured outcome result yet. The latest
+v26 Manager run itself dispatched zero new Worker changes. The repeatable
+selection → execution → delivery → live acceptance → persisted event → matured
+evaluation loop remains unproven and Phase 2 stays open.
+
+At least four read-only investigations were also completed and archived:
+ja.chon-mage exposure diagnosis, en.chon-mage internal-link audit, a multi-site
+thin/rich cohort analysis, and a shikaku thin-content cohort review. A BUNGU
+Custom 823 rewrite reached GitHub main at
+`3201f1f63a82db6589d0953084bd24b93960f0c5` but remains in review because the
+repo-specific quality/build and live verification were unavailable. Its later
+verification-marker commit `6767cd7336c12585af52a9355922e12d9a83bc8d` is also
+not a completed SEO change.
 
 The later v25 measurement read improved GSC snapshot coverage from 1/14 to
 14/14 registered sites. The portfolio remains 14/16 registered, and this

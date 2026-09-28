@@ -62,13 +62,29 @@ the same invariant.
   ready candidates, recorded why each lacked sufficient material evidence,
   and dispatched **zero** Worker changes. This proves scheduled Manager
   execution and honest no-action handling; it does not prove the SEO work loop.
+- The Worker history does contain **one material delivery** (`YG4rXEQAgmNF2UU8xdCa`)
+  marked `live_verified`. Its first seven-day outcome evaluation is due
+  **2026-10-05 09:00 JST**, so publication/acceptance is proven for that item,
+  while the result evaluation is not yet mature. This means the number of
+  production deliveries is not zero; the number with a matured outcome result
+  is currently zero.
+- The Worker also archived at least four read-only analysis tasks, including
+  the ja.chon-mage exposure diagnosis, en.chon-mage internal-link audit,
+  multi-site thin/rich cohort analysis, and shikaku thin-content cohort review.
+  These are completed investigations, not content changes.
+- A BUNGU Custom 823 content rewrite reached GitHub main at
+  `3201f1f63a82db6589d0953084bd24b93960f0c5` but was returned for review because
+  repo-specific build/site-quality and live verification were unavailable. A
+  later verification-marker commit (`6767cd7336c12585af52a9355922e12d9a83bc8d`)
+  also reached main but was blocked at hosting verification; it is not counted
+  as a completed SEO change.
 - Measurement coverage improved from the earlier v22 observation of GSC
   snapshots on 1/14 registered sites to 14/14 registered sites in a later v25
   run. The portfolio still has only 14/16 sites registered; GA4 completeness
   and aligned periods remain insufficient for a 16-site comparison.
-- No scheduled production change has yet been followed through from evidence
-  selection to Worker claim, repository delivery, live verification, persisted
-  optimization event, and matured outcome evaluation. Phase 2 remains open.
+- The full repeatable loop is not yet proven: the one `live_verified` delivery
+  is still awaiting its matured outcome readback, and the latest v26 Manager
+  run dispatched no new Worker change. Phase 2 remains open.
 - The separate Luna Worker recurrence later failed before method resolution
   and queue claim when My Portal returned `Quota exceeded`. This is a current
   execution blocker, but it does not explain the earlier zero dispatches: the
