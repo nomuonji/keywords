@@ -101,6 +101,87 @@ function articleSyncLimit() {
   return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 100)) : 100;
 }
 
+function verifiedPublishedReceipt(row: any, expectedOrigin: string) {
+  try {
+    if (!row.published_at || !row.receipt_json || !row.handoff_payload_json) return null;
+    const handoff = JSON.parse(String(row.handoff_payload_json));
+    const receipt = JSON.parse(String(row.receipt_json));
+    const urls = handoff.target_urls;
+    if (receipt.status !== 'published' || receipt.handoff_id !== row.handoff_id
+      || receipt.version_hash !== row.version_hash || !Array.isArray(urls) || urls.length !== 1
+      || !Array.isArray(receipt.final_urls) || receipt.final_urls.length !== 1
+      || receipt.final_urls[0] !== urls[0] || !receipt.publication
+      || receipt.publication.confirmed_at !== row.published_at) return null;
+    const url = urls[0];
+    const parsedUrl = new URL(url);
+    if (!canonicalKey(url) || parsedUrl.origin !== expectedOrigin || parsedUrl.search || parsedUrl.hash) return null;
+    const checks = receipt.publication.checks;
+    if (!Array.isArray(checks) || !checks.some((check: any) =>
+      check?.url === url && check.http_status === 200 && check.canonical === url)) return null;
+    return { url, canonicalKey: canonicalKey(url), publishedAt: receipt.publication.confirmed_at };
+  } catch {
+    return null;
+  }
+}
+
+async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, binding: any, existing: SiteArticleRecord[]) {
+  const warnings: string[] = [];
+  const result = { considered: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings };
+  // siteArticleList is bounded to 100; at the limit, uniqueness cannot be
+  // established from this read, so publication state must fail closed.
+  if (existing.length >= 100) {
+    warnings.push('Published Blog receipts were not synced because the article registry read reached its 100-item bound; uniqueness is unverified.');
+    return result;
+  }
+
+  const receipts = rows(`SELECT h.id AS handoff_id,h.page_id,h.version_hash,h.published_at,h.payload_json AS handoff_payload_json,r.payload_json AS receipt_json
+    FROM blog_handoffs h JOIN blog_receipts r ON r.handoff_id=h.id
+    WHERE h.project_id=? ORDER BY r.created_at DESC`, projectId);
+  for (const row of receipts) {
+    const proof = verifiedPublishedReceipt(row, binding.origin);
+    if (!proof) {
+      let declaresPublication = Boolean(row.published_at);
+      try { declaresPublication ||= JSON.parse(String(row.receipt_json)).status === 'published'; } catch {}
+      if (declaresPublication) {
+        result.considered++;
+        result.skipped++;
+        warnings.push(`Skipped published receipt ${row.handoff_id}: receipt, HTTP, canonical, or version evidence is incomplete.`);
+      }
+      continue;
+    }
+    result.considered++;
+    const localPages = rows('SELECT id,url FROM pages WHERE project_id=? AND id=? LIMIT 2', projectId, row.page_id);
+    if (localPages.length !== 1 || canonicalKey(localPages[0].url) !== proof.canonicalKey) {
+      result.skipped++;
+      warnings.push(`Skipped published receipt ${row.handoff_id}: its exact local page mapping is missing or ambiguous.`);
+      continue;
+    }
+    const localPageId = String(localPages[0].id);
+    const pageMatches = existing.filter(article => article.localPageId === localPageId);
+    const urlMatches = existing.filter(article => canonicalKey(article.canonicalUrl) === proof.canonicalKey);
+    if (pageMatches.length !== 1 || urlMatches.length !== 1 || pageMatches[0].id !== urlMatches[0].id) {
+      result.skipped++;
+      warnings.push(`Skipped published receipt ${row.handoff_id}: localPageId and canonical URL do not identify one existing article record.`);
+      continue;
+    }
+    const current = pageMatches[0];
+    if (current.status === 'published' && current.publishedAt === proof.publishedAt) {
+      result.reused++;
+      continue;
+    }
+    const saved = await siteArticleSave({
+      id: current.id, expectedRevision: current.revision, siteId: site.id,
+      status: 'published', publishedAt: proof.publishedAt
+    }) as SiteArticleRecord & { runId?: string };
+    const index = existing.findIndex(article => article.id === current.id);
+    if (index >= 0) existing[index] = saved;
+    result.updated++;
+    if (saved.runId) result.auditRunIds.push(saved.runId);
+    await paceCloudWrite();
+  }
+  return result;
+}
+
 /**
  * Backfill mode mirrors every snapshot source into the registry (one-time
  * inventory builds). Lazy mode only refreshes already-registered articles
@@ -184,6 +265,8 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
   }
 
   const existing = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
+  const publicationReceiptSync = await syncPublishedBlogReceipts(projectId, site, binding, existing);
+  warnings.push(...publicationReceiptSync.warnings);
   const byPage = new Map(existing.filter(article => article.localPageId).map(article => [String(article.localPageId), article]));
   const byUrl = new Map(existing.flatMap(article => {
     const key = canonicalKey(article.canonicalUrl);
@@ -267,7 +350,7 @@ async function syncBoundBlogArticles(projectId: string, site: SiteRecord) {
     }
   }
 
-  return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings };
+  return { status: 'synced' as const, reason: null, considered: sources.length, created, updated, reused, skipped, warnings, publicationReceiptSync };
 }
 
 /**
@@ -285,8 +368,10 @@ export async function projectSiteOperationsMetrics(projectId: string) {
 
   const warnings: string[] = [];
   let articleRegistrySync: Awaited<ReturnType<typeof syncBoundBlogArticles>>;
+  let publicationReceiptSync = { considered: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings: [] as string[] };
   try {
     articleRegistrySync = await syncBoundBlogArticles(projectId, site);
+    publicationReceiptSync = articleRegistrySync.publicationReceiptSync ?? publicationReceiptSync;
     warnings.push(...articleRegistrySync.warnings);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -358,7 +443,14 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     const seenArticles = new Set<string>();
     for (const row of pageRows) {
       const key = canonicalKey(row.url);
-      const article = (row.page_id ? articleByPage.get(String(row.page_id)) : undefined) ?? (key ? articleByUrl.get(key) : undefined);
+      const pageMatches = row.page_id ? articles.filter(article => article.localPageId === String(row.page_id)) : [];
+      const urlMatches = key ? articles.filter(article => canonicalKey(article.canonicalUrl) === key) : [];
+      if (pageMatches.length > 1 || urlMatches.length > 1
+        || (pageMatches.length === 1 && urlMatches.length === 1 && pageMatches[0].id !== urlMatches[0].id)) {
+        warnings.push(`Skipped GSC page ${row.url}: localPageId and canonical URL do not identify one registered article.`);
+        continue;
+      }
+      const article = pageMatches[0] ?? urlMatches[0];
       if (!article || seenArticles.has(article.id)) continue;
       seenArticles.add(article.id);
       await persist(gscArticle, {
@@ -449,7 +541,12 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     const mappedRows = new Map<string, Array<{ article: SiteArticleRecord; metrics: Record<string, number | null> }>>();
     for (const row of landingPages) {
       const key = landingPageCanonicalKey(site.productionUrl, row.landingPage);
-      const article = key ? articleByUrl.get(key) : undefined;
+      const matches = key ? articles.filter(article => canonicalKey(article.canonicalUrl) === key) : [];
+      if (matches.length > 1) {
+        directGa4AmbiguousArticleRows++;
+        continue;
+      }
+      const article = matches[0];
       if (!article) {
         directGa4UnmappedLandingRows++;
         continue;
@@ -538,6 +635,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     siteId: site.id,
     siteName: site.name,
     articleRegistrySync,
+    publicationReceiptSync,
     articleMappings: { registered: articles.length, byLocalPageId: articleByPage.size, byCanonicalUrl: articleByUrl.size },
     gsc: { importsConsidered: imports.length, site: gscSite, articles: gscArticle },
     ga4,

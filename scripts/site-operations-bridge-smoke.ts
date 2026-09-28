@@ -254,6 +254,61 @@ try {
   assert.equal(decodeField(articleDocs[0].fields?.status), 'draft', 'local Blog mapping must not invent publication state');
   const articleId = articleDocs[0].name.split('/').at(-1)!;
 
+  const publishedAt = '2026-09-16T12:34:56.000Z';
+  const targetUrl = 'https://example.com/article-a';
+  const handoffPayload = { target_urls: [targetUrl] };
+  const receiptPayload = (eventId: string, httpStatus: number, canonical: string) => ({
+    schema_version: 1, event_id: eventId, handoff_id: eventId, version_hash: `${eventId}-version`,
+    status: 'published', occurred_at: publishedAt, evidence_refs: ['fixture:published'], final_urls: [targetUrl],
+    publication: { confirmed_at: publishedAt, checks: [{ url: targetUrl, http_status: httpStatus, canonical }] }
+  });
+  const insertHandoff = (id: string, withReceipt: boolean, httpStatus = 200, canonical = targetUrl) => {
+    sqlite.prepare(`INSERT INTO blog_handoffs(id,project_id,page_id,version_hash,payload_json,status,published_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(id, 'project-a', 'page-a', `${id}-version`, JSON.stringify(handoffPayload), 'published', withReceipt ? publishedAt : null, publishedAt, publishedAt);
+    if (withReceipt) sqlite.prepare(`INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)`)
+      .run(id, id, `${id}-hash`, JSON.stringify(receiptPayload(id, httpStatus, canonical)), publishedAt);
+  };
+
+  // A handoff without a receipt and a malformed publication receipt never
+  // promote the mapped record. The malformed fixture combines non-200 and
+  // canonical mismatch evidence and must be rejected with a visible warning.
+  insertHandoff('handoff-without-receipt', false);
+  insertHandoff('handoff-invalid-publication', true, 404, 'https://example.com/wrong');
+  const rejectedPublication: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(rejectedPublication.publicationReceiptSync.updated, 0);
+  assert.equal(rejectedPublication.publicationReceiptSync.skipped, 1);
+  assert.ok(rejectedPublication.publicationReceiptSync.warnings.some((message: string) => message.includes('evidence is incomplete')));
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.status), 'draft');
+
+  insertHandoff('handoff-valid-publication', true);
+  const articleDuplicate = JSON.parse(JSON.stringify(docs.get(`${root}articles/${articleId}`)));
+  articleDuplicate.name = `${root}articles/${articleId}-duplicate`;
+  articleDuplicate.fields.id = { stringValue: `${articleId}-duplicate` };
+  articleDuplicate.updateTime = 'duplicate-fixture';
+  docs.set(articleDuplicate.name, articleDuplicate);
+  const ambiguousPublication: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(ambiguousPublication.publicationReceiptSync.updated, 0);
+  assert.ok(ambiguousPublication.publicationReceiptSync.warnings.some((message: string) => message.includes('do not identify one existing article record')));
+  assert.deepEqual(ambiguousPublication.gsc.articles, { saved: 0, reused: 0 }, 'ambiguous article identities are excluded from page-level GSC projection');
+  assert.equal(ambiguousPublication.ga4Articles.saved, 0, 'ambiguous article identities are excluded from page-level GA4 projection');
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.status), 'draft');
+  docs.delete(articleDuplicate.name);
+
+  const auditRunsBeforePublish = [...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length;
+  const syncedPublication: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(syncedPublication.publicationReceiptSync.updated, 1);
+  assert.equal(syncedPublication.publicationReceiptSync.reused, 0);
+  assert.equal(syncedPublication.publicationReceiptSync.auditRunIds.length, 1);
+  const publishedArticle = docs.get(`${root}articles/${articleId}`);
+  assert.equal(decodeField(publishedArticle.fields?.status), 'published');
+  assert.equal(decodeField(publishedArticle.fields?.publishedAt), publishedAt);
+  assert.equal(decodeField(publishedArticle.fields?.repoPath), 'content/posts/article-a.mdx', 'receipt sync preserves article source metadata');
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
+  assert.ok(docs.has(`${root}runs/${syncedPublication.publicationReceiptSync.auditRunIds[0]}`), 'publication update writes a durable audit run');
+  assert.ok([...docs.values()].some(doc => doc.name.startsWith(`${root}metricSnapshots/`)
+    && decodeField(doc.fields?.sourceVersion) === `sqlite:gsc:local-source-v1:article:${articleId}`),
+    'the exact registered article remains the downstream GSC projection target');
+
   const metricDocsAfterFirst = [...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`));
   assert.equal(metricDocsAfterFirst.length, 10);
   const siteGsc = metricDocsAfterFirst.find(doc => decodeField(doc.fields?.provider) === 'gsc' && decodeField(doc.fields?.articleId) === null);
@@ -278,6 +333,9 @@ try {
   assert.equal(second.articleRegistrySync.status, 'synced');
   assert.equal(second.articleRegistrySync.created, 0);
   assert.equal(second.articleRegistrySync.reused, 1);
+  assert.equal(second.publicationReceiptSync.updated, 0);
+  assert.equal(second.publicationReceiptSync.reused, 1, 'repeated projection is idempotent');
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
   assert.deepEqual(second.ga4, { saved: 0, reused: 3 });
@@ -362,7 +420,7 @@ try {
   assert.ok(!bearerFailureCapture.organicError?.includes(bearerErrorFixture), 'organic error summaries must redact Bearer credentials');
   assert.deepEqual(bearerFailureCapture.metrics, { sessions: 25, activeUsers: 22, engagement: 0.68, views: 56 });
 
-  console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, lazy sync defers new articles, and Firestore stays idempotent');
+  console.log('site operations bridge smoke passed: verified publication receipts update exact articles idempotently, ambiguous identities are skipped, GSC article metrics remain mapped, and Firestore stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
