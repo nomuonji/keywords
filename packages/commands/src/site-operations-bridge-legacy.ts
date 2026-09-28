@@ -126,7 +126,7 @@ function verifiedPublishedReceipt(row: any, expectedOrigin: string) {
 
 async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, binding: any, existing: SiteArticleRecord[], onlyHandoffId?: string) {
   const warnings: string[] = [];
-  const result = { considered: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings };
+  const result = { considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings };
   // siteArticleList is bounded to 100; at the limit, uniqueness cannot be
   // established from this read, so publication state must fail closed.
   if (existing.length >= 100) {
@@ -160,12 +160,64 @@ async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, bi
     const localPageId = String(localPages[0].id);
     const pageMatches = existing.filter(article => article.localPageId === localPageId);
     const urlMatches = existing.filter(article => canonicalKey(article.canonicalUrl) === proof.canonicalKey);
-    if (pageMatches.length !== 1 || urlMatches.length !== 1 || pageMatches[0].id !== urlMatches[0].id) {
+    const noArticleRegistered = pageMatches.length === 0 && urlMatches.length === 0;
+    if (!noArticleRegistered && (pageMatches.length !== 1 || urlMatches.length !== 1 || pageMatches[0].id !== urlMatches[0].id)) {
       result.skipped++;
       warnings.push(`Skipped published receipt ${row.handoff_id}: localPageId and canonical URL do not identify one existing article record.`);
       continue;
     }
     const current = pageMatches[0];
+    if (!current) {
+      // A publication may register a missing article only when the approved
+      // handoff names the same source path and digest as the bound Blog
+      // snapshot, and that source maps to the unique local page above.
+      let handoff: any;
+      let snapshot: any;
+      try {
+        handoff = JSON.parse(String(row.handoff_payload_json));
+        snapshot = snapshotSchema.parse(JSON.parse(String(binding.snapshot_json)));
+      } catch {
+        result.skipped++;
+        warnings.push(`Skipped published receipt ${row.handoff_id}: the bound Blog snapshot is invalid; article identity cannot be established.`);
+        continue;
+      }
+      const targetSources = Array.isArray(handoff.target_sources) ? handoff.target_sources : [];
+      const sourceMatches = snapshot.sources.filter((source: any) =>
+        source.expected_url === proof.url
+        && targetSources.some((target: any) => target?.path === source.source_ref && target?.sha256 === source.source_sha256));
+      const targetSourceMatches = targetSources.filter((target: any) =>
+        typeof target?.path === 'string' && typeof target?.sha256 === 'string'
+        && snapshot.sources.some((source: any) => source.source_ref === target.path && source.source_sha256 === target.sha256 && source.expected_url === proof.url));
+      let productionOrigin: string | null = null;
+      try { productionOrigin = new URL(site.productionUrl).origin; } catch {}
+      if (handoff.publication_authorized !== true || handoff.handoff_id !== row.handoff_id
+        || handoff.version_hash !== row.version_hash || handoff.canonical_origin !== binding.origin
+        || sourceMatches.length !== 1 || targetSourceMatches.length !== 1
+        || snapshot.blog_site_id !== binding.blog_site_id || snapshot.canonical_origin !== binding.origin
+        || snapshot.canonical_origin !== productionOrigin) {
+        result.skipped++;
+        warnings.push(`Skipped published receipt ${row.handoff_id}: approved source path/digest does not uniquely match the bound Blog snapshot and production URL.`);
+        continue;
+      }
+      const source = sourceMatches[0];
+      const deterministicId = articleId(site.id, source.source_ref);
+      try {
+        const saved = await siteArticleSave({
+          id: deterministicId, expectedRevision: 0, siteId: site.id,
+          localPageId, canonicalUrl: proof.url, repo: site.repository, repoPath: source.source_ref,
+          slug: articleSlug(proof.url), title: source.title || source.source_ref,
+          status: 'published', publishedAt: proof.publishedAt
+        }) as SiteArticleRecord & { runId?: string };
+        existing.push(saved);
+        result.created++;
+        if (saved.runId) result.auditRunIds.push(saved.runId);
+        await paceCloudWrite();
+      } catch (error) {
+        result.skipped++;
+        warnings.push(`Skipped published receipt ${row.handoff_id}: exact article registration conflicted or could not be saved.`);
+      }
+      continue;
+    }
     if (current.status === 'paused' || current.status === 'archived') {
       result.skipped++;
       warnings.push(`Skipped published receipt ${row.handoff_id}: the matching article is ${current.status} and must not be reactivated automatically.`);
@@ -190,27 +242,27 @@ async function syncPublishedBlogReceipts(projectId: string, site: SiteRecord, bi
 
 /** Promote one just-verified local Blog publication into its exact remote article record. */
 export async function syncVerifiedBlogPublication(projectId: string, handoffId: string) {
-  if (!firestoreReady()) return { status: 'skipped' as const, reason: 'firestore_not_configured', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: [] as string[] };
+  if (!firestoreReady()) return { status: 'skipped' as const, reason: 'firestore_not_configured', created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: [] as string[] };
   const resolved = await siteRegistryResolve({ localProjectId: projectId });
   const site = resolved.site as SiteRecord | null;
-  if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the local project has no unique registered site.'] };
+  if (!site) return { status: 'skipped' as const, reason: 'site_not_linked', created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the local project has no unique registered site.'] };
   const binding = sqlite.prepare('SELECT * FROM blog_bindings WHERE project_id=?').get(projectId) as any;
-  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the project has no confirmed Blog binding.'] };
+  if (!binding) return { status: 'skipped' as const, reason: 'blog_not_bound', created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the project has no confirmed Blog binding.'] };
   let siteOrigin: string | null = null;
   try { siteOrigin = new URL(site.productionUrl).origin; } catch {}
-  if (!siteOrigin || siteOrigin !== binding.origin) return { status: 'skipped' as const, reason: 'binding_origin_mismatch', updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the Blog origin does not exactly match the registered production site.'] };
+  if (!siteOrigin || siteOrigin !== binding.origin) return { status: 'skipped' as const, reason: 'binding_origin_mismatch', created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [], warnings: ['Blog publication receipt was not synced because the Blog origin does not exactly match the registered production site.'] };
   const existing = (await siteArticleList({ siteId: site.id, limit: 100 })).items as SiteArticleRecord[];
   const sync = await syncPublishedBlogReceipts(projectId, site, binding, existing, handoffId);
-  return { status: sync.updated ? 'synced' as const : sync.reused ? 'reused' as const : sync.skipped ? 'skipped' as const : 'unchanged' as const, reason: null, ...sync };
+  return { status: sync.created || sync.updated ? 'synced' as const : sync.reused ? 'reused' as const : sync.skipped ? 'skipped' as const : 'unchanged' as const, reason: null, ...sync };
 }
 
 /**
  * Backfill mode mirrors every snapshot source into the registry (one-time
  * inventory builds). Lazy mode only refreshes already-registered articles
- * and defers new ones: the registry then means "articles under PDCA
- * management", and new records are created explicitly when an optimization
- * event opens or an article publishes (site_article_save). Lazy keeps
- * scheduled projections cheap under tight Firestore quotas.
+ * and defers snapshot-only sources. A missing article can enter through an
+ * approved optimization event or through the direct publication path, where
+ * the handoff and verified receipt must identify one exact source in the
+ * bound snapshot. Lazy keeps scheduled projections cheap under tight quotas.
  */
 export function articleSyncLazy() {
   return (process.env.KEYWORDS_ARTICLE_SYNC_MODE ?? 'backfill').trim().toLowerCase() === 'lazy';
@@ -390,7 +442,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
 
   const warnings: string[] = [];
   let articleRegistrySync: Awaited<ReturnType<typeof syncBoundBlogArticles>>;
-  let publicationReceiptSync = { considered: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings: [] as string[] };
+  let publicationReceiptSync = { considered: 0, created: 0, updated: 0, reused: 0, skipped: 0, auditRunIds: [] as string[], warnings: [] as string[] };
   try {
     articleRegistrySync = await syncBoundBlogArticles(projectId, site);
     publicationReceiptSync = articleRegistrySync.publicationReceiptSync ?? publicationReceiptSync;
@@ -668,3 +720,4 @@ export async function projectSiteOperationsMetrics(projectId: string) {
     warnings
   };
 }
+

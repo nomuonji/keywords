@@ -1,6 +1,12 @@
 # Agent-driven Operations — Implementation Status
 
-最終更新: 2026-09-09
+最終更新: 2026-09-29
+
+## 2026-09-29 publication registry handoff
+
+Verified Blog publication receipts can now create a missing Sites article record when the approved handoff ID/version/origin, published HTTP 200 + canonical evidence, unique local page, and one exact source path+SHA in the confirmed Blog snapshot agree. Deterministic IDs make retries idempotent; paused/archived records and ambiguous or incomplete source mappings remain unchanged. This closes the gap where newly published pages never entered article-level SEO measurement. It does not mass-backfill snapshot content or make measurement jobs run optimization work.
+
+Validation for this follow-up: `npm run test:site-operations-bridge`, `npm run typecheck`, and full `npm run build` passed locally. It is prepared on the existing GitHub PR branch and awaits remote CI/Manager review; it has not been deployed.
 
 ## 状態
 
@@ -100,3 +106,4 @@ APIにbackground schedulerはない。scheduler ownerは `npm run autopilot` の
 - 実publish/canonical確認
 - 実provider limit下の長時間復旧
 - 公開後SEO成果
+
