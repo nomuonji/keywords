@@ -80,7 +80,7 @@ async function readCandidate(sessionId: string, candidateId: string) {
   const doc = await readDocument(`/${candidatePath(sessionId, candidateId)}`);
   return doc ? { doc, candidate: normalizeCandidate(parseDoc<ThemeCandidate>(doc)) } : null;
 }
-async function listCandidates(sessionId: string) {
+async function listCandidates(sessionId: string): Promise<ThemeCandidate[]> {
   const result = await firestore(`/researchSessions/${id.parse(sessionId)}/themeCandidates?pageSize=100&orderBy=updatedAt%20desc`);
   return (result.documents ?? []).map((doc: any) => normalizeCandidate(parseDoc<ThemeCandidate>(doc)));
 }
