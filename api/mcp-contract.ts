@@ -19,7 +19,7 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'site_structure_patch',
   'keyword_screen_batch',
   'keyword_research_pipeline',
-  'theme_kodoku_context',
+  'theme_research_context',
   'theme_candidate_upsert',
   'theme_candidate_challenge'
 ] as const;
