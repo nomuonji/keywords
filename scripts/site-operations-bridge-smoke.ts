@@ -269,9 +269,11 @@ try {
   // observation. Preserve it as an explicit complete zero site snapshot so
   // downstream readers do not silently keep using stale GSC data.
   const emptyGscAt = '2026-09-29T00:00:00.000Z';
-  sqlite.prepare(`INSERT INTO measurement_imports(id,project_id,provider,property,target_origin,filters_json,start_date,end_date,timezone,search_type,dimensions_json,status,completeness,source_label,source_version,captured_at,payload_json,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run('empty-gsc-import', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-22', '2026-09-28', 'America/Los_Angeles', 'web', '["query","page"]', 'succeeded', 'complete', 'GSC empty fixture', 'empty-source-v1', emptyGscAt, JSON.stringify({ queryRows: 0, pageRows: 0, queryComplete: true, pageComplete: true }), emptyGscAt);
+  const insertGscImport = sqlite.prepare(`INSERT INTO measurement_imports(id,project_id,provider,property,target_origin,filters_json,start_date,end_date,timezone,search_type,dimensions_json,status,completeness,source_label,source_version,captured_at,payload_json,created_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+  insertGscImport.run('empty-gsc-import', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-22', '2026-09-28', 'America/Los_Angeles', 'web', '["query","page"]', 'succeeded', 'complete', 'GSC empty fixture', 'empty-source-v1', emptyGscAt, JSON.stringify({ queryRows: 0, pageRows: 0, queryComplete: true, pageComplete: true }), emptyGscAt);
+  insertGscImport.run('partial-empty-gsc-import', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-21', '2026-09-27', 'America/Los_Angeles', 'web', '["query","page"]', 'partial', 'partial', 'GSC partial empty fixture', 'partial-empty-source-v1', '2026-09-29T00:00:01.000Z', JSON.stringify({ queryRows: 0, pageRows: 0, queryComplete: false, pageComplete: true }), '2026-09-29T00:00:01.000Z');
+  insertGscImport.run('failed-empty-gsc-import', 'project-a', 'gsc', 'sc-domain:example.com', 'https://example.com', '[]', '2026-09-20', '2026-09-26', 'America/Los_Angeles', 'web', '["query","page"]', 'failed', 'failed', 'GSC failed empty fixture', 'failed-empty-source-v1', '2026-09-29T00:00:02.000Z', JSON.stringify({ error: 'fixture failure' }), '2026-09-29T00:00:02.000Z');
   const emptyGscProjection: any = await projectSiteOperationsMetrics('project-a');
   assert.equal(emptyGscProjection.status, 'projected');
   assert.ok(emptyGscProjection.latestSiteSnapshots.gsc, 'complete empty GSC capture must refresh the site-level snapshot');
@@ -283,6 +285,13 @@ try {
   const emptyGscDoc = [...docs.values()].find(doc => doc.name.startsWith(`${root}metricSnapshots/`)
     && decodeField(doc.fields?.sourceVersion) === 'sqlite:gsc:empty-source-v1');
   assert.ok(emptyGscDoc, 'empty complete GSC observation must be persisted in Firestore');
+  assert.deepEqual(emptyGscProjection.gsc.site, { saved: 1, reused: 2 });
+  const repeatedEmptyProjection: any = await projectSiteOperationsMetrics('project-a');
+  assert.deepEqual(repeatedEmptyProjection.gsc.site, { saved: 0, reused: 3 }, 'empty GSC projection must remain idempotent');
+  assert.equal(repeatedEmptyProjection.latestSiteSnapshots.gsc.sourceVersion, 'sqlite:gsc:empty-source-v1');
+  assert.ok(![...docs.values()].some(doc => doc.name.startsWith(`${root}metricSnapshots/`)
+    && ['sqlite:gsc:partial-empty-source-v1', 'sqlite:gsc:failed-empty-source-v1'].includes(String(decodeField(doc.fields?.sourceVersion)))),
+    'partial or failed empty imports must not be projected as zero snapshots');
 
   // Lazy mode refreshes registered articles but defers new ones to explicit
   // registration (optimization event or publication).
