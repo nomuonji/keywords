@@ -9,6 +9,7 @@ const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test@example.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }), project_id: 'test' });
 process.env.FIREBASE_PROJECT_ID = 'test';
 process.env.KEYWORDS_REMOTE_MCP_TOKEN = 'test-only-token';
+process.env.KEYWORDS_GROQ_MCP_TOKEN = 'groq-test-token';
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 const keywordId = 'a'.repeat(32);
@@ -135,6 +136,18 @@ try {
     assert.equal(response.status, 200);
     return (await response.json() as any).result;
   };
+  const groqApiKeyResponse = await mcp.request('/mcp', {
+    method: 'POST',
+    headers: { 'x-api-key': 'groq-test-token', 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+  });
+  assert.equal(groqApiKeyResponse.status, 200);
+  const groqBearerResponse = await mcp.request('/mcp', {
+    method: 'POST',
+    headers: { authorization: 'Bearer groq-test-token', 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} })
+  });
+  assert.equal(groqBearerResponse.status, 200);
   const listing = await call('tools/list', {});
   assert.equal(listing.tools.length, 22);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_patch' && tool.inputSchema.properties.expectedRevision));
