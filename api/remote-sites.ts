@@ -1,36 +1,39 @@
 import { Hono } from 'hono';
-import { readSiteDigest, siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
+import { siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
+import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-digest.js';
 
-// Public read-only browser endpoint for the remote Sites overview.
-// Returns the site registry with each site's projection digest (bounded:
-// one list plus one digest read per site). Full snapshot/event history,
-// credentials, and all mutations stay behind the authenticated Sites MCP.
-// Article bodies remain in Git and are never returned here.
+// Public read-only browser endpoint for agent-managed Sites Operator sites.
+// Keep this view cheap: one registry read + one compact planning-digest list.
+// Full analytics detail stays behind the authenticated MCP and no per-site N+1
+// Firestore reads are performed here.
 const app = new Hono();
 app.get('/api/remote-sites', async c => {
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
-  const registry = await siteRegistryList({ limit });
-  const sites = [];
-  for (const site of registry.items as Array<Record<string, unknown>>) {
-    let digest: unknown = null;
-    try {
-      digest = await readSiteDigest(String(site.id));
-    } catch {
-      digest = null;
-    }
-    sites.push({
-      id: site.id,
-      name: site.name,
-      repository: site.repository,
-      productionUrl: site.productionUrl,
-      deploymentProvider: site.deploymentProvider,
-      status: site.status,
-      ga4PropertyId: site.ga4PropertyId ?? null,
-      searchConsoleProperty: site.searchConsoleProperty ?? null,
-      localProjectId: site.localProjectId ?? null,
-      digest
-    });
-  }
-  return c.json({ generatedAt: new Date().toISOString(), sites }, 200, { 'cache-control': 'no-store' });
+  const [registry, planning] = await Promise.all([
+    siteRegistryList({ limit }),
+    seoPlanningDigestList({ limit })
+  ]);
+  const digestBySite = new Map((planning.items as Array<Record<string, unknown>>).map(item => [String(item.siteId), item]));
+  const sites = (registry.items as Array<Record<string, unknown>>).map(site => ({
+    id: site.id,
+    name: site.name,
+    repository: site.repository,
+    productionUrl: site.productionUrl,
+    deploymentProvider: site.deploymentProvider,
+    status: site.status,
+    ga4PropertyId: site.ga4PropertyId ?? null,
+    searchConsoleProperty: site.searchConsoleProperty ?? null,
+    localProjectId: site.localProjectId ?? null,
+    planningDigest: digestBySite.get(String(site.id)) ?? null
+  }));
+  return c.json({
+    generatedAt: new Date().toISOString(),
+    semantics: {
+      scope: 'Sites Operator registry = agent-managed production sites',
+      siteMonitor: 'Human-only portfolio dashboard; not an agent planning source',
+      analytics: 'Planning digests are externally refreshed; this endpoint never calls Google'
+    },
+    sites
+  }, 200, { 'cache-control': 'no-store' });
 });
 export default app;
