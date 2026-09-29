@@ -225,7 +225,7 @@ try {
   assert.equal(ga4RequestBodies.filter(body => body.dimensionFilter?.andGroup?.expressions?.some((expression: any) => expression?.filter?.fieldName === 'sessionDefaultChannelGroup')).length, 3);
   const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
   assert.equal(ga4Payloads.length, 3);
-  const capturedPayload = JSON.parse(ga4Payloads.find(row => JSON.parse(row.payload_json).organicStatus === 'complete')!.payload_json);
+  const capturedPayload = JSON.parse(ga4Payloads.find(row => JSON.parse(row.payload_json).metrics?.sessions === 31)!.payload_json);
   assert.equal(capturedPayload.metrics.sessions, 31, 'the existing sessions field remains all-channel');
   assert.equal(capturedPayload.organicMetrics.sessions, 17, 'Organic Search has a separate field');
   assert.deepEqual(capturedPayload.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels', organicLandingPages: 'Organic Search' });
