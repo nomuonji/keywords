@@ -87,4 +87,15 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
 
       - name: Measure all managed sites sequentially
-        run: npx tsx scripts/site-measurement-batch.ts
+        shell: bash
+        env:
+          BOOTSTRAP_RETRY_SITE_JOBS_JSON: >-
+            [
+              {"projectId":"c387a1dd-044b-412f-a1e1-176728b2527c","name":"book-discovery","domain":"books.antonbase.com","sitemapUrl":"https://books.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"},
+              {"projectId":"25781e0a-4f7b-4ba6-ad0f-d32c2c30b673","name":"job-world","domain":"job.antonbase.com","sitemapUrl":"https://job.antonbase.com/sitemap.xml","gscProperty":"sc-domain:antonbase.com"}
+            ]
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            export SITE_JOBS_JSON="$BOOTSTRAP_RETRY_SITE_JOBS_JSON"
+          fi
+          npx tsx scripts/site-measurement-batch.ts
