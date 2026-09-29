@@ -240,6 +240,7 @@ Required/optional variables include:
 
 ```text
 KEYWORDS_REMOTE_MCP_TOKEN
+KEYWORDS_GROQ_MCP_TOKEN            # optional dedicated Groq token
 KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN
 FIREBASE_PROJECT_ID
 FIREBASE_SERVICE_ACCOUNT_JSON
@@ -258,6 +259,34 @@ Google Ads demand uses the working proxy first and direct Google Ads credentials
 
 ## ChatGPT connection
 
-Use the production `/mcp` URL with OAuth/PKCE. The endpoint exchanges the configured access key for short-lived access tokens and renewable refresh tokens. Static bearer auth remains available for API/MCP clients.
+Use the production `/mcp` URL with OAuth/PKCE. The endpoint exchanges `KEYWORDS_REMOTE_MCP_TOKEN` for short-lived access tokens and renewable refresh tokens. Static bearer auth remains available for API/MCP clients.
 
 After a server deployment that changes the tool contract, ChatGPT may cache the previous connector manifest for the current conversation. `remote_keyword_status.tools` is the server-side source of truth; reconnect/refresh the custom connector or start a new session when the client needs to discover newly added tools.
+
+## Groq connection
+
+Groq remote MCP accepts explicit HTTP headers rather than requiring the OAuth discovery flow. Keep ChatGPT OAuth intact and configure Groq with a static secret header.
+
+Preferred production setup:
+
+1. Set a distinct encrypted Vercel variable `KEYWORDS_GROQ_MCP_TOKEN`.
+2. Point Groq at `https://keywords-seven.vercel.app/mcp`.
+3. Send either `Authorization: Bearer <KEYWORDS_GROQ_MCP_TOKEN>` or `x-api-key: <KEYWORDS_GROQ_MCP_TOKEN>`.
+4. If the dedicated Groq token is not configured yet, `x-api-key` falls back to `KEYWORDS_REMOTE_MCP_TOKEN` for backward compatibility; do not rely on that fallback long-term.
+
+Example Responses API tool definition:
+
+```json
+{
+  "type": "mcp",
+  "server_label": "keywords_operator",
+  "server_url": "https://keywords-seven.vercel.app/mcp",
+  "headers": {
+    "x-api-key": "<KEYWORDS_GROQ_MCP_TOKEN>"
+  },
+  "server_description": "Research keyword demand, SERPs, trend article opportunities, and site overlap using the Keywords Operator.",
+  "require_approval": "never"
+}
+```
+
+Never put either MCP token in Git, Firestore, prompts, or article metadata.
