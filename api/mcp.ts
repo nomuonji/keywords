@@ -29,10 +29,11 @@ const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
 if (!configuredToken) throw new Error('KEYWORDS_REMOTE_MCP_TOKEN is required for the remote MCP');
 const token: string = configuredToken;
+const groqToken = process.env.KEYWORDS_GROQ_MCP_TOKEN?.trim() || null;
 const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
 let googleAdsDirectLastError: string | null = null;
 
-app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
+app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
 function origin(c: any) { return new URL(c.req.url).origin; }
 function b64(value: string) { return Buffer.from(value).toString('base64url'); }
 function unb64(value: string) { return Buffer.from(value, 'base64url').toString('utf8'); }
@@ -46,14 +47,26 @@ function verified(value: string, kind: string) {
   if (expected.length !== signature.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return null;
   try { const payload = JSON.parse(unb64(body)); return payload.kind === kind && typeof payload.exp === 'number' && payload.exp > Math.floor(Date.now() / 1000) ? payload : null; } catch { return null; }
 }
-function isAuthorized(value: string) { return value === token || Boolean(verified(value, 'access')); }
-function sameSecret(value: string) { return value.length === token.length && timingSafeEqual(Buffer.from(value), Buffer.from(token)); }
+function sameValue(value: string, expected: string | null) {
+  return Boolean(expected) && value.length === expected!.length && timingSafeEqual(Buffer.from(value), Buffer.from(expected!));
+}
+function isAuthorizedBearer(value: string) {
+  return sameValue(value, token) || sameValue(value, groqToken) || Boolean(verified(value, 'access'));
+}
+function isAuthorizedApiKey(value: string) {
+  return sameValue(value, groqToken ?? token);
+}
+function sameSecret(value: string) { return sameValue(value, token); }
 function query(c: any, name: string) { return c.req.query(name) ?? ''; }
 function safeRedirect(value: string) { try { const url = new URL(value); return url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(url.hostname)) ? url : null; } catch { return null; } }
 function form(c: any, values: Record<string, string>) { return c.html(`<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Keywords Treasury</title><style>body{font-family:system-ui;max-width:34rem;margin:5rem auto;padding:1.5rem;color:#17211f}input,button{width:100%;padding:.75rem;margin:.5rem 0;font:inherit}button{background:#176b52;color:white;border:0;border-radius:.4rem}small{color:#52615c}</style><h1>Keywords Treasury を接続</h1><p>ChatGPT が共有キーワードストックを読み書きできるようにします。</p><form method="post" action="${origin(c)}/oauth/authorize">${Object.entries(values).map(([key,value])=>`<input type="hidden" name="${key}" value="${value.replaceAll('&','&amp;').replaceAll('"','&quot;')}">`).join('')}<label>アクセスキー<input name="access_key" type="password" autocomplete="current-password" required autofocus></label><small>Vercel の <code>KEYWORDS_REMOTE_MCP_TOKEN</code> の値を入力してください。</small><button type="submit">許可して接続</button></form></html>`); }
 const requireToken = async (c: any, next: any) => {
-  const supplied = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
-  if (!isAuthorized(supplied)) { c.header('WWW-Authenticate', `Bearer resource_metadata="${origin(c)}/.well-known/oauth-protected-resource"`); return c.json({ error: 'Unauthorized' }, 401); }
+  const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '') ?? '';
+  const apiKey = c.req.header('x-api-key')?.trim() ?? '';
+  if (!isAuthorizedBearer(bearer) && !isAuthorizedApiKey(apiKey)) {
+    c.header('WWW-Authenticate', `Bearer resource_metadata="${origin(c)}/.well-known/oauth-protected-resource"`);
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   return next();
 };
 app.use('/mcp', requireToken); app.use('/api/mcp', requireToken);
@@ -75,6 +88,12 @@ function runtimeStatus() {
     },
     toolCount: KEYWORDS_MCP_TOOL_NAMES.length,
     tools: [...KEYWORDS_MCP_TOOL_NAMES],
+    authentication: {
+      oauthPkce: true,
+      legacyStaticBearer: true,
+      groqStaticTokenConfigured: Boolean(groqToken),
+      groqHeaders: ['Authorization: Bearer <token>', 'x-api-key: <token>']
+    },
     googleAdsDemandProviderOrder: ['proxy', 'direct'],
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
