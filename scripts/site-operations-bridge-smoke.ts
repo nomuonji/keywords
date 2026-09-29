@@ -59,6 +59,7 @@ globalThis.fetch = async (input, init) => {
     const startDate = body.dateRanges?.[0]?.startDate;
     if (startDate === '2026-08-25') return Response.json({ error: { message: 'fixture failure' } }, { status: 503 });
     const organic = body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup';
+    const organicLanding = body.dimensionFilter?.andGroup?.expressions?.some((expression: any) => expression?.filter?.fieldName === 'sessionDefaultChannelGroup') ?? false;
     if (organic && startDate === '2026-08-11') throw new Error(`Synthetic GA4 failure: Authorization: Bearer ${bearerErrorFixture}`);
     const landing = body.dimensions?.[0]?.name === 'landingPage';
     const current = startDate === '2026-09-08';
@@ -79,10 +80,16 @@ globalThis.fetch = async (input, init) => {
       });
     }
     if (landing) {
-      assert.notEqual(body.dimensionFilter?.filter?.fieldName, 'sessionDefaultChannelGroup', 'landing-page report remains an explicitly all-channel series');
-      const pageMetrics = current
-        ? ['13', '11', '0.66', '29']
-        : partial ? ['3', '3', '0.50', '7'] : ['9', '8', '0.61', '21'];
+      if (organicLanding) {
+        assert.ok(body.dimensionFilter?.andGroup?.expressions?.some((expression: any) => expression?.filter?.fieldName === 'sessionDefaultChannelGroup'));
+      } else {
+        assert.notEqual(body.dimensionFilter?.filter?.fieldName, 'sessionDefaultChannelGroup', 'all-channel landing-page report must remain unfiltered by channel');
+      }
+      const pageMetrics = organicLanding
+        ? (current ? ['7', '6', '0.70', '16'] : partial ? ['2', '2', '0.50', '5'] : ['5', '4', '0.60', '12'])
+        : current
+          ? ['13', '11', '0.66', '29']
+          : partial ? ['3', '3', '0.50', '7'] : ['9', '8', '0.61', '21'];
       const rows = [{
         dimensionValues: [{ value: current ? '/article-a/' : '/article-a' }],
         metricValues: pageMetrics.map(value => ({ value }))
@@ -213,14 +220,17 @@ try {
   assert.equal(partialLandingGa4.landingPages.status, 'partial');
   assert.deepEqual(currentGa4.organicMetrics, { sessions: 17, activeUsers: 15, engagement: 0.71, views: 39 });
   assert.equal(currentGa4.organicStatus, 'complete', currentGa4.organicError ?? undefined);
-  assert.deepEqual(currentGa4.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' });
+  assert.deepEqual(currentGa4.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels', organicLandingPages: 'Organic Search' });
   assert.equal(ga4RequestBodies.filter(body => body.dimensionFilter?.filter?.fieldName === 'sessionDefaultChannelGroup').length, 3);
+  assert.equal(ga4RequestBodies.filter(body => body.dimensionFilter?.andGroup?.expressions?.some((expression: any) => expression?.filter?.fieldName === 'sessionDefaultChannelGroup')).length, 3);
   const ga4Payloads = sqlite.prepare("SELECT payload_json FROM measurement_imports WHERE project_id=? AND provider='ga4' AND completeness='complete'").all('project-a') as Array<{ payload_json: string }>;
   assert.equal(ga4Payloads.length, 3);
   const capturedPayload = JSON.parse(ga4Payloads.find(row => JSON.parse(row.payload_json).organicStatus === 'complete')!.payload_json);
   assert.equal(capturedPayload.metrics.sessions, 31, 'the existing sessions field remains all-channel');
   assert.equal(capturedPayload.organicMetrics.sessions, 17, 'Organic Search has a separate field');
-  assert.deepEqual(capturedPayload.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' });
+  assert.deepEqual(capturedPayload.metricScopes, { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels', organicLandingPages: 'Organic Search' });
+  assert.equal(capturedPayload.organicLandingPages.status, 'complete');
+  assert.equal(capturedPayload.organicLandingPages.rows[0].metrics.sessions, 7);
   assert.ok(!JSON.stringify(ga4Payloads).includes('ga4-secret-fixture-token'), 'measurement persistence must not contain credentials');
 
   await assert.rejects(() => captureGa4Period(systemCtx, { projectId: 'project-a', propertyId: '123', targetOrigin: 'https://example.com', startDate: '2026-08-25', endDate: '2026-08-31' }), /GA4 collection failed/);
