@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { getDatabase } from '@keywords/db';
 import { field, firestore, value } from '../../db/src/firestore.js';
 import { dateOffset } from './recovery-context.js';
@@ -233,9 +234,15 @@ export async function refreshSeoPlanningDigest(projectId: string, endDate: strin
   return { siteId: site.id, generatedAt: digest.generatedAt, inventoryCount: digest.inventoryCount, selectedCount: digest.selectedCount };
 }
 
+export const seoPlanningDigestGetShape = {
+  siteId: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/)
+};
+export const seoPlanningDigestListShape = {
+  limit: z.number().int().min(1).max(100).default(50)
+};
+
 export async function seoPlanningDigestGet(input: unknown) {
-  const siteId = String((input as any)?.siteId ?? '');
-  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(siteId)) throw new Error('Invalid siteId');
+  const { siteId } = z.object(seoPlanningDigestGetShape).strict().parse(input);
   try {
     const doc = await firestore(`/seoPlanningDigests/${siteId}`);
     return decode(doc);
@@ -243,4 +250,25 @@ export async function seoPlanningDigestGet(input: unknown) {
     if (Number(error?.status) === 404) return { siteId, digest: null };
     throw error;
   }
+}
+
+
+export async function seoPlanningDigestList(input: unknown) {
+  const args = z.object(seoPlanningDigestListShape).strict().parse(input);
+  const result = await firestore(`/seoPlanningDigests?pageSize=${args.limit}&orderBy=generatedAt%20desc`);
+  const items = (result.documents ?? []).map((doc: any) => {
+    const digest = decode(doc);
+    return {
+      siteId: digest.siteId,
+      repository: digest.repository,
+      productionUrl: digest.productionUrl,
+      generatedAt: digest.generatedAt,
+      measurementEnd: digest.measurementEnd,
+      inventoryCount: digest.inventoryCount,
+      selectedCount: digest.selectedCount,
+      notObservedInComplete90dGscCount: digest.notObservedInComplete90dGscCount,
+      statuses: digest.statuses
+    };
+  });
+  return { items };
 }
