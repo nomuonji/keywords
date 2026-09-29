@@ -157,7 +157,7 @@ export async function captureProjectGa4Metrics(ctx: CommandContext, input: { pro
   const targetOrigin = origin(site.productionUrl);
   if (!targetOrigin) return { status: 'skipped' as const, reason: 'site_production_url_invalid', siteId: site.id, captures: [] };
   const captures: Array<Record<string, unknown>> = [];
-  for (const period of input.periods.slice(0, 4)) {
+  for (const period of input.periods.slice(0, 6)) {
     try {
       captures.push({ key: period.key, ...(await captureGa4Period(ctx, { projectId: input.projectId, propertyId: site.ga4PropertyId, targetOrigin, startDate: period.startDate, endDate: period.endDate })) });
     } catch (error) {
