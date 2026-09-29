@@ -102,3 +102,41 @@ export type OptimizationEvent = {
   createdAt: string;
   updatedAt: string;
 };
+
+
+export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article';
+export type SeoTaskStatus = 'proposed' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
+export type SeoTaskPriority = 'high' | 'medium' | 'low';
+
+export type SeoTaskHistoryEntry = {
+  at: string;
+  actor: string;
+  event: string;
+  detail: string;
+};
+
+export type SeoTaskRecord = {
+  id: string;
+  siteId: string;
+  articleIds: string[];
+  targetUrls: string[];
+  repo: string;
+  taskType: SeoTaskType;
+  status: SeoTaskStatus;
+  priority: SeoTaskPriority;
+  title: string;
+  rationale: string;
+  evidence: string[];
+  dedupeKey: string;
+  issueNumber: number | null;
+  issueUrl: string | null;
+  issueState: 'open' | 'closed' | null;
+  resultCommitSha: string | null;
+  executionSummary: string;
+  history: SeoTaskHistoryEntry[];
+  createdBy: string;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+};

@@ -1,4 +1,4 @@
-export const SITES_MCP_SERVER_VERSION = '0.3.0';
+export const SITES_MCP_SERVER_VERSION = '0.4.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
@@ -11,6 +11,12 @@ export const SITES_MCP_TOOL_NAMES = [
   'site_article_save',
   'site_metric_snapshot_save',
   'site_metric_snapshot_list',
+  'seo_planning_digest_get',
+  'seo_planning_digest_list',
+  'seo_task_get',
+  'seo_task_create',
+  'seo_task_list',
+  'seo_task_update',
   'optimization_event_create',
   'optimization_event_list',
   'optimization_event_update',

@@ -24,6 +24,23 @@ function finite(value: unknown) {
   return Number.isFinite(number) ? number : null;
 }
 
+
+function queryRowsForPage(projectId: string, observation: any, pageRow: any) {
+  return rows(`SELECT query,clicks,impressions,ctr,position FROM query_page_metric_snapshots
+    WHERE project_id=? AND site_url=? AND start_date=? AND end_date=? AND COALESCE(search_type,'web')=? AND observed_at=?
+      AND (page_id=? OR url=?)
+    ORDER BY impressions DESC LIMIT 200`,
+    projectId, observation.property, observation.start_date, observation.end_date, observation.search_type ?? 'web',
+    observation.captured_at, pageRow.page_id ?? '', pageRow.url
+  ).map(item => ({
+    query: String(item.query),
+    clicks: finite(item.clicks),
+    impressions: finite(item.impressions),
+    ctr: finite(item.ctr),
+    averagePosition: finite(item.position)
+  }));
+}
+
 function canonicalKey(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -370,7 +387,7 @@ export async function projectSiteOperationsMetrics(projectId: string) {
         metrics: {
           clicks: finite(row.clicks), impressions: finite(row.impressions), ctr: finite(row.ctr), averagePosition: finite(row.position)
         },
-        queries: [],
+        queries: queryRowsForPage(projectId, observation, row),
         completeness: 'complete',
         sourceVersion: `sqlite:gsc:${observation.source_version}:article:${article.id}`,
         capturedAt: observation.captured_at

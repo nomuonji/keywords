@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
-import type { MetricSnapshot, OptimizationEvent, SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
+import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const note = z.string().max(4000);
@@ -19,6 +19,16 @@ const articleStatus = z.enum(['draft', 'published', 'paused', 'archived']);
 const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 'cta_ui', 'freshness', 'indexing', 'new_article', 'other']);
 const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cancelled']);
 const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened', 'inconclusive']);
+const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article']);
+const seoTaskStatus = z.enum(['proposed', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
+const seoTaskPriority = z.enum(['high', 'medium', 'low']);
+const issueState = z.enum(['open', 'closed']);
+const historyEntry = z.object({
+  at: isoTime.optional(),
+  actor: z.string().trim().min(1).max(120),
+  event: z.string().trim().min(1).max(120),
+  detail: z.string().trim().min(1).max(2000)
+}).strict();
 
 export const siteRegistryListShape = { status: siteStatus.optional(), limit: z.number().int().min(1).max(100).default(50), pageToken: z.string().max(4000).optional() };
 export const siteRegistryGetShape = { id: entityId };
@@ -65,6 +75,43 @@ export const metricSnapshotListShape = {
   siteId: entityId, articleId: entityId.optional(), provider: z.enum(['gsc', 'ga4']).optional(),
   limit: z.number().int().min(1).max(100).default(50)
 };
+
+export const seoTaskGetShape = { id: entityId };
+export const seoTaskCreateShape = {
+  id: entityId.optional(),
+  siteId: entityId,
+  articleIds: z.array(entityId).max(20).default([]),
+  targetUrls: z.array(webUrl).max(20).default([]),
+  repo: repository,
+  taskType: seoTaskType,
+  priority: seoTaskPriority.default('medium'),
+  title: z.string().trim().min(1).max(300),
+  rationale: note.refine(value => value.trim().length > 0),
+  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).default([]),
+  dedupeKey: z.string().trim().min(1).max(300),
+  createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
+};
+const seoTaskCreateSchema = z.object(seoTaskCreateShape).strict();
+export const seoTaskListShape = {
+  siteId: entityId.optional(),
+  articleId: entityId.optional(),
+  taskType: seoTaskType.optional(),
+  status: seoTaskStatus.optional(),
+  limit: z.number().int().min(1).max(100).default(50)
+};
+export const seoTaskUpdateShape = {
+  id: entityId,
+  expectedRevision: z.number().int().min(1),
+  status: seoTaskStatus.optional(),
+  priority: seoTaskPriority.optional(),
+  issueNumber: z.number().int().positive().nullable().optional(),
+  issueUrl: webUrl.nullable().optional(),
+  issueState: issueState.nullable().optional(),
+  resultCommitSha: commitSha.nullable().optional(),
+  executionSummary: note.optional(),
+  appendHistory: historyEntry.optional()
+};
+const seoTaskUpdateSchema = z.object(seoTaskUpdateShape).strict();
 
 export const optimizationEventCreateShape = {
   id: entityId.optional(), siteId: entityId, articleId: entityId,
@@ -463,6 +510,99 @@ export async function metricSnapshotList(input: unknown) {
   const items = (await queryBySite('metricSnapshots', args.siteId, 1000)).filter((item: any) => (!args.articleId || item.articleId === args.articleId) && (!args.provider || item.provider === args.provider))
     .sort((a: any, b: any) => String(b.capturedAt).localeCompare(String(a.capturedAt))).slice(0, args.limit) as MetricSnapshot[];
   return { items };
+}
+
+export async function seoTaskGet(input: unknown) {
+  const args = z.object(seoTaskGetShape).strict().parse(input);
+  const doc = await readDocument('seoTasks', args.id);
+  if (!doc) throw new Error('SEO task not found');
+  return decoded(doc) as SeoTaskRecord;
+}
+
+export async function seoTaskCreate(input: unknown) {
+  const args = seoTaskCreateSchema.parse(input);
+  await ensureSite(args.siteId);
+  for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
+  if (!args.articleIds.length && !args.targetUrls.length) throw new Error('articleIds or targetUrls is required');
+  const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+  const duplicate = existing.find(task =>
+    task.dedupeKey === args.dedupeKey &&
+    !['completed', 'cancelled', 'superseded'].includes(task.status)
+  );
+  if (duplicate) throw new Error(`Open SEO task already exists for dedupeKey: ${duplicate.id}`);
+  const t = now();
+  const idValue = args.id ?? randomUUID();
+  if (await readDocument('seoTasks', idValue)) throw new Error('SEO task already exists');
+  const record: SeoTaskRecord = {
+    id: idValue,
+    siteId: args.siteId,
+    articleIds: args.articleIds,
+    targetUrls: args.targetUrls,
+    repo: args.repo,
+    taskType: args.taskType,
+    status: 'proposed',
+    priority: args.priority,
+    title: args.title,
+    rationale: args.rationale,
+    evidence: args.evidence,
+    dedupeKey: args.dedupeKey,
+    issueNumber: null,
+    issueUrl: null,
+    issueState: null,
+    resultCommitSha: null,
+    executionSummary: '',
+    history: [{ at: t, actor: args.createdBy, event: 'proposed', detail: 'SEO task record created before GitHub Issue issuance.' }],
+    createdBy: args.createdBy,
+    revision: 1,
+    createdAt: t,
+    updatedAt: t,
+    completedAt: null
+  };
+  const runId = await auditWrite('seo_task_create', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, null);
+  return { ...record, runId };
+}
+
+export async function seoTaskList(input: unknown) {
+  const args = z.object(seoTaskListShape).strict().parse(input);
+  let items: SeoTaskRecord[];
+  if (args.siteId) {
+    await ensureSite(args.siteId);
+    items = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+  } else {
+    const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
+    items = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoTaskRecord);
+  }
+  items = items.filter(task =>
+    (!args.articleId || task.articleIds.includes(args.articleId)) &&
+    (!args.taskType || task.taskType === args.taskType) &&
+    (!args.status || task.status === args.status)
+  ).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
+  return { items };
+}
+
+export async function seoTaskUpdate(input: unknown) {
+  const args = seoTaskUpdateSchema.parse(input);
+  const previous = await readDocument('seoTasks', args.id);
+  if (!previous) throw new Error('SEO task not found');
+  const current = decoded(previous) as SeoTaskRecord;
+  if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
+  const t = now();
+  const { id: _id, expectedRevision, appendHistory, ...patch } = args;
+  const history = [...(current.history ?? [])];
+  if (appendHistory) history.push({ ...appendHistory, at: appendHistory.at ?? t });
+  const status = patch.status ?? current.status;
+  const record: SeoTaskRecord = {
+    ...current,
+    ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
+    status,
+    history: history.slice(-100),
+    completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
+    revision: expectedRevision + 1,
+    updatedAt: t
+  };
+  if (record.status === 'issued' && (!record.issueNumber || !record.issueUrl)) throw new Error('issued SEO task requires issueNumber and issueUrl');
+  const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
+  return { ...record, runId };
 }
 
 export async function optimizationEventCreate(input: unknown) {

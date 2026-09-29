@@ -44,6 +44,9 @@ export const keywordMetricSnapshots = sqliteTable('keyword_metric_snapshots', {
 export const pageMetricSnapshots = sqliteTable('page_metric_snapshots', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), pageId: text('page_id').references(() => pages.id, { onDelete: 'set null' }), url: text('url').notNull(), siteUrl: text('site_url').notNull(), startDate: text('start_date').notNull(), endDate: text('end_date').notNull(), searchType: text('search_type'), clicks: real('clicks').notNull(), impressions: real('impressions').notNull(), ctr: real('ctr').notNull(), position: real('position').notNull(), observedAt: text('observed_at').notNull()
 });
+export const queryPageMetricSnapshots = sqliteTable('query_page_metric_snapshots', {
+  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), pageId: text('page_id').references(() => pages.id, { onDelete: 'set null' }), url: text('url').notNull(), query: text('query').notNull(), siteUrl: text('site_url').notNull(), startDate: text('start_date').notNull(), endDate: text('end_date').notNull(), searchType: text('search_type'), clicks: real('clicks').notNull(), impressions: real('impressions').notNull(), ctr: real('ctr').notNull(), position: real('position').notNull(), observedAt: text('observed_at').notNull()
+});
 
 export const sources = sqliteTable('sources', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), type: text('type').notNull(), label: text('label').notNull(), url: text('url'), metadataJson: text('metadata_json'), createdAt: text('created_at').notNull()

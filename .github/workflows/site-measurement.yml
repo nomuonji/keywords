@@ -1,9 +1,9 @@
 # On-demand site measurement for the Sites Operator loop.
 #
-# No resident daemon: this workflow runs measurement only when triggered,
-# either manually (workflow_dispatch) or on the staggered weekly schedule
-# below. Each job handles a small site group so Firestore quota is spread
-# across days instead of bursting.
+# No resident daemon: this workflow runs measurement only when triggered.
+# Managed Sites Operator sites are measured every day, but the portfolio is
+# split into three staggered groups so Google/Firestore work is externalized
+# from ChatGPT scheduled planning and write bursts stay bounded.
 #
 # Runs on github-hosted runners with a fresh database every time. Projects
 # are recreated with their stable registry-linked ids, captures are window
@@ -28,9 +28,10 @@ on:
         required: false
         default: 'all'
   schedule:
-    - cron: '0 18 * * 2'
-    - cron: '0 18 * * 4'
-    - cron: '0 18 * * 6'
+    # Daily UTC stagger: A=17:00, B=18:00, C=19:00.
+    - cron: '0 17 * * *'
+    - cron: '0 18 * * *'
+    - cron: '0 19 * * *'
 permissions:
   contents: read
 concurrency:
@@ -74,22 +75,22 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
       KEYWORDS_AGENT_ID: site-measurement-actions
-      # Lazy article sync: refresh registered articles only. New records are
-      # created explicitly when an optimization event opens or an article
-      # publishes, so scheduled projections stay cheap under tight quotas.
+      # Planning uses one overwrite-only Firestore digest per site. Keep
+      # legacy article projection lazy so analytics collection never creates
+      # one Firestore document per page/period.
       KEYWORDS_ARTICLE_SYNC_MODE: lazy
     steps:
       - name: Select scheduled group
         id: select
         shell: bash
         run: |
-          day=$(date -u +%w)
+          hour=$(date -u +%H)
           want="${{ inputs.group }}"
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            case "$day" in
-              2) want="a" ;;
-              4) want="b" ;;
-              6) want="c" ;;
+            case "$hour" in
+              17) want="a" ;;
+              18) want="b" ;;
+              19) want="c" ;;
               *) want="none" ;;
             esac
           fi

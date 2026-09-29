@@ -172,7 +172,7 @@ export async function ga4RunReport(input: { propertyId: string; startDate: strin
  * the path of the first pageview in the session; query strings are deliberately
  * excluded so canonical article identity can be matched without URL-parameter noise.
  */
-export async function ga4RunLandingPageReport(input: { propertyId: string; startDate: string; endDate: string; maxRows?: number }): Promise<Ga4LandingPageReportResult> {
+export async function ga4RunLandingPageReport(input: { propertyId: string; startDate: string; endDate: string; maxRows?: number; channel?: 'Organic Search' }): Promise<Ga4LandingPageReportResult> {
   assertDates(input.startDate, input.endDate);
   const maxRows = Math.max(1, Math.min(Math.floor(input.maxRows ?? 25_000), 250_000));
   const { propertyId, resourceName, raw } = await runReport({
@@ -181,7 +181,12 @@ export async function ga4RunLandingPageReport(input: { propertyId: string; start
       dateRanges: [{ startDate: input.startDate, endDate: input.endDate }],
       dimensions: [{ name: 'landingPage' }],
       metrics: metricNames.map(name => ({ name })),
-      dimensionFilter: {
+      dimensionFilter: input.channel ? {
+        andGroup: { expressions: [
+          { notExpression: { filter: { fieldName: 'landingPage', stringFilter: { value: '(not set)', matchType: 'EXACT' } } } },
+          { filter: { fieldName: 'sessionDefaultChannelGroup', stringFilter: { value: input.channel, matchType: 'EXACT' } } }
+        ] }
+      } : {
         notExpression: { filter: { fieldName: 'landingPage', stringFilter: { value: '(not set)', matchType: 'EXACT' } } }
       },
       limit: String(maxRows),
