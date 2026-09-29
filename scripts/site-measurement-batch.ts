@@ -6,7 +6,7 @@ import { siteCommands } from '../packages/commands/src/site.js';
 import { blogCommands } from '../packages/commands/src/blog.js';
 import { metricsCommands } from '../packages/commands/src/metrics.js';
 import { captureProjectGa4Metrics } from '../packages/commands/src/ga4-metrics.js';
-import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest.js';
+import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest-refresh.js';
 import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/src/recovery-context.js';
 
 /**
