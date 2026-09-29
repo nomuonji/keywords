@@ -75,11 +75,10 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
       KEYWORDS_AGENT_ID: site-measurement-actions
-      # Planner mode: analytics acquisition is externalized here. Registered
-      # article mappings are refreshed during projection; the planner itself
-      # must never spend its scheduled runtime collecting Google data.
-      KEYWORDS_ARTICLE_SYNC_MODE: backfill
-      KEYWORDS_CLOUD_METRIC_IMPORT_LIMIT: '8'
+      # Planning uses one overwrite-only Firestore digest per site. Keep
+      # legacy article projection lazy so analytics collection never creates
+      # one Firestore document per page/period.
+      KEYWORDS_ARTICLE_SYNC_MODE: lazy
     steps:
       - name: Select scheduled group
         id: select
