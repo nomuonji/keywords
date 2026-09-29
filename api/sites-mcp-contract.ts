@@ -11,6 +11,8 @@ export const SITES_MCP_TOOL_NAMES = [
   'site_article_save',
   'site_metric_snapshot_save',
   'site_metric_snapshot_list',
+  'seo_planning_digest_get',
+  'seo_planning_digest_list',
   'seo_task_get',
   'seo_task_create',
   'seo_task_list',
