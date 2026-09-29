@@ -60,30 +60,34 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       organicError = (error instanceof Error ? error.message : String(error)).replace(/Bearer\s+\S+/gi, 'Bearer [redacted]').slice(0, 200);
     }
 
-    let landingPages: {
+    type LandingSet = {
       status: 'complete' | 'partial' | 'failed';
       rowCount: number;
       rows: Array<{ landingPage: string; metrics: ReturnType<typeof normalizeGa4Metrics> }>;
       error?: string;
     };
-    let landingReservation: ReturnType<typeof reserveOperationBudget> | null = null;
-    try {
-      landingReservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:landing:${property}:${input.startDate}:${input.endDate}`);
-      const landingReport = await ga4RunLandingPageReport({ propertyId, startDate: input.startDate, endDate: input.endDate, maxRows: landingPageLimit() });
-      settleOperationBudget(landingReservation?.id, 'succeeded');
-      landingPages = {
-        status: landingReport.complete ? 'complete' : 'partial',
-        rowCount: landingReport.rowCount,
-        rows: landingReport.rows.map(row => ({ landingPage: row.landingPage, metrics: normalizeGa4Metrics(row.metrics) }))
-      };
-    } catch (error) {
-      settleOperationBudget(landingReservation?.id, 'failed', error);
-      landingPages = { status: 'failed', rowCount: 0, rows: [], error: 'ga4_landing_page_collection_failed' };
-    }
+    const captureLanding = async (key: string, channel?: 'Organic Search'): Promise<LandingSet> => {
+      let reservation: ReturnType<typeof reserveOperationBudget> | null = null;
+      try {
+        reservation = reserveOperationBudget(ctx, input.projectId, 'external_request', `ga4:landing:${key}:${property}:${input.startDate}:${input.endDate}`);
+        const report = await ga4RunLandingPageReport({ propertyId, startDate: input.startDate, endDate: input.endDate, maxRows: landingPageLimit(), channel });
+        settleOperationBudget(reservation?.id, 'succeeded');
+        return {
+          status: report.complete ? 'complete' : 'partial',
+          rowCount: report.rowCount,
+          rows: report.rows.map(row => ({ landingPage: row.landingPage, metrics: normalizeGa4Metrics(row.metrics) }))
+        };
+      } catch (error) {
+        settleOperationBudget(reservation?.id, 'failed', error);
+        return { status: 'failed', rowCount: 0, rows: [], error: `ga4_${key}_landing_page_collection_failed` };
+      }
+    };
+    const landingPages = await captureLanding('all');
+    const organicLandingPages = await captureLanding('organic', 'Organic Search');
 
-    const metricScopes = { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels' };
+    const metricScopes = { sessions: 'all channels', organicMetrics: 'Organic Search', landingPages: 'all channels', organicLandingPages: 'Organic Search' };
     const filters = [{ groupType: 'and', filters: [{ dimension: 'sessionDefaultChannelGroup', operator: 'equals', expression: 'Organic Search' }] }];
-    const sourceVersion = fingerprint({ provider: 'ga4', property, startDate: input.startDate, endDate: input.endDate, metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages });
+    const sourceVersion = fingerprint({ provider: 'ga4', property, startDate: input.startDate, endDate: input.endDate, metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages, organicLandingPages });
     const observation = recordMeasurementImport({
       projectId: input.projectId,
       provider: 'ga4',
@@ -94,13 +98,13 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       endDate: input.endDate,
       timezone: 'UTC',
       searchType: null,
-      dimensions: ['sessionDefaultChannelGroup', ...(landingPages.status === 'complete' ? ['landingPage'] : [])],
+      dimensions: ['sessionDefaultChannelGroup', ...(landingPages.status === 'complete' || organicLandingPages.status === 'complete' ? ['landingPage'] : [])],
       status: 'succeeded',
       completeness: 'complete',
       sourceLabel: `GA4 all-channel + Organic Search snapshot: ${input.startDate} → ${input.endDate}`,
       sourceVersion,
       capturedAt,
-      payload: { metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages, api: 'analyticsdata.googleapis.com/v1beta', rowCount: report.rowCount }
+      payload: { metrics, organicMetrics, organicStatus, organicError, metricScopes, landingPages, organicLandingPages, api: 'analyticsdata.googleapis.com/v1beta', rowCount: report.rowCount }
     });
     const source = {
       id: randomUUID(), projectId: input.projectId, type: 'ga4_snapshot',
@@ -109,6 +113,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       metadataJson: JSON.stringify({
         measurementImportId: observation.id, sourceVersion, property, metrics, organicMetrics, organicStatus, organicError, metricScopes,
         landingPages: { status: landingPages.status, rowCount: landingPages.rowCount, storedRows: landingPages.rows.length },
+        organicLandingPages: { status: organicLandingPages.status, rowCount: organicLandingPages.rowCount, storedRows: organicLandingPages.rows.length },
         api: 'analyticsdata.googleapis.com/v1beta'
       }),
       createdAt: capturedAt
@@ -128,6 +133,7 @@ export async function captureGa4Period(ctx: CommandContext, input: { projectId: 
       organicError,
       metricScopes,
       landingPages: { status: landingPages.status, rowCount: landingPages.rowCount, storedRows: landingPages.rows.length },
+      organicLandingPages: { status: organicLandingPages.status, rowCount: organicLandingPages.rowCount, storedRows: organicLandingPages.rows.length },
       capturedAt
     };
   } catch (error) {
