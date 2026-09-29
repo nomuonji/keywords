@@ -1,7 +1,8 @@
-export const SITES_MCP_SERVER_VERSION = '0.4.0';
+export const SITES_MCP_SERVER_VERSION = '0.5.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
+  'seo_agent_context',
   'site_registry_list',
   'site_registry_get',
   'site_registry_resolve',
