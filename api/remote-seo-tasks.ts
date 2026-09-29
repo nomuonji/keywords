@@ -7,7 +7,12 @@ import { seoAgentContext } from '../packages/commands/src/seo-agent-policy.js';
 const app = new Hono();
 app.get('/api/remote-seo-tasks', async c => {
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 60), 100));
-  const result = await seoTaskList({ limit });
+  let result: Awaited<ReturnType<typeof seoTaskList>> = { items: [] };
+  try {
+    result = await seoTaskList({ limit });
+  } catch (error: any) {
+    if (Number(error?.status) !== 404) throw error;
+  }
   const tasks = result.items.map(task => ({
     id: task.id,
     siteId: task.siteId,
