@@ -87,7 +87,7 @@ function queryMap(projectId: string, startDate: string, endDate: string) {
     if (seenAt && seenAt !== observation) continue;
     latestSeen.set(url, observation);
     const list = out.get(url) ?? [];
-    if (list.length >= 5) continue;
+    if (list.length >= 3) continue;
     list.push({
       query: String(row.query).slice(0, 220),
       clicks: finite(row.clicks),
@@ -136,20 +136,20 @@ function selectPlannerPages(input: Array<any>) {
   const exposure = [...input]
     .filter(item => (item.trailing90?.impressions ?? 0) > 0 || (item.current28?.impressions ?? 0) > 0)
     .sort((a, b) => Number(b.trailing90?.impressions ?? b.current28?.impressions ?? 0) - Number(a.trailing90?.impressions ?? a.current28?.impressions ?? 0))
-    .slice(0, 45);
+    .slice(0, 35);
   const declines = [...input]
     .filter(item => item.previous28 && item.current28 && Number(item.previous28.impressions ?? 0) > Number(item.current28.impressions ?? 0))
     .sort((a, b) =>
       (Number(b.previous28?.impressions ?? 0) - Number(b.current28?.impressions ?? 0)) -
       (Number(a.previous28?.impressions ?? 0) - Number(a.current28?.impressions ?? 0)))
-    .slice(0, 20);
+    .slice(0, 10);
   const unseen = [...input]
     .filter(item => item.notObservedInComplete90dGsc)
     .sort((a, b) => a.url.localeCompare(b.url))
     .slice(0, 15);
   const byUrl = new Map<string, any>();
   for (const item of [...exposure, ...declines, ...unseen]) byUrl.set(item.url, item);
-  return [...byUrl.values()].slice(0, 80);
+  return [...byUrl.values()].slice(0, 60);
 }
 
 export async function refreshSeoPlanningDigest(projectId: string, endDate: string) {
@@ -218,13 +218,26 @@ export async function refreshSeoPlanningDigest(projectId: string, endDate: strin
       purpose: 'article_driven_issue_planning',
       plannerMustNotFetchGoogle: true,
       overwriteLatestOnly: true,
-      maxPages: 80,
-      maxQueriesPerPage: 5,
+      maxPages: 60,
+      maxQueriesPerWindowPerPage: 3,
+      maxSerializedBytes: 500000,
       absenceIsNotAutomaticDelete: true,
       note: 'Use this digest to choose revise/merge/delete/internal-link/technical/new-article GitHub Issues. Verify repository content and duplicate/open task state before issuing.'
     }
   };
   digest.selectedCount = digest.pages.length;
+
+  // Firestore documents have a hard size ceiling. Keep a conservative JSON
+  // byte budget because Firestore's encoded field overhead is larger than
+  // JSON itself. Prune lowest-priority tail pages before persistence rather
+  // than splitting analytics into more durable records.
+  while (Buffer.byteLength(JSON.stringify(digest), 'utf8') > 500_000 && digest.pages.length > 10) {
+    digest.pages.pop();
+    digest.selectedCount = digest.pages.length;
+  }
+  const serializedBytes = Buffer.byteLength(JSON.stringify(digest), 'utf8');
+  if (serializedBytes > 500_000) throw new Error(`SEO planning digest exceeds storage budget after pruning: ${serializedBytes} bytes`);
+  (digest.policy as any).serializedBytes = serializedBytes;
 
   await firestore(`/seoPlanningDigests/${site.id}`, {
     method: 'PATCH',
