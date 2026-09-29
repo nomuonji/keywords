@@ -36,8 +36,7 @@ async function upsertLivePage(projectId: string, inputUrl: string, observedAt: s
   const identity = pageIdentity(inputUrl);
   const existingUrl = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.url, identity.url))).get();
   if (existingUrl) { await db.update(schema.pages).set({ status: existingUrl.status === 'archived' || existingUrl.status === 'stale' ? 'published' : existingUrl.status, lastSeenAt: observedAt, updatedAt: observedAt }).where(eq(schema.pages.id, existingUrl.id)); return existingUrl.id; }
-  const sameSlug = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.slug, identity.slug))).get();
-  const safeSlug = sameSlug ? `${identity.slug.slice(0, 210)}--live-${slugSuffix(identity.url)}` : identity.slug;
+  const safeSlug = await uniqueLiveSlug(projectId, identity.slug, identity.url);
   const page = { id: id(), projectId, clusterId: null, title: identity.title, slug: safeSlug, kind: 'existing', status: 'published', rationale: null, evidenceJson: null, audience: null, question: null, searchIntent: null, uniqueAngle: null, unresolvedAssumptionsJson: null, planMode: 'new_page', targetPageId: null, url: identity.url, source: 'search_console', lastSeenAt: observedAt, createdAt: observedAt, updatedAt: observedAt };
   await db.insert(schema.pages).values(page); return page.id;
 }
