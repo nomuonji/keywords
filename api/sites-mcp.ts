@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { SITES_MCP_SERVER_VERSION, SITES_MCP_TOOL_NAMES } from './sites-mcp-contract.js';
+import { seoAgentContext, seoAgentContextShape } from '../packages/commands/src/seo-agent-policy.js';
 import {
   metricSnapshotList, metricSnapshotListShape, metricSnapshotSave, metricSnapshotSaveShape,
   optimizationContext, optimizationContextShape,
@@ -74,6 +75,7 @@ function runtimeStatus() {
 function server() {
   const mcp = new McpServer({ name: 'sites-operator', version: SITES_MCP_SERVER_VERSION });
   mcp.registerTool('remote_sites_status', { description: 'Check Sites Operator version, deployment, source-of-truth policy, Firestore configuration and tool contract. No secrets are returned.' }, async () => structured(runtimeStatus()));
+  mcp.registerTool('seo_agent_context', { description: 'Call this first for Sites Operator SEO planning or execution. Returns the current versioned operating policy, source-routing rules, analytics constraints, dedupe rules, Issue workflow, and role-specific run contract so scheduler prompts can remain minimal.', inputSchema: seoAgentContextShape, annotations: { readOnlyHint: true } }, async input => structured(seoAgentContext(input)));
   mcp.registerTool('site_registry_list', { description: 'List real deployed/building sites. Site Concepts remain separate planning records in siteStructures.', inputSchema: siteRegistryListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryList(input)));
   mcp.registerTool('site_registry_get', { description: 'Read one real site and its repository, production URL, deployment provider, local project link and analytics identifiers.', inputSchema: siteRegistryGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryGet(input)));
   mcp.registerTool('site_registry_resolve', { description: 'Resolve a real site by explicit localProjectId or exact productionUrl. Returns site=null when no mapping exists; never guesses from names.', inputSchema: siteRegistryResolveShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryResolve(input)));
