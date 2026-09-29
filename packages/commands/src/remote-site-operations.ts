@@ -324,7 +324,15 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents'],
+    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'seoTasks'],
+    analyticsStoragePolicy: {
+      rawMeasurementRows: 'ephemeral_sqlite_only',
+      planningDigest: 'one_overwrite_document_per_site',
+      maxPlannerPages: 60,
+      maxQueriesPerWindowPerPage: 3,
+      maxSerializedBytes: 500000,
+      durableGrowth: 'seoTasks_only_when_material_action_is_issued'
+    },
     optimizationPolicy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14 }
   };
 }
