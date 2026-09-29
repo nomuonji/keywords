@@ -84,13 +84,27 @@ async function main() {
       const endDate = recoveryDate();
       const context = recoveryContext(job.projectId);
       const siteUrl = job.gscProperty ?? context.latest?.property;
-      const previousPeriod = { key: 'previous', startDate: dateOffset(endDate, -13), endDate: dateOffset(endDate, -7) };
-      const currentPeriod = { key: 'current', startDate: dateOffset(endDate, -6), endDate };
-      const previous = await metricsCommands.capture(sctx, { projectId: job.projectId, siteUrl, startDate: previousPeriod.startDate, endDate: previousPeriod.endDate, timezone: 'America/Los_Angeles' });
-      const current = await metricsCommands.capture(sctx, { projectId: job.projectId, siteUrl, startDate: currentPeriod.startDate, endDate: currentPeriod.endDate, timezone: 'America/Los_Angeles' });
+      const periods = [
+        { key: 'current7', startDate: dateOffset(endDate, -6), endDate },
+        { key: 'previous7', startDate: dateOffset(endDate, -13), endDate: dateOffset(endDate, -7) },
+        { key: 'current28', startDate: dateOffset(endDate, -27), endDate },
+        { key: 'previous28', startDate: dateOffset(endDate, -55), endDate: dateOffset(endDate, -28) },
+        { key: 'trailing90', startDate: dateOffset(endDate, -89), endDate }
+      ];
+      const gscCaptures: Array<Record<string, unknown>> = [];
+      for (const period of periods) {
+        const capture = await metricsCommands.capture(sctx, {
+          projectId: job.projectId,
+          siteUrl,
+          startDate: period.startDate,
+          endDate: period.endDate,
+          timezone: 'America/Los_Angeles'
+        });
+        gscCaptures.push({ key: period.key, ...capture });
+      }
       let ga4: unknown;
       try {
-        ga4 = await captureProjectGa4Metrics(sctx, { projectId: job.projectId, periods: [previousPeriod, currentPeriod] });
+        ga4 = await captureProjectGa4Metrics(sctx, { projectId: job.projectId, periods });
       } catch {
         ga4 = { status: 'failed', reason: 'ga4_collection_failed' };
       }
@@ -104,13 +118,13 @@ async function main() {
       }
       const projectionStatus = String((projection as any)?.status ?? 'unknown');
       const projectionFailed = projectionStatus !== 'projected';
-      const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), [previousPeriod, currentPeriod]);
+      const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), periods);
       const projectionFailure = projectionFailed
         ? projectionError ?? `projection returned status=${projectionStatus}`
         : null;
       await operationCommands.complete({ ...sctx, workSessionId: undefined }, {
         operationId: started.operation.id,
-        summary: `On-demand measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 200)}; sitemap ${sync.discovered} URLs; GSC captured; GA4 ${(ga4 as any)?.status}; projection ${JSON.stringify(projection)?.slice(0, 300)}; GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.${projectionFailure ? ` Projection failure: ${projectionFailure}` : ''}`,
+        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 200)}; sitemap ${sync.discovered} URLs; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4 ${(ga4 as any)?.status}; projection ${JSON.stringify(projection)?.slice(0, 300)}; GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.${projectionFailure ? ` Projection failure: ${projectionFailure}` : ''}`,
       });
       summary.push({ projectId: label, ok: !projectionFailed, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, projection, projectionRows: capturedRows, ...(projectionFailure ? { projectionError: projectionFailure } : {}) });
       if (projectionFailure) console.error(`Measurement projection failed for ${label}: ${projectionFailure}; captured GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.`);
