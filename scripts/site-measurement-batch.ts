@@ -6,7 +6,7 @@ import { siteCommands } from '../packages/commands/src/site.js';
 import { blogCommands } from '../packages/commands/src/blog.js';
 import { metricsCommands } from '../packages/commands/src/metrics.js';
 import { captureProjectGa4Metrics } from '../packages/commands/src/ga4-metrics.js';
-import { projectSiteOperationsMetrics } from '../packages/commands/src/site-operations-bridge.js';
+import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest.js';
 import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/src/recovery-context.js';
 
 /**
@@ -20,13 +20,13 @@ import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/
  *   (ephemeral runners start from an empty database).
  *   snapshotFile: fresh Blog site-context snapshot to refresh the binding
  *   (needs the Blog workspace; omitted on github-hosted runners, where the
- *   projection degrades gracefully to site-level snapshots).
+ *   planning still works from sitemap/GSC URL inventory).
  *   sitemapUrl: explicit sitemap; omitted lets sitemap discovery run.
  *   gscProperty: explicit Search Console property for this site.
- * The worker-identical sequence runs per site: ensure project, binding
- * refresh (when a snapshot is supplied), sitemap sync, two equal GSC weeks,
- * GA4 collection, and Firestore projection. Local evidence is always
- * preserved; cloud projection failures are reported, never fatal.
+ * The sequence runs per site: ensure project, optional binding refresh,
+ * sitemap inventory, 7d/28d/90d GSC+GA4 capture, then ONE compact Firestore
+ * planning digest overwrite. Raw rows remain ephemeral and are not mirrored
+ * as one Firestore record per page/period.
  */
 const jobs = JSON.parse(process.env.SITE_JOBS_JSON ?? '[]') as Array<{ projectId: string; name?: string; domain?: string; snapshotFile?: string; sitemapUrl?: string; gscProperty?: string }>;
 const ctx = { actor: 'system' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'site-measurement-batch' };
@@ -39,9 +39,12 @@ function capturedGscRowCounts(projectId: string, siteUrl: string, periods: Array
     WHERE project_id=? AND site_url=? AND (${periodFilter})`);
   const page = sqlite.prepare(`SELECT COUNT(*) AS count FROM page_metric_snapshots
     WHERE project_id=? AND site_url=? AND (${periodFilter})`);
+  const queryPage = sqlite.prepare(`SELECT COUNT(*) AS count FROM query_page_metric_snapshots
+    WHERE project_id=? AND site_url=? AND (${periodFilter})`);
   return {
     queries: Number((query.get(projectId, siteUrl, ...periodParams) as { count: number }).count),
-    pages: Number((page.get(projectId, siteUrl, ...periodParams) as { count: number }).count)
+    pages: Number((page.get(projectId, siteUrl, ...periodParams) as { count: number }).count),
+    queryPages: Number((queryPage.get(projectId, siteUrl, ...periodParams) as { count: number }).count)
   };
 }
 
@@ -63,9 +66,9 @@ async function main() {
         requestText: `On-demand site measurement: ${label}.`,
         projectIds: [job.projectId],
         scope: 'single',
-        objective: `On-demand measurement for ${label}: binding refresh when supplied, sitemap sync, two GSC weeks, GA4, Firestore projection.`,
-        completionCriteria: ['Sitemap inventory synced', 'Two equal GSC weekly periods captured', 'GA4 attempted without discarding GSC', 'Firestore projection attempted with local evidence preserved'],
-        budget: { maxActions: 24, maxExternalRequests: 40, maxCandidateWrites: 0, maxProjects: 1, maxRuntimeMinutes: 30 },
+        objective: `External SEO planning measurement for ${label}: sitemap + 7d/28d/90d GSC/GA4 + one compact planning digest overwrite.`,
+        completionCriteria: ['Sitemap inventory synced', '7d/28d/90d GSC windows captured', 'GA4 organic landing-page data attempted', 'Exactly one compact latest planning digest written for the site'],
+        budget: { maxActions: 40, maxExternalRequests: 60, maxCandidateWrites: 0, maxProjects: 1, maxRuntimeMinutes: 30 },
       });
       const child = (started as { children?: Array<{ workSessionId?: string | null }> }).children?.[0];
       let workSessionId = child?.workSessionId ?? null;
@@ -108,26 +111,13 @@ async function main() {
       } catch {
         ga4 = { status: 'failed', reason: 'ga4_collection_failed' };
       }
-      let projection: unknown;
-      let projectionError: string | null = null;
-      try {
-        projection = await projectSiteOperationsMetrics(job.projectId);
-      } catch (error) {
-        projectionError = error instanceof Error ? error.message : String(error);
-        projection = { status: 'failed', error: projectionError };
-      }
-      const projectionStatus = String((projection as any)?.status ?? 'unknown');
-      const projectionFailed = projectionStatus !== 'projected';
       const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), periods);
-      const projectionFailure = projectionFailed
-        ? projectionError ?? `projection returned status=${projectionStatus}`
-        : null;
+      const digest = await refreshSeoPlanningDigest(job.projectId, endDate);
       await operationCommands.complete({ ...sctx, workSessionId: undefined }, {
         operationId: started.operation.id,
-        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 200)}; sitemap ${sync.discovered} URLs; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4 ${(ga4 as any)?.status}; projection ${JSON.stringify(projection)?.slice(0, 300)}; GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.${projectionFailure ? ` Projection failure: ${projectionFailure}` : ''}`,
+        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 160)}; sitemap=${sync.discovered}; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4=${(ga4 as any)?.status}; compact digest selected=${digest.selectedCount}/inventory=${digest.inventoryCount}; local rows queries=${capturedRows.queries}, pages=${capturedRows.pages}, queryPages=${capturedRows.queryPages}. Firestore writes analytics as one overwrite-only digest document, not per-page snapshots.`,
       });
-      summary.push({ projectId: label, ok: !projectionFailed, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, projection, projectionRows: capturedRows, ...(projectionFailure ? { projectionError: projectionFailure } : {}) });
-      if (projectionFailure) console.error(`Measurement projection failed for ${label}: ${projectionFailure}; captured GSC rows queries=${capturedRows.queries}, pages=${capturedRows.pages}.`);
+      summary.push({ projectId: label, ok: true, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, digest, localRows: capturedRows });
     } catch (error) {
       summary.push({ projectId: label, ok: false, error: error instanceof Error ? error.message : String(error) });
     }
