@@ -22,7 +22,8 @@ import {
   serpResearchCached,
   serpUsageStatus
 } from '../packages/commands/src/remote-keyword-research.js';
-import { themeResearchContext, themeResearchContextShape, themeCandidateUpsert, themeCandidateUpsertShape, themeCandidateChallenge, themeCandidateChallengeShape } from '../packages/commands/src/theme-research.js';\nimport { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
+import { themeResearchContext, themeResearchContextShape, themeCandidateUpsert, themeCandidateUpsertShape, themeCandidateChallenge, themeCandidateChallengeShape } from '../packages/commands/src/theme-research.js';
+import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
