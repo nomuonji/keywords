@@ -193,7 +193,8 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 22);
+  assert.equal(listing.tools.length, 23);
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
@@ -201,6 +202,11 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_planning_digest_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
+  const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.0.0');
+  assert.equal(agentPolicy.structuredContent.role, 'planner');
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /Never call Google Analytics or Search Console directly/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
   const mapped = await call('tools/call', { name: 'site_registry_resolve', arguments: { localProjectId: 'local-project-a' } });
@@ -210,7 +216,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.4.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.5.0');
 
   console.log('site operations smoke passed: normalized site/article identities, explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
