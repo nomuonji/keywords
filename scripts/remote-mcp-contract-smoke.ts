@@ -139,9 +139,14 @@ assert.match(mcpSource, /keyword_treasury_search/);
 assert.match(mcpSource, /site_structure_patch/);
 assert.match(mcpSource, /theme_research_context/);
 assert.match(mcpSource, /theme_candidate_upsert/);
-assert.match(mcpSource, /theme_candidate_challenge/);\nassert.match(mcpSource, /trend_article_research/);
+assert.match(mcpSource, /theme_candidate_challenge/);
+assert.match(mcpSource, /trend_article_research/);
 
-const trendArticleSource = readFileSync(new URL('../packages/commands/src/trend-article-research.ts', import.meta.url), 'utf8');\nassert.match(trendArticleSource, /Zero-volume trend terms are not automatically rejected/);\nassert.match(trendArticleSource, /existingPageMatches/);\n\nconst researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
+const trendArticleSource = readFileSync(new URL('../packages/commands/src/trend-article-research.ts', import.meta.url), 'utf8');
+assert.match(trendArticleSource, /Zero-volume trend terms are not automatically rejected/);
+assert.match(trendArticleSource, /existingPageMatches/);
+
+const researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
 assert.match(researchLedgerSource, /whyStillAlive/);
 assert.match(researchLedgerSource, /fatalRisks/);
 assert.match(researchLedgerSource, /challengeHistory/);
