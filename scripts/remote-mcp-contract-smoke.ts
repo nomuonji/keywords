@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
-import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';\nimport { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
+import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
+import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
 assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.6.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
@@ -27,7 +28,8 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'keyword_research_pipeline',
   'theme_research_context',
   'theme_candidate_upsert',
-  'theme_candidate_challenge'
+  'theme_candidate_challenge',
+  'trend_article_research'
 ]);
 assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 22);
 
