@@ -210,7 +210,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.3.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.4.0');
 
   console.log('site operations smoke passed: normalized site/article identities, explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
 } finally {
