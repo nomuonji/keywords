@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CommandContext } from '@keywords/domain';
@@ -24,7 +25,7 @@ function pageIdentity(input: string) {
   const slug = pathname === '/' ? '__root__' : pathname.replace(/^\/+|\/+$/g, '').replace(/\//g, '--').slice(0, 220);
   return { url: url.toString(), title, slug };
 }
-const slugSuffix = (value: string) => Buffer.from(value).toString('base64url').slice(0, 16).toLowerCase();
+const slugSuffix = (value: string) => createHash('sha256').update(value).digest('base64url').slice(0, 16).toLowerCase();
 
 async function uniqueLiveSlug(projectId: string, desiredSlug: string, url: string) {
   const base = desiredSlug.slice(0, 190);
