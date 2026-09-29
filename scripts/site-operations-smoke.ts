@@ -193,11 +193,14 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 16);
+  assert.equal(listing.tools.length, 22);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_query_opportunities'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_planning_digest_get'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
   const mapped = await call('tools/call', { name: 'site_registry_resolve', arguments: { localProjectId: 'local-project-a' } });
