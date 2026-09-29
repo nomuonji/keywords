@@ -24,7 +24,20 @@ function pageIdentity(input: string) {
   const slug = pathname === '/' ? '__root__' : pathname.replace(/^\/+|\/+$/g, '').replace(/\//g, '--').slice(0, 220);
   return { url: url.toString(), title, slug };
 }
-const slugSuffix = (value: string) => Buffer.from(value).toString('base64url').slice(0, 10).toLowerCase();
+const slugSuffix = (value: string) => Buffer.from(value).toString('base64url').slice(0, 16).toLowerCase();
+
+async function uniqueLiveSlug(projectId: string, desiredSlug: string, url: string) {
+  const base = desiredSlug.slice(0, 190);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const candidate = attempt === 0
+      ? desiredSlug
+      : `${base}--live-${slugSuffix(`${url}#${attempt}`)}`;
+    const existing = await db.select().from(schema.pages)
+      .where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.slug, candidate))).get();
+    if (!existing || existing.url === url) return candidate;
+  }
+  throw new Error(`Unable to allocate unique live slug for ${url}`);
+}
 
 async function upsertKeyword(projectId: string, query: string, row: { clicks: number; impressions: number; ctr: number; position: number }, observedAt: string) {
   const normalized = normalize(query); let keyword = await db.select().from(schema.keywords).where(and(eq(schema.keywords.projectId, projectId), eq(schema.keywords.normalized, normalized))).get();
