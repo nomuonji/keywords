@@ -20,11 +20,12 @@ docs.set(`${root}sites/site-r`, {
   },
   updateTime: 'seed-1',
 });
-docs.set(`${root}siteDigests/site-r`, {
-  name: `${root}siteDigests/site-r`,
+docs.set(`${root}seoPlanningDigests/site-r`, {
+  name: `${root}seoPlanningDigests/site-r`,
   fields: {
-    siteId: field('site-r'), generatedAt: field('2026-09-18T00:00:00.000Z'), articleCount: field(7),
-    latestSiteGsc: field(null), latestSiteGa4: field(null), activeOptimizations: field([]), warnings: field([]),
+    siteId: field('site-r'), repository: field('nomuonji/site-r'), productionUrl: field('https://example.com/'),
+    generatedAt: field('2026-09-18T00:00:00.000Z'), measurementEnd: field('2026-09-15'), inventoryCount: field(7),
+    selectedCount: field(5), notObservedInComplete90dGscCount: field(2), statuses: field({ gsc90: 'complete' })
   },
   updateTime: 'seed-2',
 });
@@ -35,8 +36,9 @@ globalThis.fetch = async (input, init) => {
   assert.ok(url.startsWith('https://firestore.googleapis.com/'), `Unexpected network: ${url}`);
   const parsed = new URL(url);
   const path = parsed.pathname.replace('/v1/', '');
-  if (path === 'projects/test/databases/(default)/documents/sites') {
-    const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}sites/`));
+  if (path === 'projects/test/databases/(default)/documents/sites' || path === 'projects/test/databases/(default)/documents/seoPlanningDigests') {
+    const collection = path.split('/').at(-1)!;
+    const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
   }
   return docs.has(path) ? Response.json(docs.get(path)) : Response.json({}, { status: 404 });
@@ -52,9 +54,10 @@ try {
   const site = body.sites[0];
   assert.equal(site.id, 'site-r');
   assert.equal(site.name, 'Site R');
-  assert.equal((site.digest as { articleCount: number }).articleCount, 7);
+  assert.equal((site.planningDigest as { inventoryCount: number }).inventoryCount, 7);
+  assert.equal((site.planningDigest as { selectedCount: number }).selectedCount, 5);
   assert.ok(!JSON.stringify(body).includes('test-access-token'), 'no credentials in response');
-  console.log('remote sites smoke passed: registry plus digest in bounded reads, read-only, no secrets');
+  console.log('remote sites smoke passed: registry plus compact planning digest in bounded reads, read-only, no secrets');
 } finally {
   globalThis.fetch = originalFetch;
 }
