@@ -14,6 +14,9 @@ import {
   siteRegistryGet, siteRegistryGetShape, siteRegistryList, siteRegistryListShape, siteRegistryResolve, siteRegistryResolveShape, siteRegistrySave, siteRegistrySaveShape
 } from '../packages/commands/src/remote-site-operations.js';
 import {
+  seoPlanningDigestGet, seoPlanningDigestGetShape, seoPlanningDigestList, seoPlanningDigestListShape
+} from '../packages/commands/src/seo-planning-digest.js';
+import {
   optimizationEvaluationContext,
   optimizationEvaluationContextShape,
   siteQueryOpportunities,
@@ -80,6 +83,8 @@ function server() {
   mcp.registerTool('site_article_save', { description: 'Create or update an article registry record with optimistic revision control. localPageId/canonicalUrl can explicitly connect local GSC page observations; the Git repository remains the content source of truth.', inputSchema: siteArticleSaveShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteArticleSave(input)));
   mcp.registerTool('site_metric_snapshot_save', { description: 'Persist an idempotent GSC or GA4 period snapshot. Daily collection is allowed; missing/partial data is represented explicitly rather than converted to zero.', inputSchema: metricSnapshotSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async input => structured(await metricSnapshotSave(input)));
   mcp.registerTool('site_metric_snapshot_list', { description: 'List recent GSC/GA4 snapshots for a site or article.', inputSchema: metricSnapshotListShape, annotations: { readOnlyHint: true } }, async input => structured(await metricSnapshotList(input)));
+  mcp.registerTool('seo_planning_digest_get', { description: 'Read the latest compact 7d/28d/90d article-planning digest for one managed site. Analytics acquisition is externalized and this read never calls Google.', inputSchema: seoPlanningDigestGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestGet(input)));
+  mcp.registerTool('seo_planning_digest_list', { description: 'List freshness and coverage summaries for compact site planning digests without returning all article rows.', inputSchema: seoPlanningDigestListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestList(input)));
   mcp.registerTool('seo_task_get', { description: 'Read one persisted SEO planner task and its GitHub Issue/execution history.', inputSchema: seoTaskGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskGet(input)));
   mcp.registerTool('seo_task_create', { description: 'Create a deduplicated SEO action record before issuing its GitHub Issue. Supports revise/merge/delete/internal-links/technical/new-article tasks.', inputSchema: seoTaskCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await seoTaskCreate(input)));
   mcp.registerTool('seo_task_list', { description: 'List SEO planner tasks by site/article/type/status so scheduled planners and executors avoid duplicate Issues.', inputSchema: seoTaskListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskList(input)));
