@@ -4,8 +4,9 @@ import { analyzeSerp } from '../packages/research/src/index.js';
 import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
+import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.5.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.6.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -27,9 +28,10 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'keyword_research_pipeline',
   'theme_research_context',
   'theme_candidate_upsert',
-  'theme_candidate_challenge'
+  'theme_candidate_challenge',
+  'trend_article_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 21);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 22);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -88,6 +90,17 @@ assert.deepEqual(screening.passedKeywords, ['high value']);
 assert.deepEqual(screening.serpRecommended, ['high value']);
 assert.ok(screening.results[0].screenScore > screening.results[1].screenScore);
 
+const trendSerpSelection = selectTrendSerpKeywords(
+  ['brand new launch', 'established query', 'another fresh query'],
+  [
+    { keyword: 'established query', avgMonthlySearches: 500, screenScore: 70 },
+    { keyword: 'brand new launch', avgMonthlySearches: 0, screenScore: 5 },
+    { keyword: 'another fresh query', avgMonthlySearches: 0, screenScore: 4 }
+  ],
+  2
+);
+assert.deepEqual(trendSerpSelection, ['established query', 'brand new launch']);
+
 process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '2000';
 process.env.KEYWORDS_SERP_SOFT_LIMIT = '1500';
 process.env.KEYWORDS_SERP_RESERVE = '500';
@@ -127,6 +140,11 @@ assert.match(mcpSource, /site_structure_patch/);
 assert.match(mcpSource, /theme_research_context/);
 assert.match(mcpSource, /theme_candidate_upsert/);
 assert.match(mcpSource, /theme_candidate_challenge/);
+assert.match(mcpSource, /trend_article_research/);
+
+const trendArticleSource = readFileSync(new URL('../packages/commands/src/trend-article-research.ts', import.meta.url), 'utf8');
+assert.match(trendArticleSource, /Zero-volume trend terms are not automatically rejected/);
+assert.match(trendArticleSource, /existingPageMatches/);
 
 const researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
 assert.match(researchLedgerSource, /whyStillAlive/);

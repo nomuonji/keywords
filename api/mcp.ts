@@ -23,6 +23,7 @@ import {
   serpUsageStatus
 } from '../packages/commands/src/remote-keyword-research.js';
 import { themeResearchContext, themeResearchContextShape, themeCandidateUpsert, themeCandidateUpsertShape, themeCandidateChallenge, themeCandidateChallengeShape } from '../packages/commands/src/theme-research.js';
+import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -155,6 +156,11 @@ function server() {
     }
     return structured({ demand, screening, maxSerpChecks: input.maxSerpChecks, selectedForSerp: selected.map(item => item.keyword), serpChecks, stoppedReason, usage: await serpUsageStatus() });
   });
+  mcp.registerTool('trend_article_research', {
+    description: 'Read-only research bundle for an X/web trend article. Combines historical keyword demand, bounded cached SERP evidence, optional site structure context, and literal existing-page overlap hints. Fresh zero-volume terms remain eligible for SERP checks. Does not save, publish, or mutate site structure.',
+    inputSchema: trendArticleResearchShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await trendArticleResearch(input)));
   return mcp;
 }
 const health = (c: any) => c.json({ ok: true, service: 'keywords-treasury-mcp', ...runtimeStatus() });

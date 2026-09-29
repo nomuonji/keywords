@@ -136,7 +136,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 21);
+  assert.equal(listing.tools.length, 22);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_patch' && tool.inputSchema.properties.expectedRevision));
   const saved = await call('tools/call', { name: 'site_structure_save', arguments: { id: 'via-mcp', title: 'MCPから作成', expectedRevision: 0 } });
   assert.ok(!saved.isError, JSON.stringify(saved));
