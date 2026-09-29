@@ -6,7 +6,7 @@ import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPaylo
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.6.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.6.1');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -141,6 +141,9 @@ assert.match(mcpSource, /theme_research_context/);
 assert.match(mcpSource, /theme_candidate_upsert/);
 assert.match(mcpSource, /theme_candidate_challenge/);
 assert.match(mcpSource, /trend_article_research/);
+assert.match(mcpSource, /KEYWORDS_GROQ_MCP_TOKEN/);
+assert.match(mcpSource, /x-api-key/);
+assert.match(mcpSource, /groqStaticTokenConfigured/);
 
 const trendArticleSource = readFileSync(new URL('../packages/commands/src/trend-article-research.ts', import.meta.url), 'utf8');
 assert.match(trendArticleSource, /Zero-volume trend terms are not automatically rejected/);
