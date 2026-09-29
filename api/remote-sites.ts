@@ -9,11 +9,14 @@ import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-dig
 const app = new Hono();
 app.get('/api/remote-sites', async c => {
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
-  const [registry, planning] = await Promise.all([
-    siteRegistryList({ limit }),
-    seoPlanningDigestList({ limit })
-  ]);
-  const digestBySite = new Map((planning.items as Array<Record<string, unknown>>).map(item => [String(item.siteId), item]));
+  const registry = await siteRegistryList({ limit });
+  let planning: { items: Array<Record<string, unknown>> } = { items: [] };
+  try {
+    planning = await seoPlanningDigestList({ limit }) as { items: Array<Record<string, unknown>> };
+  } catch (error: any) {
+    if (Number(error?.status) !== 404) throw error;
+  }
+  const digestBySite = new Map(planning.items.map(item => [String(item.siteId), item]));
   const sites = (registry.items as Array<Record<string, unknown>>).map(site => ({
     id: site.id,
     name: site.name,
