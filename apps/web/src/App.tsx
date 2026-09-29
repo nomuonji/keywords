@@ -9,8 +9,8 @@ import { ThemeResearch } from './ThemeResearch';
 
 type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research';
 const views:Array<{id:View;label:string;hint:string}>=[
-  {id:'operations',label:'今日',hint:'優先順位・停止理由'},
-  {id:'sites',label:'サイト',hint:'状態・設定'},
+  {id:'operations',label:'運用',hint:'Issue・実行履歴'},
+  {id:'sites',label:'サイト',hint:'Agent管理対象'},
   {id:'articles',label:'記事',hint:'管理・検証・成果'},
   {id:'treasury',label:'お宝KW',hint:'共有ストック'},
   {id:'structures',label:'サイト構想',hint:'設計・ページ構造'},
@@ -20,8 +20,8 @@ const views:Array<{id:View;label:string;hint:string}>=[
 function readLocation(){
   const params=new URLSearchParams(window.location.search);
   const requested=params.get('view');
-  // Remote backends serve digest-backed views; the operations queue is local-only.
-  const fallback = isRemoteBackend() ? 'sites' as View : 'operations' as View;
+  // Remote backends now expose a bounded SEO Issue queue backed by Sites Operator.
+  const fallback = 'operations' as View;
   return {
     view:views.some(item=>item.id===requested)?requested as View:fallback,
     projectId:params.get('project')??''
