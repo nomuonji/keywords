@@ -21,5 +21,6 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'keyword_research_pipeline',
   'theme_research_context',
   'theme_candidate_upsert',
-  'theme_candidate_challenge'
+  'theme_candidate_challenge',
+  'trend_article_research'
 ] as const;
