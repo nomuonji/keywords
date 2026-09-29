@@ -17,7 +17,20 @@ async function withRun<T>(ctx: CommandContext, command: string, input: unknown, 
 }
 function defaultSitemap(domain: string) { const raw = /^https?:\/\//i.test(domain) ? domain : `https://${domain}`; return new URL('/sitemap.xml', raw).toString(); }
 function pageIdentity(input: string) { const url = new URL(input); const pathname = url.pathname.replace(/\/+$/, '') || '/'; const decoded = decodeURIComponent(pathname); const title = decoded === '/' ? url.hostname : (decoded.split('/').filter(Boolean).at(-1) ?? url.hostname).replace(/[-_]+/g, ' '); const slug = pathname === '/' ? '__root__' : pathname.replace(/^\/+|\/+$/g, '').replace(/\//g, '--').slice(0, 220); return { url: url.toString(), title, slug }; }
-const slugSuffix = (value: string) => Buffer.from(value).toString('base64url').slice(0, 10).toLowerCase();
+const slugSuffix = (value: string) => Buffer.from(value).toString('base64url').slice(0, 16).toLowerCase();
+
+async function uniqueLiveSlug(projectId: string, desiredSlug: string, url: string) {
+  const base = desiredSlug.slice(0, 190);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const candidate = attempt === 0
+      ? desiredSlug
+      : `${base}--live-${slugSuffix(`${url}#${attempt}`)}`;
+    const existing = await db.select().from(schema.pages)
+      .where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.slug, candidate))).get();
+    if (!existing || existing.url === url) return candidate;
+  }
+  throw new Error(`Unable to allocate unique live slug for ${url}`);
+}
 
 async function upsertLivePage(projectId: string, inputUrl: string, seenAt: string) {
   const identity = pageIdentity(inputUrl);
@@ -26,8 +39,7 @@ async function upsertLivePage(projectId: string, inputUrl: string, seenAt: strin
     await db.update(schema.pages).set({ status: existingUrl.status === 'archived' || existingUrl.status === 'stale' ? 'published' : existingUrl.status, source: existingUrl.source === 'search_console' ? 'search_console' : 'sitemap', lastSeenAt: seenAt, updatedAt: seenAt }).where(eq(schema.pages.id, existingUrl.id));
     return { id: existingUrl.id, created: false };
   }
-  const sameSlug = await db.select().from(schema.pages).where(and(eq(schema.pages.projectId, projectId), eq(schema.pages.slug, identity.slug))).get();
-  const safeSlug = sameSlug ? `${identity.slug.slice(0, 210)}--live-${slugSuffix(identity.url)}` : identity.slug;
+  const safeSlug = await uniqueLiveSlug(projectId, identity.slug, identity.url);
   const row = { id: id(), projectId, clusterId: null, title: identity.title, slug: safeSlug, kind: 'existing', status: 'published', rationale: null, evidenceJson: null, audience: null, question: null, searchIntent: null, uniqueAngle: null, unresolvedAssumptionsJson: null, planMode: 'new_page', targetPageId: null, url: identity.url, source: 'sitemap', lastSeenAt: seenAt, createdAt: seenAt, updatedAt: seenAt };
   await db.insert(schema.pages).values(row); return { id: row.id, created: true };
 }
