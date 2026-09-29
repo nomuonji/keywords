@@ -570,7 +570,7 @@ export async function seoTaskList(input: unknown) {
     items = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
   } else {
     const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
-    items = (listed.documents ?? []).map(doc => decoded(doc) as SeoTaskRecord);
+    items = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoTaskRecord);
   }
   items = items.filter(task =>
     (!args.articleId || task.articleIds.includes(args.articleId)) &&
