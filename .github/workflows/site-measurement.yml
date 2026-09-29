@@ -18,7 +18,7 @@ on:
   schedule:
     # Once per day: 17:00 UTC = 02:00 JST.
     - cron: '0 17 * * *'
-  # Temporary bootstrap path. Only the commit explicitly tagged below runs;
+  # Temporary bootstrap path. Retry after collision-safe slug hashing. Only the commit explicitly tagged below runs;
   # remove this trigger after the first current-version digest bootstrap.
   push:
     branches: [main]
