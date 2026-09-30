@@ -105,6 +105,7 @@ export const seoTaskListShape = {
   articleId: entityId.optional(),
   taskType: seoTaskType.optional(),
   status: seoTaskStatus.optional(),
+  deploymentVerificationStatus: seoTaskDeploymentVerificationStatus.optional(),
   limit: z.number().int().min(1).max(100).default(50)
 };
 export const seoTaskUpdateShape = {
@@ -608,7 +609,8 @@ export async function seoTaskList(input: unknown) {
   items = items.filter(task =>
     (!args.articleId || task.articleIds.includes(args.articleId)) &&
     (!args.taskType || task.taskType === args.taskType) &&
-    (!args.status || task.status === args.status)
+    (!args.status || task.status === args.status) &&
+    (!args.deploymentVerificationStatus || task.deploymentVerification.status === args.deploymentVerificationStatus)
   ).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
   return { items };
 }
