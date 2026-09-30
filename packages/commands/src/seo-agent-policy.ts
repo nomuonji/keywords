@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.0.0';
+export const SEO_AGENT_POLICY_VERSION = '1.1.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -39,14 +39,19 @@ const plannerInstructions = [
   'Skip a site when its planning digest is absent/stale or the evidence required for a decision is partial/failed.',
   'Plan from existing articles first. Allowed material task types are revise, merge, delete, internal_links, technical, and new_article when separately justified.',
   'Do not create work to satisfy a quota. Per run create at most 5 GitHub Issues total and at most 2 in one repository.',
-  'Before creating an Issue, check open/proposed/issued/in_progress SEO tasks and their dedupe keys. Do not duplicate an existing unresolved action.',
+  'Before creating a task, check all Sites Operator SEO tasks for the target, including completed and superseded entries, and check GitHub Issues in the target repository, both OPEN and RECENTLY CLOSED. Search for the target URL, repository path, alternate title phrasing, and the same underlying intervention/intent; a different title or absent Sites Operator record does not prove the work is new.',
+  'Read the actual target file on the CURRENT default-branch HEAD of GitHub and verify its current metadata, body, canonical, and relevant links. Do not rely on search snippets, cached GitHub evidence, historical snapshots, or the digest as proof of what currently needs changing. Record the ref/commit and exact remaining defect in each new task.',
+  'For each recent closed/completed Issue about the same URL and intervention, compare its acceptance criteria with current HEAD. If already satisfied, SKIP without creating a task or Issue, even if pre-change analytics still look poor. If the work is closed but HEAD does not establish completion, record uncertainty and do not claim it was delivered.',
+  'Compare digest measurementEnd with the target article last-change/Issue implementation date. If the digest ends before the intervention or lacks a meaningful post-change observation period, do not immediately reissue the same action. Wait for a fresh post-change digest and the relevant optimization cooldown/evaluation window (normally at least 14 days) before judging impact.',
+  'Before creating an Issue, check open/proposed/issued/in_progress SEO tasks and their dedupe keys. Do not duplicate an existing unresolved action. Previously completed or superseded work also constrains reissuance until genuinely new post-change evidence and a distinct defect exist.',
   'Before creating an Issue, verify the target article/code in its GitHub repository. Analytics alone is not enough to claim a content defect.',
+  'If an existing proposed task turns out to duplicate already-completed work, update that task to superseded, link the actual historical GitHub Issue, and append an evidence-backed history event; do not create a new Issue or mark the duplicate task completed.',
   'revise: require a concrete search/organic signal plus a verified content/snippet/structure gap that a targeted edit can address.',
   'merge: require query/intent overlap across multiple URLs plus verified content duplication or fragmented coverage. Specify canonical/redirect/internal-link handling.',
   'delete: use the highest threshold. Require complete 90d evidence showing negligible search/organic value AND GitHub inspection showing low unique value or duplication. Prefer merge+redirect when a useful destination exists. Never delete solely because traffic is low.',
   'internal_links: require a concrete discovery/contextual-link gap and named source/target pages.',
   'technical: require a reproducible technical/indexing/canonical/metadata defect and an explicit validation method.',
-  'Create the Sites Operator SEO task record before the GitHub Issue. If dedupe rejects the task, do not create the Issue.',
+  'Create the Sites Operator SEO task record only AFTER current-HEAD and open/recent-closed GitHub Issue verification; then create the GitHub Issue. If dedupe rejects the task, do not create the Issue.',
   'GitHub Issue title format: [SEO][taskType] concise action. Body must include Sites Operator task ID, target URL/file, measurement period and evidence, diagnosis, requested material change, acceptance criteria, and validation requirements.',
   'After Issue creation, attach issueNumber/issueUrl/issueState=open to the SEO task and append issue_issued history. If Issue creation fails, keep the task resumable and append failure history.',
   'This planner does not edit articles/code, create PRs, deploy, or mark implementation complete. A separate executor performs the material work.',
