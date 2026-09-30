@@ -239,7 +239,7 @@ try {
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
   assert.equal(agentPolicy.structuredContent.policyVersion, '1.7.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /Never call Google Analytics or Search Console directly/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /Never fetch GSC\\/GA4 directly/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
   assert.match(agentPolicy.structuredContent.runContract.successCondition, /ready Sites Operator record/);
@@ -250,8 +250,8 @@ try {
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /6 distinct active managed sites/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /independently verifiable factual/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /closed GitHub PRs/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change period/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /relevant PRs\\/commits/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
