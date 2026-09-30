@@ -531,13 +531,13 @@ export async function metricSnapshotList(input: unknown) {
 }
 
 const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
-  status: (task.targetUrls?.length ? 'pending' : 'not_required') as 'pending' | 'not_required',
+  // The absence of a URL is not evidence that a public check is unnecessary.
+  // An explicit human decision must set not_required.
+  status: 'pending' as const,
   checkedAt: null,
   productionUrl: task.targetUrls?.[0] ?? null,
   deployedCommitSha: null,
-  detail: task.targetUrls?.length
-    ? 'Production verification has not been recorded yet.'
-    : 'No public target URL requires production verification.'
+  detail: 'Production verification has not been recorded yet.'
 });
 
 const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
@@ -641,7 +641,7 @@ export async function seoTaskUpdate(input: unknown) {
   };
   // Preserve validation for historical issued records; new work uses ready without any Issue.
   if (record.status === 'issued' && (!record.issueNumber || !record.issueUrl)) throw new Error('Legacy issued SEO task requires issueNumber and issueUrl');
-  if (record.status === 'completed' && !record.resultCommitSha) throw new Error('completed SEO task requires resultCommitSha from main');
+  if (record.status === 'completed' && current.status !== 'completed' && !record.resultCommitSha) throw new Error('completed SEO task requires resultCommitSha from main');
   if (record.deploymentVerification.status === 'verified' && !record.deploymentVerification.checkedAt) throw new Error('verified deployment requires checkedAt');
   if (record.deploymentVerification.status === 'failed' && !record.deploymentVerification.detail.trim()) throw new Error('failed deployment verification requires detail');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
