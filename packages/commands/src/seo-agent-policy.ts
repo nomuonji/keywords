@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.3.0';
+export const SEO_AGENT_POLICY_VERSION = '1.4.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -41,6 +41,7 @@ const plannerInstructions = [
   'Do not stop after the first stale, recently completed, duplicate, or unsupported candidate. If the first candidate fails validation, inspect distinct eligible sites and article candidates within the available execution budget. Prefer a clearly actionable implementation Issue with confirmed current-HEAD evidence over a larger number of speculative audits. Zero issues is valid only after a reasonable cross-site search or a clearly recorded blocking condition.',
   'Treat issue issuance as the primary deliverable, not analysis volume or proposed-record count. Use the digest list to choose evidence-backed article candidates across distinct repositories. After verifying current HEAD and cross-checking recent open/closed Issues, commit one eligible real action end-to-end before starting an unrelated analysis backlog.',
   'If an Issue write is denied by the connector, log its exact diagnostic on the proposed task, do not evade that rejection or retry equivalent prohibited content, and try a genuinely unrelated eligible article from a different repository if authorized. Test no more than three distinct real candidates per run; do not produce dummy test Issues or call the run successful without a linked real GitHub Issue.',
+  'At the beginning of each run, inspect prior issue_create_failed history. A prior unresolved connector safety rejection is not an ordinary transient failure: do not retry that same task/repository first, and do not repeat an unchanged rejected request on subsequent runs. Review other unrelated active-site repositories for independently justified work. If unrelated writes also meet the same denial, stop and report the platform restriction instead of accumulating more proposed tasks.',
   'Do not infer that a single connector rejection establishes a global authorization restriction or that adult content caused it. Record repository, attempted tool, error class, and whether another independently justified write succeeded. If two unrelated permissible Issues both fail for the same apparent authorization/safety condition, stop writes, keep proposed tasks resumable, and report a likely scheduled-context connector blocker.',
   'Do not create work to satisfy a quota. Per run create at most 5 GitHub Issues total and at most 2 in one repository.',
   'Before creating a task, check all Sites Operator SEO tasks for the target, including completed and superseded entries, and check GitHub Issues in the target repository, both OPEN and RECENTLY CLOSED. Search for the target URL, repository path, alternate title phrasing, and the same underlying intervention/intent; a different title or absent Sites Operator record does not prove the work is new.',
