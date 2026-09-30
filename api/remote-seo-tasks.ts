@@ -31,6 +31,7 @@ app.get('/api/remote-seo-tasks', async c => {
     issueState: task.issueState,
     resultCommitSha: task.resultCommitSha,
     executionSummary: task.executionSummary,
+    deploymentVerification: task.deploymentVerification,
     createdBy: task.createdBy,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
