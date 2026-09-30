@@ -245,7 +245,7 @@ try {
   assert.match(agentPolicy.structuredContent.runContract.successCondition, /ready Sites Operator record/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /closed GitHub PRs/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change digest/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change period/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
