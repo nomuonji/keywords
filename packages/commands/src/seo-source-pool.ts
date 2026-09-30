@@ -99,7 +99,7 @@ async function readDocument(collection: string, id: string) {
   catch (error) { if (error instanceof FirestoreError && error.status === 404) return null; throw error; }
 }
 
-async function listCollection(collection: string, limit = 500) {
+async function listCollection(collection: string, limit = 500): Promise<any[]> {
   const result = await firestore(`/${collection}?pageSize=${Math.min(limit, 500)}`);
   return result.documents ?? [];
 }
