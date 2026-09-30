@@ -80,7 +80,7 @@ const statusTone = (status: SeoTask['status']) => {
 export function RemoteOperationsOverview() {
   const [tasks, setTasks] = useState<SeoTask[]>([]);
   const [sites, setSites] = useState<Record<string, Site>>({});
-  const [filter, setFilter] = useState<'open'|'completed'|'all'>('open');
+  const [filter, setFilter] = useState<'open'|'completed'|'deploy_attention'|'all'>('open');
   const [typeFilter, setTypeFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [policyVersion, setPolicyVersion] = useState('');
@@ -109,7 +109,8 @@ export function RemoteOperationsOverview() {
 
   const visible = useMemo(() => tasks.filter(task => {
     const open = ['proposed','ready','issued','in_progress'].includes(task.status);
-    const statusMatch = filter === 'all' || filter === 'open' && open || filter === 'completed' && task.status === 'completed';
+    const deployAttention = task.status === 'completed' && ['pending','failed'].includes(task.deploymentVerification?.status);
+    const statusMatch = filter === 'all' || filter === 'open' && open || filter === 'completed' && task.status === 'completed' || filter === 'deploy_attention' && deployAttention;
     const typeMatch = typeFilter === 'all' || task.taskType === typeFilter;
     const site = sites[task.siteId];
     const haystack = `${task.title} ${task.repo} ${site?.name ?? ''} ${task.targetUrls.join(' ')}`.toLowerCase();
@@ -150,7 +151,8 @@ export function RemoteOperationsOverview() {
       <input value={query} onChange={e => setQuery(e.target.value)} placeholder="タスク・repo・URLを検索" aria-label="SEOタスクを検索" />
       <div className="segmented">
         <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>未完了</button>
-        <button className={filter === 'completed' ? 'active' : ''} onClick={() => setFilter('completed')}>完了</button>
+        <button className={filter === 'completed' ? 'active' : ''} onClick={() => setFilter('completed')}>実装完了</button>
+        <button className={filter === 'deploy_attention' ? 'active' : ''} onClick={() => setFilter('deploy_attention')}>公開要確認</button>
         <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>すべて</button>
       </div>
       <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} aria-label="作業種別">
