@@ -203,7 +203,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.2.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.3.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.match(JSON.stringify(agentPolicy.structuredContent), /Never call Google Analytics or Search Console directly/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
