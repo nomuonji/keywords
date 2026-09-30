@@ -108,6 +108,14 @@ export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'te
 /** ready is the record-only planner handoff; proposed/issued are retained for historical records. */
 export type SeoTaskStatus = 'proposed' | 'ready' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
 export type SeoTaskPriority = 'high' | 'medium' | 'low';
+export type SeoTaskDeploymentVerificationStatus = 'pending' | 'verified' | 'failed' | 'not_required';
+export type SeoTaskDeploymentVerification = {
+  status: SeoTaskDeploymentVerificationStatus;
+  checkedAt: string | null;
+  productionUrl: string | null;
+  deployedCommitSha: string | null;
+  detail: string;
+};
 
 export type SeoTaskHistoryEntry = {
   at: string;
@@ -135,6 +143,8 @@ export type SeoTaskRecord = {
   issueState: 'open' | 'closed' | null;
   resultCommitSha: string | null;
   executionSummary: string;
+  /** Separate from implementation status: completed means merged to main; this records optional production verification. */
+  deploymentVerification: SeoTaskDeploymentVerification;
   history: SeoTaskHistoryEntry[];
   createdBy: string;
   revision: number;
