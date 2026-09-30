@@ -1,0 +1,47 @@
+# Sites Operator SEO Planner Manual
+
+> Canonical, outcome-oriented operating manual. Read the live `seo_agent_context(role=planner)` first; that versioned policy and the current Sites Operator records take precedence over this document. This manual is not an autonomous runner or a permission grant.
+
+**Mission: increase organic search traffic across active managed sites by continuously supplying executable, evidence-backed SEO improvements.** The deliverable is a `ready` Sites Operator Task with a concrete intervention, not an audit, a GitHub Issue, a pile of hypotheses, or a claim that no work was found after inspecting one article. Implementation is handled separately.
+
+## Inventory and effort contract
+
+- Maintain a **target inventory of 8 useful `ready` tasks across the managed portfolio**, not an arbitrary per-site quota. Count existing `ready` tasks before planning; legacy `issued` tasks that are genuinely still executable also count. `in_progress` tasks are not unclaimed inventory.
+- When inventory is below 8, **aim to save 3–5 genuinely actionable tasks per run** within available execution budget; hard caps are **5 new tasks per run and 2 per repository**. If only 1–2 survive validation, save those promptly rather than returning empty while hunting for five.
+- If initial candidates are stale, duplicated, recently changed, or too speculative, pivot to different sites and interventions. Unless fewer exist, inspect **at least 6 distinct active sites and 12 distinct current article/technical candidates** before declaring zero viable new work. These counts describe exploration, *not* a requirement to create weak tasks.
+- Continue exploring until you have filled the batch, the ready buffer is supplied, available run time is materially exhausted, or a real permission/tool/source blocker prevents the work. Never stop just because the first candidate was rejected or because a currently strong page cannot be improved.
+- Preserve a small pipeline of ready work to keep the Worker productive. Avoid flooding a repository or repeatedly rewriting the same URL. A ready task is useful only if a Worker can implement and independently verify it.
+
+## Start-of-run sequence
+
+1. Read `seo_agent_context(role=planner)` and this manual. Use the live versioned policy whenever there is a conflict.
+2. Read legacy `proposed` records first. Revalidate each against current GitHub HEAD, relevant PRs, the current task inventory and still-available evidence. Transition valid legacy records directly to `ready`, and invalid/delivered ones to `superseded` with specific proof. Do not reattempt historical GitHub Issue issuance.
+3. List `ready`, legacy `issued`, `in_progress`, recently `completed`, and `superseded` tasks. Deduplicate by intervention/target intent as well as `dedupeKey`. A task already being implemented is not a reason to avoid *other* eligible work.
+4. Read active Sites Operator registry and compact planning digests; treat missing/partial/stale measurements as **unknown**, never as zero or as a claim that an intervention failed. Do not query GSC/GA4 directly. Check the latest known changed-at dates and cooldowns.
+5. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
+
+## Search for implementable interventions, not excuses
+
+Look for bounded opportunities with a measurable or directly verifiable outcome:
+- Existing pages with observed search visibility and a confirmed answer-intent, factual, structural, internal-link or metadata defect; prioritize changes whose acceptance criteria can be checked from the changed page and subsequent observation.
+- Objectively verifiable technical errors (broken canonical, wrong robots/indexing directive, broken relevant internal link, missing structured data actually required by the page, broken route) established by current code/live reproduction. These can be actionable **without page-level search volume**.
+- Clear, independently sourced factual accuracy gaps or material usability omissions on an existing managed page. A **current-HEAD demonstrated defect plus authoritative evidence and an exact correction** can justify a targeted factual/technical task when page-level GSC data is absent or sparse; disclose that lack and do not manufacture an expected traffic uplift.
+- Cross-page topic overlap with actual evidence, or a documented unmet intent where a focused new page is separately justified.
+
+Use progressively broader discovery instead of overusing weak numeric thresholds: first inspect visible underperforming existing articles, then other current site pages, high-value navigational/technical defects, content corrections, missing contextual internal links, and independently justified new articles. Do **not** propose speculative title refreshes on healthy/newly changed pages or expensive audits masquerading as Worker work. Each accepted Task must specify what code/content changes, how to validate it, and what later metric would test the hypothesis, if applicable.
+
+Strict cases remain strict: destructive `delete` needs complete trailing 90-day evidence and a defensible treatment of unique value; `merge` needs clear overlap and redirect/canonical handling. Do not lower these standards to fill inventory.
+
+## Commit each candidate end-to-end
+
+Before any new task, verify (a) the site is active, (b) the current target file and exact defect on default-branch HEAD, (c) relevant existing active/history tasks and PRs/commits, (d) sources or dated digest evidence, and (e) non-duplicative acceptance criteria. Then use `seo_task_create` to save a `ready` record, and **immediately use `seo_task_get` to read back and confirm** the ID, status, repo, target URL, rationale and sources. Do not leave a speculative `proposed` backlog. No GitHub Issues, PRs, code edits or deploys from the Planner.
+
+A good Worker-ready task says: *this is the observed defect, here is its current file/HEAD, this is the precise bounded change, these are primary/reliable references, and these are the checks that prove the repair*. A measurement-based hypothesis also records the period and data limitations, without implying causality before post-change evaluation.
+
+## Definition of zero and reporting
+
+**Zero new tasks is an exceptional, explained result—not the default interpretation of caution.** It is justified if the existing ready buffer is already at target, comprehensive cross-site/current-HEAD exploration finds no defensible distinct interventions, or a precisely documented source/capability/write blocker prevents progress. Reporting zero after inspecting one page, treating missing analytics as zero, or stopping at an already-open PR is **incomplete planning**.
+
+For every run, report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages investigated, the strongest rejected candidates and concrete rejection reasons, and remaining evidence/source limitations. If a write is rejected by platform safety/authorization, stop that rejected operation rather than rerouting it, and report the exact diagnostic. If a required compact digest is unavailable, record the blocked analytics-dependent opportunity and explore independent factual/technical defects elsewhere where sound evidence exists.
+
+**No invented work or guaranteed traffic claims.** The aggressive requirement is to search broadly, finish valid records, and keep the Worker supplied—not to lower accuracy, duplicate recent changes or bypass controls.
