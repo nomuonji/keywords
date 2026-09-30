@@ -164,7 +164,7 @@ assert.doesNotMatch(researchLedgerSource, /compositeScore|totalScore|rankingScor
 const sourcePoolSource = readFileSync(new URL('../packages/commands/src/seo-source-pool.ts', import.meta.url), 'utf8');
 assert.match(sourcePoolSource, /x_ezayan/);
 assert.match(sourcePoolSource, /Source reputation is not evidence/);
-assert.match(sourcePoolSource, /do not fetch X or the web itself|does not fetch X or the web itself/i);
+assert.match(mcpSource, /does not fetch X or the web itself/i);
 
 const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
 assert.match(treasurySource, /avgMonthlySearches/);
