@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { field, value } from '../packages/db/src/firestore.js';
+import { value } from '../packages/db/src/firestore.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test@example.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }), project_id: 'test' });
@@ -10,7 +10,6 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let seq = 0;
 const originalFetch = globalThis.fetch;
-const decode = (v: any): any => value(v);
 
 globalThis.fetch = async (input, init) => {
   const url = String(input);
