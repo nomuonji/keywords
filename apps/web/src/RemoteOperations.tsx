@@ -9,6 +9,9 @@ type SeoTask = {
   status: 'proposed'|'ready'|'issued'|'in_progress'|'completed'|'cancelled'|'superseded';
   priority: 'high'|'medium'|'low';
   title: string;
+  rationale: string;
+  evidence: string[];
+  evidenceCount: number;
   targetUrls: string[];
   articleCount: number;
   issueNumber: number | null;
@@ -155,6 +158,12 @@ export function RemoteOperationsOverview() {
               <span><b>{when(task.updatedAt)}</b><small>updated</small></span>
             </summary>
             <div className="seoTaskExpanded">
+              <div>
+                <h3>WHY THIS TASK</h3>
+                <p>{task.rationale}</p>
+                {task.evidence.length > 0 && <><h3>EVIDENCE</h3><ul>{task.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul></>}
+                {task.evidenceCount > task.evidence.length && <small>ほか {task.evidenceCount - task.evidence.length} 件は seo_task_get で確認できます。</small>}
+              </div>
               <div className="seoTaskTargets">
                 <h3>TARGET</h3>
                 {task.targetUrls.length ? task.targetUrls.map(url => <a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>) : <p>URLなし</p>}
