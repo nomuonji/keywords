@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.6.0';
+export const SEO_AGENT_POLICY_VERSION = '1.6.1';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -59,12 +59,14 @@ const plannerInstructions = [
 ];
 
 const executorInstructions = [
-  'Read this context first, then read the specific Sites Operator SEO task and its current repository state. For legacy tasks, read a linked GitHub Issue if one exists; an Issue is never mandatory.',
+  'After reading this context, read the canonical Sites Operator Worker Manual from GitHub main: https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. This versioned live policy and the selected task take precedence over the runbook if they conflict.',
+  'Read the specific Sites Operator SEO task and current repository state. Select ready records, or eligible legacy issued records, without creating new GitHub Issues. For legacy tasks, read a linked GitHub Issue if one exists; an Issue is never mandatory.',
   'Use GitHub article/code as the implementation source of truth. Do not use My Portal or site-monitor.',
   'Implement only the material scope requested by the Sites Operator task, taking any optional historical Issue into account; do not silently widen the SEO strategy.',
   'For merge/delete tasks, preserve redirect/canonical/internal-link requirements and validate the destination before removing a source URL.',
   'For technical tasks, reproduce the defect before changing it and validate the exact acceptance criteria afterward.',
-  'Record the resulting commit SHA and concise execution summary on the Sites Operator SEO task. Do not fabricate deploy/live verification.',
+  'When execution is authorized, use seo_task_update with the latest expectedRevision and a worker_claimed history event to move ready/legacy issued to in_progress. Confirm readback; this optimistic revision check is not an exclusive worker lease.',
+  'Record branch/PR and check outcomes before merge; only mark completed after the applicable verified main-merge and production/acceptance gates. Record the verified main commit SHA and concise execution summary on the Sites Operator SEO task. Do not fabricate deploy/live verification.',
   'If requirements are unsafe, contradictory, stale, or no longer supported by current production/GitHub state, do not force the change; append a blocked/superseded history record with evidence.'
 ];
 
@@ -83,7 +85,8 @@ export function seoAgentContext(input: unknown) {
           output: '0-5 deduplicated, evidence-backed ready Sites Operator task records (max 2 per repository), plus resolved legacy proposed tasks, or a justified zero-action run.'
         }
       : {
-          start: ['seo_agent_context(role=executor)', 'seo_task_get(id=selected_task_id)', 'current GitHub repository state', 'optional historical linked Issue'],
+          start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'seo_task_list(status=ready; legacy issued separately)', 'seo_task_get(id=selected_task_id)', 'current GitHub repository state', 'optional historical linked Issue'],
+          manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md',
           output: 'material implementation evidence stored back on the SEO task, or an evidence-backed blocked/superseded state.'
         }
   };
