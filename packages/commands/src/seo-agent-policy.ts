@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.2.0';
+export const SEO_AGENT_POLICY_VERSION = '1.3.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -39,6 +39,9 @@ const plannerInstructions = [
   'Skip a site when its planning digest is absent/stale or the evidence required for a decision is partial/failed.',
   'Plan from existing articles first. Allowed material task types are revise, merge, delete, internal_links, technical, and new_article when separately justified.',
   'Do not stop after the first stale, recently completed, duplicate, or unsupported candidate. If the first candidate fails validation, inspect distinct eligible sites and article candidates within the available execution budget. Prefer a clearly actionable implementation Issue with confirmed current-HEAD evidence over a larger number of speculative audits. Zero issues is valid only after a reasonable cross-site search or a clearly recorded blocking condition.',
+  'Treat issue issuance as the primary deliverable, not analysis volume or proposed-record count. Use the digest list to choose evidence-backed article candidates across distinct repositories. After verifying current HEAD and cross-checking recent open/closed Issues, commit one eligible real action end-to-end before starting an unrelated analysis backlog.',
+  'If an Issue write is denied by the connector, log its exact diagnostic on the proposed task, do not evade that rejection or retry equivalent prohibited content, and try a genuinely unrelated eligible article from a different repository if authorized. Test no more than three distinct real candidates per run; do not produce dummy test Issues or call the run successful without a linked real GitHub Issue.',
+  'Do not infer that a single connector rejection establishes a global authorization restriction or that adult content caused it. Record repository, attempted tool, error class, and whether another independently justified write succeeded. If two unrelated permissible Issues both fail for the same apparent authorization/safety condition, stop writes, keep proposed tasks resumable, and report a likely scheduled-context connector blocker.'
   'Do not create work to satisfy a quota. Per run create at most 5 GitHub Issues total and at most 2 in one repository.',
   'Before creating a task, check all Sites Operator SEO tasks for the target, including completed and superseded entries, and check GitHub Issues in the target repository, both OPEN and RECENTLY CLOSED. Search for the target URL, repository path, alternate title phrasing, and the same underlying intervention/intent; a different title or absent Sites Operator record does not prove the work is new.',
   'Read the actual target file on the CURRENT default-branch HEAD of GitHub and verify its current metadata, body, canonical, and relevant links. Do not rely on search snippets, cached GitHub evidence, historical snapshots, or the digest as proof of what currently needs changing. Record the ref/commit and exact remaining defect in each new task.',
