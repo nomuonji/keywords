@@ -21,6 +21,14 @@ const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cance
 const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened', 'inconclusive']);
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
+const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
+const seoTaskDeploymentVerificationPatch = z.object({
+  status: seoTaskDeploymentVerificationStatus,
+  checkedAt: isoTime.nullable().optional(),
+  productionUrl: webUrl.nullable().optional(),
+  deployedCommitSha: commitSha.nullable().optional(),
+  detail: note.optional()
+}).strict();
 const seoTaskPriority = z.enum(['high', 'medium', 'low']);
 const issueState = z.enum(['open', 'closed']);
 const historyEntry = z.object({
@@ -97,6 +105,7 @@ export const seoTaskListShape = {
   articleId: entityId.optional(),
   taskType: seoTaskType.optional(),
   status: seoTaskStatus.optional(),
+  deploymentVerificationStatus: seoTaskDeploymentVerificationStatus.optional(),
   limit: z.number().int().min(1).max(100).default(50)
 };
 export const seoTaskUpdateShape = {
@@ -109,6 +118,7 @@ export const seoTaskUpdateShape = {
   issueState: issueState.nullable().optional(),
   resultCommitSha: commitSha.nullable().optional(),
   executionSummary: note.optional(),
+  deploymentVerification: seoTaskDeploymentVerificationPatch.optional(),
   appendHistory: historyEntry.optional()
 };
 const seoTaskUpdateSchema = z.object(seoTaskUpdateShape).strict();
@@ -520,11 +530,26 @@ export async function metricSnapshotList(input: unknown) {
   return { items };
 }
 
+const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
+  // The absence of a URL is not evidence that a public check is unnecessary.
+  // An explicit human decision must set not_required.
+  status: 'pending' as const,
+  checkedAt: null,
+  productionUrl: task.targetUrls?.[0] ?? null,
+  deployedCommitSha: null,
+  detail: 'Production verification has not been recorded yet.'
+});
+
+const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
+  ...task,
+  deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task)
+});
+
 export async function seoTaskGet(input: unknown) {
   const args = z.object(seoTaskGetShape).strict().parse(input);
   const doc = await readDocument('seoTasks', args.id);
   if (!doc) throw new Error('SEO task not found');
-  return decoded(doc) as SeoTaskRecord;
+  return normalizeSeoTask(decoded(doc) as SeoTaskRecord);
 }
 
 export async function seoTaskCreate(input: unknown) {
@@ -559,6 +584,7 @@ export async function seoTaskCreate(input: unknown) {
     issueState: null,
     resultCommitSha: null,
     executionSummary: '',
+    deploymentVerification: defaultDeploymentVerification({ targetUrls: args.targetUrls }),
     history: [{ at: t, actor: args.createdBy, event: 'ready', detail: 'Evidence-backed SEO task recorded in Sites Operator for later implementation; no GitHub Issue required.' }],
     createdBy: args.createdBy,
     revision: 1,
@@ -575,15 +601,16 @@ export async function seoTaskList(input: unknown) {
   let items: SeoTaskRecord[];
   if (args.siteId) {
     await ensureSite(args.siteId);
-    items = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+    items = ((await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[]).map(normalizeSeoTask);
   } else {
     const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
-    items = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoTaskRecord);
+    items = (listed.documents ?? []).map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   }
   items = items.filter(task =>
     (!args.articleId || task.articleIds.includes(args.articleId)) &&
     (!args.taskType || task.taskType === args.taskType) &&
-    (!args.status || task.status === args.status)
+    (!args.status || task.status === args.status) &&
+    (!args.deploymentVerificationStatus || task.deploymentVerification.status === args.deploymentVerificationStatus)
   ).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
   return { items };
 }
@@ -592,17 +619,21 @@ export async function seoTaskUpdate(input: unknown) {
   const args = seoTaskUpdateSchema.parse(input);
   const previous = await readDocument('seoTasks', args.id);
   if (!previous) throw new Error('SEO task not found');
-  const current = decoded(previous) as SeoTaskRecord;
+  const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
   const t = now();
-  const { id: _id, expectedRevision, appendHistory, ...patch } = args;
+  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, ...patch } = args;
   const history = [...(current.history ?? [])];
   if (appendHistory) history.push({ ...appendHistory, at: appendHistory.at ?? t });
   const status = patch.status ?? current.status;
+  const deploymentVerification = deploymentPatch === undefined
+    ? current.deploymentVerification
+    : { ...current.deploymentVerification, ...Object.fromEntries(Object.entries(deploymentPatch).filter(([, value]) => value !== undefined)) };
   const record: SeoTaskRecord = {
     ...current,
     ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
     status,
+    deploymentVerification,
     history: history.slice(-100),
     completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
     revision: expectedRevision + 1,
@@ -610,6 +641,9 @@ export async function seoTaskUpdate(input: unknown) {
   };
   // Preserve validation for historical issued records; new work uses ready without any Issue.
   if (record.status === 'issued' && (!record.issueNumber || !record.issueUrl)) throw new Error('Legacy issued SEO task requires issueNumber and issueUrl');
+  if (record.status === 'completed' && current.status !== 'completed' && !record.resultCommitSha) throw new Error('completed SEO task requires resultCommitSha from main');
+  if (record.deploymentVerification.status === 'verified' && !record.deploymentVerification.checkedAt) throw new Error('verified deployment requires checkedAt');
+  if (record.deploymentVerification.status === 'failed' && !record.deploymentVerification.detail.trim()) throw new Error('failed deployment verification requires detail');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
   return { ...record, runId };
 }

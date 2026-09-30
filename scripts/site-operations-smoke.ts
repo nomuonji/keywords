@@ -100,6 +100,8 @@ try {
   assert.equal(readyTask.status, 'ready');
   assert.equal(readyTask.issueUrl, null);
   assert.equal(readyTask.issueNumber, null);
+  assert.equal(readyTask.deploymentVerification.status, 'pending');
+  assert.equal(readyTask.deploymentVerification.productionUrl, 'https://example.com/article-a');
   assert.equal(readyTask.history[0].event, 'ready');
   assert.equal((await seoTaskGet({ id: readyTask.id })).status, 'ready');
   assert.equal((await seoTaskList({ siteId: 'site-a', status: 'ready' })).items.length, 1);
@@ -117,6 +119,43 @@ try {
   await assert.rejects(seoTaskUpdate({
     id: readyTask.id, expectedRevision: readyTask.revision, status: 'completed'
   }), /Revision conflict/);
+
+  await assert.rejects(seoTaskUpdate({
+    id: readyTask.id, expectedRevision: startedTask.revision, status: 'completed'
+  }), /completed SEO task requires resultCommitSha/);
+  const completedTask = await seoTaskUpdate({
+    id: readyTask.id,
+    expectedRevision: startedTask.revision,
+    status: 'completed',
+    resultCommitSha: 'd'.repeat(40),
+    executionSummary: 'Merged implementation to main; production verification is intentionally separate.',
+    deploymentVerification: {
+      status: 'pending',
+      productionUrl: 'https://example.com/article-a',
+      detail: 'Implementation complete on main; production not checked yet.'
+    },
+    appendHistory: { actor: 'site-operations-smoke', event: 'implementation_completed', detail: 'Merged to main.' }
+  });
+  assert.equal(completedTask.status, 'completed');
+  assert.equal(completedTask.resultCommitSha, 'd'.repeat(40));
+  assert.equal(completedTask.deploymentVerification.status, 'pending');
+  assert.ok(completedTask.completedAt);
+  assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending' })).items.length, 1);
+  const verifiedTask = await seoTaskUpdate({
+    id: readyTask.id,
+    expectedRevision: completedTask.revision,
+    deploymentVerification: {
+      status: 'verified',
+      checkedAt: '2026-10-01T00:00:00.000Z',
+      productionUrl: 'https://example.com/article-a',
+      deployedCommitSha: 'd'.repeat(40),
+      detail: 'Production route contains the merged change.'
+    },
+    appendHistory: { actor: 'site-operations-smoke', event: 'production_verified', detail: 'Live route verified.' }
+  });
+  assert.equal(verifiedTask.status, 'completed');
+  assert.equal(verifiedTask.deploymentVerification.status, 'verified');
+  assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'verified' })).items.length, 1);
 
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
@@ -237,7 +276,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.7.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.8.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -255,8 +294,10 @@ try {
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
-  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /merge/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /main merge/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /separate deploymentVerification/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /MERGE to main/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed means implementation merged to main/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /expectedRevision/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
@@ -267,9 +308,9 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.6.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.7.0');
 
-  console.log('site operations smoke passed: record-only ready tasks, dedupe, issue-free execution transition, normalized site/article identities, optimization cooldown and updated MCP contract');
+  console.log('site operations smoke passed: record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }

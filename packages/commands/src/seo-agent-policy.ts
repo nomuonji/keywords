@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.7.0';
+export const SEO_AGENT_POLICY_VERSION = '1.8.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -52,13 +52,14 @@ const plannerInstructions = [
 
 const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
-  'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. If explicitly continuing your own previous run or a confirmed handoff, resume that existing in_progress delivery rather than making a duplicate PR; never seize concurrently owned work.',
+  'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. Resume only your own previous run or a confirmed handoff; never seize concurrently owned work.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
   'Verify current main HEAD and bounded task scope before claim/change. Update task with fresh expectedRevision, worker_claimed/resumed history and readback; this is optimistic revision tracking, not a multi-worker exclusive lease.',
-  'Implement the documented material scope and validate real acceptance criteria. For merge/delete preserve redirect/canonical/internal links; for technical defects reproduce and retest the actual failure.',
-  'The default outcome is END-TO-END delivery, not opening a draft PR: in the same authorized run, run available local/CI tests, resolve actual failures, self-review the diff and required checks, mark a draft PR ready, then MERGE to main when all required repository gates are satisfied and merge is permitted. Do not stop merely because a PR exists or CI is pending; inspect/check available runs and continue while execution budget allows.',
-  'Do not invent tests, replace missing mandatory human approvals, bypass protected branch restrictions, skip failing CI or merge through a refused operation. If essential test/review tools are unavailable, record the precise capability blocker instead of treating PR creation as completion.',
-  'After verified merge record the real main commit SHA and verify production deployment plus exact live route/acceptance claims when applicable; mark completed only after all applicable gates. When pending, preserve in_progress with exact PR/check/build status and next required action for resumption.',
+  'Implement the documented material scope and validate the change itself. Run available targeted/local/repository checks; compare failures with the base branch when necessary so a pre-existing unrelated deploy/build defect is not misattributed to this task.',
+  'The Worker delivery boundary is MAIN MERGE. In the same authorized run, self-review the diff, satisfy repository-required checks/reviews, mark a draft PR ready when appropriate, and MERGE to main when permitted. PR creation alone is not completion.',
+  'After merge, verify the actual main result SHA and target code, then set status=completed with resultCommitSha. completed means implementation merged to main; it does NOT mean production deployment was verified.',
+  'Maintain deploymentVerification as a separate axis. If production was not checked, leave status=pending. If a check observes a deployment/public failure, record failed with concise evidence. If production is positively verified, record verified with checkedAt (and deployedCommitSha when known). Use not_required only when no public deployment applies. Production verification is optional for the Worker and may be performed later by a human.',
+  'Do not expand an SEO task into repairing an unrelated pre-existing deployment/platform defect merely to obtain production verification. Record the unrelated blocker in deploymentVerification/detail and finish the implementation task once the main merge is verified.',
   'Use seo_task_get -> seo_task_update(expectedRevision) -> seo_task_get readback on each state change. If tool/safety/authorization rejects an operation, stop that rejected action; do not reroute equivalent rejected content. Record exact failure and true remaining state.'
 ];
 
@@ -84,8 +85,8 @@ export function seoAgentContext(input: unknown) {
       : {
           start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'inspect in_progress resumable deliveries and ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md',
-          deliveryDefault: 'Continue to verified main merge and required live checks in the same authorized run when all repository gates pass; PR creation alone is never task completion.',
-          output: 'Verified changed code/CI/main merge/live evidence and completed Sites Operator task, or precise in_progress/blocked evidence if mandatory gates or tool limits prevent completion.'
+          deliveryDefault: 'Complete the SEO implementation at verified main merge. Production verification is a separate deploymentVerification state and is not required to set task status=completed.',
+          output: 'Verified main merge plus resultCommitSha and completed task; deploymentVerification separately records pending/verified/failed/not_required without blocking implementation completion.'
         }
   };
 }

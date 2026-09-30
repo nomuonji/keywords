@@ -284,7 +284,7 @@ Agent-facing SEO operating instructions are versioned inside Sites Operator and 
 
 **Planner runbook:** [Sites Operator SEO Planner Manual](docs/sites-operator-planner-manual.md) defines an 8-task ready inventory target, broad cross-site discovery and concrete task acceptance criteria. The scheduler prompt remains a minimal bootstrap that loads current policy.
 
-**Worker runbook:** [Sites Operator SEO Worker Manual](docs/sites-operator-worker-manual.md) now requires an authorized Worker to go through real tests/CI, ready-for-review, **merge to main in the same run when repository gates pass**, and applicable live verification. The executor policy returns its canonical URL. The manual does not install or schedule a Worker; branch protection and safety checks remain binding.
+**Worker runbook:** [Sites Operator SEO Worker Manual](docs/sites-operator-worker-manual.md) defines implementation completion at verified **main merge**. `status=completed` records the main result SHA; production is a separate `deploymentVerification` axis (`pending` / `verified` / `failed` / `not_required`) so humans can later review completed-but-unverified records without keeping Worker tasks open.
 
 # Agent work loop
 
