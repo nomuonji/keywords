@@ -87,3 +87,56 @@ export type SerpUsage = {
   createdAt: string;
   updatedAt: string;
 };
+
+
+export type SeoSourceType = 'x_account' | 'website' | 'newsletter' | 'youtube' | 'other';
+export type SeoSourceStatus = 'active' | 'paused' | 'archived';
+export type SeoSourceOrigin = 'builtin' | 'firestore';
+
+export type SeoSource = {
+  id: string;
+  sourceType: SeoSourceType;
+  label: string;
+  canonicalUrl: string;
+  handle: string | null;
+  topics: string[];
+  whyWatch: string;
+  trustNotes: string;
+  notes: string;
+  status: SeoSourceStatus;
+  reviewCadenceDays: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  origin: SeoSourceOrigin;
+};
+
+export type SeoSourceFindingDisposition = 'candidate' | 'adopted' | 'rejected' | 'watch';
+export type SeoSourceFindingConfidence = 'low' | 'low_to_medium' | 'medium' | 'medium_to_high' | 'high';
+export type SeoSourceFinding = {
+  url: string;
+  publishedAt: string | null;
+  claimSummary: string;
+  relevance: string;
+  disposition: SeoSourceFindingDisposition;
+  confidence: SeoSourceFindingConfidence;
+  verificationNeeded: boolean;
+  evaluatorIds: string[];
+  notes: string;
+};
+
+export type SeoSourceScanOutcome = 'useful' | 'mixed' | 'nothing_new' | 'needs_followup' | 'unavailable';
+export type SeoSourceScan = {
+  id: string;
+  sourceId: string;
+  reviewedAt: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  outcome: SeoSourceScanOutcome;
+  summary: string;
+  retrievalMethod: string;
+  limitations: string[];
+  findings: SeoSourceFinding[];
+  actor: string;
+  createdAt: string;
+};

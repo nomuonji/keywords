@@ -6,15 +6,17 @@ import { SitesOverview } from './SitesOverview';
 import { KeywordTreasury } from './KeywordTreasury';
 import { SiteStructures } from './SiteStructures';
 import { ThemeResearch } from './ThemeResearch';
+import { SeoSourcePool } from './SeoSourcePool';
 
-type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research';
+type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research'|'sources';
 const views:Array<{id:View;label:string;hint:string}>=[
   {id:'operations',label:'運用',hint:'Issue・実行履歴'},
   {id:'sites',label:'サイト',hint:'Agent管理対象'},
   {id:'articles',label:'記事',hint:'管理・検証・成果'},
   {id:'treasury',label:'お宝KW',hint:'共有ストック'},
   {id:'structures',label:'サイト構想',hint:'設計・ページ構造'},
-  {id:'research',label:'テーマ研究',hint:'候補・反証・次の疑問'}
+  {id:'research',label:'テーマ研究',hint:'候補・反証・次の疑問'},
+  {id:'sources',label:'情報源',hint:'X・媒体の監視プール'}
 ];
 
 function readLocation(){
@@ -55,6 +57,7 @@ export function App(){
       {view==='treasury'&&<KeywordTreasury/>}
       {view==='structures'&&<SiteStructures/>}
       {view==='research'&&<ThemeResearch/>}
+      {view==='sources'&&<SeoSourcePool/>}
     </main>
   </div>;
 }

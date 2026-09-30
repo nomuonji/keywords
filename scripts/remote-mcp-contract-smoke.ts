@@ -6,7 +6,7 @@ import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPaylo
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.6.1');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.7.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -29,9 +29,13 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'theme_research_context',
   'theme_candidate_upsert',
   'theme_candidate_challenge',
+  'seo_source_pool_context',
+  'seo_source_get',
+  'seo_source_save',
+  'seo_source_scan_record',
   'trend_article_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 22);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 26);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -140,6 +144,8 @@ assert.match(mcpSource, /site_structure_patch/);
 assert.match(mcpSource, /theme_research_context/);
 assert.match(mcpSource, /theme_candidate_upsert/);
 assert.match(mcpSource, /theme_candidate_challenge/);
+assert.match(mcpSource, /seo_source_pool_context/);
+assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
 assert.match(mcpSource, /KEYWORDS_GROQ_MCP_TOKEN/);
 assert.match(mcpSource, /x-api-key/);
@@ -154,6 +160,11 @@ assert.match(researchLedgerSource, /whyStillAlive/);
 assert.match(researchLedgerSource, /fatalRisks/);
 assert.match(researchLedgerSource, /challengeHistory/);
 assert.doesNotMatch(researchLedgerSource, /compositeScore|totalScore|rankingScore/);
+
+const sourcePoolSource = readFileSync(new URL('../packages/commands/src/seo-source-pool.ts', import.meta.url), 'utf8');
+assert.match(sourcePoolSource, /x_ezayan/);
+assert.match(sourcePoolSource, /Source reputation is not evidence/);
+assert.match(mcpSource, /does not fetch X or the web itself/i);
 
 const treasurySource = readFileSync(new URL('../packages/keyword-treasury/src/index.ts', import.meta.url), 'utf8');
 assert.match(treasurySource, /avgMonthlySearches/);
