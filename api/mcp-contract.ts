@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.6.1';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.7.0';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',
@@ -22,5 +22,9 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'theme_research_context',
   'theme_candidate_upsert',
   'theme_candidate_challenge',
+  'seo_source_pool_context',
+  'seo_source_get',
+  'seo_source_save',
+  'seo_source_scan_record',
   'trend_article_research'
 ] as const;
