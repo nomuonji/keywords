@@ -128,11 +128,14 @@ async function allSources() {
 }
 
 async function scansForSource(id: string, limit = 10) {
-  const docs = await listCollection('seoSourceScans');
-  return docs
-    .map((doc: any) => parseDoc<SeoSourceScan>(doc))
-    .filter(item => item.sourceId === id)
-    .sort((a, b) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)))
+  const result = await firestore(':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
+    from: [{ collectionId: 'seoSourceScans' }],
+    where: { fieldFilter: { field: { fieldPath: 'sourceId' }, op: 'EQUAL', value: field(sourceId.parse(id)) } },
+    limit: Math.max(limit * 5, 50)
+  } }) });
+  return (Array.isArray(result) ? result : [])
+    .flatMap((row: any) => row.document ? [parseDoc<SeoSourceScan>(row.document)] : [])
+    .sort((a: SeoSourceScan, b: SeoSourceScan) => String(b.reviewedAt).localeCompare(String(a.reviewedAt)))
     .slice(0, limit);
 }
 
