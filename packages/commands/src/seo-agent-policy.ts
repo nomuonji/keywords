@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.8.0';
+export const SEO_AGENT_POLICY_VERSION = '1.9.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -30,7 +31,8 @@ const shared = {
   managedScope: {
     source: 'Sites Operator active site registry only.',
     rule: 'A site that is visible in site-monitor but absent/paused/archived in Sites Operator is not agent-managed and must not receive new SEO tasks from this workflow.'
-  }
+  },
+  evaluationRegistry: seoEvaluatorContextSummary()
 } as const;
 
 const plannerInstructions = [
@@ -40,11 +42,12 @@ const plannerInstructions = [
   'Maintain an operating target of 8 unclaimed actionable ready/legacy issued tasks across active managed sites. When below target, aim for 3–5 genuinely justified NEW ready records per run (hard max 5, max 2 per repository). Record count is a capacity target, not permission to generate fake or redundant work.',
   'Before reporting zero when the buffer is below target, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if that many are available; pivot across unrelated sites when early candidates fail. Do not stop after an initial stale/duplicated page or active PR, and save each valid task immediately instead of spending the full run auditing.',
   'Read active site registry and Sites Operator compact digests. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero. When analytics are insufficient, still search for independently verifiable factual, usability or technical defects supported by current HEAD and authoritative sources. Do not manufacture traffic claims.',
+  'Use seo_evaluator_list/get for strategy-sensitive content decisions. For every new_article candidate, read content_incremental_value at its current version before creating the task. When cross-site templating, high-volume publishing, or semantic overlap is materially relevant, also inspect scaled_content_operation_risk. Evaluators are revisable operating hypotheses: preserve source strength, caveats, confidence and falsification conditions; never convert their qualitative signals into a composite SEO score or claim hidden Google ranking logic.',
   'Prioritize bounded, high-leverage real site/page changes: observed query-intent mismatches, sourced factual corrections, reproducible technical/indexing problems, concrete internal-link gaps, verified content overlap and separately justified unmet intent. Use the Planner Manual exploration ladder rather than waiting passively for a perfect CTR statistic.',
   'Before saving a task, inspect the exact target file at the CURRENT GitHub default-branch HEAD and confirm the remaining defect, metadata and links. Compare all existing task records and relevant PRs/commits; historical closure does not prove delivery but current HEAD satisfying acceptance criteria does.',
   'For analytics-dependent revisions require a concrete observed search/organic signal and a verified page gap; independently verifiable factual/technical corrections may proceed with current code/primary-source evidence even when page-level metrics are sparse, with the measurement limitation disclosed. Do not prematurely reissue previously changed snippet experiments during cooldown.',
   'Merge requires actual intent overlap and complete redirect/canonical handling. Delete requires complete trailing-90d evidence plus low unique value or verified duplication and should favor merge/redirect. Internal links must name source/target and document a real gap; technical fixes require reproducible validation.',
-  'Save only concrete, deduplicated evidence-backed ready tasks using seo_task_create after validating current code and prior work; read each result back with seo_task_get. If a legacy proposed task is still valid, promote it instead of cloning it.',
+  'Save only concrete, deduplicated evidence-backed ready tasks using seo_task_create after validating current code and prior work; read each result back with seo_task_get. If an evaluator materially informed the decision, persist its exact evaluatorId/evaluatorVersion, registered evidenceSourceIds, confidence and case-specific inference in the task evaluation field. Keep target-specific proof in evidence. If a legacy proposed task is still valid, promote it instead of cloning it.',
   'Zero newly created tasks is valid only if the ready buffer is already supplied, broad current-HEAD exploration finds no safe distinct interventions, or a documented permission/source blocker prevents further justified work. Report initial/final ready inventory, new/promoted task IDs, sites/pages actually checked, rejected candidates and exact reasons.',
   'Never create Issues or write code, PRs, or deployments from this Planner. If a mutation is blocked by safety or authorization, do not retry the rejected operation through another route; preserve actual state and report the diagnostic.',
   'Do not treat a planning report, audit-only worker assignment or unsupported numerical score as an SEO material outcome. The actionable task must specify a concrete change and verifiable acceptance criteria.'
@@ -72,14 +75,14 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'cross-site exploration until buffer target or justified stop'],
+          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'cross-site exploration until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           readyInventoryTarget: 8,
           targetNewTasksPerRun: [3, 5],
           maxNewTasksPerRun: 5,
           maxNewTasksPerRepository: 2,
           successCondition: 'A new action counts when seo_task_create persists an evidence-backed ready Sites Operator record, or a legacy proposed record is revalidated and updated to ready, and seo_task_get readback confirms its current state. No GitHub Issue is required.',
-          report: 'Report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages checked, specific rejected candidates and why, and any precise blocker. Zero tasks below buffer target requires documented broad cross-site exploration. No GitHub Issues.',
+          report: 'Report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages checked, specific rejected candidates and why, evaluator references when they materially affected accept/reject decisions, and any precise blocker. Zero tasks below buffer target requires documented broad cross-site exploration. No GitHub Issues.',
           output: 'When inventory <8, aim 3-5 new distinct evidence-backed ready Sites Operator task records (hard max 5, max 2 per repo); if fewer qualify, save them and explain the exhaustive relevant search.'
         }
       : {

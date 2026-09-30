@@ -6,6 +6,13 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { SITES_MCP_SERVER_VERSION, SITES_MCP_TOOL_NAMES } from './sites-mcp-contract.js';
 import { seoAgentContext, seoAgentContextShape } from '../packages/commands/src/seo-agent-policy.js';
 import {
+  SEO_EVALUATION_REGISTRY_VERSION,
+  seoEvaluatorGet,
+  seoEvaluatorGetShape,
+  seoEvaluatorList,
+  seoEvaluatorListShape
+} from '../packages/commands/src/seo-evaluation-registry.js';
+import {
   metricSnapshotList, metricSnapshotListShape, metricSnapshotSave, metricSnapshotSaveShape,
   optimizationContext, optimizationContextShape,
   optimizationEventCreate, optimizationEventCreateShape, optimizationEventList, optimizationEventListShape, optimizationEventUpdate, optimizationEventUpdateShape,
@@ -62,6 +69,10 @@ function runtimeStatus() {
     ...remoteSitesStatus(),
     serverVersion: SITES_MCP_SERVER_VERSION,
     gitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? process.env.COMMIT_SHA ?? null,
+    evaluationRegistry: {
+      version: SEO_EVALUATION_REGISTRY_VERSION,
+      sourceOfTruth: 'versioned_git_registry'
+    },
     deployment: {
       platform: process.env.VERCEL ? 'vercel' : 'unknown',
       environment: process.env.VERCEL_ENV ?? null,
@@ -75,7 +86,9 @@ function runtimeStatus() {
 function server() {
   const mcp = new McpServer({ name: 'sites-operator', version: SITES_MCP_SERVER_VERSION });
   mcp.registerTool('remote_sites_status', { description: 'Check Sites Operator version, deployment, source-of-truth policy, Firestore configuration and tool contract. No secrets are returned.' }, async () => structured(runtimeStatus()));
-  mcp.registerTool('seo_agent_context', { description: 'Call this first for Sites Operator SEO planning or execution. Returns the current versioned operating policy, source-routing rules, analytics constraints, dedupe rules, record-only task workflow, and role-specific run contract so scheduler prompts can remain minimal.', inputSchema: seoAgentContextShape, annotations: { readOnlyHint: true } }, async input => structured(seoAgentContext(input)));
+  mcp.registerTool('seo_agent_context', { description: 'Call this first for Sites Operator SEO planning or execution. Returns the current versioned operating policy, source-routing rules, analytics constraints, evaluation-registry summary, dedupe rules, record-only task workflow, and role-specific run contract so scheduler prompts can remain minimal.', inputSchema: seoAgentContextShape, annotations: { readOnlyHint: true } }, async input => structured(seoAgentContext(input)));
+  mcp.registerTool('seo_evaluator_list', { description: 'List versioned Sites Operator SEO evaluators. Evaluators are operational hypotheses with explicit epistemic status, not hidden Google ranking claims.', inputSchema: seoEvaluatorListShape, annotations: { readOnlyHint: true } }, async input => structured(seoEvaluatorList(input)));
+  mcp.registerTool('seo_evaluator_get', { description: 'Read one SEO evaluator version with its decision rule, hard gates, qualitative signals, inference confidence, falsification conditions, and registered evidence sources/caveats.', inputSchema: seoEvaluatorGetShape, annotations: { readOnlyHint: true } }, async input => structured(seoEvaluatorGet(input)));
   mcp.registerTool('site_registry_list', { description: 'List real deployed/building sites. Site Concepts remain separate planning records in siteStructures.', inputSchema: siteRegistryListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryList(input)));
   mcp.registerTool('site_registry_get', { description: 'Read one real site and its repository, production URL, deployment provider, local project link and analytics identifiers.', inputSchema: siteRegistryGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryGet(input)));
   mcp.registerTool('site_registry_resolve', { description: 'Resolve a real site by explicit localProjectId or exact productionUrl. Returns site=null when no mapping exists; never guesses from names.', inputSchema: siteRegistryResolveShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryResolve(input)));
@@ -88,7 +101,7 @@ function server() {
   mcp.registerTool('seo_planning_digest_get', { description: 'Read the latest compact 7d/28d/90d article-planning digest for one managed site. Analytics acquisition is externalized and this read never calls Google.', inputSchema: seoPlanningDigestGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestGet(input)));
   mcp.registerTool('seo_planning_digest_list', { description: 'List freshness and coverage summaries for compact site planning digests without returning all article rows.', inputSchema: seoPlanningDigestListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestList(input)));
   mcp.registerTool('seo_task_get', { description: 'Read one persisted SEO task with implementation evidence, separate deployment-verification state, and execution history. GitHub Issue links are optional historical references.', inputSchema: seoTaskGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskGet(input)));
-  mcp.registerTool('seo_task_create', { description: 'Create a deduplicated, evidence-backed ready SEO task directly in Sites Operator; no GitHub Issue is required.', inputSchema: seoTaskCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await seoTaskCreate(input)));
+  mcp.registerTool('seo_task_create', { description: 'Create a deduplicated, evidence-backed ready SEO task directly in Sites Operator; optional evaluation provenance records the exact evaluator/version/source IDs used for the decision. No GitHub Issue is required.', inputSchema: seoTaskCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await seoTaskCreate(input)));
   mcp.registerTool('seo_task_list', { description: 'List SEO tasks by site/article/type/status and deploymentVerificationStatus, including completed records awaiting or failing production verification.', inputSchema: seoTaskListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskList(input)));
   mcp.registerTool('seo_task_update', { description: 'Transition task state, append history, store main-merge implementation evidence, and independently update deploymentVerification (pending/verified/failed/not_required). completed means implementation merged to main; it does not imply production verification.', inputSchema: seoTaskUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await seoTaskUpdate(input)));
   mcp.registerTool('optimization_event_create', { description: 'Persist one SEO hypothesis/change event. Only one implemented, unevaluated change may exist per article.', inputSchema: optimizationEventCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await optimizationEventCreate(input)));

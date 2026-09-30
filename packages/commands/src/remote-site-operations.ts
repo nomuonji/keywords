@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
+import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const note = z.string().max(4000);
@@ -96,6 +97,7 @@ export const seoTaskCreateShape = {
   title: z.string().trim().min(1).max(300),
   rationale: note.refine(value => value.trim().length > 0),
   evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
+  evaluation: seoTaskEvaluationShape.optional(),
   dedupeKey: z.string().trim().min(1).max(300),
   createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
 };
@@ -542,6 +544,7 @@ const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
 
 const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   ...task,
+  evaluation: task.evaluation ?? null,
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task)
 });
 
@@ -554,6 +557,7 @@ export async function seoTaskGet(input: unknown) {
 
 export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
+  const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
   await ensureSite(args.siteId);
   for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
   if (!args.articleIds.length && !args.targetUrls.length) throw new Error('articleIds or targetUrls is required');
@@ -578,6 +582,7 @@ export async function seoTaskCreate(input: unknown) {
     title: args.title,
     rationale: args.rationale,
     evidence: args.evidence,
+    evaluation,
     dedupeKey: args.dedupeKey,
     issueNumber: null,
     issueUrl: null,

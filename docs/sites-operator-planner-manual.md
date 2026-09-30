@@ -18,7 +18,19 @@
 2. Read legacy `proposed` records first. Revalidate each against current GitHub HEAD, relevant PRs, the current task inventory and still-available evidence. Transition valid legacy records directly to `ready`, and invalid/delivered ones to `superseded` with specific proof. Do not reattempt historical GitHub Issue issuance.
 3. List `ready`, legacy `issued`, `in_progress`, recently `completed`, and `superseded` tasks. Deduplicate by intervention/target intent as well as `dedupeKey`. A task already being implemented is not a reason to avoid *other* eligible work.
 4. Read active Sites Operator registry and compact planning digests; treat missing/partial/stale measurements as **unknown**, never as zero or as a claim that an intervention failed. Do not query GSC/GA4 directly. Check the latest known changed-at dates and cooldowns.
-5. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
+5. Read the current evaluation-registry inventory with `seo_evaluator_list`. For strategy-sensitive content decisions, read the relevant exact version with `seo_evaluator_get`. Every `new_article` candidate must consult `content_incremental_value`; consult `scaled_content_operation_risk` when cross-site templating, semantic overlap, or production scale is materially relevant.
+6. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
+
+## Evaluation registry: evidence before inference
+
+The canonical registry is documented in [sites-operator-evaluation-registry.md](./sites-operator-evaluation-registry.md) and served by `seo_evaluator_list/get`.
+
+- Evaluators are **versioned operating hypotheses**, not assertions that Google's private ranking or enforcement implementation is known.
+- Keep **primary Search policy/guidance**, broader research, secondary reporting, and internal observations distinct. Do not silently promote an indirect source into a Search fact.
+- Do not convert qualitative evaluator signals into a single numerical SEO score. Hard gates may block a decision; softer signals remain evidence to reason about.
+- Preserve falsification conditions and review triggers. New contrary evidence should produce a new evaluator version rather than rewriting old decision history.
+- When an evaluator materially supports an accepted task, store its exact `evaluatorId`, `evaluatorVersion`, registered `evidenceSourceIds`, confidence, and case-specific inference in the task's optional `evaluation` field. Keep page-specific observations in the ordinary `evidence` field.
+- An experimental evaluator such as `scaled_content_operation_risk` cannot independently justify a block when its key evidence is indirect. Require primary Search policy or direct target evidence for the actual intervention.
 
 ## Search for implementable interventions, not excuses
 
@@ -34,7 +46,7 @@ Strict cases remain strict: destructive `delete` needs complete trailing 90-day 
 
 ## Commit each candidate end-to-end
 
-Before any new task, verify (a) the site is active, (b) the current target file and exact defect on default-branch HEAD, (c) relevant existing active/history tasks and PRs/commits, (d) sources or dated digest evidence, and (e) non-duplicative acceptance criteria. Then use `seo_task_create` to save a `ready` record, and **immediately use `seo_task_get` to read back and confirm** the ID, status, repo, target URL, rationale and sources. Do not leave a speculative `proposed` backlog. No GitHub Issues, PRs, code edits or deploys from the Planner.
+Before any new task, verify (a) the site is active, (b) the current target file and exact defect on default-branch HEAD, (c) relevant existing active/history tasks and PRs/commits, (d) sources or dated digest evidence, and (e) non-duplicative acceptance criteria. Then use `seo_task_create` to save a `ready` record, including evaluation provenance when an evaluator materially informed the decision, and **immediately use `seo_task_get` to read back and confirm** the ID, status, repo, target URL, rationale, sources, and evaluator reference when present. Do not leave a speculative `proposed` backlog. No GitHub Issues, PRs, code edits or deploys from the Planner.
 
 A good Worker-ready task says: *this is the observed defect, here is its current file/HEAD, this is the precise bounded change, these are primary/reliable references, and these are the checks that prove the repair*. A measurement-based hypothesis also records the period and data limitations, without implying causality before post-change evaluation.
 
