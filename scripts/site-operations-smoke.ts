@@ -237,7 +237,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.6.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.6.1');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.match(JSON.stringify(agentPolicy.structuredContent), /Never call Google Analytics or Search Console directly/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -247,6 +247,9 @@ try {
   assert.match(JSON.stringify(agentPolicy.structuredContent), /closed GitHub PRs/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change period/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
+  const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
+  assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /expectedRevision/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
   const mapped = await call('tools/call', { name: 'site_registry_resolve', arguments: { localProjectId: 'local-project-a' } });
