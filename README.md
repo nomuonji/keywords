@@ -282,7 +282,9 @@ Daily observation does not mean daily rewriting. `optimizationEvents` enforces o
 
 Agent-facing SEO operating instructions are versioned inside Sites Operator and exposed through `seo_agent_context(role=planner|executor)`. Scheduled ChatGPT tasks should keep only a bootstrap instruction to call this tool first; planning/execution rules, source routing, Analytics persistence limits, dedupe behavior, and record-only SEO task workflow belong to the Operator policy so they can evolve without rewriting scheduler prompts. Planner now saves validated work directly as `ready` Sites Operator records; GitHub Issues are optional historical references, never a prerequisite for planning. Legacy `proposed` tasks are revalidated and transitioned to `ready` or `superseded`, while pre-existing `issued` records remain readable. Implementation/PR/merge automation is a separate future workflow.
 
-**Worker runbook:** [Sites Operator SEO Worker Manual](docs/sites-operator-worker-manual.md) defines selection, issue-free claiming with revision checks, minimum implementation/verification evidence, delivery status and failure handling. The executor policy returns its canonical URL; this manual does not install or schedule a Worker.
+**Planner runbook:** [Sites Operator SEO Planner Manual](docs/sites-operator-planner-manual.md) defines an 8-task ready inventory target, broad cross-site discovery and concrete task acceptance criteria. The scheduler prompt remains a minimal bootstrap that loads current policy.
+
+**Worker runbook:** [Sites Operator SEO Worker Manual](docs/sites-operator-worker-manual.md) now requires an authorized Worker to go through real tests/CI, ready-for-review, **merge to main in the same run when repository gates pass**, and applicable live verification. The executor policy returns its canonical URL. The manual does not install or schedule a Worker; branch protection and safety checks remain binding.
 
 # Agent work loop
 
