@@ -83,7 +83,7 @@ export function seoAgentContext(input: unknown) {
           output: '0-5 deduplicated, evidence-backed ready Sites Operator task records (max 2 per repository), plus resolved legacy proposed tasks, or a justified zero-action run.'
         }
       : {
-          start: ['seo_agent_context(role=executor)', 'seo_task_get(status=ready or legacy issued)', 'current GitHub repository state', 'optional historical linked Issue'],
+          start: ['seo_agent_context(role=executor)', 'seo_task_get(id=selected_task_id)', 'current GitHub repository state', 'optional historical linked Issue'],
           output: 'material implementation evidence stored back on the SEO task, or an evidence-backed blocked/superseded state.'
         }
   };
