@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SeoTaskType } from '../../db/src/site-operations-schema.js';
 
 export const SEO_EVALUATION_REGISTRY_VERSION = '1.0.0';
 
@@ -50,7 +51,7 @@ type SeoEvaluator = {
   title: string;
   status: z.infer<typeof evaluatorStatus>;
   scopes: Array<z.infer<typeof evaluatorScope>>;
-  applicableTaskTypes: Array<'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article'>;
+  applicableTaskTypes: SeoTaskType[];
   purpose: string;
   decisionRule: string;
   principles: string[];
@@ -287,7 +288,7 @@ export function seoEvaluatorGet(input: unknown) {
   };
 }
 
-export function assertSeoTaskEvaluation(input: unknown, taskType: SeoEvaluator['applicableTaskTypes'][number]) {
+export function assertSeoTaskEvaluation(input: unknown, taskType: SeoTaskType) {
   const parsed = seoTaskEvaluationShape.parse(input);
   const evaluator = resolveEvaluator(parsed.evaluatorId, parsed.evaluatorVersion);
   if (!evaluator.current) throw new Error(`SEO task evaluation must use the current evaluator version: ${evaluator.id}`);
