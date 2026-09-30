@@ -95,11 +95,22 @@ try {
     repo: 'nomuonji/site-a', taskType: 'revise', title: 'Correct sourced article claim',
     rationale: 'Complete site digest and verified current repo HEAD show a specific outdated claim.',
     evidence: ['Complete 90-day site digest and verified current default-branch article gap.'],
+    evaluation: {
+      evaluatorId: 'content_incremental_value',
+      evaluatorVersion: '1.0.0',
+      decision: 'proceed',
+      confidence: 'medium_to_high',
+      evidenceSourceIds: ['google_scaled_content_policy', 'google_ai_content_guidance'],
+      inference: 'The change adds a sourced correction with concrete user value rather than expanding content for volume.'
+    },
     dedupeKey: 'site-a:revise:article-a:claim-correction', createdBy: 'site-operations-smoke'
   });
   assert.equal(readyTask.status, 'ready');
   assert.equal(readyTask.issueUrl, null);
   assert.equal(readyTask.issueNumber, null);
+  assert.equal(readyTask.evaluation?.evaluatorId, 'content_incremental_value');
+  assert.equal(readyTask.evaluation?.evaluatorVersion, '1.0.0');
+  assert.deepEqual(readyTask.evaluation?.evidenceSourceIds, ['google_scaled_content_policy', 'google_ai_content_guidance']);
   assert.equal(readyTask.deploymentVerification.status, 'pending');
   assert.equal(readyTask.deploymentVerification.productionUrl, 'https://example.com/article-a');
   assert.equal(readyTask.history[0].event, 'ready');
@@ -110,6 +121,20 @@ try {
     taskType: 'revise', title: 'Duplicate wording', rationale: 'Same underlying change.',
     evidence: ['Same existing action.'], dedupeKey: 'site-a:revise:article-a:claim-correction'
   }), /Open SEO task already exists/);
+  await assert.rejects(seoTaskCreate({
+    siteId: 'site-a', targetUrls: ['https://example.com/article-b'], repo: 'nomuonji/site-a',
+    taskType: 'new_article', title: 'Invalid evaluator provenance', rationale: 'Exercise source validation.',
+    evidence: ['Target-specific evidence.'],
+    evaluation: {
+      evaluatorId: 'content_incremental_value',
+      evaluatorVersion: '1.0.0',
+      decision: 'proceed',
+      confidence: 'medium',
+      evidenceSourceIds: ['sej_safe_2026'],
+      inference: 'This source is intentionally not registered for the evaluator.'
+    },
+    dedupeKey: 'site-a:new-article:invalid-evaluator'
+  }), /not registered/);
   const startedTask = await seoTaskUpdate({
     id: readyTask.id, expectedRevision: readyTask.revision, status: 'in_progress',
     appendHistory: { actor: 'site-operations-smoke', event: 'claimed', detail: 'No GitHub Issue needed.' }
@@ -266,8 +291,10 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 23);
+  assert.equal(listing.tools.length, 25);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
@@ -276,7 +303,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.8.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.9.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -292,6 +319,17 @@ try {
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
+  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.0.0');
+  assert.match(agentPolicy.structuredContent.evaluationRegistry.scoring, /No composite SEO score/);
+  const evaluatorList = await call('tools/call', { name: 'seo_evaluator_list', arguments: {} });
+  assert.equal(evaluatorList.structuredContent.registryVersion, '1.0.0');
+  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'content_incremental_value' && item.status === 'active'));
+  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'scaled_content_operation_risk' && item.status === 'experimental'));
+  const scaledRisk = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'scaled_content_operation_risk' } });
+  assert.equal(scaledRisk.structuredContent.evaluator.version, '1.0.0');
+  assert.equal(scaledRisk.structuredContent.evaluator.inference.confidence, 'low_to_medium');
+  assert.ok(scaledRisk.structuredContent.evidence.some((source: any) => source.id === 'google_research_safe_2026'));
+  assert.match(JSON.stringify(scaledRisk.structuredContent), /does not establish that SAFE is used by Google Search/i);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /main merge/);
@@ -308,9 +346,10 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.7.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.8.0');
+  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.0.0');
 
-  console.log('site operations smoke passed: record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
+  console.log('site operations smoke passed: evaluator provenance, versioned evidence registry, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }
