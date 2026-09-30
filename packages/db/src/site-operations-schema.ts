@@ -124,6 +124,17 @@ export type SeoTaskHistoryEntry = {
   detail: string;
 };
 
+export type SeoTaskEvaluationConfidence = 'low' | 'low_to_medium' | 'medium' | 'medium_to_high' | 'high';
+export type SeoTaskEvaluationReference = {
+  evaluatorId: string;
+  evaluatorVersion: string;
+  decision: 'proceed' | 'proceed_with_caveat';
+  confidence: SeoTaskEvaluationConfidence;
+  evidenceSourceIds: string[];
+  /** Case-specific inference. Evaluator definitions and generic source caveats remain in the Git registry. */
+  inference: string;
+};
+
 export type SeoTaskRecord = {
   id: string;
   siteId: string;
@@ -136,6 +147,8 @@ export type SeoTaskRecord = {
   title: string;
   rationale: string;
   evidence: string[];
+  /** Optional provenance for the versioned Sites Operator evaluator used to justify this task. */
+  evaluation: SeoTaskEvaluationReference | null;
   dedupeKey: string;
   /** Optional historical GitHub Issue reference; no longer required for newly planned tasks. */
   issueNumber: number | null;
