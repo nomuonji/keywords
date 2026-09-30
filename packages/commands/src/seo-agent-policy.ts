@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.4.0';
+export const SEO_AGENT_POLICY_VERSION = '1.5.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -34,12 +34,13 @@ const shared = {
 } as const;
 
 const plannerInstructions = [
-  'Read this context first, then list active managed sites, compact planning digests, and open SEO task records.',
+  'Read this context first. Before scanning for any new candidate, list Sites Operator SEO tasks with status=proposed and resolve that issuance backlog first. A valid proposed task must be revalidated and driven to a real linked GitHub Issue in the same run; an invalid one must be superseded with evidence. Do not create a new proposed task while any prior proposed task remains unresolved unless that prior task has an explicit issue_create_failed safety/authorization blocker that policy says not to retry.',
+  'Only after the proposed-task backlog is resolved or explicitly blocked may you list active managed sites and compact planning digests to search for new work.'
   'Never call Google Analytics or Search Console directly from the planning session. Never use My Portal or site-monitor.',
   'Skip a site when its planning digest is absent/stale or the evidence required for a decision is partial/failed.',
   'Plan from existing articles first. Allowed material task types are revise, merge, delete, internal_links, technical, and new_article when separately justified.',
   'Do not stop after the first stale, recently completed, duplicate, or unsupported candidate. If the first candidate fails validation, inspect distinct eligible sites and article candidates within the available execution budget. Prefer a clearly actionable implementation Issue with confirmed current-HEAD evidence over a larger number of speculative audits. Zero issues is valid only after a reasonable cross-site search or a clearly recorded blocking condition.',
-  'Treat issue issuance as the primary deliverable, not analysis volume or proposed-record count. Use the digest list to choose evidence-backed article candidates across distinct repositories. After verifying current HEAD and cross-checking recent open/closed Issues, commit one eligible real action end-to-end before starting an unrelated analysis backlog.',
+  'Treat issue issuance as the primary deliverable, not analysis volume or proposed-record count. For a resumable proposed task, spend the execution budget on GitHub current-HEAD/Issue revalidation and create_issue first. Do not spend the run opening unrelated digests until that existing task is either issued, superseded, or explicitly blocked. For new work, use the digest list to choose evidence-backed article candidates across distinct repositories and commit one eligible real action end-to-end before starting an unrelated analysis backlog.'
   'If an Issue write is denied by the connector, log its exact diagnostic on the proposed task, do not evade that rejection or retry equivalent prohibited content, and try a genuinely unrelated eligible article from a different repository if authorized. Test no more than three distinct real candidates per run; do not produce dummy test Issues or call the run successful without a linked real GitHub Issue.',
   'At the beginning of each run, inspect prior issue_create_failed history. A prior unresolved connector safety rejection is not an ordinary transient failure: do not retry that same task/repository first, and do not repeat an unchanged rejected request on subsequent runs. Review other unrelated active-site repositories for independently justified work. If unrelated writes also meet the same denial, stop and report the platform restriction instead of accumulating more proposed tasks.',
   'Do not infer that a single connector rejection establishes a global authorization restriction or that adult content caused it. Record repository, attempted tool, error class, and whether another independently justified write succeeded. If two unrelated permissible Issues both fail for the same apparent authorization/safety condition, stop writes, keep proposed tasks resumable, and report a likely scheduled-context connector blocker.',
@@ -84,7 +85,7 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'seo_task_list(open statuses)'],
+          start: ['seo_agent_context(role=planner)', 'seo_task_list(status=proposed)', 'resolve proposed issuance backlog', 'then site_registry_list(status=active)', 'then seo_planning_digest_list'],
           successCondition: 'A new action counts as issued only when GitHub create_issue returns a real new Issue and Sites Operator seo_task_update links that exact Issue, followed by read-back confirmation.',
           report: 'Report newly issued Issue URLs and linked task IDs separately from proposed-only tasks, historical linked Issues, blocked issuance and justified zero-action runs.',
           output: '0-5 deduplicated material GitHub Issues plus linked Sites Operator task records, or a justified zero-action run with verified blocking reasons.'
