@@ -17,6 +17,7 @@ import { dashboardCommands } from '@keywords/commands/dashboard';
 import { treasuryList } from '@keywords/keyword-treasury';
 import { siteStructureGet, siteStructureList } from '@keywords/commands/site-structure';
 import { themeResearchContext } from '@keywords/commands/theme-research';
+import { seoSourcePoolContext } from '@keywords/commands/seo-source-pool';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
@@ -60,6 +61,14 @@ app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 app.get('/keyword-treasury', async c => c.json(await treasuryList({ status: c.req.query('status'), query: c.req.query('query'), limit: Number(c.req.query('limit') ?? 100) })));
 app.get('/site-structures', async c => c.json(c.req.query('id') ? await siteStructureGet({ id: c.req.query('id') }) : await siteStructureList({ limit: Number(c.req.query('limit') ?? 50), pageToken: c.req.query('pageToken') })));
 app.get('/theme-research', async c => c.json(await themeResearchContext({ sessionId: c.req.query('sessionId') || undefined, includeKilled: c.req.query('includeKilled') !== 'false' })));
+app.get('/seo-source-pool', async c => c.json(await seoSourcePoolContext({
+  sourceType: c.req.query('sourceType') || undefined,
+  topic: c.req.query('topic') || undefined,
+  includePaused: c.req.query('includePaused') === 'true',
+  includeArchived: c.req.query('includeArchived') === 'true',
+  staleAfterDays: c.req.query('staleAfterDays') ? Number(c.req.query('staleAfterDays')) : undefined,
+  scanLimitPerSource: c.req.query('scanLimitPerSource') ? Number(c.req.query('scanLimitPerSource')) : undefined
+})));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));
