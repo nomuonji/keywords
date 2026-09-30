@@ -20,7 +20,7 @@
 
 このリサーチでは総合スコア・自動ランキング・単一指標による勝者選定を作らない。検索量、成果単価、EPC、確定率、SERP観測などの数値は証拠として保存し、残存理由、致命傷、未確認点、次の反証を文章で更新する。候補を落とした理由は保持し、新しい証拠なしに killed 候補を再提案しない。スケジュール実行でも各回最低1件の批判検証結果を記録し、次のセッションがチャット履歴なしで再開できる状態を残す。
 
-## Product principle
+## SEO情報源ウォッチ\n\nSEO界隈の人物・Xアカウント・ブログ・ニュースレター等を継続観測するときは、チャット履歴だけで監視対象を再構築せず、remote Keywords MCP の `seo_source_pool_context` を最初に読む。ユーザーが「最近あいつら何か有益なこと言ってる？」「このSEOアカウントを貯めておいて」などと依頼した場合は `docs/seo-source-watch-pool.md` に従う。\n\nSourceは権威リストではなく観測対象である。発信者の評判だけで主張を採用せず、公開URLと簡潔な要約をFindingに保存する。Google Searchの仕様・ポリシー主張は一次情報を優先して別途確認する。新規性がなければ `nothing_new` を正当なScan結果として残し、無理に示唆を作らない。評価関数への反映は Source → Scan → Finding → independent verification → Evaluation Registry の順とし、インフルエンサー投稿を直接ルール化しない。\n\n## Product principle
 
 This repository is an agent-native SEO workspace. Do not add a second, agent-only state model. Human UI actions, CLI operations, MCP tool calls, and scheduled operator ticks must execute the same commands against the same SQL database.
 
