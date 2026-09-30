@@ -87,7 +87,7 @@ export const seoTaskCreateShape = {
   priority: seoTaskPriority.default('medium'),
   title: z.string().trim().min(1).max(300),
   rationale: note.refine(value => value.trim().length > 0),
-  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).default([]),
+  evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
   dedupeKey: z.string().trim().min(1).max(300),
   createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
 };
