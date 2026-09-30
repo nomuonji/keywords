@@ -105,7 +105,8 @@ export type OptimizationEvent = {
 
 
 export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article';
-export type SeoTaskStatus = 'proposed' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
+/** ready is the record-only planner handoff; proposed/issued are retained for historical records. */
+export type SeoTaskStatus = 'proposed' | 'ready' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
 export type SeoTaskPriority = 'high' | 'medium' | 'low';
 
 export type SeoTaskHistoryEntry = {
@@ -128,6 +129,7 @@ export type SeoTaskRecord = {
   rationale: string;
   evidence: string[];
   dedupeKey: string;
+  /** Optional historical GitHub Issue reference; no longer required for newly planned tasks. */
   issueNumber: number | null;
   issueUrl: string | null;
   issueState: 'open' | 'closed' | null;
