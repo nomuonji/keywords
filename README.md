@@ -280,7 +280,7 @@ Article body text is deliberately excluded from Firestore. Registry records poin
 
 Daily observation does not mean daily rewriting. `optimizationEvents` enforces one implemented + unevaluated change per article and defaults to a 14-day evaluation wait.
 
-Agent-facing SEO operating instructions are versioned inside Sites Operator and exposed through `seo_agent_context(role=planner|executor)`. Scheduled ChatGPT tasks should keep only a bootstrap instruction to call this tool first; planning/execution rules, source routing, Analytics persistence limits, dedupe behavior, and GitHub Issue workflow belong to the Operator policy so they can evolve without rewriting scheduler prompts.
+Agent-facing SEO operating instructions are versioned inside Sites Operator and exposed through `seo_agent_context(role=planner|executor)`. Scheduled ChatGPT tasks should keep only a bootstrap instruction to call this tool first; planning/execution rules, source routing, Analytics persistence limits, dedupe behavior, and record-only SEO task workflow belong to the Operator policy so they can evolve without rewriting scheduler prompts. Planner now saves validated work directly as `ready` Sites Operator records; GitHub Issues are optional historical references, never a prerequisite for planning. Legacy `proposed` tasks are revalidated and transitioned to \`ready\` or `superseded`, while pre-existing `issued` records remain readable. Implementation/PR/merge automation is a separate future workflow.
 
 # Agent work loop
 

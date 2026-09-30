@@ -9,7 +9,11 @@ import {
   siteArticleSave,
   siteRegistryGet,
   siteRegistryResolve,
-  siteRegistrySave
+  siteRegistrySave,
+  seoTaskCreate,
+  seoTaskGet,
+  seoTaskList,
+  seoTaskUpdate
 } from '../packages/commands/src/remote-site-operations.js';
 
 // Deterministic Firestore double. Never loads .env or touches production data.
@@ -55,7 +59,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json(rows);
   }
 
-  if (/\/(sites|articles|metricSnapshots|optimizationEvents)$/.test(path)) {
+  if (/\/(sites|articles|metricSnapshots|optimizationEvents|seoTasks)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
@@ -83,6 +87,36 @@ try {
     id: 'site-c', expectedRevision: 0, localProjectId: 'local-project-c', name: 'Duplicate Site', repository: 'nomuonji/site-c',
     productionUrl: 'https://example.com/?utm_source=duplicate#fragment'
   }), /productionUrl is already linked/);
+
+  // Record-only planner handoff must persist without GitHub Issues, support
+  // deduplication and transition to execution, and keep the versioned contract explicit.
+  const readyTask = await seoTaskCreate({
+    id: 'seo-ready-a', siteId: 'site-a', targetUrls: ['https://example.com/article-a'],
+    repo: 'nomuonji/site-a', taskType: 'revise', title: 'Correct sourced article claim',
+    rationale: 'Complete site digest and verified current repo HEAD show a specific outdated claim.',
+    evidence: ['Complete 90-day site digest and verified current default-branch article gap.'],
+    dedupeKey: 'site-a:revise:article-a:claim-correction', createdBy: 'site-operations-smoke'
+  });
+  assert.equal(readyTask.status, 'ready');
+  assert.equal(readyTask.issueUrl, null);
+  assert.equal(readyTask.issueNumber, null);
+  assert.equal(readyTask.history[0].event, 'ready');
+  assert.equal((await seoTaskGet({ id: readyTask.id })).status, 'ready');
+  assert.equal((await seoTaskList({ siteId: 'site-a', status: 'ready' })).items.length, 1);
+  await assert.rejects(seoTaskCreate({
+    siteId: 'site-a', targetUrls: ['https://example.com/article-a'], repo: 'nomuonji/site-a',
+    taskType: 'revise', title: 'Duplicate wording', rationale: 'Same underlying change.',
+    evidence: ['Same existing action.'], dedupeKey: 'site-a:revise:article-a:claim-correction'
+  }), /Open SEO task already exists/);
+  const startedTask = await seoTaskUpdate({
+    id: readyTask.id, expectedRevision: readyTask.revision, status: 'in_progress',
+    appendHistory: { actor: 'site-operations-smoke', event: 'claimed', detail: 'No GitHub Issue needed.' }
+  });
+  assert.equal(startedTask.status, 'in_progress');
+  assert.equal(startedTask.issueUrl, null);
+  await assert.rejects(seoTaskUpdate({
+    id: readyTask.id, expectedRevision: readyTask.revision, status: 'completed'
+  }), /Revision conflict/);
 
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
@@ -203,13 +237,15 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.5.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.6.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.match(JSON.stringify(agentPolicy.structuredContent), /Never call Google Analytics or Search Console directly/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT default-branch HEAD/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /RECENTLY CLOSED/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change digest/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
+  assert.match(agentPolicy.structuredContent.runContract.successCondition, /ready Sites Operator record/);
+  assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /closed GitHub PRs/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent), /post-change period/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
@@ -220,9 +256,9 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.5.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.6.0');
 
-  console.log('site operations smoke passed: normalized site/article identities, explicit local mappings, idempotent metrics, optimization cooldown/evaluation and separate MCP contract');
+  console.log('site operations smoke passed: record-only ready tasks, dedupe, issue-free execution transition, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }

@@ -20,7 +20,7 @@ const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 
 const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cancelled']);
 const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened', 'inconclusive']);
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article']);
-const seoTaskStatus = z.enum(['proposed', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
+const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskPriority = z.enum(['high', 'medium', 'low']);
 const issueState = z.enum(['open', 'closed']);
 const historyEntry = z.object({
@@ -87,7 +87,7 @@ export const seoTaskCreateShape = {
   priority: seoTaskPriority.default('medium'),
   title: z.string().trim().min(1).max(300),
   rationale: note.refine(value => value.trim().length > 0),
-  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).default([]),
+  evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
   dedupeKey: z.string().trim().min(1).max(300),
   createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
 };
@@ -331,7 +331,7 @@ export function remoteSitesStatus() {
       maxPlannerPages: 60,
       maxQueriesPerWindowPerPage: 3,
       maxSerializedBytes: 500000,
-      durableGrowth: 'seoTasks_only_when_material_action_is_issued'
+      durableGrowth: 'seoTasks_only_when_evidence_backed_material_action_is_ready'
     },
     optimizationPolicy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14 }
   };
@@ -548,7 +548,7 @@ export async function seoTaskCreate(input: unknown) {
     targetUrls: args.targetUrls,
     repo: args.repo,
     taskType: args.taskType,
-    status: 'proposed',
+    status: 'ready',
     priority: args.priority,
     title: args.title,
     rationale: args.rationale,
@@ -559,7 +559,7 @@ export async function seoTaskCreate(input: unknown) {
     issueState: null,
     resultCommitSha: null,
     executionSummary: '',
-    history: [{ at: t, actor: args.createdBy, event: 'proposed', detail: 'SEO task record created before GitHub Issue issuance.' }],
+    history: [{ at: t, actor: args.createdBy, event: 'ready', detail: 'Evidence-backed SEO task recorded in Sites Operator for later implementation; no GitHub Issue required.' }],
     createdBy: args.createdBy,
     revision: 1,
     createdAt: t,
@@ -608,7 +608,8 @@ export async function seoTaskUpdate(input: unknown) {
     revision: expectedRevision + 1,
     updatedAt: t
   };
-  if (record.status === 'issued' && (!record.issueNumber || !record.issueUrl)) throw new Error('issued SEO task requires issueNumber and issueUrl');
+  // Preserve validation for historical issued records; new work uses ready without any Issue.
+  if (record.status === 'issued' && (!record.issueNumber || !record.issueUrl)) throw new Error('Legacy issued SEO task requires issueNumber and issueUrl');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
   return { ...record, runId };
 }
