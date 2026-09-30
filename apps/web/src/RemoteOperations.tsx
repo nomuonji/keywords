@@ -6,7 +6,7 @@ type SeoTask = {
   siteId: string;
   repo: string;
   taskType: 'revise'|'merge'|'delete'|'internal_links'|'technical'|'new_article';
-  status: 'proposed'|'issued'|'in_progress'|'completed'|'cancelled'|'superseded';
+  status: 'proposed'|'ready'|'issued'|'in_progress'|'completed'|'cancelled'|'superseded';
   priority: 'high'|'medium'|'low';
   title: string;
   targetUrls: string[];
@@ -37,8 +37,9 @@ const when = (value?: string | null) => value
   ? new Date(value).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
   : '—';
 const statusLabel: Record<string,string> = {
-  proposed: 'Issue待ち',
-  issued: 'Issue発行済み',
+  proposed: '要再検証（旧）',
+  ready: '実装待ち',
+  issued: '実装待ち（旧Issue）',
   in_progress: '実行中',
   completed: '完了',
   cancelled: '取消',
@@ -91,7 +92,7 @@ export function RemoteOperationsOverview() {
   useEffect(() => { void load(); }, []);
 
   const visible = useMemo(() => tasks.filter(task => {
-    const open = ['proposed','issued','in_progress'].includes(task.status);
+    const open = ['proposed','ready','issued','in_progress'].includes(task.status);
     const statusMatch = filter === 'all' || filter === 'open' && open || filter === 'completed' && task.status === 'completed';
     const typeMatch = typeFilter === 'all' || task.taskType === typeFilter;
     const site = sites[task.siteId];
@@ -99,36 +100,36 @@ export function RemoteOperationsOverview() {
     return statusMatch && typeMatch && haystack.includes(query.toLowerCase());
   }), [tasks, sites, filter, typeFilter, query]);
 
-  const openCount = tasks.filter(task => ['proposed','issued','in_progress'].includes(task.status)).length;
-  const issuedCount = tasks.filter(task => task.status === 'issued' && task.issueState === 'open').length;
+  const openCount = tasks.filter(task => ['proposed','ready','issued','in_progress'].includes(task.status)).length;
+  const readyCount = tasks.filter(task => ['ready','issued'].includes(task.status)).length;
   const runningCount = tasks.filter(task => task.status === 'in_progress').length;
   const completedCount = tasks.filter(task => task.status === 'completed').length;
 
   return <div className="corePage">
     <div className="coreTitleRow">
       <div>
-        <p className="coreEyebrow">SEO ISSUE CONTROL</p>
-        <h1>Issue Queue</h1>
-        <p>ChatGPT plannerがSites Operatorのplanning digestを読み、GitHub Issueへ落とした作業だけを追います。実装は別Agentが担当します。</p>
+        <p className="coreEyebrow">SEO TASK CONTROL</p>
+        <h1>Task Queue</h1>
+        <p>Plannerが根拠を確認してSites Operatorに保存したSEOタスクを管理します。GitHub Issueは不要で、実装Workerは後日対応します。</p>
       </div>
       <span className="countBadge">{loading ? '更新中' : `${openCount} open · policy v${policyVersion}`}</span>
     </div>
 
     <section className="remoteSummaryStrip">
-      <div><small>未完了</small><strong>{openCount}</strong><span>proposed / issued / running</span></div>
-      <div><small>GitHub Issue</small><strong>{issuedCount}</strong><span>open</span></div>
+      <div><small>未完了</small><strong>{openCount}</strong><span>ready / 旧Task / running</span></div>
+      <div><small>実装待ち</small><strong>{readyCount}</strong><span>Sites Operator records</span></div>
       <div><small>実行中</small><strong>{runningCount}</strong><span>executor working</span></div>
       <div><small>完了</small><strong>{completedCount}</strong><span>tracked result</span></div>
     </section>
 
     <aside className="operatorFlowNotice">
-      <span>measurement job</span><i>→</i><span>planning digest</span><i>→</i><span>ChatGPT planner</span><i>→</i><span>GitHub Issue</span><i>→</i><span>executor</span>
+      <span>measurement job</span><i>→</i><span>planning digest</span><i>→</i><span>ChatGPT planner</span><i>→</i><span>Sites Operator Task</span><i>→</i><span>実装待ち</span>
     </aside>
 
     {error && <div className="coreError">{error}<div><button onClick={() => void load()}>再試行</button></div></div>}
 
     <div className="coreToolbar">
-      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Issue・repo・URLを検索" aria-label="SEOタスクを検索" />
+      <input value={query} onChange={e => setQuery(e.target.value)} placeholder="タスク・repo・URLを検索" aria-label="SEOタスクを検索" />
       <div className="segmented">
         <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>未完了</button>
         <button className={filter === 'completed' ? 'active' : ''} onClick={() => setFilter('completed')}>完了</button>
@@ -150,7 +151,7 @@ export function RemoteOperationsOverview() {
               <span className={`taskStatusPill ${statusTone(task.status)}`}>{statusLabel[task.status] ?? task.status}</span>
               <span className="seoTaskTitle"><b>{task.title}</b><small>{site?.name ?? task.siteId} · {task.repo}</small></span>
               <span><b>{typeLabel[task.taskType] ?? task.taskType}</b><small>{task.priority}</small></span>
-              <span><b>{task.issueNumber ? `#${task.issueNumber}` : '—'}</b><small>{task.issueState ?? 'Issue未発行'}</small></span>
+              <span><b>{task.id.slice(0, 8)}</b><small>{task.issueNumber ? `旧Issue #${task.issueNumber}` : 'Task ID'}</small></span>
               <span><b>{when(task.updatedAt)}</b><small>updated</small></span>
             </summary>
             <div className="seoTaskExpanded">
@@ -160,9 +161,10 @@ export function RemoteOperationsOverview() {
                 <small>{task.articleCount} article record</small>
               </div>
               <div>
-                <h3>ISSUE</h3>
-                {task.issueUrl ? <p><a href={task.issueUrl} target="_blank" rel="noreferrer">GitHub Issue #{task.issueNumber}</a></p> : <p>Issue発行待ち</p>}
-                <small>state: {task.issueState ?? '—'} · created by {task.createdBy}</small>
+                <h3>TASK RECORD</h3>
+                <p><code>{task.id}</code></p>
+                {task.issueUrl && <p><a href={task.issueUrl} target="_blank" rel="noreferrer">旧GitHub Issue #{task.issueNumber}</a></p>}
+                <small>created by {task.createdBy}{task.issueState ? ` · 旧Issue: ${task.issueState}` : ''}</small>
               </div>
               <div>
                 <h3>EXECUTION</h3>
@@ -177,7 +179,7 @@ export function RemoteOperationsOverview() {
             </div>
           </details>;
         })}
-        {!visible.length && <div className="composedEmpty"><strong>表示するSEO Issueはありません</strong><p>今のフィルタでは対象がありません。Plannerは件数合わせでIssueを作りません。</p></div>}
+        {!visible.length && <div className="composedEmpty"><strong>表示するSEOタスクはありません</strong><p>今のフィルタでは対象がありません。Plannerは根拠のないタスクを作りません。</p></div>}
       </div>
     }
     <p className="remoteFootnote">自動ポーリングなし · 最新 {when(updatedAt)}。画面を開いた時と手動更新時だけbounded readします。</p>
