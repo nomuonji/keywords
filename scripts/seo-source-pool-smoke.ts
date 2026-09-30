@@ -30,6 +30,18 @@ globalThis.fetch = async (input, init) => {
     return Response.json({});
   }
 
+  if (url.endsWith(':runQuery')) {
+    const query = body.structuredQuery;
+    const collection = query.from[0].collectionId;
+    const fieldPath = query.where.fieldFilter.field.fieldPath;
+    const expected = value(query.where.fieldFilter.value);
+    const rows = [...docs.values()]
+      .filter(doc => doc.name.startsWith(`${root}${collection}/`) && value(doc.fields?.[fieldPath]) === expected)
+      .slice(0, Number(query.limit ?? 500))
+      .map(document => ({ document }));
+    return Response.json(rows);
+  }
+
   if (/\/(seoSourceAccounts|seoSourceScans)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const rows = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
