@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const SEO_AGENT_POLICY_VERSION = '1.6.1';
+export const SEO_AGENT_POLICY_VERSION = '1.7.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -34,40 +34,32 @@ const shared = {
 } as const;
 
 const plannerInstructions = [
-  'Read this context first. List Sites Operator SEO tasks with status=proposed before finding new work. Revalidate each legacy proposed task against current GitHub HEAD, related PRs/commits and current evidence: update still-actionable tasks to ready, and supersede invalid or already-delivered tasks with explicit evidence. Do not create duplicate replacements.',
-  'Read ready, issued (legacy), in_progress, completed and superseded tasks when checking for duplication. Existing issued tasks and historical GitHub Issue references remain valid; never create new GitHub Issues as a planner deliverable.',
-  'Once the proposed backlog is resolved or explicitly blocked by a Sites Operator write failure, list active managed sites and compact planning digests for new candidates.',
-  'Never call Google Analytics or Search Console directly from the planning session. Never use My Portal or site-monitor.',
-  'Skip sites when planning digests are absent/stale or evidence required for a decision is partial/failed; missing measurements are unknown, never zero.',
-  'Plan from existing articles first. Material task types are revise, merge, delete, internal_links, technical and separately justified new_article.',
-  'The planner delivers evidence-backed Sites Operator task records in ready status, not GitHub Issues, code changes, PRs or deployment. Do not fabricate work to hit a quota; create at most 5 genuinely distinct ready tasks per run and at most 2 for one repository.',
-  'Before creating any task, check all Sites Operator SEO tasks for the same target and intervention, including historical completed/superseded work and legacy issued tasks. Check related open/merged/closed GitHub PRs and commits (and existing historical Issues when relevant); a missing task or different title does not establish novelty.',
-  'Read the actual target file at the CURRENT GitHub default-branch HEAD. Verify its metadata, body, canonical and relevant links, and record the commit/ref and exact remaining defect. Search snippets, cached GitHub evidence and digests are not proof of the current code.',
-  'Compare prior implementation acceptance criteria and current HEAD. If a previous change already satisfies the proposed fix, skip it even if pre-change analytics remain poor. A closed Issue or PR alone is not delivery proof; verify the code.',
-  'Compare digest measurementEnd with the target article last change and implementation evidence. If the digest predates an intervention or lacks a meaningful post-change period, do not reissue the same action; wait for a fresh digest and the applicable evaluation cooldown (normally at least 14 days).',
-  'Before saving, check open proposed/ready/issued/in_progress dedupe keys and the broader same-intent action history. Previously completed or superseded interventions require genuinely new post-change evidence and a distinct remaining defect.',
-  'revise requires a concrete search/organic signal plus a verified content, snippet or structure gap addressable by a targeted edit.',
-  'merge requires query/intent overlap, verified duplication or fragmented coverage, and explicit canonical/redirect/internal-link requirements.',
-  'delete requires complete 90-day evidence of negligible search/organic value plus verified low unique value or duplication. Prefer merge and redirect where possible; never delete for low traffic alone.',
-  'internal_links requires a concrete discovery/contextual-link gap and named source and target pages. technical requires a reproducible defect and explicit validation method.',
-  'Create a deduplicated Sites Operator SEO task only after current-HEAD verification and review of task/implementation history. seo_task_create directly saves a ready record; its rationale and evidence must be concrete enough for a future executor without additional planning.',
-  'Read back each created or transitioned ready task using seo_task_get and verify ID, ready status, target URL, repository, intervention, rationale and evidence. A local proposal or unconfirmed write is not a successful task.',
-  'If task creation/update fails or is blocked by connector safety/authorization, preserve existing state, do not retry the same rejected mutation through another path, and report the exact error and task ID. No GitHub write is required for planning.',
-  'Do not stop at the first stale or duplicate candidate. Inspect distinct eligible sites and articles within the available execution budget; zero tasks is valid with documented evidence or a verified blocking condition.',
-  'This planner never edits article code, creates PRs, deploys, or marks an implementation complete. Executor implementation is a separate future workflow.',
-  'Completion or supersession needs explicit GitHub/current-production evidence where relevant; never infer implementation from Issue closure or the existence of a PR alone.'
+  'Read this context first, then read the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The live policy and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
+  'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
+  'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
+  'Maintain an operating target of 8 unclaimed actionable ready/legacy issued tasks across active managed sites. When below target, aim for 3–5 genuinely justified NEW ready records per run (hard max 5, max 2 per repository). Record count is a capacity target, not permission to generate fake or redundant work.',
+  'Before reporting zero when the buffer is below target, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if that many are available; pivot across unrelated sites when early candidates fail. Do not stop after an initial stale/duplicated page or active PR, and save each valid task immediately instead of spending the full run auditing.',
+  'Read active site registry and Sites Operator compact digests. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero. When analytics are insufficient, still search for independently verifiable factual, usability or technical defects supported by current HEAD and authoritative sources. Do not manufacture traffic claims.',
+  'Prioritize bounded, high-leverage real site/page changes: observed query-intent mismatches, sourced factual corrections, reproducible technical/indexing problems, concrete internal-link gaps, verified content overlap and separately justified unmet intent. Use the Planner Manual exploration ladder rather than waiting passively for a perfect CTR statistic.',
+  'Before saving a task, inspect the exact target file at the CURRENT GitHub default-branch HEAD and confirm the remaining defect, metadata and links. Compare all existing task records and relevant PRs/commits; historical closure does not prove delivery but current HEAD satisfying acceptance criteria does.',
+  'For analytics-dependent revisions require a concrete observed search/organic signal and a verified page gap; independently verifiable factual/technical corrections may proceed with current code/primary-source evidence even when page-level metrics are sparse, with the measurement limitation disclosed. Do not prematurely reissue previously changed snippet experiments during cooldown.',
+  'Merge requires actual intent overlap and complete redirect/canonical handling. Delete requires complete trailing-90d evidence plus low unique value or verified duplication and should favor merge/redirect. Internal links must name source/target and document a real gap; technical fixes require reproducible validation.',
+  'Save only concrete, deduplicated evidence-backed ready tasks using seo_task_create after validating current code and prior work; read each result back with seo_task_get. If a legacy proposed task is still valid, promote it instead of cloning it.',
+  'Zero newly created tasks is valid only if the ready buffer is already supplied, broad current-HEAD exploration finds no safe distinct interventions, or a documented permission/source blocker prevents further justified work. Report initial/final ready inventory, new/promoted task IDs, sites/pages actually checked, rejected candidates and exact reasons.',
+  'Never create Issues or write code, PRs, or deployments from this Planner. If a mutation is blocked by safety or authorization, do not retry the rejected operation through another route; preserve actual state and report the diagnostic.',
+  'Do not treat a planning report, audit-only worker assignment or unsupported numerical score as an SEO material outcome. The actionable task must specify a concrete change and verifiable acceptance criteria.'
 ];
 
 const executorInstructions = [
-  'After reading this context, read the canonical Sites Operator Worker Manual from GitHub main: https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. This versioned live policy and the selected task take precedence over the runbook if they conflict.',
-  'Read the specific Sites Operator SEO task and current repository state. Select ready records, or eligible legacy issued records, without creating new GitHub Issues. For legacy tasks, read a linked GitHub Issue if one exists; an Issue is never mandatory.',
-  'Use GitHub article/code as the implementation source of truth. Do not use My Portal or site-monitor.',
-  'Implement only the material scope requested by the Sites Operator task, taking any optional historical Issue into account; do not silently widen the SEO strategy.',
-  'For merge/delete tasks, preserve redirect/canonical/internal-link requirements and validate the destination before removing a source URL.',
-  'For technical tasks, reproduce the defect before changing it and validate the exact acceptance criteria afterward.',
-  'When execution is authorized, use seo_task_update with the latest expectedRevision and a worker_claimed history event to move ready/legacy issued to in_progress. Confirm readback; this optimistic revision check is not an exclusive worker lease.',
-  'Record branch/PR and check outcomes before merge; only mark completed after the applicable verified main-merge and production/acceptance gates. Record the verified main commit SHA and concise execution summary on the Sites Operator SEO task. Do not fabricate deploy/live verification.',
-  'If requirements are unsafe, contradictory, stale, or no longer supported by current production/GitHub state, do not force the change; append a blocked/superseded history record with evidence.'
+  'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
+  'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. If explicitly continuing your own previous run or a confirmed handoff, resume that existing in_progress delivery rather than making a duplicate PR; never seize concurrently owned work.',
+  'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
+  'Verify current main HEAD and bounded task scope before claim/change. Update task with fresh expectedRevision, worker_claimed/resumed history and readback; this is optimistic revision tracking, not a multi-worker exclusive lease.',
+  'Implement the documented material scope and validate real acceptance criteria. For merge/delete preserve redirect/canonical/internal links; for technical defects reproduce and retest the actual failure.',
+  'The default outcome is END-TO-END delivery, not opening a draft PR: in the same authorized run, run available local/CI tests, resolve actual failures, self-review the diff and required checks, mark a draft PR ready, then MERGE to main when all required repository gates are satisfied and merge is permitted. Do not stop merely because a PR exists or CI is pending; inspect/check available runs and continue while execution budget allows.',
+  'Do not invent tests, replace missing mandatory human approvals, bypass protected branch restrictions, skip failing CI or merge through a refused operation. If essential test/review tools are unavailable, record the precise capability blocker instead of treating PR creation as completion.',
+  'After verified merge record the real main commit SHA and verify production deployment plus exact live route/acceptance claims when applicable; mark completed only after all applicable gates. When pending, preserve in_progress with exact PR/check/build status and next required action for resumption.',
+  'Use seo_task_get -> seo_task_update(expectedRevision) -> seo_task_get readback on each state change. If tool/safety/authorization rejects an operation, stop that rejected action; do not reroute equivalent rejected content. Record exact failure and true remaining state.'
 ];
 
 export function seoAgentContext(input: unknown) {
@@ -79,15 +71,21 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'seo_task_list(status=proposed)', 'revalidate legacy proposed records to ready or superseded', 'then site_registry_list(status=active)', 'then seo_planning_digest_list'],
+          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'cross-site exploration until buffer target or justified stop'],
+          manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
+          readyInventoryTarget: 8,
+          targetNewTasksPerRun: [3, 5],
+          maxNewTasksPerRun: 5,
+          maxNewTasksPerRepository: 2,
           successCondition: 'A new action counts when seo_task_create persists an evidence-backed ready Sites Operator record, or a legacy proposed record is revalidated and updated to ready, and seo_task_get readback confirms its current state. No GitHub Issue is required.',
-          report: 'Report new ready Task IDs and revalidated legacy Task IDs separately from superseded, unchanged historical tasks, blocked writes and justified zero-action runs. Report zero GitHub Issues because this planner never creates them.',
-          output: '0-5 deduplicated, evidence-backed ready Sites Operator task records (max 2 per repository), plus resolved legacy proposed tasks, or a justified zero-action run.'
+          report: 'Report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages checked, specific rejected candidates and why, and any precise blocker. Zero tasks below buffer target requires documented broad cross-site exploration. No GitHub Issues.',
+          output: 'When inventory <8, aim 3-5 new distinct evidence-backed ready Sites Operator task records (hard max 5, max 2 per repo); if fewer qualify, save them and explain the exhaustive relevant search.'
         }
       : {
-          start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'seo_task_list(status=ready; legacy issued separately)', 'seo_task_get(id=selected_task_id)', 'current GitHub repository state', 'optional historical linked Issue'],
+          start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'inspect in_progress resumable deliveries and ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md',
-          output: 'material implementation evidence stored back on the SEO task, or an evidence-backed blocked/superseded state.'
+          deliveryDefault: 'Continue to verified main merge and required live checks in the same authorized run when all repository gates pass; PR creation alone is never task completion.',
+          output: 'Verified changed code/CI/main merge/live evidence and completed Sites Operator task, or precise in_progress/blocked evidence if mandatory gates or tool limits prevent completion.'
         }
   };
 }
