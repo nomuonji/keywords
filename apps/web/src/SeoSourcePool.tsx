@@ -44,7 +44,7 @@ type Context = {
   recentUsefulFindings: Array<Finding & { sourceId: string; sourceLabel: string; scanId: string; reviewedAt: string; outcome: string }>;
 };
 
-const endpoint = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '/seo-source-pool' : '/api/seo-source-pool';
+const endpoint = ['localhost', '127.0.0.1'].includes(window.location.hostname) ? '/seo-source-pool' : '/api/theme-research?resource=seo-source-pool';
 const fmt = (v?: string | null) => v ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(v)) : '未確認';
 
 export function SeoSourcePool() {
