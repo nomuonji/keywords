@@ -19,6 +19,13 @@ type SeoTask = {
   issueState: 'open'|'closed'|null;
   resultCommitSha: string | null;
   executionSummary: string;
+  deploymentVerification: {
+    status: 'pending'|'verified'|'failed'|'not_required';
+    checkedAt: string | null;
+    productionUrl: string | null;
+    deployedCommitSha: string | null;
+    detail: string;
+  };
   createdBy: string;
   createdAt: string;
   updatedAt: string;
@@ -47,6 +54,12 @@ const statusLabel: Record<string,string> = {
   completed: '完了',
   cancelled: '取消',
   superseded: '差替'
+};
+const deploymentLabel: Record<string,string> = {
+  pending: '公開未確認',
+  verified: '公開確認済み',
+  failed: '公開確認失敗',
+  not_required: '公開確認不要'
 };
 const typeLabel: Record<string,string> = {
   revise: '改稿',
@@ -107,6 +120,7 @@ export function RemoteOperationsOverview() {
   const readyCount = tasks.filter(task => ['ready','issued'].includes(task.status)).length;
   const runningCount = tasks.filter(task => task.status === 'in_progress').length;
   const completedCount = tasks.filter(task => task.status === 'completed').length;
+  const deployAttentionCount = tasks.filter(task => task.status === 'completed' && ['pending','failed'].includes(task.deploymentVerification?.status)).length;
 
   return <div className="corePage">
     <div className="coreTitleRow">
@@ -122,7 +136,8 @@ export function RemoteOperationsOverview() {
       <div><small>未完了</small><strong>{openCount}</strong><span>ready / 旧Task / running</span></div>
       <div><small>実装待ち</small><strong>{readyCount}</strong><span>Sites Operator records</span></div>
       <div><small>実行中</small><strong>{runningCount}</strong><span>executor working</span></div>
-      <div><small>完了</small><strong>{completedCount}</strong><span>tracked result</span></div>
+      <div><small>実装完了</small><strong>{completedCount}</strong><span>merged to main</span></div>
+      <div><small>公開要確認</small><strong>{deployAttentionCount}</strong><span>pending / failed</span></div>
     </section>
 
     <aside className="operatorFlowNotice">
@@ -179,6 +194,9 @@ export function RemoteOperationsOverview() {
                 <h3>EXECUTION</h3>
                 <p>{task.executionSummary || task.lastHistory?.detail || 'まだ実行結果はありません。'}</p>
                 {task.resultCommitSha ? <small>commit {task.resultCommitSha.slice(0, 10)}</small> : <small>result commit未記録</small>}
+                <p><b>公開:</b> {deploymentLabel[task.deploymentVerification?.status] ?? task.deploymentVerification?.status ?? '未記録'}</p>
+                {task.deploymentVerification?.detail && <small>{task.deploymentVerification.detail}</small>}
+                {task.deploymentVerification?.productionUrl && <p><a href={task.deploymentVerification.productionUrl} target="_blank" rel="noreferrer">production URL</a></p>}
               </div>
               {task.lastHistory && <div className="seoTaskHistory">
                 <h3>LATEST HISTORY</h3>
