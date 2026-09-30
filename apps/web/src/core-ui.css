@@ -149,7 +149,7 @@ button:active:not(:disabled), summary:active { transform: translateY(1px); }
 .dashboardSkeleton span { min-height: 112px; border: 1px solid #273833; border-radius: 12px; background: linear-gradient(90deg,#111a18,#1b2824,#111a18); background-size: 200% 100%; animation: skeleton 1.4s infinite; }
 .sectionUnavailable { padding: 28px 20px; color: #c49d91; background: #211b19; text-align: center; font-size: 12px; }
 
-.coreStats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.coreStats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 .coreStats > div {
   background: linear-gradient(145deg, #182523, #121b1a);
   border: 1px solid #2c3b38;
