@@ -158,11 +158,14 @@ export interface SerpSnapshot {
   results: SerpResult[];
   peopleAlsoAsk: string[];
   relatedSearches: string[];
-  provider: 'brave' | 'serper';
+  provider: 'api' | 'brave' | 'serper';
+  upstreamProvider?: 'reserp' | 'brightdata' | null;
+  warnings?: string[];
   fetchedAt: string;
 }
 
-export type SerpProvider = 'brave' | 'serper';
+export type SerpProvider = 'api' | 'brave' | 'serper';
+export type SerpProxyProvider = 'auto' | 'reserp' | 'brightdata';
 
 function hostname(value: string) {
   try { return new URL(value).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
@@ -174,6 +177,58 @@ function normalizedSerpResult(item: { position?: unknown; title?: unknown; link?
   const domain = hostname(link);
   if (!title || !link || !domain) return null;
   return { position: Number.isFinite(Number(item.position)) ? Number(item.position) : fallbackPosition, title, link, domain, snippet: item.snippet ? String(item.snippet) : null };
+}
+
+async function searchApiProxy(input: {
+  query: string;
+  country?: string;
+  language?: string;
+  location?: string;
+  num?: number;
+  proxyProvider?: SerpProxyProvider;
+}): Promise<SerpSnapshot> {
+  const endpoint =
+    process.env.KEYWORDS_SERP_PROXY_URL ??
+    'https://api-three-gilt-37.vercel.app/api/serp-search';
+  const raw = await jsonRequest<Record<string, any>>(endpoint, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({
+      query: input.query,
+      country: input.country,
+      language: input.language,
+      location: input.location,
+      num: Math.max(1, Math.min(input.num ?? 10, 20)),
+      provider: input.proxyProvider ?? 'auto'
+    })
+  });
+
+  const results = Array.isArray(raw.results)
+    ? raw.results
+        .map((item: any, index: number) => normalizedSerpResult(item, index + 1))
+        .filter((item: SerpResult | null): item is SerpResult => Boolean(item))
+    : [];
+  const peopleAlsoAsk = Array.isArray(raw.peopleAlsoAsk)
+    ? raw.peopleAlsoAsk.map((item: any) => String(item ?? '')).filter(Boolean)
+    : [];
+  const relatedSearches = Array.isArray(raw.relatedSearches)
+    ? raw.relatedSearches.map((item: any) => String(item ?? '')).filter(Boolean)
+    : [];
+  const upstreamProvider =
+    raw.provider === 'reserp' || raw.provider === 'brightdata' ? raw.provider : null;
+
+  return {
+    query: input.query,
+    country: input.country ?? null,
+    language: input.language ?? null,
+    results,
+    peopleAlsoAsk,
+    relatedSearches,
+    provider: 'api',
+    upstreamProvider,
+    warnings: Array.isArray(raw.warnings) ? raw.warnings.map((item: any) => String(item)) : [],
+    fetchedAt: typeof raw.fetchedAt === 'string' ? raw.fetchedAt : new Date().toISOString()
+  };
 }
 
 async function searchBrave(input: { query: string; country?: string; language?: string; num?: number }): Promise<SerpSnapshot> {
@@ -208,12 +263,22 @@ async function searchSerper(input: { query: string; country?: string; language?:
 }
 
 /**
- * Retrieve a normalized web SERP. Brave is deliberately the default; Serper is
- * only used when explicitly requested so a Google-SERP confirmation remains a
- * deliberate, higher-cost final check.
+ * Retrieve a normalized web SERP. The shared nomuonji/api proxy is the default
+ * and routes to Reserp or Bright Data. Brave/Serper remain only as explicit
+ * legacy compatibility providers.
  */
-export async function searchSerp(input: { query: string; country?: string; language?: string; location?: string; num?: number; provider?: SerpProvider }): Promise<SerpSnapshot> {
-  return input.provider === 'serper' ? searchSerper(input) : searchBrave(input);
+export async function searchSerp(input: {
+  query: string;
+  country?: string;
+  language?: string;
+  location?: string;
+  num?: number;
+  provider?: SerpProvider;
+  proxyProvider?: SerpProxyProvider;
+}): Promise<SerpSnapshot> {
+  if (input.provider === 'serper') return searchSerper(input);
+  if (input.provider === 'brave') return searchBrave(input);
+  return searchApiProxy(input);
 }
 
 export interface SerpAnalysis {
