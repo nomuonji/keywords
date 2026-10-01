@@ -37,7 +37,7 @@ export async function searchGapResearch(input: unknown) {
     guidance: [
       'Compare the actual text with the question. Domain names, dates and title matches do not establish an unmet need.',
       'Extract a dated source excerpt and describe what the page answers and what remains unresolved. A partial/truncated or unavailable page cannot prove whole-page absence.',
-      'Brave is an exploration source, not a Google ranking snapshot. Confirm Google results with provider=serper when configured before making Google-specific competition claims.',
+      'Brave is an exploration source, not a Google ranking snapshot. Confirm Google results through the default API proxy by omitting provider; inspect provider/upstreamProvider provenance. Explicit provider=serper requires separate legacy Serper credentials and is not an alias for the proxy.',
       'Use the discovery to choose the next query and preserve that reason in the existing theme research ledger. This tool does not shortlist, save a candidate, or create a task.'
     ]
   };
