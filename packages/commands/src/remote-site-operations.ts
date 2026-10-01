@@ -558,6 +558,15 @@ export async function seoTaskGet(input: unknown) {
   return normalizeSeoTask(decoded(doc) as SeoTaskRecord);
 }
 
+/** Connect URL-only tasks to verified registry records without inventing article metadata. */
+async function taskArticleIds(task: { siteId: string; repo: string; targetUrls: string[]; articleIds: string[] }) {
+  if (!task.targetUrls.length) return task.articleIds;
+  const urls = new Set(task.targetUrls.map(normalizeWebIdentity));
+  const articles = (await queryBySite('articles', task.siteId, 500)) as SiteArticleRecord[];
+  const matched = articles.filter(article => article.repo === task.repo && article.canonicalUrl && urls.has(normalizeWebIdentity(article.canonicalUrl))).map(article => article.id);
+  return [...new Set([...task.articleIds, ...matched])];
+}
+
 export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
   const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
@@ -577,7 +586,7 @@ export async function seoTaskCreate(input: unknown) {
   const record: SeoTaskRecord = {
     id: idValue,
     siteId: args.siteId,
-    articleIds: args.articleIds,
+    articleIds: await taskArticleIds(args),
     targetUrls: args.targetUrls,
     repo: args.repo,
     taskType: args.taskType,
@@ -642,6 +651,7 @@ export async function seoTaskUpdate(input: unknown) {
   const record: SeoTaskRecord = {
     ...current,
     ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
+    articleIds: await taskArticleIds(current),
     status,
     deploymentVerification,
     history: history.slice(-100),
