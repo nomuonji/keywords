@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
+import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
@@ -98,6 +99,7 @@ export const seoTaskCreateShape = {
   rationale: note.refine(value => value.trim().length > 0),
   evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
   evaluation: seoTaskEvaluationShape.optional(),
+  research: z.object({ sessionId: entityId, candidateId: entityId, candidateRevision: z.number().int().positive() }).strict().optional(),
   dedupeKey: z.string().trim().min(1).max(300),
   createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
 };
@@ -545,6 +547,7 @@ const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
 const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   ...task,
   evaluation: task.evaluation ?? null,
+  research: task.research ?? null,
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task)
 });
 
@@ -559,6 +562,7 @@ export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
   const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
   await ensureSite(args.siteId);
+  const research = args.research ? await themeCandidateForTask(args.research.sessionId, args.research.candidateId, args.research.candidateRevision, args.siteId) : null;
   for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
   if (!args.articleIds.length && !args.targetUrls.length) throw new Error('articleIds or targetUrls is required');
   const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
@@ -583,6 +587,7 @@ export async function seoTaskCreate(input: unknown) {
     rationale: args.rationale,
     evidence: args.evidence,
     evaluation,
+    research,
     dedupeKey: args.dedupeKey,
     issueNumber: null,
     issueUrl: null,

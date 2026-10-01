@@ -1,3 +1,4 @@
+import type { ThemeDiscovery } from './remote-keyword-schema.js';
 /**
  * Firestore control-plane models for deployed sites.
  *
@@ -149,6 +150,8 @@ export type SeoTaskRecord = {
   evidence: string[];
   /** Optional provenance for the versioned Sites Operator evaluator used to justify this task. */
   evaluation: SeoTaskEvaluationReference | null;
+  /** Exact research revision and evidence snapshot; later candidate edits cannot rewrite the task basis. */
+  research?: { sessionId: string; candidateId: string; candidateRevision: number; discovery: ThemeDiscovery } | null;
   dedupeKey: string;
   /** Optional historical GitHub Issue reference; no longer required for newly planned tasks. */
   issueNumber: number | null;

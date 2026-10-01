@@ -60,7 +60,8 @@ export const serpResearchCachedShape = {
   location: z.string().max(200).optional(),
   num: z.number().int().min(1).max(20).optional(),
   provider: z.enum(['brave', 'serper']).optional(),
-  forceRefresh: z.boolean().optional()
+  forceRefresh: z.boolean().optional(),
+  maxCacheAgeHours: z.number().min(1).max(8760).optional()
 };
 
 export const keywordScreenCriteriaShape = {
@@ -203,7 +204,8 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   const { cacheKey, id: cacheId } = serpCacheId({ ...args, provider, num });
   const cachedDoc = await readDocument(`/serpCache/${cacheId}`);
   const cached = cachedDoc ? parseDoc<any>(cachedDoc) : null;
-  const cutoff = Date.now() - config.cacheTtlDays * 24 * 60 * 60 * 1000;
+  const cacheAgeHours = Math.min(config.cacheTtlDays * 24, args.maxCacheAgeHours ?? config.cacheTtlDays * 24);
+  const cutoff = Date.now() - cacheAgeHours * 60 * 60 * 1000;
   if (!args.forceRefresh && cached && Date.parse(String(cached.fetchedAt)) >= cutoff) {
     await recordCacheHit();
     return { ...(cached.snapshot as SerpSnapshot), analysis: cached.analysis as SerpAnalysis, cache: { hit: true, cacheId, fetchedAt: cached.fetchedAt, expiresAt: cached.expiresAt }, usage: await serpUsageStatus() };
@@ -311,7 +313,7 @@ export async function researchSessionUpdate(input: unknown) {
   return commitSession(session, found.doc, 'research_session_update');
 }
 
-function number(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
+function number(value: unknown) { if (value === null || value === undefined || value === '') return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 export function screenDemandResults(results: DemandMetric[], criteria: ScreenCriteria = {}) {
   const screened = results.map(result => {
     const volume = number(result.avgMonthlySearches) ?? 0;

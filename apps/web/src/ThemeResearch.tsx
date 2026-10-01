@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ThemeDiscovery } from '@keywords/db/remote-keyword-schema';
 import { api } from './api';
 
 type ThemeStatus = 'surviving' | 'challenged' | 'killed' | 'parked' | 'pilot_ready';
@@ -25,6 +26,7 @@ type Candidate = {
   observedFacts: ObservedFact[];
   alternatives: string[];
   nextChallenge: string;
+  discovery?: ThemeDiscovery | null;
   challengeHistory: Challenge[];
   historyDigest: string;
   revision: number;
@@ -68,6 +70,9 @@ function compact(text: string, length = 110) {
 }
 
 export function ThemeResearch() {
+  const [sessionId, setSessionId] = useState('seo-theme-research');
+  const [sessions, setSessions] = useState<Array<{ id: string; title: string }>>([]);
+  const [sessionListError, setSessionListError] = useState('');
   const [context, setContext] = useState<Context | null>(null);
   const [selectedId, setSelectedId] = useState('');
   const [query, setQuery] = useState('');
@@ -82,7 +87,7 @@ export function ThemeResearch() {
     setLoading(true);
     setError('');
     try {
-      const result = await api<Context>(`${endpoint}?includeKilled=true`);
+      const result = await api<Context>(`${endpoint}?includeKilled=true&sessionId=${encodeURIComponent(sessionId)}`);
       if (request !== requestId.current) return;
       setContext(result);
       setSelectedId(previous => result.candidates.some(item => item.id === previous)
@@ -96,9 +101,18 @@ export function ThemeResearch() {
   };
 
   useEffect(() => {
+    let active = true;
+    void api<{ items: Array<{ id: string; title: string }> }>(`${endpoint}?resource=sessions`)
+      .then(result => { if (active) setSessions(result.items); })
+      .catch(() => { if (active) setSessionListError('探索セッション一覧を取得できませんでした。'); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    setContext(null);
     void load();
     return () => { requestId.current += 1; };
-  }, []);
+  }, [sessionId]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -108,7 +122,9 @@ export function ThemeResearch() {
       .filter(item => !needle || [
         item.title, item.thesis, item.currentVerdict, item.whyStillAlive,
         item.nextChallenge, ...item.fatalRisks, ...item.unknowns,
-        ...item.observedFacts.flatMap(fact => [fact.label, fact.value])
+        ...item.observedFacts.flatMap(fact => [fact.label, fact.value]),
+        item.discovery?.audience ?? '', item.discovery?.question ?? '', item.discovery?.unmetNeed ?? '',
+        item.discovery?.deliverable ?? '', ...(item.discovery?.nextQueries.map(next => `${next.query} ${next.reason}`) ?? [])
       ].join(' ').toLowerCase().includes(needle))
       .sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status)
         || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
@@ -152,6 +168,11 @@ export function ThemeResearch() {
     </aside>}
 
     <div className="coreToolbar">
+      <select aria-label="探索対象" value={sessionId} onChange={event => setSessionId(event.target.value)}>
+        <option value="seo-theme-research">新規収益テーマ</option>
+        {sessions.filter(session => session.id !== 'seo-theme-research').map(session => <option key={session.id} value={session.id}>{session.title}</option>)}
+      </select>
+      {sessionListError && <span role="status">{sessionListError}</span>}
       <input
         aria-label="テーマ研究を検索"
         placeholder="テーマ・弱点・未確認点・証拠を検索"
@@ -209,6 +230,33 @@ export function ThemeResearch() {
                 <p>{selected.nextChallenge || '次の反証テーマは未設定です。'}</p>
               </section>
             </div>
+
+            {selected.discovery ? <section className="themeEvidenceSection">
+              <div className="themeSubhead"><h3>発見した機会</h3></div>
+              <div className="themeEvidenceGrid">
+                {[
+                  ['誰のどの疑問か', `${selected.discovery.audience} — ${selected.discovery.question}`],
+                  ['今ある答えの不足', selected.discovery.unmetNeed],
+                  ['作るもの', selected.discovery.deliverable],
+                  ['作れる理由', selected.discovery.feasibility],
+                  ['この案を捨てる条件', selected.discovery.falsification]
+                ].map(([label, text]) => <div className="themeEvidenceCard" key={label}><small>{label}</small><p>{text || '調査中'}</p></div>)}
+              </div>
+              <h4>困りごとの証拠</h4>
+              {selected.discovery.observations.map((observation, index) => <div className="themeEvidenceCard" key={index}>
+                <p>{observation.excerpt}</p><a href={observation.url} target="_blank" rel="noreferrer">出典</a> · {formatDate(observation.observedAt)}
+              </div>)}
+              <h4>競合本文で確認したこと</h4>
+              {selected.discovery.serpReviews.map((review, index) => <details key={index}>
+                <summary>{review.query} · {review.provider === 'serper' ? 'Google検索' : 'Brave検索'} · {formatDate(review.researchedAt)}</summary>
+                {review.pages.map((page, pageIndex) => <div className="themeEvidenceCard" key={pageIndex}>
+                  <a href={page.url} target="_blank" rel="noreferrer">確認したページ</a><small> · {page.coverage === 'partial' ? '部分的な確認' : '取得本文を確認'}</small>
+                  <p>{page.excerpt}</p><p>回答済み: {page.answers || '未整理'}</p><p>残る疑問: {page.remainingGap || '未確認'}</p>
+                </div>)}
+              </details>)}
+              <h4>発見から次に調べること</h4>
+              {selected.discovery.nextQueries.length ? <ul>{selected.discovery.nextQueries.map((next, index) => <li key={index}><strong>{next.query}</strong> — {next.reason}</li>)}</ul> : <p className="themeMuted">次の検索は未設定です。</p>}
+            </section> : <p className="themeMuted">観察・競合本文・提供価値の証拠はまだ未整理です。実装へ進む前に調査します。</p>}
 
             <div className="themeResearchColumns">
               <section>

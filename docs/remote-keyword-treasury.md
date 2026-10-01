@@ -10,7 +10,7 @@ SERP API       = small, high-cost second-stage verification
 Firestore      = durable research state + SERP cache
 ```
 
-Do not send every generated phrase to SERP. Generate broadly, screen up to 50 exact keywords at a time with Google Ads, then spend SERP quota only on the strongest survivors.
+Do not send every generated phrase to SERP. Use Google Ads to screen broad keyword batches, but reserve bounded checks for dated real-world observations through `observedCandidates`. Demand numbers do not determine the entire search space. See [observation-led discovery](theme-research.md).
 
 ## MCP tools
 
@@ -21,7 +21,8 @@ The 1.4 remote contract keeps all previous tools and adds resumable research, qu
 | `remote_keyword_status` | Version/deployment/provider/quota configuration without secrets |
 | `keyword_demand_research` | Raw Google Ads historical demand, proxy first then direct fallback |
 | `keyword_screen_batch` | Google Ads-only batch screening; never calls SERP |
-| `keyword_research_pipeline` | Bounded Google Ads → top-N SERP pipeline; `maxSerpChecks` defaults to 5 and maxes at 10 |
+| `keyword_research_pipeline` | Bounded demand + observation-led SERP checks; default total 5, including up to 2 observed candidates; no automatic promotion |
+| `search_gap_research` | Read a SERP plus bounded page bodies and observation-source URLs for a specific question; default cache maximum age 24 hours |
 | `serp_research` | Cached, quota-aware SERP research; `forceRefresh=false` by default |
 | `serp_analyze` | Analyze an already-supplied normalized SERP; no external request |
 | `serp_usage_status` | Current monthly API requests, cache hits, limits, reserve and remaining quota |
@@ -196,7 +197,7 @@ Configuration is environment-driven:
 
 The normal cutoff is the smaller of the soft limit and `monthlyLimit - reserve`. At/after that cutoff ordinary automatic SERP calls are rejected before the provider call. An explicit `forceRefresh=true` may use reserve capacity until the hard monthly limit. At the hard limit every external SERP request is blocked.
 
-Cache hits do not consume `actualApiRequests`. `keyword_research_pipeline` always performs Google Ads screening first, sorts passing candidates by a transparent screen score, and attempts SERP only for the first `maxSerpChecks` candidates. It never auto-saves to Treasury or creates a Site Concept; promotion remains a separate explicit step after evidence review.
+Cache hits do not consume `actualApiRequests`. `keyword_research_pipeline` requests Google Ads demand, reserves `maxObservationChecks` (default 2) slots within `maxSerpChecks` for source-backed observations regardless of numeric screening, and uses the remaining slots for screened demand candidates. If the Ads provider fails, only observed candidates can proceed; unavailable demand remains unknown. Legacy `screenScore` is a budget hint, never SEO difficulty. It never auto-saves to Treasury or creates a Site Concept; promotion remains a separate explicit step after evidence review.
 
 ## Recommended agent loop
 
@@ -211,8 +212,10 @@ keyword_screen_batch(<=50)             # Google Ads only
        ↓
 deduplicate / reject obvious low-value candidates
        ↓
-keyword_research_pipeline(maxSerpChecks<=5)
+keyword_research_pipeline(maxSerpChecks<=5, observedCandidates=dated evidence)
        ↓                               # cached / quota-aware
+search_gap_research(question, query) → page-body comparison
+       ↓
 keyword_treasury_save(final evidence-backed candidates)
        ↓
 research_session_update(findings, rejected/shortlisted IDs, nextActions)
