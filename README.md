@@ -246,7 +246,7 @@ site_sync
 
 ## Keywords Operator
 
-The remote ChatGPT keyword MCP uses a staged flow so the ~2,000/month SERP budget is not spent on raw candidate generation:
+The remote ChatGPT keyword MCP uses a staged flow so the shared free SERP budget is not spent on raw candidate generation:
 
 ```text
 research_session_get / create
@@ -268,7 +268,7 @@ site_structure_save / site_structure_patch
 research_session_update (findings + nextActions + siteConceptIds)
 ```
 
-`serp_research` caches by query/country/language/location/provider/result count. The default TTL is 30 days. Monthly defaults are `limit=2000`, `softLimit=1500`, `reserve=500`; normal automation stops at the normal cutoff, while explicit `forceRefresh=true` may consume reserve until the hard limit. `serp_usage_status` exposes actual provider requests, cache hits, blocked requests and remaining capacity. Values are environment-configurable.
+`serp_research` caches by query/country/language/location/provider/result count. The default provider is the shared `nomuonji/api` SERP proxy rather than a direct Brave/Serper call. The default TTL is 30 days. Monthly defaults are `limit=9000`, `softLimit=8000`, `reserve=1000`; normal automation allocates the first 4,500 uncached requests to Reserp and the next 4,500 to Bright Data, leaving 500 requests of headroom under each provider's current 5,000-request free tier. Explicit `forceRefresh=true` may consume the reserved Keywords budget but does not bypass the per-provider free-budget routing. `serp_usage_status` exposes actual provider requests, cache hits, blocked requests and remaining capacity. Values are environment-configurable.
 
 Research sessions are the cross-chat handoff mechanism. A `research_session_get` call without an ID returns the latest active session (or latest overall if none is active), so a new agent session can resume without reconstructing the prior chat transcript.
 
@@ -382,7 +382,9 @@ Agents stop at proposal creation. Page approval is human-only, and exact target 
 
 Credentials are environment-only and are never intentionally persisted to SQLite or Firestore research/session/site-operation records.
 
-- SERP (remote): `BRAVE_API_KEY` / `KEYWORDS_BRAVE_API_KEY`; optional explicit Serper via `KEYWORDS_SERPER_API_KEY`
+- SERP proxy (remote default): `KEYWORDS_SERP_PROXY_URL` (defaults to `https://api-three-gilt-37.vercel.app/api/serp-search`)
+- SERP free-tier routing: `KEYWORDS_SERP_RESERP_BUDGET` (default `4500`) and `KEYWORDS_SERP_BRIGHT_DATA_BUDGET` (default `4500`)
+- SERP legacy direct providers: `BRAVE_API_KEY` / `KEYWORDS_BRAVE_API_KEY`; explicit legacy Serper via `KEYWORDS_SERPER_API_KEY`
 - SERP quota/cache: `KEYWORDS_SERP_MONTHLY_LIMIT`, `KEYWORDS_SERP_SOFT_LIMIT`, `KEYWORDS_SERP_RESERVE`, `KEYWORDS_SERP_CACHE_TTL_DAYS`
 - Google Ads: `GOOGLE_ADS_ACCESS_TOKEN`, `GOOGLE_ADS_DEVELOPER_TOKEN`, `GOOGLE_ADS_CUSTOMER_ID`
 - Google Ads OAuth refresh: `GOOGLE_ADS_REFRESH_TOKEN`, `GOOGLE_ADS_CLIENT_ID`, `GOOGLE_ADS_CLIENT_SECRET`
@@ -398,7 +400,7 @@ Credentials are environment-only and are never intentionally persisted to SQLite
 
 OAuth refresh/token issuance remains outside workspace persistence.
 
-The API loads the repository `.env` on startup. The remote 18-tool Keywords MCP uses the configured keyword-volume proxy first for Google Ads demand research because that proxy owns the known-working credential set, and falls back to direct Google Ads only when the proxy request fails. Its SERP tools use Firestore cache/quota enforcement before reaching the external provider. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
+The API loads the repository `.env` on startup. The remote 18-tool Keywords MCP uses the configured keyword-volume proxy first for Google Ads demand research because that proxy owns the known-working credential set, and falls back to direct Google Ads only when the proxy request fails. Its SERP tools use Firestore cache/quota enforcement before calling the shared API proxy, which then reaches Reserp or Bright Data. Local project research surfaces may continue to use direct credentials where configured. Operation-driven discovery requires an available demand provider; SERP related searches/PAA are stored as search-surface observations and cannot be shortlisted or planned without verified demand. Credentials remain environment-only.
 
 The Sites bridge does not expose Firebase/Google credentials. GA4 is currently projected from the already-persisted analytics-dashboard snapshot; direct GA4 Data API acquisition has not been duplicated inside this repository.
 
