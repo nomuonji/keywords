@@ -59,7 +59,7 @@ export const serpResearchCachedShape = {
   language: z.string().min(2).max(10).optional(),
   location: z.string().max(200).optional(),
   num: z.number().int().min(1).max(20).optional(),
-  provider: z.enum(['brave', 'serper']).optional(),
+  provider: z.enum(['api', 'brave', 'serper']).optional(),
   forceRefresh: z.boolean().optional(),
   maxCacheAgeHours: z.number().min(1).max(8760).optional()
 };
@@ -100,9 +100,9 @@ function integerEnv(name: string, fallback: number, min: number, max: number) {
 }
 
 export function serpQuotaConfiguration() {
-  const monthlyLimit = integerEnv('KEYWORDS_SERP_MONTHLY_LIMIT', 2000, 1, 1_000_000);
-  const softLimit = integerEnv('KEYWORDS_SERP_SOFT_LIMIT', Math.min(1500, monthlyLimit), 1, monthlyLimit);
-  const reserve = integerEnv('KEYWORDS_SERP_RESERVE', Math.min(500, Math.max(0, monthlyLimit - softLimit)), 0, monthlyLimit - 1);
+  const monthlyLimit = integerEnv('KEYWORDS_SERP_MONTHLY_LIMIT', 9000, 1, 1_000_000);
+  const softLimit = integerEnv('KEYWORDS_SERP_SOFT_LIMIT', Math.min(8000, monthlyLimit), 1, monthlyLimit);
+  const reserve = integerEnv('KEYWORDS_SERP_RESERVE', Math.min(1000, Math.max(0, monthlyLimit - softLimit)), 0, monthlyLimit - 1);
   const cacheTtlDays = integerEnv('KEYWORDS_SERP_CACHE_TTL_DAYS', 30, 1, 365);
   return { monthlyLimit, softLimit, reserve, cacheTtlDays, normalCutoff: Math.max(0, Math.min(softLimit, monthlyLimit - reserve)) };
 }
@@ -166,13 +166,13 @@ async function reserveApiRequest(forceRefresh: boolean) {
           updatedAt: nowIso()
         };
     try {
-      await writeUsage(doc, next);
+      const saved = await writeUsage(doc, next);
       if (blocked) {
         throw new Error(hardBlocked
           ? 'SERP monthly hard limit reached'
           : 'SERP soft limit/reserve reached; use forceRefresh=true only for an explicit high-value check');
       }
-      return;
+      return parseDoc<SerpUsage>(saved);
     } catch (error) {
       if (error instanceof FirestoreError && [409, 412].includes(error.status)) continue;
       throw error;
@@ -184,13 +184,24 @@ async function recordCacheHit() {
   await mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
 }
 
+function freeProxyProviderForRequest(requestNumber: number): 'reserp' | 'brightdata' {
+  // Keep a 10% safety margin under the two providers' current 5k free tiers.
+  // This budget is local to Keywords Operator and prevents normal automation
+  // from intentionally crossing the configured free allowance.
+  const reserpBudget = integerEnv('KEYWORDS_SERP_RESERP_BUDGET', 4500, 0, 5000);
+  const brightDataBudget = integerEnv('KEYWORDS_SERP_BRIGHT_DATA_BUDGET', 4500, 0, 5000);
+  if (requestNumber <= reserpBudget) return 'reserp';
+  if (requestNumber <= reserpBudget + brightDataBudget) return 'brightdata';
+  throw new Error('Configured free SERP provider budget reached');
+}
+
 function serpCacheId(input: { query: string; country?: string; language?: string; location?: string; num?: number; provider?: SerpProvider }) {
   const cacheKey = JSON.stringify({
     query: normalizedQuery(input.query),
     country: input.country?.toUpperCase() ?? null,
     language: input.language?.toLowerCase() ?? null,
     location: input.location?.trim().toLowerCase() ?? null,
-    provider: input.provider ?? 'brave',
+    provider: input.provider ?? 'api',
     num: input.num ?? 10
   });
   return { cacheKey, id: createHash('sha256').update(cacheKey).digest('hex') };
@@ -198,7 +209,7 @@ function serpCacheId(input: { query: string; country?: string; language?: string
 
 export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpResearchCachedShape>>) {
   const args = z.object(serpResearchCachedShape).strict().parse(input);
-  const provider = args.provider ?? 'brave';
+  const provider = args.provider ?? 'api';
   const num = args.num ?? 10;
   const config = serpQuotaConfiguration();
   const { cacheKey, id: cacheId } = serpCacheId({ ...args, provider, num });
@@ -211,8 +222,20 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
     return { ...(cached.snapshot as SerpSnapshot), analysis: cached.analysis as SerpAnalysis, cache: { hit: true, cacheId, fetchedAt: cached.fetchedAt, expiresAt: cached.expiresAt }, usage: await serpUsageStatus() };
   }
 
-  await reserveApiRequest(Boolean(args.forceRefresh));
-  const snapshot = await searchSerp({ query: args.query, country: args.country, language: args.language, location: args.location, num, provider });
+  const reservedUsage = await reserveApiRequest(Boolean(args.forceRefresh));
+  const proxyProvider =
+    provider === 'api'
+      ? freeProxyProviderForRequest(Number(reservedUsage.actualApiRequests ?? 0))
+      : undefined;
+  const snapshot = await searchSerp({
+    query: args.query,
+    country: args.country,
+    language: args.language,
+    location: args.location,
+    num,
+    provider,
+    proxyProvider
+  });
   const analysis = analyzeSerp(snapshot);
   const now = nowIso();
   const expiresAt = new Date(Date.now() + config.cacheTtlDays * 24 * 60 * 60 * 1000).toISOString();
