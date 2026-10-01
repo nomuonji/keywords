@@ -15,7 +15,7 @@ export type ThemeDiscovery = {
   audience: string;
   question: string;
   observations: Array<{ kind: 'question' | 'review' | 'gsc' | 'competitor' | 'other'; url: string; observedAt: string; excerpt: string }>;
-  serpReviews: Array<{ query: string; provider: 'brave' | 'serper'; researchedAt: string; pages: Array<{
+  serpReviews: Array<{ query: string; provider: 'api' | 'brave' | 'serper'; researchedAt: string; pages: Array<{
     url: string; readAt: string; excerpt: string; coverage: 'full' | 'partial'; answers: string; remainingGap: string;
   }> }>;
   unmetNeed: string;
@@ -85,7 +85,7 @@ export type SerpCacheEntry = {
   country: string | null;
   language: string | null;
   location: string | null;
-  provider: 'brave' | 'serper';
+  provider: 'api' | 'brave' | 'serper';
   num: number;
   fetchedAt: string;
   expiresAt: string;
