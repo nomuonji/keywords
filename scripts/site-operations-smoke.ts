@@ -200,6 +200,15 @@ try {
     repo: 'nomuonji/site-a', repoPath: 'content/posts/c.mdx', slug: 'c', title: 'C'
   }), /canonicalUrl is already linked/);
 
+  const repairedTask = await seoTaskUpdate({ id: verifiedTask.id, expectedRevision: verifiedTask.revision, appendHistory: { actor: 'smoke', event: 'registry_reconciled', detail: 'Registry arrived after the task.' } });
+  assert.deepEqual(repairedTask.articleIds, ['article-a'], 'legacy URL-only task must attach its later registry entry');
+  assert.equal(repairedTask.status, 'completed');
+  const urlTask = await seoTaskCreate({ siteId: 'site-a', targetUrls: ['https://example.com/article-a/?utm_source=test'], repo: 'nomuonji/site-a', taskType: 'revise', title: 'Follow-up', rationale: 'Separate intervention.', evidence: ['Observed separate gap.'], dedupeKey: 'site-a:follow-up' });
+  assert.deepEqual(urlTask.articleIds, ['article-a'], 'new URL-only task must use canonical identity');
+  assert.ok((await seoTaskList({ siteId: 'site-a', articleId: 'article-a' })).items.some(task => task.id === urlTask.id));
+  const unrelatedTask = await seoTaskCreate({ siteId: 'site-a', targetUrls: ['https://example.com/article-a'], repo: 'nomuonji/other', taskType: 'technical', title: 'Other repo', rationale: 'No matching registry.', evidence: ['Separate repository.'], dedupeKey: 'site-a:other-repo' });
+  assert.deepEqual(unrelatedTask.articleIds, [], 'URL match must not attach a different repository');
+
   const gscInput = {
     siteId: 'site-a', articleId: 'article-a', provider: 'gsc' as const, periodStart: '2026-09-01', periodEnd: '2026-09-07',
     metrics: { clicks: 12, impressions: 400, ctr: 0.03, averagePosition: 8.4 },

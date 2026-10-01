@@ -79,3 +79,7 @@ A good Worker-ready task says: *this is the observed defect, here is its current
 For every run, report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages investigated, the strongest rejected candidates and concrete rejection reasons, and remaining evidence/source limitations. If a write is rejected by platform safety/authorization, stop that rejected operation rather than rerouting it, and report the exact diagnostic. If a required compact digest is unavailable, record the blocked analytics-dependent opportunity and explore independent factual/technical defects elsewhere where sound evidence exists.
 
 **No invented work or guaranteed traffic claims.** The operating requirement is to supply bounded changes, review their actual outcomes, and act again while preserving accuracy, dedupe and repository controls.
+
+## Experiment tracking recovery
+
+For target URLs absent from the article registry, verify the exact source path at the repository default branch and register the bounded target with `site_article_save`. URL-only Tasks attach existing same-site/same-repository canonical article matches at creation and on subsequent updates. Backfill the latest completed experiments with their existing Task IDs in optimization notes/history; never create duplicate implementation work. Record actual public observation before starting the evaluation window. Missing Google SERP credentials block Google-specific claims only: continue Brave/body evidence and independently justified implementation planning.
