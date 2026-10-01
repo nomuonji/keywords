@@ -41,7 +41,7 @@ export const keywordResearchPipelineShape = {
   language: z.string().min(2).max(10).optional(),
   location: z.string().max(200).optional(),
   num: z.number().int().min(1).max(20).optional(),
-  provider: z.enum(['brave', 'serper']).optional()
+  provider: z.enum(['api', 'brave', 'serper']).optional()
 };
 
 const treasuryCandidate = z.object({
