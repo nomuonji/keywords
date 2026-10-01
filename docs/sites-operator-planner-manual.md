@@ -83,3 +83,13 @@ For every run, report initial/final ready inventory, new ready Task IDs, legacy 
 ## Experiment tracking recovery
 
 For target URLs absent from the article registry, verify the exact source path at the repository default branch and register the bounded target with `site_article_save`. URL-only Tasks attach existing same-site/same-repository canonical article matches at creation and on subsequent updates. Backfill the latest completed experiments with their existing Task IDs in optimization notes/history; never create duplicate implementation work. Record actual public observation before starting the evaluation window. Missing Google SERP credentials block Google-specific claims only: continue Brave/body evidence and independently justified implementation planning.
+
+## Reviewed external playbooks
+
+External SEO playbooks are not part of the default planning loop and must never be loaded as
+instructions wholesale. When a concrete incident matches a reviewed diagnostic playbook, or when
+strategy discussion needs an additional lens, consult
+[`seo-external-playbook-policy.md`](./seo-external-playbook-policy.md). That policy defines
+evidence precedence, locale/jurisdiction scoping, accepted/modified/rejected parts of reviewed
+sources, and the narrow event triggers where a playbook may be useful. It never overrides the
+live `seo_agent_context`, evaluator registry, current production evidence, or primary sources.
