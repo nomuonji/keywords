@@ -71,6 +71,12 @@ Validate the **change itself** using the repository's available mechanisms:
 
 Never claim a check ran when it did not.
 
+### Reversible experiment delivery
+
+A well-scoped pilot does not need proof of traffic uplift before implementation. When the Task supplies a sourced user need, current artifact, bounded change, acceptance criteria and rollback, implement it even if the analytics baseline is unknown. Preserve that uncertainty in the summary.
+
+For registered articles, inspect `optimization_context`, reuse the linked event, or create a `proposed` event containing the Task ID, hypothesis, planned baseline dates, metric limitations and rollback. Put the event ID and before/after commit evidence in Task history/summary. Leave it proposed until actual production publication is observed. Tracking problems must be reported, but do not silently turn a valid implementation into an audit-only result. The Planner handles due outcome reviews; Worker still finishes at verified main merge.
+
 ### Pre-existing unrelated failures
 
 A failing build/deploy check is not automatically caused by the Worker.
