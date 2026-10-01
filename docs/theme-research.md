@@ -57,3 +57,24 @@ Keyword Operator で、収益化候補テーマを「一度スコアリングし
 
 > Keyword Operator の `theme_research_context` を最初に読み、正本 `seo-theme-research` の続きから作業する。`bootstrapRequired` の場合は `legacyFindings` から候補台帳を初期化してから、既存候補を批判検証し、必要なら新規候補を加える。総合スコアや固定ランキングを作らず、観測事実・致命傷・未確認点・次の反証を更新する。各実行で最低1件は `theme_candidate_challenge` を残す。新しい証拠なしに killed 候補を復活させない。
 
+
+## 観察から始める探索（台帳v2）
+
+既存の候補台帳を拡張して使う。別DB・別ランキングを作らない。新規収益テーマは `seo-theme-research`、管理サイトの機会探索は `seo-discovery-{siteId}` を正本とし、同じツールとUIで読む。初回だけ `research_session_create` で作る。
+
+`discovery` は全体置換の証拠パケット（省略時は既存値を保持）:
+
+- `siteId`: 管理サイトへの受け渡し時に必須。
+- `audience`, `question`: 誰のどの疑問か。
+- `observations[]`: `kind`（question/review/gsc/competitor/other）, `url`, `observedAt`, `excerpt`。困りごとが観察された証拠。検索量とは区別する。
+- `serpReviews[]`: `query`, `provider`（brave/serper）, `researchedAt`, `pages[]`（url/readAt/excerpt/coverage=full|partial/answers/remainingGap）。競合本文を読んだ結果。抜粋だけで全文の不在を断言しない。
+- `unmetNeed`, `deliverable`, `feasibility`, `falsification`: 残る不足、作れる成果物、実現可能な理由、案を捨てる条件。
+- `nextQueries[]`: `query`, `reason`。今回の観察によって次の調査先をどう変えたか。
+
+`search_gap_research` は検索上位本文と最大3件の観察元URLを読み、本文・切り詰め・取得失敗・検索providerを返す。意味の判定はエージェントが行う。既定は3ページ、本文12,000文字、SERPキャッシュ最大24時間。BraveをGoogle検索順位と誤認しない。
+
+`keyword_research_pipeline` は `observedCandidates`（keyword/sourceUrl/observedAt/excerpt/researchReason）に最大2件分の調査枠を先に割り当てる。これは既定の合計5件の内数。数値選別に不合格でも調査できるが、需要確認済みや採用済みにはならない。Ads障害時も観察候補だけは同じ上限で調査でき、不明な指標を0にしない。
+
+新規または更新時の `pilot_ready` は、観察・本文比較・不足・提供価値・実現可能性・反証条件が必要。旧データは消さず、不足分を再調査してから実装へ渡す。`theme_candidate_challenge` はその時点のパケットを履歴にも保存する。
+
+管理サイトの実装タスクへ `research={sessionId,candidateId,candidateRevision}` を渡すと、候補の版・pilot_ready・siteIdを検証し、証拠をTaskに固定する。Taskの完了や流入変化は、実装後の証拠として後続ラウンドに戻す。候補台帳更新やタスク作成をSEO成功そのものとして扱わない。

@@ -6,7 +6,7 @@ import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPaylo
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.7.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.8.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -33,9 +33,10 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'seo_source_get',
   'seo_source_save',
   'seo_source_scan_record',
-  'trend_article_research'
+  'trend_article_research',
+  'search_gap_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 26);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 27);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);

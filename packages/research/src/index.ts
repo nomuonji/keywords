@@ -119,6 +119,7 @@ function htmlText(html: string) {
 }
 
 export interface WebDocument {
+  truncated?: boolean;
   requestedUrl: string;
   finalUrl: string;
   status: number;
@@ -138,7 +139,7 @@ export async function fetchWebDocument(input: { url: string; maxChars?: number }
   const title = contentType.includes('html') ? decodeEntities(raw.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1]?.replace(/\s+/g, ' ').trim() ?? '') || null : null;
   const text = contentType.includes('html') ? htmlText(raw) : raw.replace(/\s+/g, ' ').trim();
   const maxChars = Math.max(500, Math.min(input.maxChars ?? 20_000, 100_000));
-  return { requestedUrl: input.url, finalUrl, status: response.status, contentType, title, text: text.slice(0, maxChars), excerpt: text.slice(0, 1_500), fetchedAt: new Date().toISOString() };
+  return { requestedUrl: input.url, finalUrl, status: response.status, contentType, title, text: text.slice(0, maxChars), excerpt: text.slice(0, 1_500), truncated: text.length > maxChars, fetchedAt: new Date().toISOString() };
 }
 
 export interface SerpResult {
@@ -224,6 +225,7 @@ export interface SerpAnalysis {
   forumCount: number;
   stalePageCount: number;
   opportunityScore: number;
+  limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
 
@@ -242,7 +244,7 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   // More weak/forum/stale results can indicate an addressable gap; exact-title
   // saturation reduces it. Result-count prevents an incomplete response scoring highly.
   const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
-  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
+  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' ? ['Brave results are not Google rankings.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
 }
 
 export interface GoogleAdsKeywordIdea {

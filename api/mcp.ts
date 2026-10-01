@@ -29,6 +29,8 @@ import {
   seoSourceSave, seoSourceSaveShape,
   seoSourceScanRecord, seoSourceScanRecordShape
 } from '../packages/commands/src/seo-source-pool.js';
+import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
+import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 
 const app = new Hono();
@@ -138,7 +140,7 @@ function server() {
     const query = input.query ?? input.keyword; if (!query) throw new Error('query or keyword is required');
     return structured(await serpResearchCached({ query, country: input.country, language: input.language, location: input.location, num: input.num ?? input.count, provider: input.provider, forceRefresh: input.forceRefresh }));
   });
-  mcp.registerTool(serpAnalyzeTool, { description: 'Compute a transparent screening score from a normalized SERP without performing any external search.', inputSchema: { snapshot: z.object({ query: z.string().min(1), country: z.string().nullable().optional(), language: z.string().nullable().optional(), provider: z.enum(['brave', 'serper']), fetchedAt: z.string(), peopleAlsoAsk: z.array(z.string()).optional(), relatedSearches: z.array(z.string()).optional(), results: z.array(z.object({ position: z.number().nullable(), title: z.string(), link: z.string(), domain: z.string().optional(), snippet: z.string().nullable() })).max(20) }) } }, async ({ snapshot }) => {
+  mcp.registerTool(serpAnalyzeTool, { description: 'Compute legacy search-surface hints only. Domain, title and date heuristics are not a content-gap judgment; use search_gap_research for page-body evidence.', inputSchema: { snapshot: z.object({ query: z.string().min(1), country: z.string().nullable().optional(), language: z.string().nullable().optional(), provider: z.enum(['brave', 'serper']), fetchedAt: z.string(), peopleAlsoAsk: z.array(z.string()).optional(), relatedSearches: z.array(z.string()).optional(), results: z.array(z.object({ position: z.number().nullable(), title: z.string(), link: z.string(), domain: z.string().optional(), snippet: z.string().nullable() })).max(20) }) } }, async ({ snapshot }) => {
     const results = snapshot.results.map(result => ({ ...result, position: result.position ?? null, snippet: result.snippet ?? null, domain: result.domain || (() => { try { return new URL(result.link).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; } })() }));
     return structured(analyzeSerp({ ...snapshot, country: snapshot.country ?? null, language: snapshot.language ?? null, results, peopleAlsoAsk: snapshot.peopleAlsoAsk ?? [], relatedSearches: snapshot.relatedSearches ?? [] }));
   });
@@ -152,8 +154,8 @@ function server() {
   mcp.registerTool('research_session_get', { description: 'Get a research session. Omit id to resume the latest active session, falling back to the latest session of any status.', inputSchema: researchSessionGetShape, annotations: { readOnlyHint: true } }, async input => structured(await researchSessionGet(input)));
   mcp.registerTool('research_session_list', { description: 'List recent research sessions, optionally filtered by status/query.', inputSchema: researchSessionListShape, annotations: { readOnlyHint: true } }, async input => structured(await researchSessionList(input)));
   mcp.registerTool('research_session_update', { description: 'Update a research session with optimistic revision control. Additive fields let agents append researched/shortlisted/rejected keyword IDs, findings, next actions and site concepts without resending the full session.', inputSchema: researchSessionUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await researchSessionUpdate(input)));
-  mcp.registerTool('theme_research_context', { description: 'Resume the durable SEO monetization theme research ledger. Read this first in every new or scheduled session. Returns surviving/challenged/killed/pilot-ready candidates with narrative verdicts, fatal risks, unknowns, evidence facts, challenge history and next falsification targets. This is deliberately qualitative: never derive a composite score or automatic winner from it.', inputSchema: themeResearchContextShape, annotations: { readOnlyHint: true } }, async input => structured(await themeResearchContext(input)));
-  mcp.registerTool('theme_candidate_upsert', { description: 'Add or revise one SEO monetization theme in the shared research ledger. Preserve a narrative thesis, why it still survives, fatal risks, unknowns, observed facts and the next challenge. Numeric facts may be stored as evidence, but this tool has no score or ranking field.', inputSchema: themeCandidateUpsertShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await themeCandidateUpsert(input)));
+  mcp.registerTool('theme_research_context', { description: 'Resume the durable theme/opportunity research ledger. Managed-site exploration uses explicit sessionId=seo-discovery-{siteId}; default seo-theme-research remains the new-monetization ledger. Read this first in every new or scheduled session. Returns surviving/challenged/killed/pilot-ready candidates with narrative verdicts, fatal risks, unknowns, evidence facts, challenge history and next falsification targets. This is deliberately qualitative: never derive a composite score or automatic winner from it.', inputSchema: themeResearchContextShape, annotations: { readOnlyHint: true } }, async input => structured(await themeResearchContext(input)));
+  mcp.registerTool('theme_candidate_upsert', { description: 'Add or revise one theme/opportunity in the shared research ledger. The discovery packet stores real observations, page-body reviews, unmet need, feasible deliverable, falsification and evidence-driven next queries. pilot_ready requires this packet. Preserve a narrative thesis, why it still survives, fatal risks, unknowns, observed facts and the next challenge. Numeric facts may be stored as evidence, but this tool has no score or ranking field.', inputSchema: themeCandidateUpsertShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await themeCandidateUpsert(input)));
   mcp.registerTool('theme_candidate_challenge', { description: 'Record one adversarial validation round against an existing theme. State the attack, evidence, defense, conclusion, resulting status and next challenge. Killed candidates stay in the ledger so later sessions do not repeat rejected ideas without materially new evidence.', inputSchema: themeCandidateChallengeShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await themeCandidateChallenge(input)));
   mcp.registerTool('seo_source_pool_context', { description: 'Read the human-curated SEO source watch pool with due-for-review status, recent scan summaries, and useful findings. Use this before asking whether watched SEO practitioners or publications have said anything worth investigating recently. This tool does not fetch X or the web itself.', inputSchema: seoSourcePoolContextShape, annotations: { readOnlyHint: true, openWorldHint: true } }, async input => structured(await seoSourcePoolContext(input)));
   mcp.registerTool('seo_source_get', { description: 'Read one watched SEO source and its recent scan history.', inputSchema: seoSourceGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoSourceGet(input)));
@@ -167,24 +169,16 @@ function server() {
     const screening = screenDemandResults(demand.results, input.criteria ?? {});
     return structured({ demand, screening });
   });
-  mcp.registerTool('keyword_research_pipeline', { description: 'Bounded staged research: Google Ads screens all supplied keywords first, then only the best passing candidates receive cached/quota-aware SERP checks. maxSerpChecks is a hard per-call cap and defaults to 5. This tool does not auto-save Treasury or Site Concepts.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), criteria: z.object(keywordScreenCriteriaShape).strict().optional(), maxSerpChecks: z.number().int().min(0).max(10).default(5), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional(), country: z.string().min(2).max(2).optional(), language: z.string().min(2).max(10).optional(), location: z.string().max(200).optional(), num: z.number().int().min(1).max(20).optional(), provider: z.enum(['brave', 'serper']).optional() } }, async input => {
-    const demand = await demandWithFallback(input);
-    const screening = screenDemandResults(demand.results, input.criteria ?? {});
-    const selected = screening.results.filter(item => item.passed).slice(0, input.maxSerpChecks);
-    const serpChecks: Array<Record<string, unknown>> = [];
-    let stoppedReason: string | null = null;
-    for (const candidate of selected) {
-      try {
-        const result = await serpResearchCached({ query: candidate.keyword, country: input.country, language: input.language, location: input.location, num: input.num, provider: input.provider, forceRefresh: false });
-        serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, ...result });
-      } catch (error) {
-        stoppedReason = error instanceof Error ? error.message : String(error);
-        if (/SERP .*limit|quota|reserve/i.test(stoppedReason)) break;
-        serpChecks.push({ keyword: candidate.keyword, screenScore: candidate.screenScore, error: stoppedReason });
-      }
-    }
-    return structured({ demand, screening, maxSerpChecks: input.maxSerpChecks, selectedForSerp: selected.map(item => item.keyword), serpChecks, stoppedReason, usage: await serpUsageStatus() });
-  });
+  mcp.registerTool('keyword_research_pipeline', {
+    description: 'Bounded demand and observation-led research. Reserve up to maxObservationChecks of the same maxSerpChecks budget for dated real-world observations, even when search volume is low, missing or the Ads provider is unavailable. Remaining checks use demand screening. No automatic promotion or save.',
+    inputSchema: keywordResearchPipelineShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('search_gap_research', {
+    description: 'Read a bounded SERP plus actual top-page bodies and optional observation source URLs for a concrete user question. Returns text, truncation, failures and provider provenance; the agent must compare answers and save its findings in the existing theme ledger. Does not invent an answer gap or save/promote a candidate.',
+    inputSchema: searchGapResearchShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await searchGapResearch(input)));
   mcp.registerTool('trend_article_research', {
     description: 'Read-only research bundle for an X/web trend article. Combines historical keyword demand, bounded cached SERP evidence, optional site structure context, and literal existing-page overlap hints. Fresh zero-volume terms remain eligible for SERP checks. Does not save, publish, or mutate site structure.',
     inputSchema: trendArticleResearchShape,

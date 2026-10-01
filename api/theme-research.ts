@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { researchSessionList } from '../packages/commands/src/remote-keyword-research.js';
 import { themeResearchContext } from '../packages/commands/src/theme-research.js';
 import { seoSourcePoolContext } from '../packages/commands/src/seo-source-pool.js';
 
@@ -6,6 +7,10 @@ const app = new Hono();
 
 app.get('/api/theme-research', async c => {
   try {
+    if (c.req.query('resource') === 'sessions') {
+      const result = await researchSessionList({ limit: 100 });
+      return c.json({ ...result, items: result.items.filter((session: any) => session.id === 'seo-theme-research' || session.id.startsWith('seo-discovery-')) }, 200, { 'cache-control': 'no-store' });
+    }
     if (c.req.query('resource') === 'seo-source-pool') {
       const result = await seoSourcePoolContext({
         sourceType: c.req.query('sourceType') || undefined,

@@ -124,6 +124,8 @@ function boundedInput(body: any) {
     input: {
       ...common,
       maxSerpChecks: Math.max(0, Math.min(Number(body.maxSerpChecks ?? 3), 5)),
+      maxObservationChecks: body.maxObservationChecks,
+      observedCandidates: body.observedCandidates,
       country: body.country,
       language: body.language,
       location: body.location,
@@ -160,6 +162,7 @@ export default async function handler(req: any, res: any) {
     }
 
     const bounded = req.method === 'GET' ? boundedInput(body) : body;
+    if (!('input' in bounded)) throw new Error('mode must be screen or pipeline');
     const result = bounded.mode === 'screen'
       ? await keywordScreenBatch(bounded.input)
       : await keywordResearchPipeline(bounded.input);

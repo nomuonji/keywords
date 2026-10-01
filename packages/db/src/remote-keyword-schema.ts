@@ -10,6 +10,21 @@ export type ThemeObservedFact = {
   observedAt?: string;
 };
 
+export type ThemeDiscovery = {
+  siteId?: string;
+  audience: string;
+  question: string;
+  observations: Array<{ kind: 'question' | 'review' | 'gsc' | 'competitor' | 'other'; url: string; observedAt: string; excerpt: string }>;
+  serpReviews: Array<{ query: string; provider: 'brave' | 'serper'; researchedAt: string; pages: Array<{
+    url: string; readAt: string; excerpt: string; coverage: 'full' | 'partial'; answers: string; remainingGap: string;
+  }> }>;
+  unmetNeed: string;
+  deliverable: string;
+  feasibility: string;
+  falsification: string;
+  nextQueries: Array<{ query: string; reason: string }>;
+};
+
 export type ThemeChallenge = {
   id: string;
   createdAt: string;
@@ -19,6 +34,7 @@ export type ThemeChallenge = {
   conclusion: string;
   statusAfter: ThemeCandidateStatus;
   nextChallenge: string;
+  discovery?: ThemeDiscovery | null;
 };
 
 export type ThemeCandidate = {
@@ -34,6 +50,7 @@ export type ThemeCandidate = {
   observedFacts: ThemeObservedFact[];
   alternatives: string[];
   nextChallenge: string;
+  discovery?: ThemeDiscovery | null;
   challengeHistory: ThemeChallenge[];
   historyDigest: string;
   revision: number;

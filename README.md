@@ -6,7 +6,7 @@ The current product scope supports evidence-backed article revisions and an opt-
 
 Blogサイト群との連携コードを実装しました。現在の機能・起動条件・Agent手順は [Blog連携の運用手順](docs/blog-integration-operations.md) が正本です。設計判断と実装前の経緯は [Blog連携計画](docs/blog-integration-plan.md) に残しています。
 
-The Vercel-hosted **Remote Keywords Operator** is a Firestore-backed planning/research extension for ChatGPT. It supports resumable research sessions, quota-aware cached SERP research, Google Ads-first staged screening, rich Treasury search, incremental Site Concept edits, and DB-driven site metadata. The operating rule is **Google Ads for broad first-stage screening, SERP only for a bounded high-value second stage, Firestore for durable cache/state**. See [Remote Keywords Operator](docs/remote-keyword-treasury.md) for the 18-tool contract and Firestore schema.
+The Vercel-hosted **Remote Keywords Operator** is a Firestore-backed planning/research extension for ChatGPT. It supports resumable research sessions, quota-aware cached SERP research, Google Ads-first staged screening, rich Treasury search, incremental Site Concept edits, and DB-driven site metadata. The operating rule is **real observations for discovery, Google Ads for broad demand screening, bounded SERP/page-body checks including observation-led candidates, Firestore for durable cache/state**. Each Planner run resumes a managed-site discovery ledger; see [theme/opportunity research](docs/theme-research.md). See [Remote Keywords Operator](docs/remote-keyword-treasury.md) for the 18-tool contract and Firestore schema.
 
 The same repository/deployment/Firebase project now also hosts a separate **Sites Operator** at `/sites-mcp`. Keywords Operator answers **what should we build?**; Sites Operator answers **how is the real deployed site performing and what hypothesis is currently being tested?**. Real sites and article registry metadata live in Firestore, article bodies remain in Git/Markdown/MDX, and SQLite remains the local execution plane. The existing runner projects complete local GSC observations and the already-saved analytics-dashboard GA4 totals into Firestore without introducing another scheduler. See [Agent-native Site Operations Architecture](docs/site-operations-architecture.md) and [Sites Operator Analytics Bridge](docs/site-operations-analytics-bridge.md).
 
@@ -255,7 +255,9 @@ generate many candidates in-agent
         ↓
 keyword_screen_batch (Google Ads, <=50)
         ↓
-keyword_research_pipeline (SERP only for top maxSerpChecks; default 5)
+keyword_research_pipeline (default 5 total checks, including up to 2 observation-led candidates)
+        ↓
+search_gap_research (read actual top-page bodies for a concrete question)
         ↓
 keyword_treasury_save (final evidence-backed candidates only)
         ↓

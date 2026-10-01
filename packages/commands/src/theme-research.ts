@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { assertDiscoveryReady, themeDiscoverySchema } from './theme-discovery-evidence.js';
 import { field, firestore, firestoreDocumentName, FirestoreError, value } from '../../db/src/firestore.js';
 import type { ResearchSession, ThemeCandidate, ThemeCandidateStatus, ThemeChallenge } from '../../db/src/remote-keyword-schema.js';
 
@@ -33,6 +34,7 @@ export const themeCandidateUpsertShape = {
   unknowns: textList.optional(),
   observedFacts: z.array(observedFact).max(100).optional(),
   alternatives: z.array(id).max(100).optional(),
+  discovery: themeDiscoverySchema.optional(),
   nextChallenge: z.string().max(4000).optional()
 };
 
@@ -52,7 +54,8 @@ export const themeCandidateChallengeShape = {
   addUnknowns: textList.optional(),
   resolveUnknowns: textList.optional(),
   addObservedFacts: z.array(observedFact).max(100).optional(),
-  addAlternatives: z.array(id).max(100).optional()
+  addAlternatives: z.array(id).max(100).optional(),
+  discovery: themeDiscoverySchema.optional()
 };
 
 function fields(data: object) {
@@ -101,6 +104,7 @@ function normalizeCandidate(candidate: ThemeCandidate): ThemeCandidate {
     alternatives: unique(candidate.alternatives ?? []),
     challengeHistory: Array.isArray(candidate.challengeHistory) ? candidate.challengeHistory : [],
     historyDigest: candidate.historyDigest ?? '',
+    discovery: candidate.discovery ?? null,
     currentVerdict: candidate.currentVerdict ?? '',
     whyStillAlive: candidate.whyStillAlive ?? '',
     nextChallenge: candidate.nextChallenge ?? '',
@@ -114,11 +118,12 @@ async function commitCandidate(
   candidate: ThemeCandidate,
   command: string
 ) {
+  if (Buffer.byteLength(JSON.stringify(fields(candidate)), 'utf8') > 900000) throw new Error('Candidate evidence/history exceeds Firestore document budget; shorten excerpts before saving');
   const runId = randomUUID();
   const now = nowIso();
   const nextSession: ResearchSession = {
     ...session,
-    themeLedgerVersion: 1,
+    themeLedgerVersion: 2,
     revision: session.revision + 1,
     updatedAt: now
   };
@@ -180,6 +185,10 @@ export async function themeResearchContext(input: unknown = {}) {
       'This research ledger is qualitative. Do not create or infer a composite score or automatic winner.',
       'Treat search volume, payout, EPC, conversion conditions and SERP observations as evidence, not verdicts.',
       'Each research pass should actively look for disconfirming evidence, add genuinely stronger alternatives when found, and preserve why rejected ideas were rejected.',
+      'Before inventing keywords, inspect dated real questions, reviews, query observations or competitor answers. Follow discovery.nextQueries and change direction when evidence changes.',
+      'Save discovery with the observation excerpts, page-body reviews, unmet need, feasible deliverable and falsification. Numbers are demand evidence; missing volume is unknown, not a reason to skip observation-led research.',
+      'pilot_ready requires this evidence packet. Repeated criticism without new observation is not validation. Do not treat partial/unavailable page text as proof of absence.',
+      'Managed-site exploration belongs in researchSessions seo-discovery-{siteId}; keep the default seo-theme-research session for new monetization themes. Create missing sessions with research_session_create, never overwrite an unrelated session.',
       'Do not revive a killed candidate without materially new evidence.'
     ]
   };
@@ -209,6 +218,7 @@ export async function themeCandidateUpsert(input: unknown) {
     observedFacts: args.observedFacts ?? previous?.observedFacts ?? [],
     alternatives: args.alternatives ?? previous?.alternatives ?? [],
     nextChallenge: args.nextChallenge ?? previous?.nextChallenge ?? '',
+    discovery: args.discovery ?? previous?.discovery ?? null,
     challengeHistory: previous?.challengeHistory ?? [],
     historyDigest: previous?.historyDigest ?? '',
     revision: (previous?.revision ?? 0) + 1,
@@ -216,6 +226,7 @@ export async function themeCandidateUpsert(input: unknown) {
     updatedAt: now
   });
 
+  if (next.status === 'pilot_ready') assertDiscoveryReady(next.discovery);
   const saved = await commitCandidate(sessionDoc, session, found?.doc ?? null, next, 'theme_candidate_upsert');
   return { sessionId: saved.session.id, revision: saved.session.revision, candidate: saved.candidate, runId: saved.runId };
 }
@@ -238,7 +249,8 @@ export async function themeCandidateChallenge(input: unknown) {
     defense: args.defense,
     conclusion: args.conclusion,
     statusAfter: args.statusAfter,
-    nextChallenge: args.nextChallenge
+    nextChallenge: args.nextChallenge,
+    discovery: args.discovery ?? current.discovery ?? null
   };
   const history = [...current.challengeHistory, challenge];
   const overflow = history.length > 12 ? history.slice(0, history.length - 12) : [];
@@ -253,12 +265,24 @@ export async function themeCandidateChallenge(input: unknown) {
     observedFacts: [...current.observedFacts, ...(args.addObservedFacts ?? [])].slice(-100),
     alternatives: unique([...current.alternatives, ...(args.addAlternatives ?? [])]),
     nextChallenge: args.nextChallenge,
+    discovery: args.discovery ?? current.discovery ?? null,
     challengeHistory: keptHistory,
     historyDigest: compactDigest(current.historyDigest, overflow),
     revision: current.revision + 1,
     updatedAt: now
   });
 
+  if (updatedCandidate.status === 'pilot_ready') assertDiscoveryReady(updatedCandidate.discovery);
   const saved = await commitCandidate(sessionDoc, session, found.doc, updatedCandidate, 'theme_candidate_challenge');
   return { sessionId: saved.session.id, revision: saved.session.revision, candidate: saved.candidate, challenge, runId: saved.runId };
+}
+
+/** Read an exact candidate for an implementation handoff without scanning the ledger. */
+export async function themeCandidateForTask(sessionId: string, candidateId: string, candidateRevision: number, siteId: string) {
+  const found = await readCandidate(sessionId, candidateId);
+  if (!found || found.candidate.revision !== candidateRevision) throw new Error('Research candidate missing or revision changed; read theme_research_context again');
+  if (found.candidate.status !== 'pilot_ready') throw new Error('Research candidate must be pilot_ready before implementation handoff');
+  const discovery = assertDiscoveryReady(found.candidate.discovery);
+  if (discovery.siteId !== siteId) throw new Error('Research candidate must explicitly match the managed siteId');
+  return { sessionId, candidateId, candidateRevision, discovery };
 }

@@ -16,6 +16,7 @@ import { registerBlogRoutes } from './blog.js';
 import { dashboardCommands } from '@keywords/commands/dashboard';
 import { treasuryList } from '@keywords/keyword-treasury';
 import { siteStructureGet, siteStructureList } from '@keywords/commands/site-structure';
+import { researchSessionList } from '@keywords/commands/remote-keyword-research';
 import { themeResearchContext } from '@keywords/commands/theme-research';
 import { seoSourcePoolContext } from '@keywords/commands/seo-source-pool';
 
@@ -60,7 +61,13 @@ app.get('/projects', async c => c.json(await commands.project.list(ctx(c))));
 // Remote-first Firestore storage, deliberately readable in the local console.
 app.get('/keyword-treasury', async c => c.json(await treasuryList({ status: c.req.query('status'), query: c.req.query('query'), limit: Number(c.req.query('limit') ?? 100) })));
 app.get('/site-structures', async c => c.json(c.req.query('id') ? await siteStructureGet({ id: c.req.query('id') }) : await siteStructureList({ limit: Number(c.req.query('limit') ?? 50), pageToken: c.req.query('pageToken') })));
-app.get('/theme-research', async c => c.json(await themeResearchContext({ sessionId: c.req.query('sessionId') || undefined, includeKilled: c.req.query('includeKilled') !== 'false' })));
+app.get('/theme-research', async c => {
+  if (c.req.query('resource') === 'sessions') {
+    const result = await researchSessionList({ limit: 100 });
+    return c.json({ ...result, items: result.items.filter((session: any) => session.id === 'seo-theme-research' || session.id.startsWith('seo-discovery-')) });
+  }
+  return c.json(await themeResearchContext({ sessionId: c.req.query('sessionId') || undefined, includeKilled: c.req.query('includeKilled') !== 'false' }));
+});
 app.get('/seo-source-pool', async c => c.json(await seoSourcePoolContext({
   sourceType: c.req.query('sourceType') || undefined,
   topic: c.req.query('topic') || undefined,
