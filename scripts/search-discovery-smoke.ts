@@ -10,7 +10,7 @@ const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test@example.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }), project_id: 'test' });
 process.env.FIREBASE_PROJECT_ID = 'test';
 process.env.KEYWORDS_REMOTE_MCP_TOKEN = 'test-only-token';
-process.env.BRAVE_API_KEY = 'test-brave-key';
+process.env.KEYWORDS_SERP_PROXY_URL = 'https://serp-proxy.example.test';
 process.env.GOOGLE_ADS_KEYWORD_VOLUME_API_URL = 'https://volume.example.test';
 process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '20';
 process.env.KEYWORDS_SERP_SOFT_LIMIT = '15';
@@ -46,13 +46,24 @@ globalThis.fetch = async (input, init) => {
       { keyword: 'unmeasured question', avgMonthlySearches: null, averageCpcMicros: null, competitionIndex: null }
     ] });
   }
-  if (urlString.startsWith('https://api.search.brave.com/')) {
+  if (urlString === 'https://serp-proxy.example.test') {
     serpCalls++;
-    return Response.json({ web: { results: [
-      { title: 'Pen list', url: pageUrl, description: 'Useful pens' },
-      { title: 'Unavailable source', url: 'https://8.8.8.8/missing', description: 'A source' },
-      { title: 'Private result', url: 'http://127.0.0.1/private', description: 'Must not be fetched' }
-    ] } });
+    const request = JSON.parse(String(init?.body ?? '{}'));
+    return Response.json({
+      query: request.query,
+      country: request.country ?? null,
+      language: request.language ?? null,
+      results: [
+        { position: 1, title: 'Pen list', link: pageUrl, domain: '8.8.8.8', snippet: 'Useful pens' },
+        { position: 2, title: 'Unavailable source', link: 'https://8.8.8.8/missing', domain: '8.8.8.8', snippet: 'A source' },
+        { position: 3, title: 'Private result', link: 'http://127.0.0.1/private', domain: '127.0.0.1', snippet: 'Must not be fetched' }
+      ],
+      peopleAlsoAsk: [],
+      relatedSearches: [],
+      provider: request.provider === 'brightdata' ? 'brightdata' : 'reserp',
+      fetchedAt: new Date().toISOString(),
+      warnings: []
+    });
   }
   if (urlString.startsWith('https://8.8.8.8/')) {
     pageReads.push(urlString);
