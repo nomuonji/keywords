@@ -6,7 +6,7 @@ import { researchSessionCreate, researchSessionGet, researchSessionUpdate, serpR
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test@example.com', private_key: privateKey.export({ type: 'pkcs8', format: 'pem' }), project_id: 'test' });
 process.env.FIREBASE_PROJECT_ID = 'test';
-process.env.BRAVE_API_KEY = 'test-brave-key';
+process.env.KEYWORDS_SERP_PROXY_URL = 'https://serp-proxy.example.test';
 process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '4';
 process.env.KEYWORDS_SERP_SOFT_LIMIT = '2';
 process.env.KEYWORDS_SERP_RESERVE = '2';
@@ -15,7 +15,7 @@ process.env.KEYWORDS_SERP_CACHE_TTL_DAYS = '30';
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
-let braveCalls = 0;
+let serpProxyCalls = 0;
 let forceUsageRaceToHardLimit = false;
 const originalFetch = globalThis.fetch;
 
@@ -27,13 +27,24 @@ function docPath(url: URL) { return url.pathname.replace('/v1/', ''); }
 globalThis.fetch = async (input, init) => {
   const urlString = String(input);
   if (urlString === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'test-access-token', expires_in: 3600 });
-  if (urlString.startsWith('https://api.search.brave.com/')) {
-    braveCalls++;
-    const query = new URL(urlString).searchParams.get('q') ?? '';
-    return Response.json({ web: { results: [
-      { title: `${query} 比較`, url: 'https://example.com/compare', description: '2024年版' },
-      { title: 'ユーザー体験談', url: 'https://note.com/example', description: '2019年の記事' }
-    ] } });
+  if (urlString === 'https://serp-proxy.example.test') {
+    serpProxyCalls++;
+    const request = JSON.parse(String(init?.body ?? '{}'));
+    const query = String(request.query ?? '');
+    return Response.json({
+      query,
+      country: request.country ?? null,
+      language: request.language ?? null,
+      results: [
+        { position: 1, title: `${query} 比較`, link: 'https://example.com/compare', domain: 'example.com', snippet: '2024年版' },
+        { position: 2, title: 'ユーザー体験談', link: 'https://note.com/example', domain: 'note.com', snippet: '2019年の記事' }
+      ],
+      peopleAlsoAsk: [],
+      relatedSearches: [],
+      provider: request.provider === 'brightdata' ? 'brightdata' : 'reserp',
+      fetchedAt: new Date().toISOString(),
+      warnings: []
+    });
   }
   assert.ok(urlString.startsWith('https://firestore.googleapis.com/'), `Unexpected network: ${urlString}`);
   const url = new URL(urlString);
@@ -76,22 +87,22 @@ globalThis.fetch = async (input, init) => {
 try {
   const first = await serpResearchCached({ query: '勤怠管理 SaaS 比較', country: 'JP', language: 'ja' });
   assert.equal(first.cache.hit, false);
-  assert.equal(braveCalls, 1);
+  assert.equal(serpProxyCalls, 1);
   assert.equal(first.usage.actualApiRequests, 1);
 
   const cached = await serpResearchCached({ query: '  勤怠管理   SaaS 比較 ', country: 'jp', language: 'JA' });
   assert.equal(cached.cache.hit, true);
-  assert.equal(braveCalls, 1, 'fresh cache must avoid a second SERP API request');
+  assert.equal(serpProxyCalls, 1, 'fresh cache must avoid a second SERP API request');
   assert.equal(cached.usage.cacheHits, 1);
 
   const forced = await serpResearchCached({ query: '勤怠管理 SaaS 比較', country: 'JP', language: 'ja', forceRefresh: true });
   assert.equal(forced.cache.hit, false);
-  assert.equal(braveCalls, 2);
+  assert.equal(serpProxyCalls, 2);
   assert.equal(forced.usage.actualApiRequests, 2);
   assert.equal(forced.usage.forcedApiRequests, 1);
 
   await assert.rejects(serpResearchCached({ query: '経費精算 SaaS 比較', country: 'JP', language: 'ja' }), /soft limit|reserve/i);
-  assert.equal(braveCalls, 2, 'soft-limit rejection must happen before provider call');
+  assert.equal(serpProxyCalls, 2, 'soft-limit rejection must happen before provider call');
   const usage = await serpUsageStatus();
   assert.equal(usage.state, 'soft_limited');
   assert.equal(usage.blockedRequests, 1);
@@ -99,7 +110,7 @@ try {
 
   forceUsageRaceToHardLimit = true;
   await assert.rejects(serpResearchCached({ query: '電子契約 比較', country: 'JP', language: 'ja', forceRefresh: true }), /hard limit/i);
-  assert.equal(braveCalls, 2, 'a losing quota reservation race must re-read the counter and block before the provider call');
+  assert.equal(serpProxyCalls, 2, 'a losing quota reservation race must re-read the counter and block before the provider call');
   const hardLimited = await serpUsageStatus();
   assert.equal(hardLimited.actualApiRequests, 4);
   assert.equal(hardLimited.state, 'hard_limited');
