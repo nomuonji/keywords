@@ -137,3 +137,99 @@ As of 2026-10-02:
   spam/artificial/low-quality link situations that caused, or are likely to cause, a manual action.
 
 Re-verify time-sensitive details from primary sources when actually applying a playbook.
+
+
+## Source tiers and contamination controls
+
+Do not collapse every source into a single "SEO knowledge" pool.
+
+### Tier P — primary / normative
+Use for current platform requirements, documented controls, policies, and product behavior:
+- Google Search Central documentation, documentation updates, Search Central Blog, and Search Status Dashboard.
+- Bing Webmaster documentation/blog for Bing-specific claims.
+
+Primary does not mean exhaustive. Absence from documentation does not prove a mechanism does not exist, and a documented best practice does not reveal an effect size.
+
+### Tier E — controlled experiments
+Use to generate concrete hypotheses worth testing:
+- SearchPilot SEO split-test case studies.
+
+A controlled test is stronger than anecdote for that tested context, but it is still site/template/query/market specific. Preserve negative and inconclusive tests. Never turn one published case study into a universal evaluator rule.
+
+### Tier O — observational research
+Use for market/SERP patterns and anomaly detection:
+- Ahrefs Data & Studies.
+- SISTRIX SERP/update analysis.
+
+Always save sample/market/time/methodology. Correlation, visibility movement, citation frequency, CTR studies, and vendor metrics are not ranking-causality evidence.
+
+### Tier C — curation / discovery
+Use only to discover candidate resources:
+- LearningSEO.io.
+
+A curated listing is not evidence. Follow through to the original source and reclassify it before using any claim.
+
+### Tier R — restricted research references
+Material about patents, leaked APIs, inferred ranking systems, or unofficial reverse engineering belongs here. It can help formulate mechanisms to investigate, but it must not directly produce operational evaluator rules.
+
+Promotion requires:
+1. exact provenance and date;
+2. explicit statement of what the source actually proves;
+3. explicit limitations / alternative explanations;
+4. target language, market, and jurisdiction applicability;
+5. independent confirmation appropriate to the claim;
+6. a falsifiable site-level observation or pilot when the recommendation is causal.
+
+## Reviewed external agent skills (2026-10-02)
+
+### Missing Intent — google-leak-patents-seo
+**Status: restricted research reference only; do not install into the production planner.**
+
+Useful:
+- explicitly distinguishes leak-field existence from function;
+- explicitly says patents describe methods, not deployment;
+- explicitly says no weights leaked;
+- encourages source-backed, uncertainty-labeled claims.
+
+Risk:
+- its cross-linking/classification of leaked fields and patents is original analysis, not Google documentation;
+- field tiers and patent-to-field mappings can create false mechanistic confidence;
+- the 2024 leak is historical and cannot establish current deployment or weight.
+
+Use only when researching a possible mechanism. Never cite its inferred mechanism as a current Google ranking rule without checking the underlying leaked field/patent and stronger current evidence.
+
+### Bhanunamikaze — Agentic-SEO-Skill
+**Status: direct install rejected; scripts/check ideas may be mined selectively.**
+
+Useful:
+- separates confirmed/likely/unknown findings;
+- validates live HTML and technical state with scripts;
+- contains reusable checks for robots, redirects, links, Core Web Vitals, screenshots, schema and hreflang.
+
+Risk / rejected behavior:
+- weighted 0-100 SEO health scoring encourages false precision;
+- E-E-A-T / AI-search scoring can turn qualitative concepts into pseudo-metrics;
+- llms.txt is treated as an AI-readiness check despite current Google guidance saying special AI text files are not required for Google generative Search;
+- large fixed audit pipelines would duplicate the Sites Operator and encourage audit work over material changes.
+
+If a specific script is ever reused, review its implementation and source assumptions independently. Do not import its router, scoring system, or quality gates.
+
+### Luzikov — codex-seo-skill
+**Status: direct install rejected; limited checklist inspiration only.**
+
+Useful:
+- says not to guess when pages are unreachable;
+- distinguishes sample review from a full crawl;
+- includes technical/codebase checks.
+
+Risk / rejected behavior:
+- checks llms.txt as a default AI-search item;
+- arbitrary hard thresholds for location-page counts;
+- generic audit priority rules and checklists overlap the current system and can become unverified gates.
+
+### eigent-ai seo-audit and similar lightweight SEO skills
+**Status: no operational value over the current stack.**
+They are generic checklist routers and add little beyond existing Sites Operator / Keywords Operator behavior. Do not add them merely because they use the SKILL.md format.
+
+### AI-search audit skills
+Prefer current official Google generative-AI Search guidance and actual Search Console generative-AI reporting over third-party "GEO/AEO readiness scores". A third-party audit may contribute a concrete crawlability, answerability, entity-clarity, or proof question, but not an AI-citation guarantee or score.
