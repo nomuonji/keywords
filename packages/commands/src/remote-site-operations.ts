@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
-import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
+import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
 
@@ -22,6 +22,8 @@ const articleStatus = z.enum(['draft', 'published', 'paused', 'archived']);
 const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 'cta_ui', 'freshness', 'indexing', 'new_article', 'other']);
 const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cancelled']);
 const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened', 'inconclusive']);
+const siteDirectionStatus = z.enum(['open', 'monitor', 'decided', 'rejected', 'superseded']);
+const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', 'content_scope', 'monetization_model', 'page_family', 'other']);
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
@@ -87,6 +89,45 @@ export const metricSnapshotListShape = {
   limit: z.number().int().min(1).max(100).default(50)
 };
 
+export const siteDirectionGetShape = { id: entityId };
+export const siteDirectionCreateShape = {
+  id: entityId.optional(),
+  siteId: entityId,
+  status: z.enum(['open', 'monitor']).default('open'),
+  topic: siteDirectionTopic,
+  title: z.string().trim().min(1).max(300),
+  observation: note.refine(value => value.trim().length > 0),
+  evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
+  uncertainty: note.default(''),
+  proposedOptions: z.array(z.string().trim().min(1).max(1200)).max(10).default([]),
+  decisionQuestion: z.string().trim().min(1).max(2000),
+  constraints: z.array(z.string().trim().min(1).max(1200)).max(20).default([]),
+  dedupeKey: z.string().trim().min(1).max(300),
+  openedBy: z.string().trim().min(1).max(120).default('chatgpt_planner')
+};
+const siteDirectionCreateSchema = z.object(siteDirectionCreateShape).strict();
+export const siteDirectionListShape = {
+  siteId: entityId.optional(),
+  status: siteDirectionStatus.optional(),
+  topic: siteDirectionTopic.optional(),
+  limit: z.number().int().min(1).max(100).default(50)
+};
+export const siteDirectionUpdateShape = {
+  id: entityId,
+  expectedRevision: z.number().int().min(1),
+  status: siteDirectionStatus.optional(),
+  observation: note.optional(),
+  evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30).optional(),
+  uncertainty: note.optional(),
+  proposedOptions: z.array(z.string().trim().min(1).max(1200)).max(10).optional(),
+  decisionQuestion: z.string().trim().min(1).max(2000).optional(),
+  decision: note.optional(),
+  decisionRationale: note.optional(),
+  constraints: z.array(z.string().trim().min(1).max(1200)).max(20).optional(),
+  appendHistory: historyEntry.optional()
+};
+const siteDirectionUpdateSchema = z.object(siteDirectionUpdateShape).strict();
+
 export const seoTaskGetShape = { id: entityId };
 export const seoTaskCreateShape = {
   id: entityId.optional(),
@@ -99,6 +140,7 @@ export const seoTaskCreateShape = {
   title: z.string().trim().min(1).max(300),
   rationale: note.refine(value => value.trim().length > 0),
   evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
+  directionId: entityId.nullable().optional(),
   evaluation: seoTaskEvaluationShape.optional(),
   research: z.object({ sessionId: entityId, candidateId: entityId, candidateRevision: z.number().int().positive() }).strict().optional(),
   dedupeKey: z.string().trim().min(1).max(300),
@@ -339,7 +381,7 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'seoTasks'],
+    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks'],
     analyticsStoragePolicy: {
       rawMeasurementRows: 'ephemeral_sqlite_only',
       planningDigest: 'one_overwrite_document_per_site',
@@ -535,6 +577,131 @@ export async function metricSnapshotList(input: unknown) {
   return { items };
 }
 
+const normalizeSiteDirection = (direction: SiteDirectionRecord): SiteDirectionRecord => ({
+  ...direction,
+  status: direction.status ?? 'open',
+  uncertainty: direction.uncertainty ?? '',
+  proposedOptions: direction.proposedOptions ?? [],
+  decision: direction.decision ?? '',
+  decisionRationale: direction.decisionRationale ?? '',
+  constraints: direction.constraints ?? [],
+  history: direction.history ?? [],
+  decidedAt: direction.decidedAt ?? null
+});
+
+export async function siteDirectionGet(input: unknown) {
+  const args = z.object(siteDirectionGetShape).strict().parse(input);
+  const doc = await readDocument('siteDirections', args.id);
+  if (!doc) throw new Error('Site direction record not found');
+  return normalizeSiteDirection(decoded(doc) as SiteDirectionRecord);
+}
+
+export async function siteDirectionCreate(input: unknown) {
+  const args = siteDirectionCreateSchema.parse(input);
+  await ensureSite(args.siteId);
+  const existing = (await queryBySite('siteDirections', args.siteId, 1000)).map(item => normalizeSiteDirection(item as SiteDirectionRecord));
+  const duplicate = existing.find(direction =>
+    direction.dedupeKey === args.dedupeKey &&
+    ['open', 'monitor'].includes(direction.status)
+  );
+  if (duplicate) throw new Error(`Open site direction already exists for dedupeKey: ${duplicate.id}`);
+  const idValue = args.id ?? randomUUID();
+  if (await readDocument('siteDirections', idValue)) throw new Error('Site direction record already exists');
+  const t = now();
+  const record: SiteDirectionRecord = {
+    id: idValue,
+    siteId: args.siteId,
+    status: args.status,
+    topic: args.topic,
+    title: args.title,
+    observation: args.observation,
+    evidence: args.evidence,
+    uncertainty: args.uncertainty,
+    proposedOptions: args.proposedOptions,
+    decisionQuestion: args.decisionQuestion,
+    decision: '',
+    decisionRationale: '',
+    constraints: args.constraints,
+    dedupeKey: args.dedupeKey,
+    history: [{ at: t, actor: args.openedBy, event: args.status === 'monitor' ? 'monitoring_started' : 'discussion_opened', detail: args.decisionQuestion }],
+    openedBy: args.openedBy,
+    openedAt: t,
+    decidedAt: null,
+    revision: 1,
+    createdAt: t,
+    updatedAt: t
+  };
+  const runId = await auditWrite('site_direction_create', record.id, { __write: { collection: 'siteDirections', id: record.id, fields: record } }, null);
+  return { ...record, runId };
+}
+
+export async function siteDirectionList(input: unknown = {}) {
+  const args = z.object(siteDirectionListShape).strict().parse(input);
+  let items: SiteDirectionRecord[];
+  if (args.siteId) {
+    await ensureSite(args.siteId);
+    items = (await queryBySite('siteDirections', args.siteId, 1000)).map(item => normalizeSiteDirection(item as SiteDirectionRecord));
+  } else {
+    const listed = await listDocuments('siteDirections', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
+    items = (listed.documents ?? []).map((doc: any) => normalizeSiteDirection(decoded(doc) as SiteDirectionRecord));
+  }
+  items = items
+    .filter(direction => (!args.status || direction.status === args.status) && (!args.topic || direction.topic === args.topic))
+    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+    .slice(0, args.limit);
+  return { items };
+}
+
+export async function siteDirectionUpdate(input: unknown) {
+  const args = siteDirectionUpdateSchema.parse(input);
+  const previous = await readDocument('siteDirections', args.id);
+  if (!previous) throw new Error('Site direction record not found');
+  const current = normalizeSiteDirection(decoded(previous) as SiteDirectionRecord);
+  if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current site direction and reapply the edit');
+  if (['superseded'].includes(current.status)) throw new Error('Superseded site direction records are immutable');
+  if (['decided', 'rejected'].includes(current.status) && args.status && args.status !== 'superseded') {
+    throw new Error('Decided/rejected site direction records may only transition to superseded');
+  }
+  const t = now();
+  const { id: _id, expectedRevision, appendHistory, ...patch } = args;
+  const nextStatus = patch.status ?? current.status;
+  const record: SiteDirectionRecord = {
+    ...current,
+    ...Object.fromEntries(Object.entries(patch).filter(([, item]) => item !== undefined)),
+    status: nextStatus,
+    revision: expectedRevision + 1,
+    updatedAt: t
+  };
+  if (nextStatus === 'decided') {
+    if (!record.decision.trim()) throw new Error('decided site direction requires decision');
+    if (!record.decisionRationale.trim()) throw new Error('decided site direction requires decisionRationale');
+    record.decidedAt = current.decidedAt ?? t;
+  }
+  if (nextStatus === 'rejected' && !record.decisionRationale.trim()) {
+    throw new Error('rejected site direction requires decisionRationale');
+  }
+  const history = [...(current.history ?? [])];
+  if (appendHistory) history.push({ ...appendHistory, at: appendHistory.at ?? t });
+  if (nextStatus !== current.status) {
+    history.push({
+      at: t,
+      actor: appendHistory?.actor ?? 'site_direction_update',
+      event: `status_${nextStatus}`,
+      detail: nextStatus === 'decided' ? record.decision : record.decisionRationale || record.decisionQuestion
+    });
+  }
+  record.history = history.slice(-100);
+  const runId = await auditWrite('site_direction_update', record.id, { __write: { collection: 'siteDirections', id: record.id, fields: record } }, previous);
+  return { ...record, runId };
+}
+
+async function ensureDecidedDirection(directionId: string, siteId: string) {
+  const direction = await siteDirectionGet({ id: directionId });
+  if (direction.siteId !== siteId) throw new Error('Site direction does not belong to the requested site');
+  if (direction.status !== 'decided') throw new Error('SEO task directionId must reference a decided site direction');
+  return direction;
+}
+
 const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
   // The absence of a URL is not evidence that a public check is unnecessary.
   // An explicit human decision must set not_required.
@@ -547,6 +714,7 @@ const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
 
 const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   ...task,
+  directionId: task.directionId ?? null,
   evaluation: task.evaluation ?? null,
   research: task.research ?? null,
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task)
@@ -572,6 +740,7 @@ export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
   const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
   await ensureSite(args.siteId);
+  if (args.directionId) await ensureDecidedDirection(args.directionId, args.siteId);
   const research = args.research ? await themeCandidateForTask(args.research.sessionId, args.research.candidateId, args.research.candidateRevision, args.siteId) : null;
   for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
   const siteLevelExpansion = ['data_expansion', 'schema_expansion'].includes(args.taskType);
@@ -599,6 +768,7 @@ export async function seoTaskCreate(input: unknown) {
     title: args.title,
     rationale: args.rationale,
     evidence: args.evidence,
+    directionId: args.directionId ?? null,
     evaluation,
     research,
     dedupeKey: args.dedupeKey,
