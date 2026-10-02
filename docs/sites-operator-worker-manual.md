@@ -71,6 +71,22 @@ Validate the **change itself** using the repository's available mechanisms:
 
 Never claim a check ran when it did not.
 
+### Direction-linked implementation
+
+A Task may carry `directionId` when it materially implements a human-decided site strategy.
+
+Before changing code/content for such a Task:
+
+1. read the exact Site Direction record;
+2. confirm it belongs to the Task's `siteId`;
+3. confirm status is `decided`;
+4. treat `decision` and `constraints` as implementation boundaries;
+5. record the direction ID in Task history/summary when delivering the change.
+
+If the direction is open, monitor, rejected or superseded, do not infer authorization from the Task text alone. Stop the strategic implementation and report the mismatch so Planner/human can reconcile the records.
+
+A decided Direction record is immutable. A later strategic change should be a new record, with the old one marked superseded, preserving why earlier Tasks were issued.
+
 ### Expansion task delivery
 
 Expansion tasks are implementation work, not research-only assignments.
