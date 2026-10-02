@@ -10,6 +10,10 @@ import {
   siteRegistryGet,
   siteRegistryResolve,
   siteRegistrySave,
+  siteDirectionCreate,
+  siteDirectionGet,
+  siteDirectionList,
+  siteDirectionUpdate,
   seoTaskCreate,
   seoTaskGet,
   seoTaskList,
@@ -59,7 +63,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json(rows);
   }
 
-  if (/\/(sites|articles|metricSnapshots|optimizationEvents|seoTasks)$/.test(path)) {
+  if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
@@ -183,11 +187,57 @@ try {
   assert.equal(verifiedTask.deploymentVerification.status, 'verified');
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'verified' })).items.length, 1);
 
+  const openDirection = await siteDirectionCreate({
+    id: 'direction-a',
+    siteId: 'site-a',
+    topic: 'content_scope',
+    title: 'Decide whether comparison pages belong in the site',
+    observation: 'The proposed comparison family changes the site from a pure database into a broader decision product.',
+    evidence: ['Current siteShape is database and no comparison page family exists yet.'],
+    uncertainty: 'Search demand and long-term scope are not yet settled.',
+    proposedOptions: ['Keep database-only scope', 'Add bounded comparison pages'],
+    decisionQuestion: 'Should the site add a bounded comparison page family?',
+    constraints: ['Do not create thin filter permutations'],
+    dedupeKey: 'site-a:direction:comparison-scope',
+    openedBy: 'site-operations-smoke'
+  });
+  assert.equal(openDirection.status, 'open');
+  assert.equal((await siteDirectionGet({ id: 'direction-a' })).siteId, 'site-a');
+  assert.equal((await siteDirectionList({ siteId: 'site-a', status: 'open' })).items.length, 1);
+
+  await assert.rejects(seoTaskCreate({
+    id: 'seo-direction-too-early',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/compare'],
+    repo: 'nomuonji/site-a',
+    taskType: 'site_expansion',
+    title: 'Premature direction implementation',
+    rationale: 'Should not be allowed until human decision.',
+    evidence: ['Direction is still open.'],
+    directionId: openDirection.id,
+    dedupeKey: 'site-a:premature-direction'
+  }), /must reference a decided site direction/);
+
+  const decidedDirection = await siteDirectionUpdate({
+    id: openDirection.id,
+    expectedRevision: openDirection.revision,
+    status: 'decided',
+    decision: 'Add a bounded comparison page family.',
+    decisionRationale: 'It improves decision support without changing the canonical database source of truth.',
+    constraints: ['Only source-backed comparisons', 'No arbitrary filter permutations'],
+    appendHistory: { actor: 'human-smoke', event: 'human_decision', detail: 'Approved bounded comparison family.' }
+  });
+  assert.equal(decidedDirection.status, 'decided');
+  assert.ok(decidedDirection.decidedAt);
+  assert.match(decidedDirection.history.map((x:any)=>x.event).join(','), /human_decision/);
+  assert.equal((await siteDirectionList({ siteId: 'site-a', status: 'decided' })).items.length, 1);
+
   const siteExpansionTask = await seoTaskCreate({
     id: 'seo-expand-site', siteId: 'site-a', targetUrls: ['https://example.com/compare'],
     repo: 'nomuonji/site-a', taskType: 'site_expansion', title: 'Add decision comparison experience',
     rationale: 'Observed user need is better served by a bounded comparison experience than another article.',
     evidence: ['Current repository has no comparison route; task defines one bounded useful experience.'],
+    directionId: decidedDirection.id,
     dedupeKey: 'site-a:site-expansion:comparison', createdBy: 'site-operations-smoke'
   });
   const dataExpansionTask = await seoTaskCreate({
@@ -205,6 +255,7 @@ try {
     dedupeKey: 'site-a:schema-expansion:eligibility', createdBy: 'site-operations-smoke'
   });
   assert.equal(siteExpansionTask.taskType, 'site_expansion');
+  assert.equal(siteExpansionTask.directionId, decidedDirection.id);
   assert.equal(dataExpansionTask.taskType, 'data_expansion');
   assert.equal(schemaExpansionTask.taskType, 'schema_expansion');
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'site_expansion' })).items.length, 1);
@@ -329,11 +380,15 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 27);
+  assert.equal(listing.tools.length, 31);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_get'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_create'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_update'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_site_status'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_deployment_logs'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
@@ -343,7 +398,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.14.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.15.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -353,10 +408,12 @@ try {
   assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRepository, 2);
-  assert.equal(agentPolicy.structuredContent.runContract.directionReview.mode, 'report_only_human_gate');
+  assert.equal(agentPolicy.structuredContent.runContract.directionReview.mode, 'persistent_human_gate');
   assert.match(agentPolicy.structuredContent.runContract.directionReview.majorChangeGate, /No Worker task/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /discussion_required/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /do not deepen/i);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /site_direction_create/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /directionId/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /6 distinct active managed sites/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /independently verifiable factual/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
@@ -390,7 +447,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.11.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.12.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.0.0');
 
   console.log('site operations smoke passed: evaluator provenance, versioned evidence registry, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
