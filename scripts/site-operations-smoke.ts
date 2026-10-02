@@ -403,7 +403,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.15.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.16.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -425,12 +425,18 @@ try {
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
-  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.0.0');
+  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.1.0');
   assert.match(agentPolicy.structuredContent.evaluationRegistry.scoring, /No composite SEO score/);
   const evaluatorList = await call('tools/call', { name: 'seo_evaluator_list', arguments: {} });
-  assert.equal(evaluatorList.structuredContent.registryVersion, '1.0.0');
+  assert.equal(evaluatorList.structuredContent.registryVersion, '1.1.0');
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'content_incremental_value' && item.status === 'active'));
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'scaled_content_operation_risk' && item.status === 'experimental'));
+  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'database_indexation_quality' && item.status === 'active'));
+  const databaseIndexation = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'database_indexation_quality' } });
+  assert.equal(databaseIndexation.structuredContent.evaluator.version, '1.0.0');
+  assert.equal(databaseIndexation.structuredContent.evaluator.inference.confidence, 'high');
+  assert.ok(databaseIndexation.structuredContent.evidence.some((source: any) => source.id === 'google_faceted_navigation_guidance'));
+  assert.match(JSON.stringify(databaseIndexation.structuredContent), /indexable URL surface/i);
   const scaledRisk = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'scaled_content_operation_risk' } });
   assert.equal(scaledRisk.structuredContent.evaluator.version, '1.0.0');
   assert.equal(scaledRisk.structuredContent.evaluator.inference.confidence, 'low_to_medium');
@@ -453,7 +459,7 @@ try {
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
   assert.equal(oauthStatus.structuredContent.serverVersion, '0.12.0');
-  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.0.0');
+  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, versioned evidence registry, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
