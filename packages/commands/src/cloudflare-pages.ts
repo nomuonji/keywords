@@ -102,33 +102,49 @@ async function resolveProject(site: SiteTarget) {
   if (!site.repository) throw new Error(`Site ${site.id} has no repository in the Sites Operator registry`);
   const [repoOwner, repoName] = site.repository.split('/');
   if (!repoOwner || !repoName) throw new Error(`Site ${site.id} has an invalid repository identity: ${site.repository}`);
-
-  let project: any;
-  try {
-    project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(repoName)}`)).result;
-  } catch (error: any) {
-    throw new Error(`Cloudflare Pages project could not be resolved directly from repository name ${repoName}. If the Pages project name differs from the GitHub repository name, add an explicit mapping before using diagnostics. Cause: ${error?.message ?? String(error)}`);
-  }
-
-  const source = project?.source?.config;
-  const sourceMatches = String(source?.owner ?? '').toLowerCase() === repoOwner.toLowerCase()
-    && String(source?.repo_name ?? '').toLowerCase() === repoName.toLowerCase();
-
   const productionHost = normalizedHost(site.productionUrl);
-  const projectHosts = [
-    ...(Array.isArray(project?.domains) ? project.domains : []),
-    project?.subdomain
-  ].map(normalizedHost).filter(Boolean);
-  const domainMatches = Boolean(productionHost && projectHosts.includes(productionHost));
 
-  if (!sourceMatches && !domainMatches) {
-    throw new Error(`Cloudflare Pages project ${project?.name ?? repoName} did not match registered repository ${site.repository} or production host ${productionHost ?? 'none'}; refusing an ambiguous diagnostic lookup`);
-  }
-
-  return {
-    project,
-    resolution: sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const
+  const matchesSite = (project: any) => {
+    const source = project?.source?.config;
+    const sourceMatches = String(source?.owner ?? '').toLowerCase() === repoOwner.toLowerCase()
+      && String(source?.repo_name ?? '').toLowerCase() === repoName.toLowerCase();
+    const projectHosts = [
+      ...(Array.isArray(project?.domains) ? project.domains : []),
+      project?.subdomain
+    ].map(normalizedHost).filter(Boolean);
+    const domainMatches = Boolean(productionHost && projectHosts.includes(productionHost));
+    return { sourceMatches, domainMatches };
   };
+
+  try {
+    const project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(repoName)}`)).result;
+    const match = matchesSite(project);
+    if (!match.sourceMatches && !match.domainMatches) {
+      throw new Error(`Cloudflare Pages project ${project?.name ?? repoName} did not match registered repository ${site.repository} or production host ${productionHost ?? 'none'}`);
+    }
+    return {
+      project,
+      resolution: match.sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const
+    };
+  } catch (directError: any) {
+    const envelope = await cloudflare<any[]>('/pages/projects');
+    const projects = Array.isArray(envelope.result) ? envelope.result : [];
+    const matches = projects
+      .map(project => ({ project, ...matchesSite(project) }))
+      .filter(item => item.sourceMatches || item.domainMatches);
+
+    if (matches.length === 1) {
+      const match = matches[0];
+      return {
+        project: match.project,
+        resolution: match.sourceMatches ? 'repository_list_exact' as const : 'production_domain_list_exact' as const
+      };
+    }
+    if (matches.length > 1) {
+      throw new Error(`Multiple Cloudflare Pages projects matched registered site ${site.id}; refusing an ambiguous diagnostic lookup`);
+    }
+    throw new Error(`Cloudflare Pages project could not be resolved for ${site.repository} or ${productionHost ?? 'no production host'}. Direct lookup failed: ${directError?.message ?? String(directError)}`);
+  }
 }
 
 function safeProject(project: any) {
