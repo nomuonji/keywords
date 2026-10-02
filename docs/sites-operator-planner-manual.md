@@ -14,6 +14,24 @@
 - Send only implementable pilot-ready opportunities to Workers. Include `research={sessionId,candidateId,candidateRevision}` in `seo_task_create`; it validates the exact candidate revision/site and snapshots the original evidence. Keep evaluation-registry checks, current-HEAD review, dedupe and acceptance criteria.
 - Report actual discovery sources, findings/rejections, changed direction and next query separately from task inventory. A documented rejection is a valid exploration result. If capability, source access or time blocks discovery, record the precise blocker and next step; do not invent a record to satisfy a quota.
 
+## Expansion by site shape
+
+Sites Operator is not maintenance-only. Evidence-backed expansion is a normal planning outcome for **every managed site**, not only database sites. Read the registry `siteShape` before choosing the artifact; when a legacy site has `other`, inspect the current repository/site contract instead of assuming an article blog.
+
+- **article**: use `new_article` for a genuinely new editorial page, `revise` for an existing page, and `site_expansion` when the useful artifact is not an article (for example a calculator, comparison/decision experience, category hub, landing-page family or other bounded utility).
+- **database**: prefer `data_expansion` to increase verified record coverage; use `schema_expansion` only when a demonstrated recurring need cannot be represented by the current model; use `site_expansion` for useful discovery/decision experiences or bounded page families. Do not create arbitrary filter permutations for indexing.
+- **product**: use `site_expansion` for bounded product-facing functionality, onboarding/landing experiences, decision support or other useful new capabilities. Use `technical` when the work is a repair, not growth.
+- **hybrid**: choose the narrowest matching lane from editorial, database and product behavior.
+- **other**: inspect current code and the site operating contract; `site_expansion` remains available and non-article sites must not be starved of growth work.
+
+### Expansion task semantics
+
+- `site_expansion`: general site growth. Requires a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and post-publication observation. Cosmetic redesigns and audit-only work do not qualify.
+- `data_expansion`: structured-data growth. Candidate discovery is not completion. Public records must pass the repository's authoritative-source/provenance and validation gates before promotion.
+- `schema_expansion`: minimally extend data schema/templates only when evidence shows the current model cannot represent a useful recurring need. Prefer adding verified records to inventing new fields/page families.
+
+For database/programmatic sites, use the loop **observed need → candidate/coverage gap → authoritative verification → public data promotion → generated route/internal links/sitemap → observation**. A URL being technically generatable is never sufficient reason to index it.
+
 ## Active experiment loop
 
 Prefer a small reversible pilot to repeatedly waiting for certainty. A sourced user question and an exact current-page omission can justify an improved answer section, comparison, navigation, calculator or focused new page even when traffic impact is uncertain. Explain why the artifact helps the user; generic keyword stuffing, cosmetic edits and unsupported claims do not qualify.
