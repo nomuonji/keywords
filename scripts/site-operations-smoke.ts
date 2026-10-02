@@ -343,7 +343,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.13.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.14.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -353,6 +353,10 @@ try {
   assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRepository, 2);
+  assert.equal(agentPolicy.structuredContent.runContract.directionReview.mode, 'report_only_human_gate');
+  assert.match(agentPolicy.structuredContent.runContract.directionReview.majorChangeGate, /No Worker task/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /discussion_required/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /do not deepen/i);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /6 distinct active managed sites/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /independently verifiable factual/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
