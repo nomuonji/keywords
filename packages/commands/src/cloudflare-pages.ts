@@ -116,17 +116,27 @@ async function resolveProject(site: SiteTarget) {
     return { sourceMatches, domainMatches };
   };
 
-  try {
-    const project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(repoName)}`)).result;
-    const match = matchesSite(project);
-    if (!match.sourceMatches && !match.domainMatches) {
-      throw new Error(`Cloudflare Pages project ${project?.name ?? repoName} did not match registered repository ${site.repository} or production host ${productionHost ?? 'none'}`);
+  let directError: any = null;
+  const directCandidates = [...new Set([repoName, repoName.replace(/_/g, '-')])];
+  for (const projectName of directCandidates) {
+    try {
+      const project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(projectName)}`)).result;
+      const match = matchesSite(project);
+      if (!match.sourceMatches && !match.domainMatches) {
+        throw new Error(`Cloudflare Pages project ${project?.name ?? projectName} did not match registered repository ${site.repository} or production host ${productionHost ?? 'none'}`);
+      }
+      return {
+        project,
+        resolution: projectName === repoName
+          ? (match.sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const)
+          : (match.sourceMatches ? 'repository_normalized_project_name_exact' as const : 'production_domain_normalized_project_name_exact' as const)
+      };
+    } catch (error: any) {
+      directError = error;
     }
-    return {
-      project,
-      resolution: match.sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const
-    };
-  } catch (directError: any) {
+  }
+
+  {
     const envelope = await cloudflare<any[]>('/pages/projects');
     const projects = Array.isArray(envelope.result) ? envelope.result : [];
     const matches = projects
