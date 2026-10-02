@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.13.0';
+export const SEO_AGENT_POLICY_VERSION = '1.14.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -31,6 +31,20 @@ const shared = {
   managedScope: {
     source: 'Sites Operator active site registry only.',
     rule: 'A site that is visible in site-monitor but absent/paused/archived in Sites Operator is not agent-managed and must not receive new SEO tasks from this workflow.'
+  },
+  directionReview: {
+    principle: 'Planner must detect material strategic mismatch, but major site-direction changes require human discussion before implementation.',
+    modes: ['clear', 'monitor', 'discussion_required'],
+    majorChangeExamples: [
+      'changing the primary audience or site positioning',
+      'merging or splitting sites/domains',
+      'pausing/archiving a site or deindexing/deleting a broad page family',
+      'moving substantial content between repositories or brands',
+      'replacing the monetization/editorial model',
+      'sitewide taxonomy/rebrand changes that alter the product identity'
+    ],
+    behavior: 'Do not create Worker implementation tasks for a discussion_required direction change. Report the concern with evidence and a concrete decision question. Continue bounded work that does not deepen the disputed direction.',
+    queueRule: 'Direction-review findings do not count toward ready inventory and must not be converted into fake maintenance tasks to satisfy the queue target.'
   },
   expansion: {
     principle: 'Managed sites are not maintenance-only. Planner should expand useful site value when evidence supports it, regardless of site shape.',
@@ -62,6 +76,9 @@ const plannerInstructions = [
   'Maintain an operating target of 8 unclaimed actionable ready/legacy issued tasks across active managed sites. When below target, aim for 3–5 genuinely justified NEW ready records per run (hard max 5, max 2 per repository). Record count is a capacity target, not permission to generate fake or redundant work.',
   'When a repair/inventory planning pass is warranted, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if available before concluding no viable repair. Rejecting one discovery candidate or failing one source is not a portfolio stop condition. Pivot to other sites, existing-page answer improvements or bounded experiments; continue until the buffer is supplied, the available run time is genuinely exhausted or a portfolio-wide capability blocker prevents progress. Save valid implementation tasks promptly.',
   'Read active site registry and Sites Operator compact digests. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero. When analytics are insufficient, still search for independently verifiable factual, usability or technical defects supported by current HEAD and authoritative sources. Do not manufacture traffic claims.',
+  'Perform a bounded portfolio-direction triage while reading the registry/digests/current repository contracts. Look for structural warning signs such as large inventories with almost no observed search visibility, topic/audience contamination, multiple managed sites competing for nearly the same intent, monetization-first page structures with weak user decision value, or a repository concept that conflicts with its current content. These are diagnosis signals, not automatic verdicts.',
+  'Classify structural concerns as clear, monitor or discussion_required. A major direction change is discussion_required when the proposed fix would change the primary audience/positioning, merge or split sites/domains, move substantial content across brands/repos, pause/archive a site, broadly delete/noindex a page family, or replace the monetization/editorial model. Do NOT create Worker tasks that perform those changes. Report evidence, uncertainty, plausible options and the exact human decision question instead.',
+  'When a site is discussion_required, do not deepen the disputed direction merely to fill the ready queue: avoid new content/data/page-family expansion that assumes the contested strategy is correct. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected parts of the site or other sites. Direction-review findings never count toward the ready-task inventory.',
   'Read each active site\'s siteShape before choosing the artifact. Expansion is a first-class Planner outcome for every shape, not only databases: article sites may grow with new_article or site_expansion; product/other sites may receive site_expansion; database sites may receive data_expansion, schema_expansion or site_expansion. Do not force every opportunity into an article task.',
   'For site_expansion, require a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and a post-publication observation plan. Examples include calculators, comparison/decision pages, category hubs, navigation experiences, landing-page families and small useful features. Cosmetic redesign or an audit is not expansion.',
   'For database sites, treat verified data coverage as product and SEO work. data_expansion may promote candidates only after authoritative-source verification and repository validation gates. schema_expansion is justified only when evidence shows the existing schema cannot represent a useful recurring need; prefer adding verified records to inventing fields or page families. Never index arbitrary filter combinations just because generation is possible.',
@@ -75,6 +92,7 @@ const plannerInstructions = [
   'For analytics-dependent revisions require a concrete observed search/organic signal and a verified page gap for a claimed performance diagnosis; a reversible experiment may proceed with sourced user-intent evidence, exact current-HEAD improvement, a testable hypothesis and rollback even without adequate traffic data; independently verifiable factual/technical corrections may proceed with current code/primary-source evidence even when page-level metrics are sparse, with the measurement limitation disclosed. Do not prematurely reissue previously changed snippet experiments during cooldown.',
   'Merge requires actual intent overlap and complete redirect/canonical handling. Delete requires complete trailing-90d evidence plus low unique value or verified duplication and should favor merge/redirect. Internal links must name source/target and document a real gap; technical fixes require reproducible validation.',
   'Save only concrete, deduplicated evidence-backed ready tasks using seo_task_create after validating current code and prior work; read each result back with seo_task_get. If an evaluator materially informed the decision, persist its exact evaluatorId/evaluatorVersion, registered evidenceSourceIds, confidence and case-specific inference in the task evaluation field. Keep target-specific proof in evidence. If a legacy proposed task is still valid, promote it instead of cloning it.',
+  'Before creating a site_expansion/new_article/data_expansion/schema_expansion task, check whether it materially commits the site to a direction currently classified discussion_required. If yes, withhold that task and surface it in the direction-review report for human discussion. Do not use revise/technical as a disguised route around this gate.',
   'Zero new implementation tasks is justified only when the ready buffer is supplied, broad cross-site exploration finds no defensible bounded change, actual run time is exhausted after meaningful exploration, or a precise portfolio-wide capability/write blocker prevents progress. One rejected candidate, one unavailable source, missing analytics or waiting for another page to mature is not a reason to stop implementation planning. Task volume must never force a repair or premature promotion. Report implementation inventory separately from discovery evidence, findings, rejections and the next query.',
   'Never create Issues or write code, PRs, or deployments from this Planner. If a mutation is blocked by safety or authorization, do not retry the rejected operation through another route; preserve actual state and report the diagnostic.',
   'Do not treat a planning report, audit-only worker assignment or unsupported numerical score as an SEO material outcome. The actionable task must specify a concrete change and verifiable acceptance criteria.'
@@ -116,6 +134,13 @@ export function seoAgentContext(input: unknown) {
             completion: 'Dated external observations and body comparison saved with a finding/rejection and next query, or an exact capability/source/time blocker. No candidate or task quota.',
             handoff: 'Pilot-ready candidate with explicit siteId and immutable task research snapshot.'
           },
+          directionReview: {
+            mode: 'report_only_human_gate',
+            classifications: ['clear', 'monitor', 'discussion_required'],
+            majorChangeGate: 'No Worker task for primary-positioning changes, site/domain merge/split, broad deletion/noindex/pause, cross-brand migration or monetization/editorial-model replacement until human discussion.',
+            disputedDirectionRule: 'Do not deepen a discussion_required direction with new expansion solely to fill ready inventory; continue unrelated bounded improvements.',
+            reportFields: ['siteId', 'classification', 'evidence', 'uncertainty', 'plausible options', 'decision question']
+          },
           expansion: {
             siteShapeField: 'site_registry.siteShape',
             taskTypes: ['site_expansion', 'data_expansion', 'schema_expansion'],
@@ -138,7 +163,7 @@ export function seoAgentContext(input: unknown) {
           maxNewTasksPerRun: 5,
           maxNewTasksPerRepository: 2,
           successCondition: 'Review due experiments, persist supported decisions and continue active bounded change supply. Complete and report the bounded discovery pass separately. A new implementation action counts when seo_task_create persists an evidence-backed ready Sites Operator record, or a legacy proposed record is revalidated and updated to ready, and seo_task_get readback confirms its current state. No GitHub Issue is required.',
-          report: 'Report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages checked, specific rejected candidates and why, evaluator references when they materially affected accept/reject decisions, and any precise blocker. Report discovery session/candidate/revision, actual sources/pages read, changed search direction, rejected opportunities and next query or blocker separately. Explain a zero batch with portfolio-level evidence/time/capability limits, not a single discovery rejection. Report experiment task IDs, due reviews, publication blockers and retain/expand/revise/revert decisions. No GitHub Issues.',
+          report: 'Report initial/final ready inventory, new ready Task IDs, legacy promotions/supersessions, number of distinct sites/pages checked, specific rejected candidates and why, evaluator references when they materially affected accept/reject decisions, and any precise blocker. Separately report portfolio direction-review findings using clear/monitor/discussion_required; for discussion_required include evidence, uncertainty, plausible options and the exact human decision question, with no implementation task created. Report discovery session/candidate/revision, actual sources/pages read, changed search direction, rejected opportunities and next query or blocker separately. Explain a zero batch with portfolio-level evidence/time/capability limits, not a single discovery rejection. Report experiment task IDs, due reviews, publication blockers and retain/expand/revise/revert decisions. No GitHub Issues.',
           output: 'Supply bounded reversible experiments and review their outcomes; a discovery rejection alone cannot end planning below the buffer target. Persist a bounded discovery outcome even when the implementation buffer is full; no forced candidate promotion. When inventory <8, aim 3-5 new distinct evidence-backed ready Sites Operator task records (hard max 5, max 2 per repo); if fewer qualify, save them and explain the exhaustive relevant search.'
         }
       : {
