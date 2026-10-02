@@ -105,7 +105,7 @@ export type OptimizationEvent = {
 };
 
 
-export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article' | 'data_expansion' | 'schema_expansion';
+export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article' | 'site_expansion' | 'data_expansion' | 'schema_expansion';
 /** ready is the record-only planner handoff; proposed/issued are retained for historical records. */
 export type SeoTaskStatus = 'proposed' | 'ready' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
 export type SeoTaskPriority = 'high' | 'medium' | 'low';
