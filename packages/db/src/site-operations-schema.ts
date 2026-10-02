@@ -107,6 +107,48 @@ export type OptimizationEvent = {
 };
 
 
+export type SiteDirectionStatus = 'open' | 'monitor' | 'decided' | 'rejected' | 'superseded';
+export type SiteDirectionTopic =
+  | 'positioning'
+  | 'audience'
+  | 'consolidation'
+  | 'content_scope'
+  | 'monetization_model'
+  | 'page_family'
+  | 'other';
+
+export type SiteDirectionHistoryEntry = {
+  at: string;
+  actor: string;
+  event: string;
+  detail: string;
+};
+
+export type SiteDirectionRecord = {
+  id: string;
+  siteId: string;
+  status: SiteDirectionStatus;
+  topic: SiteDirectionTopic;
+  title: string;
+  observation: string;
+  evidence: string[];
+  uncertainty: string;
+  proposedOptions: string[];
+  decisionQuestion: string;
+  decision: string;
+  decisionRationale: string;
+  constraints: string[];
+  dedupeKey: string;
+  history: SiteDirectionHistoryEntry[];
+  openedBy: string;
+  openedAt: string;
+  decidedAt: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+
 export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article' | 'site_expansion' | 'data_expansion' | 'schema_expansion';
 /** ready is the record-only planner handoff; proposed/issued are retained for historical records. */
 export type SeoTaskStatus = 'proposed' | 'ready' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';
@@ -150,6 +192,8 @@ export type SeoTaskRecord = {
   title: string;
   rationale: string;
   evidence: string[];
+  /** Optional strategy decision that authorizes/materially constrains this implementation. */
+  directionId: string | null;
   /** Optional provenance for the versioned Sites Operator evaluator used to justify this task. */
   evaluation: SeoTaskEvaluationReference | null;
   /** Exact research revision and evidence snapshot; later candidate edits cannot rewrite the task basis. */
