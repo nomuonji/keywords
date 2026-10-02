@@ -30,6 +30,13 @@ import {
   siteQueryOpportunities,
   siteQueryOpportunitiesShape
 } from '../packages/commands/src/site-operations-analysis.js';
+import {
+  cloudflarePagesDeploymentLogs,
+  cloudflarePagesDeploymentLogsShape,
+  cloudflarePagesRuntimeStatus,
+  cloudflarePagesSiteStatus,
+  cloudflarePagesSiteStatusShape
+} from '../packages/commands/src/cloudflare-pages.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -73,6 +80,9 @@ function runtimeStatus() {
       version: SEO_EVALUATION_REGISTRY_VERSION,
       sourceOfTruth: 'versioned_git_registry'
     },
+    integrations: {
+      cloudflarePages: cloudflarePagesRuntimeStatus()
+    },
     deployment: {
       platform: process.env.VERCEL ? 'vercel' : 'unknown',
       environment: process.env.VERCEL_ENV ?? null,
@@ -93,6 +103,23 @@ function server() {
   mcp.registerTool('site_registry_get', { description: 'Read one real site and its repository, production URL, deployment provider, local project link and analytics identifiers.', inputSchema: siteRegistryGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryGet(input)));
   mcp.registerTool('site_registry_resolve', { description: 'Resolve a real site by explicit localProjectId or exact productionUrl. Returns site=null when no mapping exists; never guesses from names.', inputSchema: siteRegistryResolveShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryResolve(input)));
   mcp.registerTool('site_registry_save', { description: 'Create or update a real site with optimistic revision control. localProjectId explicitly links the Firestore site to the existing SQLite project; this does not create or edit a Site Concept.', inputSchema: siteRegistrySaveShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteRegistrySave(input)));
+  mcp.registerTool('cloudflare_pages_site_status', {
+    description: 'Diagnose publication state for one Sites Operator site through Cloudflare Pages. Resolves the Pages project by exact Git repository first, then exact production domain, and returns safe project/build settings, recent deployment stages, and SEO tasks still pending or failed publication verification. Requires CLOUDFLARE_ACCOUNT_ID and a Pages Read API token; secrets are never returned.',
+    inputSchema: cloudflarePagesSiteStatusShape,
+    annotations: { readOnlyHint: true }
+  }, async input => {
+    const site = await siteRegistryGet({ id: input.siteId });
+    const taskResult = await seoTaskList({ siteId: input.siteId, limit: 100 }) as { items: any[] };
+    return structured(await cloudflarePagesSiteStatus(input, site as any, taskResult.items));
+  });
+  mcp.registerTool('cloudflare_pages_deployment_logs', {
+    description: 'Read Cloudflare Pages build logs for a Sites Operator site. When deploymentId is omitted, selects the most recent failed deployment in the requested environment, falling back to the latest deployment. Returns only safe deployment metadata and bounded log lines; it does not retry or mutate Cloudflare.',
+    inputSchema: cloudflarePagesDeploymentLogsShape,
+    annotations: { readOnlyHint: true }
+  }, async input => {
+    const site = await siteRegistryGet({ id: input.siteId });
+    return structured(await cloudflarePagesDeploymentLogs(input, site as any));
+  });
   mcp.registerTool('site_article_list', { description: 'List article registry records for a real site. Article bodies remain in Git and are never returned from Firestore.', inputSchema: siteArticleListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteArticleList(input)));
   mcp.registerTool('site_article_get', { description: 'Read one article registry record including repoPath/currentCommitSha, optional localPageId/canonicalUrl and keyword links, without article body text.', inputSchema: siteArticleGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteArticleGet(input)));
   mcp.registerTool('site_article_save', { description: 'Create or update an article registry record with optimistic revision control. localPageId/canonicalUrl can explicitly connect local GSC page observations; the Git repository remains the content source of truth.', inputSchema: siteArticleSaveShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteArticleSave(input)));
