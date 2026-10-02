@@ -574,7 +574,10 @@ export async function seoTaskCreate(input: unknown) {
   await ensureSite(args.siteId);
   const research = args.research ? await themeCandidateForTask(args.research.sessionId, args.research.candidateId, args.research.candidateRevision, args.siteId) : null;
   for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
-  if (!args.articleIds.length && !args.targetUrls.length) throw new Error('articleIds or targetUrls is required');
+  const siteLevelExpansion = ['data_expansion', 'schema_expansion'].includes(args.taskType);
+  if (!siteLevelExpansion && !args.articleIds.length && !args.targetUrls.length) {
+    throw new Error('articleIds or targetUrls is required unless taskType is data_expansion or schema_expansion');
+  }
   const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
   const duplicate = existing.find(task =>
     task.dedupeKey === args.dedupeKey &&
