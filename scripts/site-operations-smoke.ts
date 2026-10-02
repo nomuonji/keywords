@@ -71,12 +71,13 @@ globalThis.fetch = async (input, init) => {
 try {
   const site = await siteRegistrySave({
     id: 'site-a', expectedRevision: 0, siteConceptId: 'concept-a', localProjectId: 'local-project-a', name: 'Site A', repository: 'nomuonji/site-a',
-    productionUrl: 'https://example.com', deploymentProvider: 'vercel', ga4PropertyId: 'properties/123',
+    productionUrl: 'https://example.com', deploymentProvider: 'vercel', siteShape: 'database', ga4PropertyId: 'properties/123',
     searchConsoleProperty: 'sc-domain:example.com', status: 'active'
   });
   assert.equal(site.revision, 1);
   assert.equal(site.productionUrl, 'https://example.com/');
   assert.equal((await siteRegistryGet({ id: 'site-a' })).siteConceptId, 'concept-a');
+  assert.equal((await siteRegistryGet({ id: 'site-a' })).siteShape, 'database');
   assert.equal((await siteRegistryResolve({ localProjectId: 'local-project-a' })).site?.id, 'site-a');
   assert.equal((await siteRegistryResolve({ productionUrl: 'https://EXAMPLE.com:443/?utm_source=smoke#fragment' })).site?.id, 'site-a');
   assert.equal((await siteRegistryResolve({ localProjectId: 'missing-project' })).site, null);
@@ -181,6 +182,34 @@ try {
   assert.equal(verifiedTask.status, 'completed');
   assert.equal(verifiedTask.deploymentVerification.status, 'verified');
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'verified' })).items.length, 1);
+
+  const siteExpansionTask = await seoTaskCreate({
+    id: 'seo-expand-site', siteId: 'site-a', targetUrls: ['https://example.com/compare'],
+    repo: 'nomuonji/site-a', taskType: 'site_expansion', title: 'Add decision comparison experience',
+    rationale: 'Observed user need is better served by a bounded comparison experience than another article.',
+    evidence: ['Current repository has no comparison route; task defines one bounded useful experience.'],
+    dedupeKey: 'site-a:site-expansion:comparison', createdBy: 'site-operations-smoke'
+  });
+  const dataExpansionTask = await seoTaskCreate({
+    id: 'seo-expand-data', siteId: 'site-a',
+    repo: 'nomuonji/site-a', taskType: 'data_expansion', title: 'Promote verified database records',
+    rationale: 'Database coverage has a verified gap represented by source-backed candidates.',
+    evidence: ['Authoritative-source verification and repository validation are required before public promotion.'],
+    dedupeKey: 'site-a:data-expansion:verified-records', createdBy: 'site-operations-smoke'
+  });
+  const schemaExpansionTask = await seoTaskCreate({
+    id: 'seo-expand-schema', siteId: 'site-a',
+    repo: 'nomuonji/site-a', taskType: 'schema_expansion', title: 'Represent recurring eligibility requirements',
+    rationale: 'A recurring demonstrated user need cannot be represented by the current structured model.',
+    evidence: ['Task is bounded to schema, validation and generated output required for the demonstrated field.'],
+    dedupeKey: 'site-a:schema-expansion:eligibility', createdBy: 'site-operations-smoke'
+  });
+  assert.equal(siteExpansionTask.taskType, 'site_expansion');
+  assert.equal(dataExpansionTask.taskType, 'data_expansion');
+  assert.equal(schemaExpansionTask.taskType, 'schema_expansion');
+  assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'site_expansion' })).items.length, 1);
+  assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'data_expansion' })).items.length, 1);
+  assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'schema_expansion' })).items.length, 1);
 
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
