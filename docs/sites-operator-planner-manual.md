@@ -45,15 +45,21 @@ Treat the following as `discussion_required` by default:
 - replacing the site's monetization/editorial model;
 - sitewide rebrand/taxonomy changes that alter product identity.
 
-A `discussion_required` item is **not a Worker task** and does not count toward the ready inventory. Report it separately with:
+A `discussion_required` item is **not a Worker task** and does not count toward the ready inventory. It must be persisted as a Site Direction record unless an equivalent open/monitor record already exists.
 
-1. site ID;
-2. concrete evidence;
-3. what is still uncertain;
-4. 2–3 plausible options when useful;
-5. the exact decision that needs human discussion.
+Direction records live in Sites Operator and are the durable bridge between Planner observation and human discussion:
 
-While a direction is under discussion, do not keep publishing more content/data/pages that assume the disputed strategy is correct merely to fill the ready queue. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected areas or other sites.
+- `open`: human decision is required; strategy-dependent expansion is blocked.
+- `monitor`: there is a structural concern, but evidence is not yet sufficient to force a decision; preserve it and gather evidence.
+- `decided`: the human has chosen a direction. Future planning must inherit the decision and constraints.
+- `rejected`: the proposed direction was considered and rejected; do not repeatedly propose it without materially new evidence.
+- `superseded`: a later direction record replaces this one; retain it for history.
+
+Use `site_direction_create` to open/monitor a new issue with concrete evidence, uncertainty, proposed options, a decision question and a stable dedupe key. Use `site_direction_list/get` before planning so a later run does not rediscover the same question. Human discussion may happen in chat or another human-facing surface; once the decision is made, persist it with `site_direction_update(status=decided, decision, decisionRationale, constraints)`.
+
+When implementation materially follows a decided strategic direction, the resulting `seo_task_create` must carry that record's `directionId`. Tasks cannot use an open/monitor/rejected direction as authorization.
+
+While a direction is open/monitor, do not keep publishing more content/data/pages that assume the disputed strategy is correct merely to fill the ready queue. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected areas or other sites.
 
 Do not disguise a strategic change as `revise`, `technical`, `site_expansion` or another ordinary Task to bypass this gate.
 
@@ -100,9 +106,10 @@ Prefer a small reversible pilot to repeatedly waiting for certainty. A sourced u
 1. Read `seo_agent_context(role=planner)` and this manual. Use the live versioned policy whenever there is a conflict.
 2. Read legacy `proposed` records first. Revalidate each against current GitHub HEAD, relevant PRs, the current task inventory and still-available evidence. Transition valid legacy records directly to `ready`, and invalid/delivered ones to `superseded` with specific proof. Do not reattempt historical GitHub Issue issuance.
 3. List `ready`, legacy `issued`, `in_progress`, recently `completed`, and `superseded` tasks. Deduplicate by intervention/target intent as well as `dedupeKey`. A task already being implemented is not a reason to avoid *other* eligible work.
-4. Read active Sites Operator registry and compact planning digests; treat missing/partial/stale measurements as **unknown**, never as zero or as a claim that an intervention failed. Do not query GSC/GA4 directly. Check the latest known changed-at dates and cooldowns.
-5. Read the current evaluation-registry inventory with `seo_evaluator_list`. For strategy-sensitive content decisions, read the relevant exact version with `seo_evaluator_get`. Every `new_article` candidate must consult `content_incremental_value`; consult `scaled_content_operation_risk` when cross-site templating, semantic overlap, or production scale is materially relevant.
-6. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
+4. Read the active Sites Operator registry, then `site_direction_list` for open/monitor/decided strategy state. Reuse existing records rather than reopening the same issue. A decided record is a planning constraint; an open/monitor record blocks expansion that depends on the unresolved choice.
+5. Read compact planning digests; treat missing/partial/stale measurements as **unknown**, never as zero or as a claim that an intervention failed. Do not query GSC/GA4 directly. Check the latest known changed-at dates and cooldowns.
+6. Read the current evaluation-registry inventory with `seo_evaluator_list`. For strategy-sensitive content decisions, read the relevant exact version with `seo_evaluator_get`. Every `new_article` candidate must consult `content_incremental_value`; consult `scaled_content_operation_risk` when cross-site templating, semantic overlap, or production scale is materially relevant.
+7. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
 
 ## Evaluation registry: evidence before inference
 
