@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.14.0';
+export const SEO_AGENT_POLICY_VERSION = '1.15.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -33,8 +33,10 @@ const shared = {
     rule: 'A site that is visible in site-monitor but absent/paused/archived in Sites Operator is not agent-managed and must not receive new SEO tasks from this workflow.'
   },
   directionReview: {
-    principle: 'Planner must detect material strategic mismatch, but major site-direction changes require human discussion before implementation.',
-    modes: ['clear', 'monitor', 'discussion_required'],
+    principle: 'Planner must detect material strategic mismatch, persist unresolved/decided strategy in Site Direction records, and never implement a major direction change before human discussion.',
+    recordSource: 'Sites Operator siteDirections collection via site_direction_get/create/list/update.',
+    statuses: ['open', 'monitor', 'decided', 'rejected', 'superseded'],
+    topics: ['positioning', 'audience', 'consolidation', 'content_scope', 'monetization_model', 'page_family', 'other'],
     majorChangeExamples: [
       'changing the primary audience or site positioning',
       'merging or splitting sites/domains',
@@ -43,8 +45,8 @@ const shared = {
       'replacing the monetization/editorial model',
       'sitewide taxonomy/rebrand changes that alter the product identity'
     ],
-    behavior: 'Do not create Worker implementation tasks for a discussion_required direction change. Report the concern with evidence and a concrete decision question. Continue bounded work that does not deepen the disputed direction.',
-    queueRule: 'Direction-review findings do not count toward ready inventory and must not be converted into fake maintenance tasks to satisfy the queue target.'
+    behavior: 'Read direction records before planning. For a new material concern, persist open/monitor rather than a Worker task. Human discussion resolves it to decided/rejected; later implementation tasks may reference only a decided directionId.',
+    queueRule: 'Direction records do not count toward ready inventory and must not be converted into fake maintenance tasks to satisfy the queue target.'
   },
   expansion: {
     principle: 'Managed sites are not maintenance-only. Planner should expand useful site value when evidence supports it, regardless of site shape.',
@@ -75,9 +77,11 @@ const plannerInstructions = [
   'For implementation derived from discovery, pass research={sessionId,candidateId,candidateRevision} to seo_task_create. The candidate must be pilot_ready and explicitly match siteId; the task snapshots its evidence so future edits cannot change the original rationale. Define a bounded artifact, acceptance criteria and post-publication observation. Discovery and analysis remain Planner work, never an audit/research-only Worker assignment.',
   'Maintain an operating target of 8 unclaimed actionable ready/legacy issued tasks across active managed sites. When below target, aim for 3–5 genuinely justified NEW ready records per run (hard max 5, max 2 per repository). Record count is a capacity target, not permission to generate fake or redundant work.',
   'When a repair/inventory planning pass is warranted, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if available before concluding no viable repair. Rejecting one discovery candidate or failing one source is not a portfolio stop condition. Pivot to other sites, existing-page answer improvements or bounded experiments; continue until the buffer is supplied, the available run time is genuinely exhausted or a portfolio-wide capability blocker prevents progress. Save valid implementation tasks promptly.',
+  'Read active site registry, then site_direction_list for unresolved and decided strategy records, then Sites Operator compact digests. Direction records are durable strategy state: do not rediscover an open question as if new, do not contradict a decided record without opening a new superseding discussion, and do not treat a rejected option as available without materially new evidence. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero.',
+  'When portfolio triage finds a material concern with no equivalent open/monitor direction record, create site_direction_create(status=open or monitor) with concrete evidence, uncertainty, plausible options and an exact decisionQuestion. This is the durable handoff to human discussion and is not a ready SEO task. Read the created record back before reporting it.',
   'Read active site registry and Sites Operator compact digests. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero. When analytics are insufficient, still search for independently verifiable factual, usability or technical defects supported by current HEAD and authoritative sources. Do not manufacture traffic claims.',
   'Perform a bounded portfolio-direction triage while reading the registry/digests/current repository contracts. Look for structural warning signs such as large inventories with almost no observed search visibility, topic/audience contamination, multiple managed sites competing for nearly the same intent, monetization-first page structures with weak user decision value, or a repository concept that conflicts with its current content. These are diagnosis signals, not automatic verdicts.',
-  'Classify structural concerns as clear, monitor or discussion_required. A major direction change is discussion_required when the proposed fix would change the primary audience/positioning, merge or split sites/domains, move substantial content across brands/repos, pause/archive a site, broadly delete/noindex a page family, or replace the monetization/editorial model. Do NOT create Worker tasks that perform those changes. Report evidence, uncertainty, plausible options and the exact human decision question instead.',
+  'Classify structural concerns as clear, monitor or discussion_required. For monitor/discussion_required, persist or reuse a Site Direction record. A major direction change is discussion_required when the proposed fix would change the primary audience/positioning, merge or split sites/domains, move substantial content across brands/repos, pause/archive a site, broadly delete/noindex a page family, or replace the monetization/editorial model. Do NOT create Worker tasks that perform those changes until the corresponding direction record is decided by the human.',
   'When a site is discussion_required, do not deepen the disputed direction merely to fill the ready queue: avoid new content/data/page-family expansion that assumes the contested strategy is correct. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected parts of the site or other sites. Direction-review findings never count toward the ready-task inventory.',
   'Read each active site\'s siteShape before choosing the artifact. Expansion is a first-class Planner outcome for every shape, not only databases: article sites may grow with new_article or site_expansion; product/other sites may receive site_expansion; database sites may receive data_expansion, schema_expansion or site_expansion. Do not force every opportunity into an article task.',
   'For site_expansion, require a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and a post-publication observation plan. Examples include calculators, comparison/decision pages, category hubs, navigation experiences, landing-page families and small useful features. Cosmetic redesign or an audit is not expansion.',
@@ -92,7 +96,7 @@ const plannerInstructions = [
   'For analytics-dependent revisions require a concrete observed search/organic signal and a verified page gap for a claimed performance diagnosis; a reversible experiment may proceed with sourced user-intent evidence, exact current-HEAD improvement, a testable hypothesis and rollback even without adequate traffic data; independently verifiable factual/technical corrections may proceed with current code/primary-source evidence even when page-level metrics are sparse, with the measurement limitation disclosed. Do not prematurely reissue previously changed snippet experiments during cooldown.',
   'Merge requires actual intent overlap and complete redirect/canonical handling. Delete requires complete trailing-90d evidence plus low unique value or verified duplication and should favor merge/redirect. Internal links must name source/target and document a real gap; technical fixes require reproducible validation.',
   'Save only concrete, deduplicated evidence-backed ready tasks using seo_task_create after validating current code and prior work; read each result back with seo_task_get. If an evaluator materially informed the decision, persist its exact evaluatorId/evaluatorVersion, registered evidenceSourceIds, confidence and case-specific inference in the task evaluation field. Keep target-specific proof in evidence. If a legacy proposed task is still valid, promote it instead of cloning it.',
-  'Before creating a site_expansion/new_article/data_expansion/schema_expansion task, check whether it materially commits the site to a direction currently classified discussion_required. If yes, withhold that task and surface it in the direction-review report for human discussion. Do not use revise/technical as a disguised route around this gate.',
+  'Before creating a site_expansion/new_article/data_expansion/schema_expansion task, read relevant Site Direction records. If the task materially commits the site to an unresolved open/monitor direction, withhold it. If it implements a decided direction, set directionId to that exact decided record so task history remains traceable. Do not use revise/technical as a disguised route around this gate.',
   'Zero new implementation tasks is justified only when the ready buffer is supplied, broad cross-site exploration finds no defensible bounded change, actual run time is exhausted after meaningful exploration, or a precise portfolio-wide capability/write blocker prevents progress. One rejected candidate, one unavailable source, missing analytics or waiting for another page to mature is not a reason to stop implementation planning. Task volume must never force a repair or premature promotion. Report implementation inventory separately from discovery evidence, findings, rejections and the next query.',
   'Never create Issues or write code, PRs, or deployments from this Planner. If a mutation is blocked by safety or authorization, do not retry the rejected operation through another route; preserve actual state and report the diagnostic.',
   'Do not treat a planning report, audit-only worker assignment or unsupported numerical score as an SEO material outcome. The actionable task must specify a concrete change and verifiable acceptance criteria.'
@@ -102,6 +106,8 @@ const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
   'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. Resume only your own previous run or a confirmed handoff; never seize concurrently owned work.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
+  'If the selected SEO task has directionId, read that Site Direction record before implementation. It must be decided and belong to the same site; treat its decision/constraints as implementation boundaries and preserve the directionId in task history. If the record is not decided or has been superseded, stop that strategic implementation and report the mismatch.',
+
   'Respect the site registry siteShape and the selected expansion task type. site_expansion may add a bounded useful page family, utility, comparison/decision experience or product-facing feature; data_expansion updates verified structured records through the repository\'s source/provenance gates; schema_expansion changes schema/templates only within the documented need. Do not convert these tasks into generic articles or broad redesigns.',
   'For data_expansion, verify every promoted public fact against the task-required authoritative sources and run repository data validation/freshness checks. Candidate discovery alone is not completion. For schema_expansion, preserve backward compatibility where practical, update validation/types/templates and prove generated outputs remain bounded and useful.',
   'Verify current main HEAD and bounded task scope before claim/change. Update task with fresh expectedRevision, worker_claimed/resumed history and readback; this is optimistic revision tracking, not a multi-worker exclusive lease.',
@@ -125,7 +131,7 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
+          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           discovery: {
             required: true,
@@ -135,11 +141,13 @@ export function seoAgentContext(input: unknown) {
             handoff: 'Pilot-ready candidate with explicit siteId and immutable task research snapshot.'
           },
           directionReview: {
-            mode: 'report_only_human_gate',
-            classifications: ['clear', 'monitor', 'discussion_required'],
-            majorChangeGate: 'No Worker task for primary-positioning changes, site/domain merge/split, broad deletion/noindex/pause, cross-brand migration or monetization/editorial-model replacement until human discussion.',
-            disputedDirectionRule: 'Do not deepen a discussion_required direction with new expansion solely to fill ready inventory; continue unrelated bounded improvements.',
-            reportFields: ['siteId', 'classification', 'evidence', 'uncertainty', 'plausible options', 'decision question']
+            mode: 'persistent_human_gate',
+            tools: ['site_direction_list', 'site_direction_get', 'site_direction_create', 'site_direction_update'],
+            statuses: ['open', 'monitor', 'decided', 'rejected', 'superseded'],
+            majorChangeGate: 'No Worker task for primary-positioning changes, site/domain merge/split, broad deletion/noindex/pause, cross-brand migration or monetization/editorial-model replacement until human discussion marks the corresponding direction record decided.',
+            taskLink: 'Implementation that materially follows a decided strategic direction must set seo_task_create.directionId to that exact record.',
+            disputedDirectionRule: 'Do not deepen an open/monitor direction with new expansion solely to fill ready inventory; continue unrelated bounded improvements.',
+            reportFields: ['directionId', 'siteId', 'status', 'topic', 'evidence', 'uncertainty', 'proposedOptions', 'decisionQuestion']
           },
           expansion: {
             siteShapeField: 'site_registry.siteShape',
