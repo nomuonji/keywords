@@ -343,7 +343,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.12.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.13.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -386,7 +386,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.10.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.11.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.0.0');
 
   console.log('site operations smoke passed: evaluator provenance, versioned evidence registry, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
