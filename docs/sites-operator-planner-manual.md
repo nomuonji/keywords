@@ -68,7 +68,7 @@ Do not disguise a strategic change as `revise`, `technical`, `site_expansion` or
 Sites Operator is not maintenance-only. Evidence-backed expansion is a normal planning outcome for **every managed site**, not only database sites. Read the registry `siteShape` before choosing the artifact; when a legacy site has `other`, inspect the current repository/site contract instead of assuming an article blog.
 
 - **article**: use `new_article` for a genuinely new editorial page, `revise` for an existing page, and `site_expansion` when the useful artifact is not an article (for example a calculator, comparison/decision experience, category hub, landing-page family or other bounded utility).
-- **database**: prefer `data_expansion` to increase verified record coverage; use `schema_expansion` only when a demonstrated recurring need cannot be represented by the current model; use `site_expansion` for useful discovery/decision experiences or bounded page families. Do not create arbitrary filter permutations for indexing.
+- **database**: prefer `data_expansion` to increase verified record coverage; use `schema_expansion` only when a demonstrated recurring need cannot be represented by the current model; use `site_expansion` for useful discovery/decision experiences or bounded page families. Treat the dataset and Search-facing URL surface as separate layers. Do not create arbitrary filter permutations for indexing.
 - **product**: use `site_expansion` for bounded product-facing functionality, onboarding/landing experiences, decision support or other useful new capabilities. Use `technical` when the work is a repair, not growth.
 - **hybrid**: choose the narrowest matching lane from editorial, database and product behavior.
 - **other**: inspect current code and the site operating contract; `site_expansion` remains available and non-article sites must not be starved of growth work.
@@ -79,7 +79,7 @@ Sites Operator is not maintenance-only. Evidence-backed expansion is a normal pl
 - `data_expansion`: structured-data growth. Candidate discovery is not completion. Public records must pass the repository's authoritative-source/provenance and validation gates before promotion.
 - `schema_expansion`: minimally extend data schema/templates only when evidence shows the current model cannot represent a useful recurring need. Prefer adding verified records to inventing new fields/page families.
 
-For database/programmatic sites, use the loop **observed need → candidate/coverage gap → authoritative verification → public data promotion → generated route/internal links/sitemap → observation**. A URL being technically generatable is never sufficient reason to index it.
+For database/programmatic sites, use the loop **observed need → candidate/coverage gap → authoritative verification → public data promotion → generated route/internal links/sitemap → observation**. A URL being technically generatable is never sufficient reason to index it. Before creating or materially changing generated page families, facets, filters, sitemap membership, crawl/index directives or large internal-link surfaces, read `database_indexation_quality` and explicitly document the intended indexable page-family contract. Internal-link count alone is not an anti-metric; the question is which useful or low-value URLs the link graph exposes and emphasizes.
 
 ## Active experiment loop
 
@@ -108,7 +108,7 @@ Prefer a small reversible pilot to repeatedly waiting for certainty. A sourced u
 3. List `ready`, legacy `issued`, `in_progress`, recently `completed`, and `superseded` tasks. Deduplicate by intervention/target intent as well as `dedupeKey`. A task already being implemented is not a reason to avoid *other* eligible work.
 4. Read the active Sites Operator registry, then `site_direction_list` for open/monitor/decided strategy state. Reuse existing records rather than reopening the same issue. A decided record is a planning constraint; an open/monitor record blocks expansion that depends on the unresolved choice.
 5. Read compact planning digests; treat missing/partial/stale measurements as **unknown**, never as zero or as a claim that an intervention failed. Do not query GSC/GA4 directly. Check the latest known changed-at dates and cooldowns.
-6. Read the current evaluation-registry inventory with `seo_evaluator_list`. For strategy-sensitive content decisions, read the relevant exact version with `seo_evaluator_get`. Every `new_article` candidate must consult `content_incremental_value`; consult `scaled_content_operation_risk` when cross-site templating, semantic overlap, or production scale is materially relevant.
+6. Read the current evaluation-registry inventory with `seo_evaluator_list`. For strategy-sensitive decisions, read the relevant exact version with `seo_evaluator_get`. Every `new_article` candidate must consult `content_incremental_value`; consult `scaled_content_operation_risk` when cross-site templating, semantic overlap, or production scale is materially relevant. For database/programmatic sites or tasks affecting generated page families, facets, filters, crawlability, indexability, sitemaps or large internal-link surfaces, consult `database_indexation_quality`.
 7. Screen multiple active sites and candidate pages **in parallel where useful**. Check exact GitHub default-branch files and related PR/commit history before creating a task; do not substitute digest excerpts for current code.
 
 ## Evaluation registry: evidence before inference
@@ -121,6 +121,7 @@ The canonical registry is documented in [sites-operator-evaluation-registry.md](
 - Preserve falsification conditions and review triggers. New contrary evidence should produce a new evaluator version rather than rewriting old decision history.
 - When an evaluator materially supports an accepted task, store its exact `evaluatorId`, `evaluatorVersion`, registered `evidenceSourceIds`, confidence, and case-specific inference in the task's optional `evaluation` field. Keep page-specific observations in the ordinary `evidence` field.
 - An experimental evaluator such as `scaled_content_operation_risk` cannot independently justify a block when its key evidence is indirect. Require primary Search policy or direct target evidence for the actual intervention.
+- `database_indexation_quality` is the default structural evaluator for database/programmatic sites. It distinguishes data coverage from index coverage and rejects arbitrary URL permutations, unbounded crawl surfaces and near-duplicate generated families unless a real user need and URL contract are demonstrated.
 
 ## Search for implementable interventions, not excuses
 
