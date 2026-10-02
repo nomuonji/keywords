@@ -99,12 +99,11 @@ function normalizedHost(value: unknown) {
 }
 
 async function listProjects() {
-  const projects: any[] = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const envelope = await cloudflare<any[]>(`/pages/projects?per_page=20&page=${page}`);
-    projects.push(...(Array.isArray(envelope.result) ? envelope.result : []));
-    const totalPages = envelope.result_info?.total_pages ?? page;
-    if (page >= totalPages) break;
+  const envelope = await cloudflare<any[]>('/pages/projects');
+  const projects = Array.isArray(envelope.result) ? envelope.result : [];
+  const totalPages = envelope.result_info?.total_pages ?? 1;
+  if (totalPages > 1) {
+    throw new Error('Cloudflare Pages project list exceeds the default first page; explicit pagination is currently rejected by this API route and project resolution would be incomplete.');
   }
   return projects;
 }
