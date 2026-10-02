@@ -8,6 +8,7 @@ import type { ThemeDiscovery } from './remote-keyword-schema.js';
  */
 export type SiteStatus = 'planned' | 'building' | 'active' | 'paused' | 'archived';
 export type SiteDeploymentProvider = 'vercel' | 'cloudflare_pages' | 'github_pages' | 'other';
+export type SiteShape = 'article' | 'database' | 'product' | 'hybrid' | 'other';
 
 export type SiteRecord = {
   id: string;
@@ -18,6 +19,7 @@ export type SiteRecord = {
   repository: string;
   productionUrl: string;
   deploymentProvider: SiteDeploymentProvider;
+  siteShape: SiteShape;
   ga4PropertyId: string | null;
   searchConsoleProperty: string | null;
   status: SiteStatus;
