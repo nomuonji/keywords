@@ -17,6 +17,7 @@ const metrics = z.record(z.string().min(1).max(100), z.number().finite().nullabl
 const period = z.object({ start: isoDate, end: isoDate }).strict();
 const deploymentProvider = z.enum(['vercel', 'cloudflare_pages', 'github_pages', 'other']);
 const siteStatus = z.enum(['planned', 'building', 'active', 'paused', 'archived']);
+const siteShape = z.enum(['article', 'database', 'product', 'hybrid', 'other']);
 const articleStatus = z.enum(['draft', 'published', 'paused', 'archived']);
 const actionType = z.enum(['content_expand', 'title_snippet', 'internal_links', 'cta_ui', 'freshness', 'indexing', 'new_article', 'other']);
 const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cancelled']);
@@ -50,7 +51,7 @@ const siteResolveSchema = z.object(siteRegistryResolveShape).strict().refine(inp
 export const siteRegistrySaveShape = {
   id: entityId, expectedRevision: z.number().int().min(0),
   siteConceptId: entityId.nullable().optional(), localProjectId: entityId.nullable().optional(), name: z.string().trim().min(1).max(200).optional(),
-  repository: repository.optional(), productionUrl: webUrl.optional(), deploymentProvider: deploymentProvider.optional(),
+  repository: repository.optional(), productionUrl: webUrl.optional(), deploymentProvider: deploymentProvider.optional(), siteShape: siteShape.optional(),
   ga4PropertyId: z.string().trim().min(1).max(200).nullable().optional(),
   searchConsoleProperty: z.string().trim().min(1).max(500).nullable().optional(), status: siteStatus.optional()
 };
@@ -150,7 +151,7 @@ export const optimizationContextShape = { siteId: entityId, articleId: entityId.
 
 const encodeFields = (data: object) => Object.fromEntries(Object.entries(data).map(([key, item]) => [key, field(item)]));
 const decoded = (doc: any) => ({ id: doc.name.split('/').pop(), ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) });
-const siteRecord = (doc: any) => ({ localProjectId: null, ...decoded(doc) }) as SiteRecord;
+const siteRecord = (doc: any) => ({ localProjectId: null, siteShape: 'other', ...decoded(doc) }) as SiteRecord;
 const articleRecord = (doc: any) => ({ localPageId: null, canonicalUrl: null, ...decoded(doc) }) as SiteArticleRecord;
 const now = () => new Date().toISOString();
 const sha = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -394,7 +395,7 @@ export async function siteRegistrySave(input: unknown) {
   const t = now(); const { expectedRevision, ...rawPatch } = args;
   const patch = args.productionUrl === undefined ? rawPatch : { ...rawPatch, productionUrl };
   const base: SiteRecord = current ?? {
-    id: args.id, siteConceptId: null, localProjectId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other',
+    id: args.id, siteConceptId: null, localProjectId: null, name: '', repository: '', productionUrl: '', deploymentProvider: 'other', siteShape: 'other',
     ga4PropertyId: null, searchConsoleProperty: null, status: 'planned', revision: 0, createdAt: t, updatedAt: t
   };
   const record: SiteRecord = {
