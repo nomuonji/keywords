@@ -658,9 +658,9 @@ export async function siteDirectionUpdate(input: unknown) {
   if (!previous) throw new Error('Site direction record not found');
   const current = normalizeSiteDirection(decoded(previous) as SiteDirectionRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current site direction and reapply the edit');
-  if (['superseded'].includes(current.status)) throw new Error('Superseded site direction records are immutable');
-  if (['decided', 'rejected'].includes(current.status) && args.status && args.status !== 'superseded') {
-    throw new Error('Decided/rejected site direction records may only transition to superseded');
+  if (current.status === 'superseded') throw new Error('Superseded site direction records are immutable');
+  if (['decided', 'rejected'].includes(current.status) && args.status !== 'superseded') {
+    throw new Error('Decided/rejected site direction records are immutable; create a new direction and supersede this record');
   }
   const t = now();
   const { id: _id, expectedRevision, appendHistory, ...patch } = args;
