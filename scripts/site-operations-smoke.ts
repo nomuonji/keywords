@@ -231,6 +231,11 @@ try {
   assert.ok(decidedDirection.decidedAt);
   assert.match(decidedDirection.history.map((x:any)=>x.event).join(','), /human_decision/);
   assert.equal((await siteDirectionList({ siteId: 'site-a', status: 'decided' })).items.length, 1);
+  await assert.rejects(siteDirectionUpdate({
+    id: decidedDirection.id,
+    expectedRevision: decidedDirection.revision,
+    decision: 'Rewrite the decision in place.'
+  }), /immutable/);
 
   const siteExpansionTask = await seoTaskCreate({
     id: 'seo-expand-site', siteId: 'site-a', targetUrls: ['https://example.com/compare'],
