@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.12.0';
+export const SEO_AGENT_POLICY_VERSION = '1.13.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -32,6 +32,21 @@ const shared = {
     source: 'Sites Operator active site registry only.',
     rule: 'A site that is visible in site-monitor but absent/paused/archived in Sites Operator is not agent-managed and must not receive new SEO tasks from this workflow.'
   },
+  expansion: {
+    principle: 'Managed sites are not maintenance-only. Planner should expand useful site value when evidence supports it, regardless of site shape.',
+    siteShapes: {
+      article: 'Use new_article/revise/internal_links for editorial growth, and site_expansion for non-article utilities, hubs, calculators, comparison experiences, landing-page families or other useful additions.',
+      database: 'Prefer data_expansion for verified record coverage, schema_expansion only when the current model cannot represent a demonstrated user/search need, and site_expansion for new useful discovery/decision experiences. Do not create thin filter permutations.',
+      product: 'Use site_expansion for useful product-facing functionality, decision support, onboarding/landing experiences or bounded new capabilities; use technical/revise where the need is repair rather than expansion.',
+      hybrid: 'Choose the narrowest matching expansion lane from article, database and product behavior based on the actual artifact.',
+      other: 'Do not assume article-first behavior. Inspect the repository/site contract and use site_expansion for evidence-backed useful additions.'
+    },
+    taskTypes: {
+      site_expansion: 'General cross-site expansion: add a useful non-maintenance capability/page family/decision aid/landing experience that is not adequately described as a new article.',
+      data_expansion: 'Structured-data expansion: add and verify public records/attributes from authoritative sources using the repository data model and promotion gates.',
+      schema_expansion: 'Data-model expansion: minimally extend schema/templates only when a demonstrated need cannot be represented safely in the current model.'
+    }
+  },
   evaluationRegistry: seoEvaluatorContextSummary()
 } as const;
 
@@ -47,6 +62,9 @@ const plannerInstructions = [
   'Maintain an operating target of 8 unclaimed actionable ready/legacy issued tasks across active managed sites. When below target, aim for 3–5 genuinely justified NEW ready records per run (hard max 5, max 2 per repository). Record count is a capacity target, not permission to generate fake or redundant work.',
   'When a repair/inventory planning pass is warranted, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if available before concluding no viable repair. Rejecting one discovery candidate or failing one source is not a portfolio stop condition. Pivot to other sites, existing-page answer improvements or bounded experiments; continue until the buffer is supplied, the available run time is genuinely exhausted or a portfolio-wide capability blocker prevents progress. Save valid implementation tasks promptly.',
   'Read active site registry and Sites Operator compact digests. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero. When analytics are insufficient, still search for independently verifiable factual, usability or technical defects supported by current HEAD and authoritative sources. Do not manufacture traffic claims.',
+  'Read each active site\'s siteShape before choosing the artifact. Expansion is a first-class Planner outcome for every shape, not only databases: article sites may grow with new_article or site_expansion; product/other sites may receive site_expansion; database sites may receive data_expansion, schema_expansion or site_expansion. Do not force every opportunity into an article task.',
+  'For site_expansion, require a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and a post-publication observation plan. Examples include calculators, comparison/decision pages, category hubs, navigation experiences, landing-page families and small useful features. Cosmetic redesign or an audit is not expansion.',
+  'For database sites, treat verified data coverage as product and SEO work. data_expansion may promote candidates only after authoritative-source verification and repository validation gates. schema_expansion is justified only when evidence shows the existing schema cannot represent a useful recurring need; prefer adding verified records to inventing fields or page families. Never index arbitrary filter combinations just because generation is possible.',
   'Use seo_evaluator_list/get for strategy-sensitive content decisions. For every new_article candidate, read content_incremental_value at its current version before creating the task. When cross-site templating, high-volume publishing, or semantic overlap is materially relevant, also inspect scaled_content_operation_risk. Evaluators are revisable operating hypotheses: preserve source strength, caveats, confidence and falsification conditions; never convert their qualitative signals into a composite SEO score or claim hidden Google ranking logic.',
   'Prioritize bounded, high-leverage real site/page changes: observed query-intent mismatches, bounded reversible answer/structure/navigation experiments, sourced factual corrections, reproducible technical/indexing problems, concrete internal-link gaps, verified content overlap and separately justified unmet intent. Use the Planner Manual exploration ladder rather than waiting passively for a perfect CTR statistic.',
   'Prefer a small reversible experiment over indefinite certainty-seeking. A credible observed user need plus an exact current-page omission can justify a focused answer section, comparison table, navigation/internal-link change, calculator or useful new page. Limit each pilot to one intervention on one article, or 1-3 coherent new pages; preserve factual sourcing, incremental value and rollback. A pilot tests uncertain traffic impact; it never licenses invented demand or unsourced content.',
@@ -66,6 +84,8 @@ const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
   'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. Resume only your own previous run or a confirmed handoff; never seize concurrently owned work.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
+  'Respect the site registry siteShape and the selected expansion task type. site_expansion may add a bounded useful page family, utility, comparison/decision experience or product-facing feature; data_expansion updates verified structured records through the repository\'s source/provenance gates; schema_expansion changes schema/templates only within the documented need. Do not convert these tasks into generic articles or broad redesigns.',
+  'For data_expansion, verify every promoted public fact against the task-required authoritative sources and run repository data validation/freshness checks. Candidate discovery alone is not completion. For schema_expansion, preserve backward compatibility where practical, update validation/types/templates and prove generated outputs remain bounded and useful.',
   'Verify current main HEAD and bounded task scope before claim/change. Update task with fresh expectedRevision, worker_claimed/resumed history and readback; this is optimistic revision tracking, not a multi-worker exclusive lease.',
   'For a scoped reversible experiment, uncertainty about traffic uplift or a missing analytics baseline is not an implementation blocker when factual sources, current code, acceptance criteria and rollback are supplied. Implement the pilot faithfully; do not turn it into an audit or wait for proof of an effect that requires publication.',
   'For article experiments, inspect optimization_context and reuse a linked optimization event from task notes/history. If absent and the article is registered, create a proposed event with the task ID, hypothesis, actual planned baseline dates, explicit metric limitations and rollback. Record event IDs, before/after commit evidence and evaluation handoff in task history/summary. Leave phase proposed until real publication is observed; the later Planner handles measurement. Failure to register tracking must be reported separately and must not silently block the authorized main-merge implementation.',
@@ -87,7 +107,7 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site implementation planning until buffer target or justified stop'],
+          start: ['seo_agent_context(role=planner)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           discovery: {
             required: true,
@@ -95,6 +115,13 @@ export function seoAgentContext(input: unknown) {
             tools: ['theme_research_context', 'research_session_create', 'keyword_research_pipeline', 'search_gap_research', 'theme_candidate_upsert', 'theme_candidate_challenge'],
             completion: 'Dated external observations and body comparison saved with a finding/rejection and next query, or an exact capability/source/time blocker. No candidate or task quota.',
             handoff: 'Pilot-ready candidate with explicit siteId and immutable task research snapshot.'
+          },
+          expansion: {
+            siteShapeField: 'site_registry.siteShape',
+            taskTypes: ['site_expansion', 'data_expansion', 'schema_expansion'],
+            rule: 'Every managed site may receive evidence-backed expansion. Database-specific tasks supplement rather than replace general expansion.',
+            databasePromotion: 'candidate -> authoritative verification -> repository validation -> public dataset -> generated routes/sitemap -> observation',
+            guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth.'
           },
           experimentation: {
             defaultAction: 'Plan a bounded reversible site change when credible observations support it; do not wait for certainty about traffic uplift.',
