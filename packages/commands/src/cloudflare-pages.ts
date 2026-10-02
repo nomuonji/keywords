@@ -101,7 +101,7 @@ function normalizedHost(value: unknown) {
 async function listProjects() {
   const projects: any[] = [];
   for (let page = 1; page <= 10; page += 1) {
-    const envelope = await cloudflare<any[]>(`/pages/projects?per_page=100&page=${page}`);
+    const envelope = await cloudflare<any[]>(`/pages/projects?per_page=20&page=${page}`);
     projects.push(...(Array.isArray(envelope.result) ? envelope.result : []));
     const totalPages = envelope.result_info?.total_pages ?? page;
     if (page >= totalPages) break;
