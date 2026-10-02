@@ -98,40 +98,37 @@ function normalizedHost(value: unknown) {
   }
 }
 
-async function listProjects() {
-  const envelope = await cloudflare<any[]>('/pages/projects');
-  const projects = Array.isArray(envelope.result) ? envelope.result : [];
-  const totalPages = envelope.result_info?.total_pages ?? 1;
-  if (totalPages > 1) {
-    throw new Error('Cloudflare Pages project list exceeds the default first page; explicit pagination is currently rejected by this API route and project resolution would be incomplete.');
-  }
-  return projects;
-}
-
 async function resolveProject(site: SiteTarget) {
   if (!site.repository) throw new Error(`Site ${site.id} has no repository in the Sites Operator registry`);
   const [repoOwner, repoName] = site.repository.split('/');
-  const projects = await listProjects();
-  const repoMatches = projects.filter(project => {
-    const source = project?.source?.config;
-    return String(source?.owner ?? '').toLowerCase() === repoOwner.toLowerCase()
-      && String(source?.repo_name ?? '').toLowerCase() === repoName.toLowerCase();
-  });
-  if (repoMatches.length > 1) throw new Error(`Multiple Cloudflare Pages projects map exactly to repository ${site.repository}; resolve the registry/project mapping before using diagnostics`);
-  if (repoMatches.length === 1) return { project: repoMatches[0], resolution: 'repository_exact' as const };
+  if (!repoOwner || !repoName) throw new Error(`Site ${site.id} has an invalid repository identity: ${site.repository}`);
+
+  let project: any;
+  try {
+    project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(repoName)}`)).result;
+  } catch (error: any) {
+    throw new Error(`Cloudflare Pages project could not be resolved directly from repository name ${repoName}. If the Pages project name differs from the GitHub repository name, add an explicit mapping before using diagnostics. Cause: ${error?.message ?? String(error)}`);
+  }
+
+  const source = project?.source?.config;
+  const sourceMatches = String(source?.owner ?? '').toLowerCase() === repoOwner.toLowerCase()
+    && String(source?.repo_name ?? '').toLowerCase() === repoName.toLowerCase();
 
   const productionHost = normalizedHost(site.productionUrl);
-  const domainMatches = productionHost ? projects.filter(project => {
-    const hosts = [
-      ...(Array.isArray(project?.domains) ? project.domains : []),
-      project?.subdomain
-    ].map(normalizedHost).filter(Boolean);
-    return hosts.includes(productionHost);
-  }) : [];
-  if (domainMatches.length > 1) throw new Error(`Multiple Cloudflare Pages projects map to production host ${productionHost}; resolve the registry/project mapping before using diagnostics`);
-  if (domainMatches.length === 1) return { project: domainMatches[0], resolution: 'production_domain_exact' as const };
+  const projectHosts = [
+    ...(Array.isArray(project?.domains) ? project.domains : []),
+    project?.subdomain
+  ].map(normalizedHost).filter(Boolean);
+  const domainMatches = Boolean(productionHost && projectHosts.includes(productionHost));
 
-  throw new Error(`No Cloudflare Pages project matched site ${site.id} by exact repository (${site.repository}) or production domain (${productionHost ?? 'none'})`);
+  if (!sourceMatches && !domainMatches) {
+    throw new Error(`Cloudflare Pages project ${project?.name ?? repoName} did not match registered repository ${site.repository} or production host ${productionHost ?? 'none'}; refusing an ambiguous diagnostic lookup`);
+  }
+
+  return {
+    project,
+    resolution: sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const
+  };
 }
 
 function safeProject(project: any) {
