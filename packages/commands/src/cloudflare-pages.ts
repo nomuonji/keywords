@@ -98,16 +98,22 @@ function normalizedHost(value: unknown) {
   }
 }
 
+const CLOUDFLARE_PROJECT_NAME_OVERRIDES: Record<string, string> = {
+  'nomuonji/shikaku-wiki': 'shikaku-catalog',
+  'nomuonji/otonano_reset-blog': 'otonano-reset-blog'
+};
+
 async function resolveProject(site: SiteTarget) {
   if (!site.repository) throw new Error(`Site ${site.id} has no repository in the Sites Operator registry`);
   const [repoOwner, repoName] = site.repository.split('/');
   if (!repoOwner || !repoName) throw new Error(`Site ${site.id} has an invalid repository identity: ${site.repository}`);
 
+  const projectName = CLOUDFLARE_PROJECT_NAME_OVERRIDES[site.repository] ?? repoName;
   let project: any;
   try {
-    project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(repoName)}`)).result;
+    project = (await cloudflare<any>(`/pages/projects/${encodeURIComponent(projectName)}`)).result;
   } catch (error: any) {
-    throw new Error(`Cloudflare Pages project could not be resolved directly from repository name ${repoName}. If the Pages project name differs from the GitHub repository name, add an explicit mapping before using diagnostics. Cause: ${error?.message ?? String(error)}`);
+    throw new Error(`Cloudflare Pages project could not be resolved as ${projectName} for repository ${site.repository}. Add or correct the explicit mapping before using diagnostics. Cause: ${error?.message ?? String(error)}`);
   }
 
   const source = project?.source?.config;
@@ -127,7 +133,9 @@ async function resolveProject(site: SiteTarget) {
 
   return {
     project,
-    resolution: sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const
+    resolution: CLOUDFLARE_PROJECT_NAME_OVERRIDES[site.repository]
+      ? (sourceMatches ? 'repository_explicit_project_mapping' as const : 'production_domain_explicit_project_mapping' as const)
+      : (sourceMatches ? 'repository_project_name_exact' as const : 'production_domain_project_name_exact' as const)
   };
 }
 
