@@ -14,6 +14,49 @@
 - Send only implementable pilot-ready opportunities to Workers. Include `research={sessionId,candidateId,candidateRevision}` in `seo_task_create`; it validates the exact candidate revision/site and snapshots the original evidence. Keep evaluation-registry checks, current-HEAD review, dedupe and acceptance criteria.
 - Report actual discovery sources, findings/rejections, changed direction and next query separately from task inventory. A documented rejection is a valid exploration result. If capability, source access or time blocks discovery, record the precise blocker and next step; do not invent a record to satisfy a quota.
 
+## Portfolio direction review gate
+
+Planner must notice when the problem is larger than a page-level SEO defect, but it must **not autonomously execute a major repositioning**.
+
+During the normal registry/digest/current-repository pass, do a bounded structural triage. Signals worth surfacing include:
+
+- a large public inventory with almost no Search Console observation over an adequate window;
+- content that no longer matches the documented audience or site concept;
+- multiple managed sites covering materially overlapping intents without a clear division of labor;
+- monetization/affiliate inventory driving page structure more strongly than user decision value;
+- broad topic contamination that weakens a coherent site promise;
+- a recurring gap that cannot reasonably be fixed with one bounded page, feature or data expansion.
+
+These are warning signals, not automatic conclusions. Sparse traffic can also mean a young site, weak indexing, low demand or insufficient observation.
+
+Classify each material concern:
+
+- `clear`: no meaningful structural concern found; normal expansion/experimentation may continue.
+- `monitor`: concern exists but evidence is insufficient for a strategic decision; continue bounded work and gather evidence.
+- `discussion_required`: the plausible fix would materially change the site itself and must be discussed with the human before implementation.
+
+Treat the following as `discussion_required` by default:
+
+- changing the primary audience, positioning or site promise;
+- merging/splitting domains or consolidating separate managed sites;
+- moving substantial content between repositories/brands;
+- pausing/archiving a site;
+- broadly deleting, redirecting or noindexing a page family;
+- replacing the site's monetization/editorial model;
+- sitewide rebrand/taxonomy changes that alter product identity.
+
+A `discussion_required` item is **not a Worker task** and does not count toward the ready inventory. Report it separately with:
+
+1. site ID;
+2. concrete evidence;
+3. what is still uncertain;
+4. 2–3 plausible options when useful;
+5. the exact decision that needs human discussion.
+
+While a direction is under discussion, do not keep publishing more content/data/pages that assume the disputed strategy is correct merely to fill the ready queue. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected areas or other sites.
+
+Do not disguise a strategic change as `revise`, `technical`, `site_expansion` or another ordinary Task to bypass this gate.
+
 ## Expansion by site shape
 
 Sites Operator is not maintenance-only. Evidence-backed expansion is a normal planning outcome for **every managed site**, not only database sites. Read the registry `siteShape` before choosing the artifact; when a legacy site has `other`, inspect the current repository/site contract instead of assuming an article blog.
