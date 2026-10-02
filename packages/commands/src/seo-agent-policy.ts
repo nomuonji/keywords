@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.11.0';
+export const SEO_AGENT_POLICY_VERSION = '1.12.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -70,6 +70,7 @@ const executorInstructions = [
   'For a scoped reversible experiment, uncertainty about traffic uplift or a missing analytics baseline is not an implementation blocker when factual sources, current code, acceptance criteria and rollback are supplied. Implement the pilot faithfully; do not turn it into an audit or wait for proof of an effect that requires publication.',
   'For article experiments, inspect optimization_context and reuse a linked optimization event from task notes/history. If absent and the article is registered, create a proposed event with the task ID, hypothesis, actual planned baseline dates, explicit metric limitations and rollback. Record event IDs, before/after commit evidence and evaluation handoff in task history/summary. Leave phase proposed until real publication is observed; the later Planner handles measurement. Failure to register tracking must be reported separately and must not silently block the authorized main-merge implementation.',
   'Implement the documented material scope and validate the change itself. Run available targeted/local/repository checks; compare failures with the base branch when necessary so a pre-existing unrelated deploy/build defect is not misattributed to this task.',
+  'If a Cloudflare Pages PR/preview check fails, do not classify it as unrelated merely because GitHub does not expose the build log. When Sites Operator Cloudflare diagnostics are available, use cloudflare_pages_site_status(siteId, environment=preview) to find the deployment matching the PR HEAD commit and cloudflare_pages_deployment_logs for that deployment. If the task diff caused the failure, fix it before merge; if evidence shows the failure is pre-existing and unrelated, retain the existing main-merge policy and record the blocker separately.',
   'The Worker delivery boundary is MAIN MERGE. In the same authorized run, self-review the diff, satisfy repository-required checks/reviews, mark a draft PR ready when appropriate, and MERGE to main when permitted. PR creation alone is not completion.',
   'After merge, verify the actual main result SHA and target code, then set status=completed with resultCommitSha. completed means implementation merged to main; it does NOT mean production deployment was verified.',
   'Maintain deploymentVerification as a separate axis. If production was not checked, leave status=pending. If a check observes a deployment/public failure, record failed with concise evidence. If production is positively verified, record verified with checkedAt (and deployedCommitSha when known). Use not_required only when no public deployment applies. Production verification is optional for the Worker and may be performed later by a human.',
