@@ -19,7 +19,8 @@ import {
   remoteSitesStatus,
   seoTaskCreate, seoTaskCreateShape, seoTaskGet, seoTaskGetShape, seoTaskList, seoTaskListShape, seoTaskUpdate, seoTaskUpdateShape,
   siteArticleGet, siteArticleGetShape, siteArticleList, siteArticleListShape, siteArticleSave, siteArticleSaveShape,
-  siteRegistryGet, siteRegistryGetShape, siteRegistryList, siteRegistryListShape, siteRegistryResolve, siteRegistryResolveShape, siteRegistrySave, siteRegistrySaveShape
+  siteRegistryGet, siteRegistryGetShape, siteRegistryList, siteRegistryListShape, siteRegistryResolve, siteRegistryResolveShape, siteRegistrySave, siteRegistrySaveShape,
+  siteDirectionGet, siteDirectionGetShape, siteDirectionCreate, siteDirectionCreateShape, siteDirectionList, siteDirectionListShape, siteDirectionUpdate, siteDirectionUpdateShape
 } from '../packages/commands/src/remote-site-operations.js';
 import {
   seoPlanningDigestGet, seoPlanningDigestGetShape, seoPlanningDigestList, seoPlanningDigestListShape
@@ -103,6 +104,10 @@ function server() {
   mcp.registerTool('site_registry_get', { description: 'Read one real site and its repository, production URL, deployment provider, local project link and analytics identifiers.', inputSchema: siteRegistryGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryGet(input)));
   mcp.registerTool('site_registry_resolve', { description: 'Resolve a real site by explicit localProjectId or exact productionUrl. Returns site=null when no mapping exists; never guesses from names.', inputSchema: siteRegistryResolveShape, annotations: { readOnlyHint: true } }, async input => structured(await siteRegistryResolve(input)));
   mcp.registerTool('site_registry_save', { description: 'Create or update a real site with optimistic revision control, including siteShape (article/database/product/hybrid/other) for expansion planning. localProjectId explicitly links the Firestore site to the existing SQLite project; this does not create or edit a Site Concept.', inputSchema: siteRegistrySaveShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteRegistrySave(input)));
+  mcp.registerTool('site_direction_get', { description: 'Read one durable site-direction discussion/decision record.', inputSchema: siteDirectionGetShape, annotations: { readOnlyHint: true } }, async input => structured(await siteDirectionGet(input)));
+  mcp.registerTool('site_direction_create', { description: 'Open or monitor a strategic site-direction question. This records evidence and a decision question; it does not authorize implementation.', inputSchema: siteDirectionCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteDirectionCreate(input)));
+  mcp.registerTool('site_direction_list', { description: 'List durable site-direction records by site, status or topic so planners can inherit prior discussions and decisions.', inputSchema: siteDirectionListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteDirectionList(input)));
+  mcp.registerTool('site_direction_update', { description: 'Update a site-direction record with optimistic revision control. Mark decided only after human discussion; decided/rejected records may later be superseded.', inputSchema: siteDirectionUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteDirectionUpdate(input)));
   mcp.registerTool('cloudflare_pages_site_status', {
     description: 'Diagnose publication state for one Sites Operator site through Cloudflare Pages. Resolves the Pages project by exact Git repository first, then exact production domain, and returns safe project/build settings, recent deployment stages, and SEO tasks still pending or failed publication verification. Requires CLOUDFLARE_ACCOUNT_ID and a Pages Read API token; secrets are never returned.',
     inputSchema: cloudflarePagesSiteStatusShape,
