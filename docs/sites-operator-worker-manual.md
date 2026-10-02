@@ -86,9 +86,10 @@ A failing build/deploy check is not automatically caused by the Worker.
 When a check fails:
 
 1. identify the failing file/stage and compare it with the task diff;
-2. check whether the same failure existed on the pre-change/default-branch baseline when evidence is available;
-3. if the failure is caused by this task, fix it before merge;
-4. if it is clearly pre-existing and unrelated to the task, record that fact and follow the repository's actual merge policy.
+2. for a failed Cloudflare Pages PR/preview check, do not infer that it is unrelated just because GitHub does not expose the log. If Sites Operator Cloudflare diagnostics are available, call `cloudflare_pages_site_status(siteId, environment=preview)`, locate the deployment whose trigger commit matches the PR HEAD, then call `cloudflare_pages_deployment_logs` for that deployment;
+3. check whether the same failure existed on the pre-change/default-branch baseline when evidence is available;
+4. if the failure is caused by this task, fix it before merge;
+5. if it is clearly pre-existing and unrelated to the task, record that fact and follow the repository's actual merge policy.
 
 Do **not** expand an SEO content task into an unrelated platform/site repair solely to make every deployment green. If repository branch protection permits merge and the task change itself has adequate independent validation, the Worker may merge while recording the unrelated failure.
 
