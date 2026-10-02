@@ -58,6 +58,22 @@ Primary evidence:
 
 This is an internal operational mapping of public policy, not a claim that "incremental value" is a literal ranking factor.
 
+### `database_indexation_quality@1.0.0`
+
+Active database/programmatic indexation gate.
+
+Core inference: the underlying dataset and the Search-facing URL surface are separate products. A structured site may contain many records while exposing only the page families that satisfy a recurring user need and add distinct utility. Raw internal-link count or database-backed architecture is not treated as a penalty signal by itself; the evaluator instead checks what those links expose, whether faceted/filter routes create duplicate or unbounded URL spaces, and whether sitemap/robots/canonical/internal-link behavior matches the intended indexable set.
+
+Primary evidence:
+
+- Google Crawling Infrastructure — faceted navigation guidance
+- Google Search Central — URL canonicalization
+- Google Crawling Infrastructure — crawl budget guidance
+- Google Search Central — internal-link/site-structure guidance
+- Google Web Search spam policies — scaled content abuse
+
+Important limitation: this is an internal synthesis of public crawl/index guidance, not a claim that Google has a single "database quality" ranking factor or a universal page/link-count threshold.
+
 ### `scaled_content_operation_risk@1.0.0`
 
 Experimental portfolio-risk lens.
@@ -110,6 +126,10 @@ The registry currently includes:
 
 - https://developers.google.com/search/docs/essentials/spam-policies#scaled-content
 - https://developers.google.com/search/blog/2023/02/google-search-and-ai-content
+- https://developers.google.com/crawling/docs/faceted-navigation
+- https://developers.google.com/search/docs/crawling-indexing/canonicalization
+- https://developers.google.com/crawling/docs/crawl-budget
+- https://developers.google.com/search/docs/specialty/ecommerce/help-google-understand-your-ecommerce-site-structure
 - https://research.google/pubs/the-synthetic-gap-automating-forensic-investigation-of-ai-slop-with-the-scaled-abuse-forensics-examiner-safe/
 - https://www.searchenginejournal.com/google-has-deployed-a-new-ai-spam-detector-called-safe/590918/
 

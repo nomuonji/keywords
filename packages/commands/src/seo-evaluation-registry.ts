@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SeoTaskType } from '../../db/src/site-operations-schema.js';
 
-export const SEO_EVALUATION_REGISTRY_VERSION = '1.0.0';
+export const SEO_EVALUATION_REGISTRY_VERSION = '1.1.0';
 
 const evaluatorId = z.string().trim().regex(/^[a-z0-9_]{3,100}$/);
 const evaluatorVersion = z.string().trim().regex(/^\d+\.\d+\.\d+$/);
@@ -103,6 +103,70 @@ const evidenceSources: SeoEvidenceSource[] = [
     ]
   },
   {
+    id: 'google_faceted_navigation_guidance',
+    type: 'primary_guidance',
+    title: 'Google Crawling Infrastructure — Managing crawling of faceted navigation URLs',
+    url: 'https://developers.google.com/crawling/docs/faceted-navigation',
+    publishedAt: null,
+    checkedAt: '2026-10-03',
+    strength: 'strong',
+    supports: [
+      'Faceted navigation can create very large or effectively infinite URL spaces that waste crawl resources and delay discovery of useful URLs.',
+      'When faceted URLs do not need to appear in Search, Google recommends preventing crawling rather than exposing every generated combination.'
+    ],
+    caveats: [
+      'This is crawl-management guidance, not a statement that faceted navigation or database-backed sites are inherently penalized.'
+    ]
+  },
+  {
+    id: 'google_canonicalization_guidance',
+    type: 'primary_guidance',
+    title: 'Google Search Central — What is URL canonicalization',
+    url: 'https://developers.google.com/search/docs/crawling-indexing/canonicalization',
+    publishedAt: null,
+    checkedAt: '2026-10-03',
+    strength: 'strong',
+    supports: [
+      'Duplicate and near-duplicate URLs can be consolidated through canonicalization signals instead of being treated as distinct search pages.',
+      'Sorting, filtering, parameters and alternate URL forms are common sources of duplicate or near-duplicate content.'
+    ],
+    caveats: [
+      'Canonicalization consolidates duplicate signals; it does not convert a low-value page family into useful search content.'
+    ]
+  },
+  {
+    id: 'google_crawl_budget_guidance',
+    type: 'primary_guidance',
+    title: 'Google Crawling Infrastructure — Crawl budget management for large sites',
+    url: 'https://developers.google.com/crawling/docs/crawl-budget',
+    publishedAt: null,
+    checkedAt: '2026-10-03',
+    strength: 'strong',
+    supports: [
+      'Crawl-budget optimization is mainly relevant to very large or very frequently changing sites; smaller sites should not assume crawl budget is the root cause of weak Search performance.',
+      'Crawl demand and crawl capacity are separate from whether a URL is ultimately useful enough to index and rank.'
+    ],
+    caveats: [
+      'Google gives approximate large-site thresholds rather than a universal page-count cutoff.'
+    ]
+  },
+  {
+    id: 'google_internal_link_structure_guidance',
+    type: 'primary_guidance',
+    title: 'Google Search Central — Help Google understand your ecommerce site structure',
+    url: 'https://developers.google.com/search/docs/specialty/ecommerce/help-google-understand-your-ecommerce-site-structure',
+    publishedAt: null,
+    checkedAt: '2026-10-03',
+    strength: 'strong',
+    supports: [
+      'Google uses link relationships to discover pages and understand site structure and relative importance.',
+      'There is no public Google rule that a database site is harmed simply because it contains many internal links; the practical concern is which URLs those links expose and emphasize.'
+    ],
+    caveats: [
+      'The document is written for ecommerce, but the internal-link discovery and site-structure principles are applicable to other large structured sites.'
+    ]
+  },
+  {
     id: 'google_research_safe_2026',
     type: 'research',
     title: 'The Synthetic Gap: Automating Forensic Investigation of "AI Slop" with the Scaled Abuse Forensics Examiner (SAFE)',
@@ -190,6 +254,71 @@ const evaluators: SeoEvaluator[] = [
       'Evidence that the gate is being gamed through formulaic "incremental value" boilerplate.'
     ],
     updatedAt: '2026-10-01'
+  },
+  {
+    id: 'database_indexation_quality',
+    version: '1.0.0',
+    current: true,
+    title: 'Database indexation and URL-surface quality',
+    status: 'active',
+    scopes: ['portfolio_operations', 'technical'],
+    applicableTaskTypes: ['technical', 'site_expansion', 'data_expansion', 'schema_expansion'],
+    purpose: 'Keep structured/database sites from equating generatable URLs, records, filters or internal-link volume with URLs that should be crawlable and indexable.',
+    decisionRule: 'For database/programmatic page families, explicitly separate the data corpus from the indexable URL surface. Index a generated page family only when each public search page represents a recurring user need and provides distinct decision, navigation, comparison, evidence or explanatory value beyond recombining metadata. Control crawl/index exposure for arbitrary filters, sort orders and near-duplicate permutations.',
+    principles: [
+      'A database may contain many records without exposing every record or permutation as an indexable Search URL.',
+      'Internal-link count by itself is not a penalty signal; evaluate which URLs the links expose, how they communicate hierarchy, and whether they create low-value crawl surfaces.',
+      'Treat faceted navigation, filters, sort orders and parameter combinations as crawl/index architecture problems before treating them as SEO page opportunities.',
+      'Use canonicalization for genuine duplicates or alternate URL forms, not as a substitute for deciding whether a page family has user value.',
+      'Do not blame crawl budget by default on modest inventories; first distinguish crawl discovery, indexing quality, demand and page value.',
+      'Prefer a deliberate indexable allowlist/page-family contract over publishing every technically generatable route.'
+    ],
+    hardGates: [
+      { id: 'arbitrary_permutation_indexing', description: 'The proposal would index filter/sort/facet combinations primarily because they can be generated, without a demonstrated recurring user/search need.' },
+      { id: 'near_duplicate_page_family', description: 'The generated page family differs mainly by metadata recombination, ordering or entity substitution and lacks distinct user-facing value.' },
+      { id: 'unbounded_url_space', description: 'Navigation or parameters can expose an unbounded or combinatorial crawl surface without an explicit crawl/index control strategy.' }
+    ],
+    decisionSignals: [
+      'A documented indexable page-family contract that names who the page is for, what decision/question it answers, and why it deserves a stable URL.',
+      'Clear separation between data records, UI-only filters, crawlable routes and indexable routes.',
+      'A finite curated hub/pathway structure that helps users discover useful records without exposing arbitrary permutations.',
+      'Canonical, robots, sitemap and internal-link behavior are consistent with the intended indexable set.',
+      'Large existing inventories are evaluated by page-family value and observed search/user behavior rather than raw URL count.'
+    ],
+    antiMetrics: [
+      'Total database record count',
+      'Total internal-link count by itself',
+      'Total generated URL count',
+      'Percent of records with a public route',
+      'Crawl budget as a default explanation for weak performance on modest-sized sites'
+    ],
+    inference: {
+      statement: 'For structured sites, the operating risk comes from exposing low-value or duplicate URL surfaces at scale, not from database architecture or internal-link volume by themselves. Sites Operator should therefore treat indexation as a curated product surface separate from the underlying dataset.',
+      confidence: 'high',
+      caveats: [
+        'This is an operational synthesis of Google crawl, canonicalization, linking and spam guidance; Google does not publish a single metric called database indexation quality.',
+        'A useful database may legitimately have many indexable pages when individual pages satisfy real user needs and remain technically well controlled.',
+        'No universal page-count or link-count threshold is asserted.'
+      ]
+    },
+    evidenceSourceIds: [
+      'google_faceted_navigation_guidance',
+      'google_canonicalization_guidance',
+      'google_crawl_budget_guidance',
+      'google_internal_link_structure_guidance',
+      'google_scaled_content_policy'
+    ],
+    falsification: [
+      'Google materially changes its public crawl/index guidance so that arbitrary filter/permutation indexing is recommended for discovery.',
+      'Repeated portfolio evidence shows that deliberate index-surface curation systematically harms useful database discovery without reducing duplicate/low-value exposure.',
+      'A future primary source establishes a direct penalty based on raw internal-link count or database-backed architecture independent of page value and URL behavior.'
+    ],
+    reviewTriggers: [
+      'Material Google update to faceted-navigation, canonicalization, crawl-budget or large-site internal-link guidance.',
+      'A database site shows a large gap between generated URLs, crawled URLs and indexed/observed useful pages.',
+      'A new page family would materially increase parameterized, faceted or programmatically generated URLs.'
+    ],
+    updatedAt: '2026-10-03'
   },
   {
     id: 'scaled_content_operation_risk',
