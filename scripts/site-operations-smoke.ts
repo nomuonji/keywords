@@ -121,6 +121,7 @@ try {
   assert.equal(readyTask.deploymentVerification.status, 'pending');
   assert.equal(readyTask.deploymentVerification.productionUrl, 'https://example.com/article-a');
   assert.equal(readyTask.executionClaim, null);
+  assert.equal(readyTask.deliveryHandoff.state, 'none');
   assert.equal(readyTask.history[0].event, 'ready');
   assert.equal((await seoTaskGet({ id: readyTask.id })).status, 'ready');
   assert.equal((await seoTaskList({ siteId: 'site-a', status: 'ready' })).items.length, 1);
@@ -178,22 +179,67 @@ try {
   await assert.rejects(seoTaskUpdate({
     id: readyTask.id, expectedRevision: heartbeatTask.revision, status: 'completed', claimRunId: 'smoke-run-0001'
   }), /completed SEO task requires resultCommitSha/);
-  const completedTask = await seoTaskUpdate({
+
+  const handedOffTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: heartbeatTask.revision,
-    status: 'completed',
     claimRunId: 'smoke-run-0001',
+    executionSummary: 'Implementation pushed to seo/smoke-delivery and handed off.',
+    deliveryHandoff: {
+      state: 'branch_ready',
+      branch: 'seo/smoke-delivery',
+      headSha: 'c'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      validationSummary: 'targeted checks passed',
+      handedOffAt: '2026-10-01T00:00:00.000Z',
+      prNumber: null,
+      prUrl: null,
+      lastError: '',
+      updatedAt: '2026-10-01T00:00:00.000Z'
+    },
+    appendHistory: { actor: 'site-operations-smoke', event: 'delivery_handoff_ready', detail: 'Structured branch handoff recorded.' }
+  });
+  assert.equal(handedOffTask.status, 'in_progress');
+  assert.equal(handedOffTask.deliveryHandoff.state, 'branch_ready');
+  assert.equal(handedOffTask.executionClaim, null, 'branch_ready must release Worker lease');
+
+  const prOpenTask = await seoTaskUpdate({
+    id: readyTask.id,
+    expectedRevision: handedOffTask.revision,
+    deliveryHandoff: {
+      ...handedOffTask.deliveryHandoff,
+      state: 'pr_open',
+      prNumber: 123,
+      prUrl: 'https://github.com/nomuonji/site-a/pull/123',
+      updatedAt: '2026-10-01T00:10:00.000Z'
+    },
+    appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_pr_opened', detail: 'PR #123 opened; waiting for CI.' }
+  });
+  assert.equal(prOpenTask.status, 'in_progress');
+  assert.equal(prOpenTask.deliveryHandoff.prNumber, 123);
+  assert.equal(prOpenTask.executionClaim, null);
+
+  const completedTask = await seoTaskUpdate({
+    id: readyTask.id,
+    expectedRevision: prOpenTask.revision,
+    status: 'completed',
     resultCommitSha: 'd'.repeat(40),
-    executionSummary: 'Merged implementation to main; production verification is intentionally separate.',
+    deliveryHandoff: {
+      ...prOpenTask.deliveryHandoff,
+      state: 'merged',
+      updatedAt: '2026-10-01T00:20:00.000Z'
+    },
+    executionSummary: 'Central delivery merged PR #123 to main; production verification is intentionally separate.',
     deploymentVerification: {
       status: 'pending',
       productionUrl: 'https://example.com/article-a',
       detail: 'Implementation complete on main; production not checked yet.'
     },
-    appendHistory: { actor: 'site-operations-smoke', event: 'implementation_completed', detail: 'Merged to main.' }
+    appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_merged', detail: 'PR #123 merged to main.' }
   });
   assert.equal(completedTask.status, 'completed');
   assert.equal(completedTask.resultCommitSha, 'd'.repeat(40));
+  assert.equal(completedTask.deliveryHandoff.state, 'merged');
   assert.equal(completedTask.deploymentVerification.status, 'pending');
   assert.equal(completedTask.executionClaim, null);
   assert.ok(completedTask.completedAt);
@@ -432,7 +478,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.19.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.20.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -475,9 +521,10 @@ try {
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /verified push/i);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /external GitHub delivery lane/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /nextAction=awaiting_external_delivery/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /deliveryHandoff=\{state:branch_ready/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /leave the task in_progress/i);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized GitHub delivery controller/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed still means implementation merged to main/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
@@ -493,10 +540,10 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.13.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.14.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
-  console.log('site operations smoke passed: evaluator provenance, session-independent SEO task run leases, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
+  console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }
