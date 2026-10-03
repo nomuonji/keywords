@@ -1,0 +1,52 @@
+name: seo-delivery-controller
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seo-delivery-controller
+  cancel-in-progress: false
+
+jobs:
+  deliver:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
+      SEO_DELIVERY_MAX_TASKS: '20'
+      SEO_DELIVERY_NO_CHECK_GRACE_MS: '120000'
+
+    steps:
+      - name: Check central delivery credentials
+        id: config
+        shell: bash
+        run: |
+          if [ -z "$SEO_DELIVERY_GITHUB_TOKEN" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::SEO_DELIVERY_GITHUB_TOKEN is not configured; controller remains idle."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        if: steps.config.outputs.enabled == 'true'
+        run: npm install --ignore-scripts
+
+      - name: Deliver SEO branches
+        if: steps.config.outputs.enabled == 'true'
+        run: npx tsx scripts/seo-delivery-controller.ts
