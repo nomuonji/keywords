@@ -17,8 +17,14 @@ export const cloudflarePagesDeploymentLogsShape = {
   maxLines: z.number().int().min(20).max(1000).default(250)
 };
 
+export const cloudflarePagesPreviewBranchesShape = {
+  siteId: entityId,
+  excludeBranches: z.array(z.string().trim().min(1).max(200)).min(1).max(20).default(['seo/*'])
+};
+
 const siteStatusSchema = z.object(cloudflarePagesSiteStatusShape).strict();
 const deploymentLogsSchema = z.object(cloudflarePagesDeploymentLogsShape).strict();
+const previewBranchesSchema = z.object(cloudflarePagesPreviewBranchesShape).strict();
 
 type SiteTarget = {
   id: string;
@@ -66,19 +72,22 @@ export function cloudflarePagesRuntimeStatus() {
     configured: config.configured,
     accountIdConfigured: Boolean(config.accountId),
     apiTokenConfigured: Boolean(config.apiToken),
-    permissions: 'Pages Read is sufficient for status and build-log diagnostics'
+    permissions: 'Pages Read is sufficient for diagnostics; Pages Edit is required to change preview branch controls'
   };
 }
 
-async function cloudflare<T>(path: string): Promise<CloudflareEnvelope<T>> {
+async function cloudflare<T>(path: string, init: RequestInit = {}): Promise<CloudflareEnvelope<T>> {
   const config = cloudflareConfiguration();
   if (!config.configured || !config.accountId || !config.apiToken) {
-    throw new Error('Cloudflare Pages diagnostics are not configured. Set CLOUDFLARE_ACCOUNT_ID and a CLOUDFLARE_API_TOKEN with Pages Read permission in the Sites Operator deployment environment.');
+    throw new Error('Cloudflare Pages integration is not configured. Set CLOUDFLARE_ACCOUNT_ID and a CLOUDFLARE_API_TOKEN in the Sites Operator deployment environment.');
   }
   const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(config.accountId)}${path}`, {
+    ...init,
     headers: {
       authorization: `Bearer ${config.apiToken}`,
-      accept: 'application/json'
+      accept: 'application/json',
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers ?? {})
     }
   });
   const body = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
@@ -175,7 +184,9 @@ function safeProject(project: any) {
       owner: project.source.config?.owner ?? null,
       repoName: project.source.config?.repo_name ?? null,
       productionDeploymentsEnabled: project.source.config?.production_deployments_enabled ?? null,
-      previewDeploymentSetting: project.source.config?.preview_deployment_setting ?? null
+      previewDeploymentSetting: project.source.config?.preview_deployment_setting ?? null,
+      previewBranchIncludes: Array.isArray(project.source.config?.preview_branch_includes) ? project.source.config.preview_branch_includes : [],
+      previewBranchExcludes: Array.isArray(project.source.config?.preview_branch_excludes) ? project.source.config.preview_branch_excludes : []
     } : null
   };
 }
@@ -240,6 +251,68 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
     publicationBacklog: {
       count: waitingTasks.length,
       tasks: waitingTasks
+    }
+  };
+}
+
+export async function cloudflarePagesSetPreviewBranchExclusions(input: unknown, site: SiteTarget) {
+  const args = previewBranchesSchema.parse(input);
+  if (args.siteId !== site.id) throw new Error('Resolved site does not match requested siteId');
+  const { project, resolution } = await resolveProject(site);
+  const source = project?.source;
+  const sourceConfig = source?.config ?? {};
+  const currentSetting = sourceConfig.preview_deployment_setting ?? 'all';
+
+  if (currentSetting === 'none') {
+    return {
+      site: { id: site.id, repository: site.repository ?? null, productionUrl: site.productionUrl ?? null },
+      cloudflare: {
+        projectResolution: resolution,
+        changed: false,
+        reason: 'preview_deployments_already_disabled',
+        project: safeProject(project)
+      }
+    };
+  }
+
+  const existingIncludes = Array.isArray(sourceConfig.preview_branch_includes)
+    ? sourceConfig.preview_branch_includes.filter((value: unknown) => typeof value === 'string' && value.trim())
+    : [];
+  const existingExcludes = Array.isArray(sourceConfig.preview_branch_excludes)
+    ? sourceConfig.preview_branch_excludes.filter((value: unknown) => typeof value === 'string' && value.trim())
+    : [];
+  const previewBranchIncludes = currentSetting === 'all' && existingIncludes.length === 0 ? ['*'] : (existingIncludes.length ? existingIncludes : ['*']);
+  const previewBranchExcludes = [...new Set([...existingExcludes, ...args.excludeBranches])];
+
+  const updated = (await cloudflare<any>(
+    `/pages/projects/${encodeURIComponent(project.name)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        source: {
+          type: source?.type ?? 'github',
+          config: {
+            preview_deployment_setting: 'custom',
+            preview_branch_includes: previewBranchIncludes,
+            preview_branch_excludes: previewBranchExcludes
+          }
+        }
+      })
+    }
+  )).result;
+
+  const safe = safeProject(updated);
+  if (safe.source?.previewDeploymentSetting !== 'custom'
+      || !safe.source.previewBranchExcludes.includes(args.excludeBranches[0])) {
+    throw new Error(`Cloudflare Pages preview branch exclusion did not persist for project ${project.name}`);
+  }
+
+  return {
+    site: { id: site.id, repository: site.repository ?? null, productionUrl: site.productionUrl ?? null },
+    cloudflare: {
+      projectResolution: resolution,
+      changed: true,
+      project: safe
     }
   };
 }
