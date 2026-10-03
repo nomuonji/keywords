@@ -51,6 +51,16 @@ jobs:
         if: steps.config.outputs.enabled == 'true'
         run: npm install --ignore-scripts
 
+      - name: Migrate one legacy delivery task for smoke test
+        if: steps.config.outputs.enabled == 'true' && github.event_name == 'push'
+        env:
+          SEO_DELIVERY_MIGRATE_TASK_ID: a81c74b5-051f-40d6-8768-72fe3343c5b2
+          SEO_DELIVERY_MIGRATE_BRANCH: seo/whiskies-producer-filter-price-context
+          SEO_DELIVERY_MIGRATE_HEAD_SHA: bc9baf5f7095e624171baed2dd8931b3b5dae111
+          SEO_DELIVERY_MIGRATE_BASE_SHA: 679d4b73dd424caf3ed41ec8b5faa5fb3a6616ea
+          SEO_DELIVERY_MIGRATE_VALIDATION: "Worker local astro check had two pre-existing errors in astro.config.mjs (includeInSitemap and loadJsonDir implicit any); changed files were self-reviewed and no price values were changed."
+        run: npx tsx scripts/seo-delivery-legacy-handoff.ts
+
       - name: Deliver SEO branches
         if: steps.config.outputs.enabled == 'true'
         run: npx tsx scripts/seo-delivery-controller.ts
