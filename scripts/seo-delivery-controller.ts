@@ -231,6 +231,18 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
   });
 }
 
+async function deleteMergedBranch(repo: string, branch: string) {
+  if (!branch.startsWith('seo/')) return;
+  try {
+    await gh(api(repo, `/git/refs/heads/${encodeURIComponent(branch)}`), { method: 'DELETE' });
+    console.log(`Deleted merged SEO branch: ${repo}#${branch}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/GitHub 404 Not Found/.test(message)) return;
+    console.log(`Could not delete merged SEO branch ${repo}#${branch}: ${message}`);
+  }
+}
+
 async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPull) {
   const current = await seoTaskGet({ id: task.id });
   const handoff = nextHandoff(current.deliveryHandoff, {
@@ -259,6 +271,7 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
       detail: `PR #${pr.number} merged; default-branch resultCommitSha=${mergeSha}. Task completed automatically by central delivery controller.`
     }
   });
+  await deleteMergedBranch(task.repo, current.deliveryHandoff.branch ?? '');
 }
 
 async function processTask(task: SeoTaskRecord) {
