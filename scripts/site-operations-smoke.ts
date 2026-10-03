@@ -458,7 +458,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 33);
+  assert.equal(listing.tools.length, 34);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
