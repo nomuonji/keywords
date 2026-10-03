@@ -162,6 +162,15 @@ export type SeoTaskDeploymentVerification = {
   detail: string;
 };
 
+export type SeoTaskExecutionClaim = {
+  /** Ephemeral execution-run identifier. A new ChatGPT/session run may reclaim after expiry. */
+  runId: string;
+  actor: string;
+  claimedAt: string;
+  heartbeatAt: string;
+  expiresAt: string;
+};
+
 export type SeoTaskHistoryEntry = {
   at: string;
   actor: string;
@@ -207,6 +216,8 @@ export type SeoTaskRecord = {
   executionSummary: string;
   /** Separate from implementation status: completed means merged to main; this records optional production verification. */
   deploymentVerification: SeoTaskDeploymentVerification;
+  /** Temporary run lease. It is not a persistent worker identity and may be reclaimed after expiry. */
+  executionClaim: SeoTaskExecutionClaim | null;
   history: SeoTaskHistoryEntry[];
   createdBy: string;
   revision: number;
