@@ -1,4 +1,4 @@
-export const SITES_MCP_SERVER_VERSION = '0.13.0';
+export const SITES_MCP_SERVER_VERSION = '0.14.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
