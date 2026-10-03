@@ -4,9 +4,9 @@
 
 ## 1. Worker responsibility
 
-The Worker owns **implementation through verified merge to the repository default branch**.
+The Worker owns **implementation through a verified push to a dedicated `seo/*` branch plus a durable Sites Operator delivery checkpoint**.
 
-The Worker does **not** own the hosting platform, production deployment, cache propagation, or unrelated pre-existing build/deployment failures. Production verification is recorded separately so a human or a later checker can inspect it without keeping the SEO implementation task open.
+The Worker does **not** create/update pull requests or merge to the repository default branch. Those mutations belong to an external GitHub delivery lane. The Worker also does not own the hosting platform, production deployment, cache propagation, or unrelated pre-existing build/deployment failures. A later delivery/reconciliation step records completion only after the exact change is observed on the default branch.
 
 | Responsibility | Worker |
 | --- | --- |
@@ -14,10 +14,11 @@ The Worker does **not** own the hosting platform, production deployment, cache p
 | Verify current repository state and task scope | yes |
 | Implement the requested bounded change | yes |
 | Validate the change with available targeted/build/CI evidence | yes |
-| Create/update PR and satisfy required repository gates | yes |
-| Merge to main when permitted | **yes** |
-| Record actual main result SHA | **yes** |
-| Set SEO task `completed` after verified main merge | **yes** |
+| Push/update dedicated `seo/*` implementation branch | **yes** |
+| Persist delivery checkpoint in Sites Operator | **yes** |
+| Create/update PR | **no** — external delivery lane |
+| Merge to main | **no** — external delivery lane |
+| Record actual main result SHA / set `completed` | only when a later run observes the exact change already merged |
 | Verify production/public URL | optional |
 | Repair unrelated hosting/deployment/platform defects | **no** |
 
@@ -57,7 +58,7 @@ A Worker execution is an **ephemeral run**, not a durable identity. A later sche
    - `executionClaim = null`: legacy/unleased work; reclaimable.
    - `executionClaim.expiresAt <= now`: stale run lease; reclaimable.
    - unexpired claim: another execution may still be active; do not seize it.
-3. For reclaimable `in_progress` work, inspect the current GitHub default branch, existing branch/PR/check state, task history and acceptance scope. Continue from the furthest verified artifact instead of starting over.
+3. For reclaimable `in_progress` work, inspect the current GitHub default branch, existing implementation branch, task history and acceptance scope. Continue from the furthest verified artifact instead of starting over. If history already contains a valid `delivery_handoff_ready` checkpoint and the branch still exists at that recorded HEAD, do not reclaim it merely to create a PR or merge; it is awaiting the external delivery lane. If the exact change is now on the default branch, reconcile it to `completed`.
 4. If no valid stale work should be resumed, select a `ready` task (or eligible legacy `issued` task) and perform the same current-state checks.
 5. Enter execution with `seo_task_claim(id, expectedRevision)`. The response contains an ephemeral `executionClaim.runId`; keep it only for this run.
 6. Pass that value as `claimRunId` on every `seo_task_update` while the task remains `in_progress`. Long-running phases should call `seo_task_heartbeat` before the lease can expire. Successful in-progress updates also refresh the lease.
@@ -126,23 +127,47 @@ When a check fails:
 
 Do **not** expand an SEO content task into an unrelated platform/site repair solely to make every deployment green. If repository branch protection permits merge and the task change itself has adequate independent validation, the Worker may merge while recording the unrelated failure.
 
-## 5. PR and mandatory main merge
+## 5. Branch push and delivery handoff
 
-A draft PR is an intermediate artifact, not a successful Worker result.
+A verified implementation branch plus a durable checkpoint is the successful Worker delivery result.
 
-1. Create/update the PR with Sites Operator Task ID, target, changed files, rationale, acceptance criteria, and actual validation evidence.
-2. Self-review the complete diff. Do not invent a formal approval.
-3. Satisfy mandatory branch checks/reviews. Never bypass branch protection or a required external reviewer.
-4. Mark draft PR ready when appropriate.
-5. Refresh PR HEAD/base and mergeability.
-6. **Merge to main in the same authorized run when the repository permits it.**
-7. Read back the merged PR and current main target code. Record the actual main commit SHA, not only the feature-branch SHA.
+1. Use a dedicated `seo/*` branch for the Task. Reuse the existing Task branch when resuming; do not create duplicate branches for the same intervention.
+2. Self-review the complete diff against the Task acceptance criteria.
+3. Run available targeted/local repository validation. Record any pre-existing unrelated failure accurately rather than hiding it.
+4. Push or update the `seo/*` branch and read back its HEAD SHA.
+5. **Do not call GitHub PR creation/update, auto-merge, or merge mutations from the Worker.** Interactive approval can suspend unattended automation; PR/merge delivery belongs to the external GitHub delivery lane.
+6. Immediately persist a durable Sites Operator checkpoint while the Task remains `in_progress`. Include:
+   - implementation branch name;
+   - branch HEAD SHA;
+   - default-branch/base SHA used for the implementation;
+   - validation commands/results, including known unrelated failures;
+   - `nextAction=awaiting_external_delivery`;
+   - a history event named `delivery_handoff_ready`.
+7. Read the Task back and verify the checkpoint was persisted before ending the run.
 
-If mandatory repository gates genuinely prevent merge, leave the task `in_progress` with the precise blocker.
+Do not set `resultCommitSha` to the feature-branch SHA. That field is reserved for the actual default-branch result after merge.
 
-## 6. Mark implementation completed
+Example checkpoint:
 
-Once the intended change is verified on main:
+```json
+{
+  "id": "<task-id>",
+  "expectedRevision": 7,
+  "claimRunId": "<executionClaim.runId>",
+  "executionSummary": "Implementation pushed to seo/example-change at <branch-head-sha> from main <base-sha>. Validation: <actual result>. nextAction=awaiting_external_delivery.",
+  "appendHistory": {
+    "actor": "seo_worker",
+    "event": "delivery_handoff_ready",
+    "detail": "branch=seo/example-change; head=<branch-head-sha>; base=<base-sha>; validation=<actual result>; nextAction=awaiting_external_delivery"
+  }
+}
+```
+
+The Task intentionally remains `in_progress` after this handoff.
+
+## 6. Reconcile completion after external delivery
+
+If a later Worker/reconciler observes that the external delivery lane has merged the exact intended change, verify the current default-branch code and actual main result SHA, then complete the Task:
 
 ```json
 {
@@ -151,7 +176,7 @@ Once the intended change is verified on main:
   "status": "completed",
   "claimRunId": "<executionClaim.runId>",
   "resultCommitSha": "<actual-main-sha>",
-  "executionSummary": "Merged PR #...; verified target change on main. Production not independently verified.",
+  "executionSummary": "External delivery observed on main at <actual-main-sha>; verified target change on default branch. Production not independently verified.",
   "deploymentVerification": {
     "status": "pending",
     "productionUrl": "https://example.com/target",
@@ -160,7 +185,7 @@ Once the intended change is verified on main:
   "appendHistory": {
     "actor": "seo_worker",
     "event": "implementation_completed",
-    "detail": "Verified merge to main at <sha>; deployment verification remains pending."
+    "detail": "Observed and verified external delivery on main at <sha>; deployment verification remains pending."
   }
 }
 ```
@@ -220,21 +245,22 @@ Report:
 
 - selected Task ID and initial state;
 - whether it was newly claimed or stale/reclaimed, plus the ephemeral claim run ID;
-- changed files and PR;
+- changed files and implementation branch;
 - actual validation performed;
-- actual merge result and main SHA;
+- branch HEAD/base SHA and durable delivery checkpoint;
+- whether external main delivery was already observed; if so, actual main SHA;
 - final Sites Operator implementation status/revision;
 - deploymentVerification status separately;
 - any unrelated build/deploy problem as a separate note.
 
 A good final line is:
 
-> Implementation completed and merged to main. Production verification: pending.
+> Implementation pushed to `seo/*` and delivery checkpoint recorded. Awaiting external delivery to main.
 
-Do not say “completed” if the PR is merely open. Do not say “production verified” without an actual production check.
+Do not say “completed” merely because the implementation branch was pushed. Only say “completed” after the exact change is observed on the repository default branch. Do not say “production verified” without an actual production check.
 
 ### Minimal bootstrap
 
 ```text
-Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run: inspect in_progress execution claims first, reclaim unleased/expired work with seo_task_claim before taking new ready work, and never rely on a persistent "previous self". Keep executionClaim.runId for this run, use claimRunId on in-progress updates, heartbeat long phases, and finish one real task through verified main merge when repository gates permit. Then set the task completed with the actual main resultCommitSha. Production verification is a separate deploymentVerification field. Read back every state change.
+Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run: inspect in_progress execution claims first, reclaim unleased/expired work with seo_task_claim before taking new ready work, and never rely on a persistent "previous self". Keep executionClaim.runId for this run, use claimRunId on in-progress updates, and heartbeat long phases. Implement and validate one real task, push/update its dedicated seo/* branch, then persist and read back a delivery_handoff_ready checkpoint with branch HEAD, base SHA, validation evidence and nextAction=awaiting_external_delivery. Do not create/update PRs or merge to main from the Worker. Leave the task in_progress unless the exact change is already observed on the default branch; only then set completed with the actual main resultCommitSha. Production verification remains a separate deploymentVerification field.
 ```
