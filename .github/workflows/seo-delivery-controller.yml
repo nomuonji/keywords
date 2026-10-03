@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/seo-delivery-controller.yml'
+      - 'scripts/seo-delivery-controller.ts'
+      - 'scripts/seo-delivery-legacy-handoff.ts'
   schedule:
     - cron: '*/10 * * * *'
 
