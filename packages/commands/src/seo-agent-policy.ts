@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.16.0';
+export const SEO_AGENT_POLICY_VERSION = '1.17.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -72,6 +72,7 @@ const plannerInstructions = [
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
   'Reserve a bounded discovery pass alongside active experiment supply, without letting a long research pass starve implementation. Choose one active managed site, resume its research session seo-discovery-{siteId} through theme_research_context, or create that session with research_session_create if genuinely missing. Keep new monetization exploration in seo-theme-research. Rotate sites using session history rather than repeatedly inspecting only the most familiar site.',
   'Start discovery from dated real questions/reviews, persisted query observations or competitor answers. Follow the previous discovery.nextQueries/nextChallenge, inspect public source text and actual top-page bodies with search_gap_research, and let unexpected evidence change the next query. Do not infer a content gap from weakDomainCount, dates, title matches, Ads competition or a composite score. Brave is not Google ranking evidence; use configured Google SERP confirmation for Google-specific claims.',
+  'Before converging on obvious keyword variants, perform a bounded lateral-discovery pass from the concrete observation. First describe the searcher\'s latent state or job-to-be-done, then try several non-taxonomic transformations such as colloquial wording, incomplete memory/name-recall language, analogy/similarity, substitutes/alternatives, negative constraints, situation-first phrasing, proxy goals or category-boundary mistakes. Do not immediately force an interesting phrase into the current site taxonomy or monetization model. Abstract the reusable mechanism first, then test portfolio fit. This is hypothesis generation only: preserve the source and later validate demand, SERP, usefulness and monetization separately. Zero volume may reject a specific phrase after investigation but must not suppress the lateral pass itself.',
   'Use keyword_research_pipeline observedCandidates with a source URL, observedAt, excerpt and researchReason so observation-led candidates receive bounded SERP checks even with low/missing volume. This is investigation permission, never a claim of verified demand. All calls share the existing SERP quota; do not forceRefresh to bypass an exhausted normal budget.',
   'Save discoveries and rejections with theme_candidate_upsert/challenge: audience/question, dated observations, body excerpts and answer gaps, feasible deliverable, falsification and evidence-driven nextQueries. Preserve failed/partial retrieval as uncertainty. pilot_ready requires this packet; criticism without new observation is not validation. If tools, sources or time are unavailable, report the exact discovery blocker and next query, then continue justified implementation planning without inventing evidence.',
   'For implementation derived from discovery, pass research={sessionId,candidateId,candidateRevision} to seo_task_create. The candidate must be pilot_ready and explicitly match siteId; the task snapshots its evidence so future edits cannot change the original rationale. Define a bounded artifact, acceptance criteria and post-publication observation. Discovery and analysis remain Planner work, never an audit/research-only Worker assignment.',
@@ -137,6 +138,7 @@ export function seoAgentContext(input: unknown) {
             required: true,
             sessionPattern: 'seo-discovery-{siteId}',
             tools: ['theme_research_context', 'research_session_create', 'keyword_research_pipeline', 'search_gap_research', 'theme_candidate_upsert', 'theme_candidate_challenge'],
+            lateralPass: 'Diverge before filtering: infer the searcher state from a real observation and test multiple language/mental-model shifts (colloquial, name-recall, analogy, alternatives, negative constraints, situation/proxy-goal). Abstract the reusable mechanism before mapping it to a site. No requirement to promote any idea.',
             completion: 'Dated external observations and body comparison saved with a finding/rejection and next query, or an exact capability/source/time blocker. No candidate or task quota.',
             handoff: 'Pilot-ready candidate with explicit siteId and immutable task research snapshot.'
           },
