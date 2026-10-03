@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.17.0';
+export const SEO_AGENT_POLICY_VERSION = '1.18.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -105,13 +105,13 @@ const plannerInstructions = [
 
 const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
-  'Select a genuinely actionable ready or legacy issued task; inspect in_progress work and existing branches/PRs to avoid duplication. Resume only your own previous run or a confirmed handoff; never seize concurrently owned work.',
+  'Treat every scheduled/manual execution as a new ephemeral run: there is no persistent worker identity or "previous self" across sessions. Inspect in_progress work first. An in_progress task with no executionClaim or an expired executionClaim is reclaimable; an unexpired claim is temporarily protected. Prefer reclaiming stale work before claiming new ready work when it remains valid.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
   'If the selected SEO task has directionId, read that Site Direction record before implementation. It must be decided and belong to the same site; treat its decision/constraints as implementation boundaries and preserve the directionId in task history. If the record is not decided or has been superseded, stop that strategic implementation and report the mismatch.',
 
   'Respect the site registry siteShape and the selected expansion task type. site_expansion may add a bounded useful page family, utility, comparison/decision experience or product-facing feature; data_expansion updates verified structured records through the repository\'s source/provenance gates; schema_expansion changes schema/templates only within the documented need. Do not convert these tasks into generic articles or broad redesigns.',
   'For data_expansion, verify every promoted public fact against the task-required authoritative sources and run repository data validation/freshness checks. Candidate discovery alone is not completion. For schema_expansion, preserve backward compatibility where practical, update validation/types/templates and prove generated outputs remain bounded and useful.',
-  'Verify current main HEAD and bounded task scope before claim/change. Update task with fresh expectedRevision, worker_claimed/resumed history and readback; this is optimistic revision tracking, not a multi-worker exclusive lease.',
+  'Verify current main HEAD, task scope, existing branch/PR and task history before execution. Enter in_progress only through seo_task_claim with the fresh expectedRevision. Keep the returned executionClaim.runId for this run, pass it as claimRunId on in_progress seo_task_update calls, and renew with seo_task_heartbeat when a long-running phase could outlive the lease. Never use actor labels as persistent ownership.',
   'For a scoped reversible experiment, uncertainty about traffic uplift or a missing analytics baseline is not an implementation blocker when factual sources, current code, acceptance criteria and rollback are supplied. Implement the pilot faithfully; do not turn it into an audit or wait for proof of an effect that requires publication.',
   'For article experiments, inspect optimization_context and reuse a linked optimization event from task notes/history. If absent and the article is registered, create a proposed event with the task ID, hypothesis, actual planned baseline dates, explicit metric limitations and rollback. Record event IDs, before/after commit evidence and evaluation handoff in task history/summary. Leave phase proposed until real publication is observed; the later Planner handles measurement. Failure to register tracking must be reported separately and must not silently block the authorized main-merge implementation.',
   'Implement the documented material scope and validate the change itself. Run available targeted/local/repository checks; compare failures with the base branch when necessary so a pre-existing unrelated deploy/build defect is not misattributed to this task.',
@@ -120,7 +120,7 @@ const executorInstructions = [
   'After merge, verify the actual main result SHA and target code, then set status=completed with resultCommitSha. completed means implementation merged to main; it does NOT mean production deployment was verified.',
   'Maintain deploymentVerification as a separate axis. If production was not checked, leave status=pending. If a check observes a deployment/public failure, record failed with concise evidence. If production is positively verified, record verified with checkedAt (and deployedCommitSha when known). Use not_required only when no public deployment applies. Production verification is optional for the Worker and may be performed later by a human.',
   'Do not expand an SEO task into repairing an unrelated pre-existing deployment/platform defect merely to obtain production verification. Record the unrelated blocker in deploymentVerification/detail and finish the implementation task once the main merge is verified.',
-  'Use seo_task_get -> seo_task_update(expectedRevision) -> seo_task_get readback on each state change. If tool/safety/authorization rejects an operation, stop that rejected action; do not reroute equivalent rejected content. Record exact failure and true remaining state.'
+  'Use seo_task_get -> seo_task_claim/seo_task_update(expectedRevision, claimRunId when in_progress) -> seo_task_get readback on each state change. Revision conflicts require a fresh read. Active unexpired claims must not be seized; expired/unleased in_progress tasks should be reclaimed through seo_task_claim. If tool/safety/authorization rejects an operation, stop that rejected action; do not reroute equivalent rejected content. Record exact failure and true remaining state.'
 ];
 
 export function seoAgentContext(input: unknown) {
@@ -177,8 +177,9 @@ export function seoAgentContext(input: unknown) {
           output: 'Supply bounded reversible experiments and review their outcomes; a discovery rejection alone cannot end planning below the buffer target. Persist a bounded discovery outcome even when the implementation buffer is full; no forced candidate promotion. When inventory <8, aim 3-5 new distinct evidence-backed ready Sites Operator task records (hard max 5, max 2 per repo); if fewer qualify, save them and explain the exhaustive relevant search.'
         }
       : {
-          start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'inspect in_progress resumable deliveries and ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state'],
+          start: ['seo_agent_context(role=executor)', 'read canonical worker manual', 'inspect in_progress executionClaim state before ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state', 'seo_task_claim(id, expectedRevision) to claim or reclaim'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md',
+          claimModel: 'Execution ownership is a temporary run lease, not a persistent worker/session identity. Unleased or expired in_progress work is reclaimable; active claims are protected until expiry and renewed by heartbeat or claimed updates.',
           deliveryDefault: 'Complete the SEO implementation at verified main merge. Production verification is a separate deploymentVerification state and is not required to set task status=completed.',
           output: 'Verified main merge plus resultCommitSha and completed task; deploymentVerification separately records pending/verified/failed/not_required without blocking implementation completion.'
         }
