@@ -14,8 +14,10 @@ import {
   siteDirectionGet,
   siteDirectionList,
   siteDirectionUpdate,
+  seoTaskClaim,
   seoTaskCreate,
   seoTaskGet,
+  seoTaskHeartbeat,
   seoTaskList,
   seoTaskUpdate
 } from '../packages/commands/src/remote-site-operations.js';
@@ -118,6 +120,7 @@ try {
   assert.deepEqual(readyTask.evaluation?.evidenceSourceIds, ['google_scaled_content_policy', 'google_ai_content_guidance']);
   assert.equal(readyTask.deploymentVerification.status, 'pending');
   assert.equal(readyTask.deploymentVerification.productionUrl, 'https://example.com/article-a');
+  assert.equal(readyTask.executionClaim, null);
   assert.equal(readyTask.history[0].event, 'ready');
   assert.equal((await seoTaskGet({ id: readyTask.id })).status, 'ready');
   assert.equal((await seoTaskList({ siteId: 'site-a', status: 'ready' })).items.length, 1);
@@ -140,23 +143,46 @@ try {
     },
     dedupeKey: 'site-a:new-article:invalid-evaluator'
   }), /not registered/);
-  const startedTask = await seoTaskUpdate({
-    id: readyTask.id, expectedRevision: readyTask.revision, status: 'in_progress',
-    appendHistory: { actor: 'site-operations-smoke', event: 'claimed', detail: 'No GitHub Issue needed.' }
+  await assert.rejects(seoTaskUpdate({
+    id: readyTask.id, expectedRevision: readyTask.revision, status: 'in_progress'
+  }), /seo_task_claim/);
+  const startedTask = await seoTaskClaim({
+    id: readyTask.id,
+    expectedRevision: readyTask.revision,
+    runId: 'smoke-run-0001',
+    actor: 'site-operations-smoke',
+    leaseMinutes: 75
   });
   assert.equal(startedTask.status, 'in_progress');
   assert.equal(startedTask.issueUrl, null);
+  assert.equal(startedTask.executionClaim?.runId, 'smoke-run-0001');
+  assert.ok(Date.parse(startedTask.executionClaim!.expiresAt) > Date.parse(startedTask.executionClaim!.heartbeatAt));
+  await assert.rejects(seoTaskClaim({
+    id: readyTask.id,
+    expectedRevision: startedTask.revision,
+    runId: 'smoke-run-0002',
+    actor: 'other-run',
+    leaseMinutes: 75
+  }), /active execution claim/);
+  const heartbeatTask = await seoTaskHeartbeat({
+    id: readyTask.id,
+    expectedRevision: startedTask.revision,
+    runId: 'smoke-run-0001',
+    leaseMinutes: 75
+  });
+  assert.equal(heartbeatTask.executionClaim?.runId, 'smoke-run-0001');
   await assert.rejects(seoTaskUpdate({
     id: readyTask.id, expectedRevision: readyTask.revision, status: 'completed'
   }), /Revision conflict/);
 
   await assert.rejects(seoTaskUpdate({
-    id: readyTask.id, expectedRevision: startedTask.revision, status: 'completed'
+    id: readyTask.id, expectedRevision: heartbeatTask.revision, status: 'completed', claimRunId: 'smoke-run-0001'
   }), /completed SEO task requires resultCommitSha/);
   const completedTask = await seoTaskUpdate({
     id: readyTask.id,
-    expectedRevision: startedTask.revision,
+    expectedRevision: heartbeatTask.revision,
     status: 'completed',
+    claimRunId: 'smoke-run-0001',
     resultCommitSha: 'd'.repeat(40),
     executionSummary: 'Merged implementation to main; production verification is intentionally separate.',
     deploymentVerification: {
@@ -169,6 +195,7 @@ try {
   assert.equal(completedTask.status, 'completed');
   assert.equal(completedTask.resultCommitSha, 'd'.repeat(40));
   assert.equal(completedTask.deploymentVerification.status, 'pending');
+  assert.equal(completedTask.executionClaim, null);
   assert.ok(completedTask.completedAt);
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending' })).items.length, 1);
   const verifiedTask = await seoTaskUpdate({
@@ -385,7 +412,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 31);
+  assert.equal(listing.tools.length, 33);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
@@ -401,9 +428,11 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_query_opportunities'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_planning_digest_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_claim'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.17.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.18.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -448,6 +477,10 @@ try {
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /separate deploymentVerification/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /MERGE to main/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed means implementation merged to main/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
+  assert.match(executorPolicy.structuredContent.runContract.claimModel, /not a persistent worker\/session identity/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /expectedRevision/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
@@ -458,10 +491,10 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.12.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.13.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
-  console.log('site operations smoke passed: evaluator provenance, versioned evidence registry, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
+  console.log('site operations smoke passed: evaluator provenance, session-independent SEO task run leases, record-only ready tasks, main-merge completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
 }
