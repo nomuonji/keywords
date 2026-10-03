@@ -27,6 +27,19 @@ const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', '
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
+const seoTaskDeliveryState = z.enum(['none', 'branch_ready', 'pr_open', 'ci_failed', 'merged']);
+const seoTaskDeliveryHandoffShape = z.object({
+  state: seoTaskDeliveryState,
+  branch: z.string().trim().regex(/^seo\/[A-Za-z0-9._\/-]+$/).max(240).nullable(),
+  headSha: commitSha.nullable(),
+  baseSha: commitSha.nullable(),
+  validationSummary: note,
+  handedOffAt: isoTime.nullable(),
+  prNumber: z.number().int().positive().nullable(),
+  prUrl: webUrl.nullable(),
+  lastError: note,
+  updatedAt: isoTime.nullable()
+}).strict();
 const seoTaskRunId = z.string().trim().min(8).max(120);
 const seoTaskLeaseMinutes = z.number().int().min(15).max(180).default(75);
 const seoTaskDeploymentVerificationPatch = z.object({
@@ -183,6 +196,7 @@ export const seoTaskUpdateShape = {
   resultCommitSha: commitSha.nullable().optional(),
   executionSummary: note.optional(),
   deploymentVerification: seoTaskDeploymentVerificationPatch.optional(),
+  deliveryHandoff: seoTaskDeliveryHandoffShape.optional(),
   claimRunId: seoTaskRunId.optional(),
   appendHistory: historyEntry.optional()
 };
@@ -730,6 +744,19 @@ const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
   detail: 'Production verification has not been recorded yet.'
 });
 
+const defaultDeliveryHandoff = () => ({
+  state: 'none' as const,
+  branch: null,
+  headSha: null,
+  baseSha: null,
+  validationSummary: '',
+  handedOffAt: null,
+  prNumber: null,
+  prUrl: null,
+  lastError: '',
+  updatedAt: null
+});
+
 const SEO_TASK_CLAIM_DEFAULT_MINUTES = 75;
 const claimIsActive = (claim: SeoTaskRecord['executionClaim'] | null | undefined, at = Date.now()) =>
   Boolean(claim?.expiresAt && Date.parse(claim.expiresAt) > at);
@@ -753,7 +780,8 @@ const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   evaluation: task.evaluation ?? null,
   research: task.research ?? null,
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
-  executionClaim: task.executionClaim ?? null
+  executionClaim: task.executionClaim ?? null,
+  deliveryHandoff: task.deliveryHandoff ?? defaultDeliveryHandoff()
 });
 
 export async function seoTaskGet(input: unknown) {
@@ -815,6 +843,7 @@ export async function seoTaskCreate(input: unknown) {
     executionSummary: '',
     deploymentVerification: defaultDeploymentVerification({ targetUrls: args.targetUrls }),
     executionClaim: null,
+    deliveryHandoff: defaultDeliveryHandoff(),
     history: [{ at: t, actor: args.createdBy, event: 'ready', detail: 'Evidence-backed SEO task recorded in Sites Operator for later implementation; no GitHub Issue required.' }],
     createdBy: args.createdBy,
     revision: 1,
@@ -915,7 +944,7 @@ export async function seoTaskUpdate(input: unknown) {
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
   const t = now();
-  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, claimRunId, ...patch } = args;
+  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, claimRunId, ...patch } = args;
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
   }
@@ -939,9 +968,26 @@ export async function seoTaskUpdate(input: unknown) {
   const deploymentVerification = deploymentPatch === undefined
     ? current.deploymentVerification
     : { ...current.deploymentVerification, ...Object.fromEntries(Object.entries(deploymentPatch).filter(([, value]) => value !== undefined)) };
+  const deliveryHandoff = deliveryPatch === undefined ? current.deliveryHandoff : deliveryPatch;
+  const releasingToDelivery = current.status === 'in_progress' && deliveryPatch?.state === 'branch_ready';
+
+  if (deliveryPatch?.state === 'branch_ready') {
+    if (!deliveryPatch.branch || !deliveryPatch.headSha || !deliveryPatch.baseSha || !deliveryPatch.handedOffAt) {
+      throw new Error('branch_ready delivery handoff requires branch, headSha, baseSha and handedOffAt');
+    }
+    if (!claimRunId || claimRunId !== current.executionClaim?.runId) {
+      throw new Error('branch_ready delivery handoff must be written by the active Worker claim');
+    }
+  }
+  if (deliveryPatch?.state === 'pr_open' && (!deliveryPatch.prNumber || !deliveryPatch.prUrl)) {
+    throw new Error('pr_open delivery handoff requires prNumber and prUrl');
+  }
+  if (deliveryPatch?.state === 'merged' && !patch.resultCommitSha) {
+    throw new Error('merged delivery handoff requires resultCommitSha');
+  }
 
   let nextExecutionClaim = current.executionClaim;
-  if (status !== 'in_progress') {
+  if (status !== 'in_progress' || releasingToDelivery) {
     nextExecutionClaim = null;
   } else if (current.executionClaim && claimRunId === current.executionClaim.runId) {
     const leaseMinutes = Math.round(claimLeaseMs(current.executionClaim) / 60_000);
@@ -961,6 +1007,7 @@ export async function seoTaskUpdate(input: unknown) {
     status,
     deploymentVerification,
     executionClaim: nextExecutionClaim,
+    deliveryHandoff,
     history: history.slice(-100),
     completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
     revision: expectedRevision + 1,
