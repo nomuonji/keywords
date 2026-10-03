@@ -154,7 +154,14 @@ async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
   }
 
   for (const run of checks?.check_runs ?? []) {
-    const name = `check:${run.name ?? run.id}`;
+    const rawName = String(run.name ?? run.id);
+    // Hosting preview checks are intentionally not part of the SEO delivery gate.
+    // seo/* preview deployments may be disabled to avoid duplicate build spend.
+    if (/cloudflare pages/i.test(rawName) || /vercel/i.test(rawName) || /netlify/i.test(rawName)) {
+      passed.push(`hosting-preview-ignored:${rawName}`);
+      continue;
+    }
+    const name = `check:${rawName}`;
     if (run.status !== 'completed') pending.push(name);
     else if (['success', 'neutral', 'skipped'].includes(run.conclusion)) passed.push(name);
     else failed.push(`${name}=${run.conclusion ?? 'unknown'}`);
