@@ -38,7 +38,7 @@ If `SEO_DELIVERY_GITHUB_TOKEN` is absent, the scheduled workflow exits successfu
 
 ## Schedule and state machine
 
-The controller runs every 30 minutes and can also be dispatched manually.
+The controller runs hourly and can also be dispatched manually.
 
 - `branch_ready`: verify the recorded branch/head SHA and create/reuse a PR.
 - `pr_open`: wait while observed checks/statuses are pending.
