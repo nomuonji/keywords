@@ -115,17 +115,16 @@ For registered articles, inspect `optimization_context`, reuse the linked event,
 
 ### Pre-existing unrelated failures
 
-A failing build/deploy check is not automatically caused by the Worker.
+A failing validation step is not automatically caused by the Worker.
 
-When a check fails:
+When a targeted/local/repository check fails:
 
-1. identify the failing file/stage and compare it with the task diff;
-2. for a failed Cloudflare Pages PR/preview check, do not infer that it is unrelated just because GitHub does not expose the log. If Sites Operator Cloudflare diagnostics are available, call `cloudflare_pages_site_status(siteId, environment=preview)`, locate the deployment whose trigger commit matches the PR HEAD, then call `cloudflare_pages_deployment_logs` for that deployment;
-3. check whether the same failure existed on the pre-change/default-branch baseline when evidence is available;
-4. if the failure is caused by this task, fix it before merge;
-5. if it is clearly pre-existing and unrelated to the task, record that fact and follow the repository's actual merge policy.
+1. identify the failing file/stage and compare it with the Task diff;
+2. check whether the same failure is reproducible or already present on the default-branch baseline when evidence is available;
+3. if the failure is caused by this Task, fix it before the branch handoff;
+4. if it is clearly pre-existing and unrelated, record the exact failure in the delivery checkpoint without expanding the SEO Task into unrelated repair work.
 
-Do **not** expand an SEO content task into an unrelated platform/site repair solely to make every deployment green. If repository branch protection permits merge and the task change itself has adequate independent validation, the Worker may merge while recording the unrelated failure.
+The Worker does not create or mutate PRs to obtain preview checks. PR/merge CI, preview deployment checks, and merge-gate handling belong to the external delivery lane. A later reconciler may inspect their evidence when deciding whether the exact implementation reached the default branch.
 
 ## 5. Branch push and delivery handoff
 
