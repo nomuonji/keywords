@@ -468,6 +468,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_update'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_site_status'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_set_preview_branch_exclusions'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_deployment_logs'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
@@ -540,7 +541,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.14.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.15.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
