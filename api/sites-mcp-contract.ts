@@ -1,4 +1,4 @@
-export const SITES_MCP_SERVER_VERSION = '0.14.0';
+export const SITES_MCP_SERVER_VERSION = '0.15.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
@@ -14,6 +14,7 @@ export const SITES_MCP_TOOL_NAMES = [
   'site_direction_list',
   'site_direction_update',
   'cloudflare_pages_site_status',
+  'cloudflare_pages_set_preview_branch_exclusions',
   'cloudflare_pages_deployment_logs',
   'site_article_list',
   'site_article_get',
