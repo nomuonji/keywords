@@ -164,7 +164,7 @@ export function seoAgentContext(input: unknown) {
             taskEvidence: ['hypothesis', 'artifact', 'primary outcome metric', 'baseline or explicitly unknown', 'evaluation due date', 'success/failure criteria', 'rollback'],
             tracking: 'Existing SEO task rationale/evidence/history and optimization events; no separate experiment ledger.',
             feedbackTools: ['optimization_event_list', 'optimization_evaluation_context', 'optimization_event_update', 'seo_task_get', 'seo_task_update'],
-            publicationGate: 'Actual production observation before phase=implemented and the traffic evaluation window begins; main merge remains Worker completion.',
+            publicationGate: 'Actual production observation before phase=implemented and the traffic evaluation window begins; default-branch merge remains implementation completion, while the Worker delivery handoff occurs earlier at verified seo/* branch push.',
             defaultEvaluationWaitDays: 14,
             stoppingRule: 'One rejection, unavailable analytics or another page cooldown cannot justify an empty batch when inventory is below target.'
           },
