@@ -35,6 +35,8 @@ import {
   cloudflarePagesDeploymentLogs,
   cloudflarePagesDeploymentLogsShape,
   cloudflarePagesRuntimeStatus,
+  cloudflarePagesSetPreviewBranchExclusions,
+  cloudflarePagesPreviewBranchesShape,
   cloudflarePagesSiteStatus,
   cloudflarePagesSiteStatusShape
 } from '../packages/commands/src/cloudflare-pages.js';
@@ -117,6 +119,15 @@ function server() {
     const taskResult = await seoTaskList({ siteId: input.siteId, limit: 100 }) as { items: any[] };
     return structured(await cloudflarePagesSiteStatus(input, site as any, taskResult.items));
   });
+  mcp.registerTool('cloudflare_pages_set_preview_branch_exclusions', {
+    description: 'Update one Cloudflare Pages project so selected preview branch patterns (default seo/*) do not trigger preview deployments. Preserves production deployments and other preview branches. Requires Pages Edit permission.',
+    inputSchema: cloudflarePagesPreviewBranchesShape,
+    annotations: { readOnlyHint: false, destructiveHint: false }
+  }, async input => {
+    const site = await siteRegistryGet({ id: input.siteId });
+    return structured(await cloudflarePagesSetPreviewBranchExclusions(input, site as any));
+  });
+
   mcp.registerTool('cloudflare_pages_deployment_logs', {
     description: 'Read Cloudflare Pages build logs for a Sites Operator site. When deploymentId is omitted, selects the most recent failed deployment in the requested environment, falling back to the latest deployment. Returns only safe deployment metadata and bounded log lines; it does not retry or mutate Cloudflare.',
     inputSchema: cloudflarePagesDeploymentLogsShape,
