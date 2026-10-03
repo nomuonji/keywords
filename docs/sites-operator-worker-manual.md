@@ -50,13 +50,20 @@ A completed task may therefore be `completed + pending` or `completed + failed`.
 
 ## 3. Start and claim
 
-1. Call `seo_agent_context(role=executor)`.
-2. Inspect safe resumable `in_progress` work first. Resume only your own prior run or an explicit handoff after confirming no active competing executor.
-3. Otherwise list `ready` tasks (and eligible legacy `issued` tasks), fetch the selected task, verify active site mapping, current default-branch HEAD, target files, relevant PRs/commits, and existing task history.
-4. If the task is stale, duplicate, already delivered or contradicted, do not manufacture a change.
-5. Claim with `seo_task_update` using the fresh `expectedRevision`, status `in_progress`, and a `worker_claimed` / `worker_resumed` history entry. Read it back.
+A Worker execution is an **ephemeral run**, not a durable identity. A later scheduled session is not "the same Worker" and does not need an explicit handoff from a prior session.
 
-Revision conflicts require a fresh read and reconciliation; never blindly retry.
+1. Call `seo_agent_context(role=executor)`.
+2. List `in_progress` work before new `ready` work. Read each candidate's `executionClaim`.
+   - `executionClaim = null`: legacy/unleased work; reclaimable.
+   - `executionClaim.expiresAt <= now`: stale run lease; reclaimable.
+   - unexpired claim: another execution may still be active; do not seize it.
+3. For reclaimable `in_progress` work, inspect the current GitHub default branch, existing branch/PR/check state, task history and acceptance scope. Continue from the furthest verified artifact instead of starting over.
+4. If no valid stale work should be resumed, select a `ready` task (or eligible legacy `issued` task) and perform the same current-state checks.
+5. Enter execution with `seo_task_claim(id, expectedRevision)`. The response contains an ephemeral `executionClaim.runId`; keep it only for this run.
+6. Pass that value as `claimRunId` on every `seo_task_update` while the task remains `in_progress`. Long-running phases should call `seo_task_heartbeat` before the lease can expire. Successful in-progress updates also refresh the lease.
+7. Completion/cancellation/supersession clears the claim automatically.
+
+The claim exists only to prevent overlapping executions. It must never be interpreted as a person, account or persistent agent identity. Revision conflicts require a fresh read and reconciliation; never blindly retry.
 
 ## 4. Implement and validate
 
@@ -142,6 +149,7 @@ Once the intended change is verified on main:
   "id": "<task-id>",
   "expectedRevision": 7,
   "status": "completed",
+  "claimRunId": "<executionClaim.runId>",
   "resultCommitSha": "<actual-main-sha>",
   "executionSummary": "Merged PR #...; verified target change on main. Production not independently verified.",
   "deploymentVerification": {
@@ -211,6 +219,7 @@ A later human can list records with `deploymentVerificationStatus=pending` or `f
 Report:
 
 - selected Task ID and initial state;
+- whether it was newly claimed or stale/reclaimed, plus the ephemeral claim run ID;
 - changed files and PR;
 - actual validation performed;
 - actual merge result and main SHA;
@@ -227,5 +236,5 @@ Do not say “completed” if the PR is merely open. Do not say “production ve
 ### Minimal bootstrap
 
 ```text
-Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Finish one real task through verified main merge when repository gates permit, then set the task completed with the actual main resultCommitSha. Production verification is a separate deploymentVerification field: leave it pending when not checked, record failed when an actual deployment check fails, verified only with real evidence, and do not expand the SEO task into unrelated deployment repair. Read back every state change.
+Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run: inspect in_progress execution claims first, reclaim unleased/expired work with seo_task_claim before taking new ready work, and never rely on a persistent "previous self". Keep executionClaim.runId for this run, use claimRunId on in-progress updates, heartbeat long phases, and finish one real task through verified main merge when repository gates permit. Then set the task completed with the actual main resultCommitSha. Production verification is a separate deploymentVerification field. Read back every state change.
 ```
