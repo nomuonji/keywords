@@ -969,7 +969,9 @@ export async function seoTaskUpdate(input: unknown) {
   const deploymentVerification = deploymentPatch === undefined
     ? current.deploymentVerification
     : { ...current.deploymentVerification, ...Object.fromEntries(Object.entries(deploymentPatch).filter(([, value]) => value !== undefined)) };
-  const deliveryHandoff = deliveryPatch === undefined ? current.deliveryHandoff : deliveryPatch;
+  const deliveryHandoff: SeoTaskRecord['deliveryHandoff'] = deliveryPatch === undefined
+    ? current.deliveryHandoff
+    : { ...defaultDeliveryHandoff(), ...deliveryPatch, updatedAt: t };
   const releasingToDelivery = current.status === 'in_progress' && deliveryPatch?.state === 'branch_ready';
 
   if (deliveryPatch?.state === 'branch_ready') {
