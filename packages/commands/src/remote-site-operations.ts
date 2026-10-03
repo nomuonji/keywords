@@ -74,7 +74,7 @@ export const siteRegistrySaveShape = {
 };
 const siteSaveSchema = z.object(siteRegistrySaveShape).strict();
 
-export const siteArticleListShape = { siteId: entityId, status: articleStatus.optional(), limit: z.number().int().min(1).max(100).default(50) };
+export const siteArticleListShape = { siteId: entityId, status: articleStatus.optional(), limit: z.number().int().min(1).max(1000).default(50) };
 export const siteArticleGetShape = { id: entityId };
 export const siteArticleSaveShape = {
   id: entityId, expectedRevision: z.number().int().min(0), siteId: entityId,
@@ -101,7 +101,7 @@ export const metricSnapshotSaveShape = {
 const metricSaveSchema = z.object(metricSnapshotSaveShape).strict();
 export const metricSnapshotListShape = {
   siteId: entityId, articleId: entityId.optional(), provider: z.enum(['gsc', 'ga4']).optional(),
-  limit: z.number().int().min(1).max(100).default(50)
+  limit: z.number().int().min(1).max(1000).default(50)
 };
 
 export const siteDirectionGetShape = { id: entityId };
@@ -213,7 +213,7 @@ export const optimizationEventCreateShape = {
 const optimizationCreateSchema = z.object(optimizationEventCreateShape).strict();
 export const optimizationEventListShape = {
   siteId: entityId, articleId: entityId.optional(), phase: optimizationPhase.optional(), result: optimizationResult.optional(),
-  limit: z.number().int().min(1).max(100).default(50)
+  limit: z.number().int().min(1).max(1000).default(50)
 };
 export const optimizationEventUpdateShape = {
   id: entityId, expectedRevision: z.number().int().min(1), beforeCommit: commitSha.nullable().optional(), afterCommit: commitSha.nullable().optional(),
@@ -482,7 +482,7 @@ export async function siteRegistrySave(input: unknown) {
 
 export async function siteArticleList(input: unknown) {
   const args = z.object(siteArticleListShape).strict().parse(input); await ensureSite(args.siteId);
-  const items = (await queryBySite('articles', args.siteId, 500)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord)
+  const items = (await queryBySite('articles', args.siteId, 1000)).map(item => ({ localPageId: null, canonicalUrl: null, ...item }) as SiteArticleRecord)
     .filter(item => !args.status || item.status === args.status)
     .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.limit);
   return { items };

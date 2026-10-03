@@ -69,6 +69,7 @@ try {
   const { operationCommands } = await import('../packages/commands/src/operation.js');
   const {
     metricSnapshotSave,
+    siteArticleList,
     siteArticleSave,
     siteRegistrySave
   } = await import('../packages/commands/src/remote-site-operations.js');
@@ -100,6 +101,22 @@ try {
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'page-a', canonicalUrl: 'https://example.com/article-a',
     repo: 'nomuonji/site-a', repoPath: 'content/article-a.mdx', currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A', status: 'published'
   });
+  // Keep the measurable article outside the old default first-100 window.
+  // Candidate selection must inspect the site's full bounded registry result,
+  // or it can report no work while a qualified article is present.
+  docs.get(`${root}articles/article-a`).fields.updatedAt = { stringValue: '2020-01-01T00:00:00.000Z' };
+  for (let index = 0; index < 105; index++) {
+    const suffix = String(index).padStart(3, '0');
+    await siteArticleSave({
+      id: `article-decoy-${suffix}`, expectedRevision: 0, siteId: 'site-a',
+      localPageId: `page-decoy-${suffix}`, canonicalUrl: `https://example.com/decoy-${suffix}`,
+      repo: 'nomuonji/site-a', repoPath: `content/decoy-${suffix}.mdx`, currentCommitSha: 'c'.repeat(40),
+      slug: `decoy-${suffix}`, title: `Decoy ${suffix}`, status: 'published'
+    });
+  }
+  const defaultArticlePage = await siteArticleList({ siteId: 'site-a', limit: 100 });
+  assert.equal(defaultArticlePage.items.length, 100);
+  assert.ok(!defaultArticlePage.items.some((article: any) => article.id === 'article-a'), 'fixture article must be outside the default first page');
 
   const previous = await metricSnapshotSave({
     siteId: 'site-a', articleId: 'article-a', provider: 'gsc', periodStart: date(-15), periodEnd: date(-9),

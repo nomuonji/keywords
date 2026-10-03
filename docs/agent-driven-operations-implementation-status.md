@@ -1,6 +1,60 @@
 # Agent-driven Operations — Implementation Status
 
-最終更新: 2026-09-09
+最終更新: 2026-09-29
+
+## Remote scheduled SEO loop — evidence and remaining gap (2026-09-29)
+
+This repository's GitHub measurement workflow is not the Agent HQ SEO Manager
+or Luna Worker scheduler. Scheduled Manager Methods v22/v25/v26 have completed
+their own control-plane runs. In the latest recorded v26 run, the Manager read
+five ready candidates, wrote per-candidate no-action reasons, and dispatched
+zero Worker changes because the evidence did not justify a material edit. A
+later Worker attempt could not resolve its active Method or claim work because
+My Portal returned `Quota exceeded`.
+
+The manager's safe no-action behavior and scheduled claim/finish path are
+verified. The Worker history contains one chonmage-en delivery Work Item
+(`YG4rXEQAgmNF2UU8xdCa`) marked `live_verified` for Shinjuku Nightlife and
+Golden Gai; its first seven-day outcome evaluation is due 2026-10-05 09:00 JST.
+That item is separate from BUNGU, and its implementation commit is not
+identified in the available record. The latest v26 Manager run itself
+dispatched zero new Worker changes. The repeatable selection → execution →
+delivery → live acceptance → persisted event → matured evaluation loop remains
+unproven and Phase 2 stays open.
+
+At least four read-only investigations were also completed and archived:
+ja.chon-mage exposure diagnosis, en.chon-mage internal-link audit, a multi-site
+thin/rich cohort analysis, and a shikaku thin-content cohort review. The BUNGU
+Custom 823 rewrite reached GitHub main at
+`3201f1f63a82db6589d0953084bd24b93960f0c5`, with verification marker at
+`6767cd7336c12585af52a9355922e12d9a83bc8d`. Manager Run
+`WqgLm6F2krTg1wBuxx87` later verified the Custom 823 page and marker plus two
+Stationery Awards pages in production (HTTP 200, canonical, index/follow, and
+expected content). The two BUNGU Work Items and related Incident could not be
+reconciled/archived because the My Portal state writes were rejected. Thus
+three BUNGU production pages have verified live evidence, while their
+Agent-HQ completion state remains open.
+
+The later v25 measurement read improved GSC snapshot coverage from 1/14 to
+14/14 registered sites. The portfolio remains 14/16 registered, and this
+measurement improvement alone does not demonstrate an optimization or its
+effect. PR #50 (`Sync verified Blog publication receipts`) adds a prerequisite
+for newly published pages to enter the exact article registry; it is open and
+not yet merged or deployed. A second issue was then confirmed in code: candidate
+selection and explicit article lookups could silently stop at the first 100
+records. The current branch raises the bounded selection window to 1,000 and
+uses direct ID lookup for named articles; the regression smoke proves a
+qualified article beyond row 100 is still selected. Targeted smoke, typecheck,
+and full build pass locally. Registries above 1,000 still need cursor
+pagination, and this fix awaits CI/merge/deploy. My Portal's SystemChangeSet
+could not be updated during the quota incident, so this repository record
+preserves the code and runtime evidence pending control-plane reconciliation.
+
+## 2026-09-29 publication registry handoff
+
+Verified Blog publication receipts can now create a missing Sites article record when the approved handoff ID/version/origin, published HTTP 200 + canonical evidence, unique local page, and one exact source path+SHA in the confirmed Blog snapshot agree. Deterministic IDs make retries idempotent; paused/archived records and ambiguous or incomplete source mappings remain unchanged. This closes the gap where newly published pages never entered article-level SEO measurement. It does not mass-backfill snapshot content or make measurement jobs run optimization work.
+
+Validation for this follow-up: `npm run test:site-operations-bridge`, `npm run typecheck`, and full `npm run build` passed locally. It is prepared on the existing GitHub PR branch and awaits remote CI/Manager review; it has not been deployed.
 
 ## 状態
 
@@ -100,3 +154,4 @@ APIにbackground schedulerはない。scheduler ownerは `npm run autopilot` の
 - 実publish/canonical確認
 - 実provider limit下の長時間復旧
 - 公開後SEO成果
+

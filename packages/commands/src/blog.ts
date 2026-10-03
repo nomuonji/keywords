@@ -5,6 +5,7 @@ import { fetchPublicHtml, searchConsoleQuery } from '@keywords/research';
 import { blogContract, briefSchema, receiptSchema, snapshotSchema, type BlogSnapshot } from './blog-contract.js';
 import { isBudgetedCommand } from './budget.js';
 import { autonomyControl } from './autonomy.js';
+import { syncVerifiedBlogPublication } from './site-operations-bridge-legacy.js';
 
 const { sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -74,6 +75,24 @@ export function blogNextActions(projectId: string) {
   kind:h.status==='blocked'?'blog_blocked':'blog_observation_due',rank:4.5,title:h.status==='blocked'?'Resolve Blog delivery blocker':'Observe published Blog change',
   reason:h.status==='blocked'?'Blog reported a blocker; inspect receipt before more content.':`Observation due: ${h.next_observation_at}`,relatedType:'blog_handoff',relatedId:h.id
  }));
+}
+
+async function syncPublishedReceiptToArticleRegistry(projectId: string, handoffId: string) {
+  try {
+    return await syncVerifiedBlogPublication(projectId, handoffId);
+  } catch {
+    // Keep the verified local receipt durable; surface a safe retry instruction
+    // without leaking provider errors or turning a successful publication into failure.
+    return {
+      status: 'failed' as const,
+      reason: 'site_article_sync_failed',
+      updated: 0,
+      reused: 0,
+      skipped: 1,
+      auditRunIds: [] as string[],
+      warnings: ['The verified publication receipt is saved locally, but the remote article registry sync failed. Retry verification after the registry is available.']
+    };
+  }
 }
 
 export const blogCommands = {
@@ -160,8 +179,10 @@ export const blogCommands = {
   const p=one('SELECT status FROM pages WHERE id=?',h.page_id);
   return {payload:parse(h.payload_json),status:h.status,valid:p?.status==='approved'&&h.version_hash===pageVersion(h.page_id),receipts:rows('SELECT payload_json FROM blog_receipts WHERE handoff_id=? ORDER BY created_at',h.id).map(r=>parse(r.payload_json))};
  },
- receipt: async(ctx:CommandContext,input:{projectId:string;receipt:unknown})=>audited(ctx,input.projectId,'blog.receipt',()=>sqlite.transaction(()=>{
-  const r=receiptSchema.parse(input.receipt);const h=one('SELECT * FROM blog_handoffs WHERE id=? AND project_id=?',r.handoff_id,input.projectId);required(h,'Handoff not in project');
+ receipt: async(ctx:CommandContext,input:{projectId:string;receipt:unknown})=>audited(ctx,input.projectId,'blog.receipt',async()=>{
+  const r=receiptSchema.parse(input.receipt);
+  const result = sqlite.transaction(()=>{
+  const h=one('SELECT * FROM blog_handoffs WHERE id=? AND project_id=?',r.handoff_id,input.projectId);required(h,'Handoff not in project');
   const hash=fingerprint(r), old=one('SELECT * FROM blog_receipts WHERE event_id=?',r.event_id);
   if(old){required(old.payload_hash===hash&&old.handoff_id===h.id,'Event ID payload collision');return {status:h.status,duplicate:true};}
   required(r.version_hash===h.version_hash,'Receipt version mismatch');fresh(r.occurred_at,365);
@@ -187,10 +208,17 @@ export const blogCommands = {
   run('INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)',r.event_id,h.id,hash,JSON.stringify(r),now());
   run('UPDATE blog_handoffs SET status=?,published_at=?,next_observation_at=?,updated_at=? WHERE id=?',r.status,publishedAt,due,now(),h.id);
   return {status:r.status,duplicate:false,nextObservationAt:due};
- }).immediate()),
+  }).immediate();
+  if (r.status !== 'published') return result;
+  const articleRegistrySync = await syncPublishedReceiptToArticleRegistry(input.projectId, r.handoff_id);
+  return { ...result, articleRegistrySync };
+ }),
  verifyPublished: async(ctx:CommandContext,input:{projectId:string;handoffId:string;source?:string})=>audited(ctx,input.projectId,'blog.verify_published',async()=>{
   const h=one('SELECT * FROM blog_handoffs WHERE id=? AND project_id=?',input.handoffId,input.projectId);required(h,'Handoff not found');
-  if(h.published_at)return {status:'already_published',publishedAt:h.published_at,nextObservationAt:h.next_observation_at};
+  if(h.published_at) return {
+   status:'already_published',publishedAt:h.published_at,nextObservationAt:h.next_observation_at,
+   articleRegistrySync: await syncPublishedReceiptToArticleRegistry(input.projectId, h.id)
+  };
   required(['exported','accepted','local_verified'].includes(h.status),'Only an active delivered handoff can be directly verified');
   const payload=parse(h.payload_json), urls=(payload.target_urls??[]) as string[];required(urls.length,'Handoff has no target URLs');
   const checks=[] as Array<{url:string;http_status:200;canonical:string}>;const failures=[] as Array<{url:string;reason:string}>;
@@ -203,7 +231,8 @@ export const blogCommands = {
   const hash=fingerprint(receipt),due=new Date(Date.parse(confirmedAt)+7*86400000).toISOString();
   run('INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)',receipt.event_id,h.id,hash,JSON.stringify(receipt),confirmedAt);
   run('UPDATE blog_handoffs SET status=?,published_at=?,next_observation_at=?,updated_at=? WHERE id=?', 'published',confirmedAt,due,confirmedAt,h.id);
-  return {status:'published',publishedAt:confirmedAt,nextObservationAt:due,checks};
+  const articleRegistrySync = await syncPublishedReceiptToArticleRegistry(input.projectId, h.id);
+  return {status:'published',publishedAt:confirmedAt,nextObservationAt:due,checks,articleRegistrySync};
  }),
  capture: async(ctx:CommandContext,input:{projectId:string;startDate:string;endDate:string;siteUrl:string;searchType?:string})=>audited(ctx,input.projectId,'blog.capture',async()=>{
   const b=binding(input.projectId);required(/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)&&/^\d{4}-\d{2}-\d{2}$/.test(input.endDate)&&input.startDate<=input.endDate,'Valid ordered dates required');

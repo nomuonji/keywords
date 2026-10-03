@@ -116,6 +116,11 @@ globalThis.fetch = async (input, init) => {
       rowCount: 1
     });
   }
+  if (url === 'https://example.com/article-a' || url === 'https://example.com/article-b') {
+    return new Response(`<html><head><link rel="canonical" href="${url}"></head><body>verified fixture</body></html>`, {
+      status: 200, headers: { 'content-type': 'text/html' }
+    });
+  }
   assert.ok(url.startsWith('https://firestore.googleapis.com/'), `Unexpected network request: ${url}`);
   const parsed = new URL(url);
   const path = parsed.pathname.replace('/v1/', '');
@@ -156,6 +161,7 @@ try {
   const { getDatabase } = await import('../packages/db/src/index.js');
   const { optimizationContext, siteRegistrySave } = await import('../packages/commands/src/remote-site-operations.js');
   const { captureGa4Period } = await import('../packages/commands/src/ga4-metrics.js');
+  const { blogCommands } = await import('../packages/commands/src/blog.js');
   const { projectSiteOperationsMetrics } = await import('../packages/commands/src/site-operations-bridge.js');
   const { sqlite } = getDatabase();
   const t = '2026-09-15T00:00:00.000Z';
@@ -264,6 +270,66 @@ try {
   assert.equal(decodeField(articleDocs[0].fields?.status), 'draft', 'local Blog mapping must not invent publication state');
   const articleId = articleDocs[0].name.split('/').at(-1)!;
 
+  const publishedAt = '2026-09-16T12:34:56.000Z';
+  const targetUrl = 'https://example.com/article-a';
+  const handoffPayload = { target_urls: [targetUrl] };
+  const receiptPayload = (eventId: string, httpStatus: number, canonical: string) => ({
+    schema_version: 1, event_id: eventId, handoff_id: eventId, version_hash: `${eventId}-version`,
+    status: 'published', occurred_at: publishedAt, evidence_refs: ['fixture:published'], final_urls: [targetUrl],
+    publication: { confirmed_at: publishedAt, checks: [{ url: targetUrl, http_status: httpStatus, canonical }] }
+  });
+  const insertHandoff = (id: string, withReceipt: boolean, httpStatus = 200, canonical = targetUrl, status = 'published') => {
+    sqlite.prepare(`INSERT INTO blog_handoffs(id,project_id,page_id,version_hash,payload_json,status,published_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(id, 'project-a', 'page-a', `${id}-version`, JSON.stringify(handoffPayload), status, withReceipt ? publishedAt : null, publishedAt, publishedAt);
+    if (withReceipt) sqlite.prepare(`INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)`)
+      .run(id, id, `${id}-hash`, JSON.stringify(receiptPayload(id, httpStatus, canonical)), publishedAt);
+  };
+
+  // A handoff without a receipt and a malformed publication receipt never
+  // promote the mapped record. The malformed fixture combines non-200 and
+  // canonical mismatch evidence and must be rejected with a visible warning.
+  insertHandoff('handoff-without-receipt', false);
+  insertHandoff('handoff-invalid-publication', true, 404, 'https://example.com/wrong');
+  const rejectedPublication: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(rejectedPublication.publicationReceiptSync.updated, 0);
+  assert.equal(rejectedPublication.publicationReceiptSync.skipped, 1);
+  assert.ok(rejectedPublication.publicationReceiptSync.warnings.some((message: string) => message.includes('evidence is incomplete')));
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.status), 'draft');
+
+  insertHandoff('handoff-valid-publication', false, 200, targetUrl, 'accepted');
+  insertHandoff('handoff-ambiguous-publication', true);
+  const articleDuplicate = JSON.parse(JSON.stringify(docs.get(`${root}articles/${articleId}`)));
+  articleDuplicate.name = `${root}articles/${articleId}-duplicate`;
+  articleDuplicate.fields.id = { stringValue: `${articleId}-duplicate` };
+  articleDuplicate.updateTime = 'duplicate-fixture';
+  docs.set(articleDuplicate.name, articleDuplicate);
+  const ambiguousPublication: any = await projectSiteOperationsMetrics('project-a');
+  assert.equal(ambiguousPublication.publicationReceiptSync.updated, 0);
+  assert.ok(ambiguousPublication.publicationReceiptSync.warnings.some((message: string) => message.includes('do not identify one existing article record')));
+  assert.deepEqual(ambiguousPublication.gsc.articles, { saved: 0, reused: 0 }, 'ambiguous article identities are excluded from page-level GSC projection');
+  assert.equal(ambiguousPublication.ga4Articles.saved, 0, 'ambiguous article identities are excluded from page-level GA4 projection');
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.status), 'draft');
+  docs.delete(articleDuplicate.name);
+
+  const auditRunsBeforePublish = [...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length;
+  const verifiedPublication: any = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-valid-publication', source: 'fixture:headless-publish'
+  });
+  assert.equal(verifiedPublication.status, 'published');
+  assert.equal(verifiedPublication.articleRegistrySync.status, 'synced', 'publication verification immediately syncs the remote article registry');
+  assert.equal(verifiedPublication.articleRegistrySync.updated, 1);
+  assert.equal(verifiedPublication.articleRegistrySync.reused, 0);
+  assert.equal(verifiedPublication.articleRegistrySync.auditRunIds.length, 1);
+  const publishedArticle = docs.get(`${root}articles/${articleId}`);
+  assert.equal(decodeField(publishedArticle.fields?.status), 'published');
+  assert.equal(decodeField(publishedArticle.fields?.publishedAt), verifiedPublication.publishedAt);
+  assert.equal(decodeField(publishedArticle.fields?.repoPath), 'content/posts/article-a.mdx', 'receipt sync preserves article source metadata');
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
+  assert.ok(docs.has(`${root}runs/${verifiedPublication.articleRegistrySync.auditRunIds[0]}`), 'publication update writes a durable audit run');
+  assert.ok([...docs.values()].some(doc => doc.name.startsWith(`${root}metricSnapshots/`)
+    && decodeField(doc.fields?.sourceVersion) === `sqlite:gsc:local-source-v1:article:${articleId}`),
+    'the exact registered article remains the downstream GSC projection target');
+
   const metricDocsAfterFirst = [...docs.values()].filter(doc => doc.name.startsWith(`${root}metricSnapshots/`));
   assert.equal(metricDocsAfterFirst.length, 10);
   const siteGsc = metricDocsAfterFirst.find(doc => decodeField(doc.fields?.provider) === 'gsc' && decodeField(doc.fields?.articleId) === null);
@@ -288,6 +354,10 @@ try {
   assert.equal(second.articleRegistrySync.status, 'synced');
   assert.equal(second.articleRegistrySync.created, 0);
   assert.equal(second.articleRegistrySync.reused, 1);
+  assert.equal(second.publicationReceiptSync.updated, 0);
+  assert.equal(second.publicationReceiptSync.reused, 2, 'repeated and stale receipts do not create writes or move publication time backwards');
+  assert.equal(decodeField(docs.get(`${root}articles/${articleId}`).fields?.publishedAt), verifiedPublication.publishedAt);
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, auditRunsBeforePublish + 1);
   assert.deepEqual(second.gsc.site, { saved: 0, reused: 1 });
   assert.deepEqual(second.gsc.articles, { saved: 0, reused: 1 });
   assert.deepEqual(second.ga4, { saved: 0, reused: 3 });
@@ -341,8 +411,8 @@ try {
     && ['sqlite:gsc:partial-empty-source-v1', 'sqlite:gsc:failed-empty-source-v1'].includes(String(decodeField(doc.fields?.sourceVersion)))),
     'partial or failed empty imports must not be projected as zero snapshots');
 
-  // Lazy mode refreshes registered articles but defers new ones to explicit
-  // registration (optimization event or publication).
+  // Lazy measurement sync refreshes registered articles but defers
+  // snapshot-only sources; a separate verified-publication path is covered below.
   sqlite.prepare('INSERT INTO pages(id,project_id,title,slug,kind,status,url,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
     .run('page-b', 'project-a', 'Article B', 'article-b', 'existing', 'local', 'https://example.com/article-b', 'blog_local', t, t);
   const snapshotRow = sqlite.prepare('SELECT snapshot_json FROM blog_bindings WHERE project_id=?').get('project-a') as { snapshot_json: string };
@@ -372,10 +442,97 @@ try {
   assert.ok(!bearerFailureCapture.organicError?.includes(bearerErrorFixture), 'organic error summaries must redact Bearer credentials');
   assert.deepEqual(bearerFailureCapture.metrics, { sessions: 25, activeUsers: 22, engagement: 0.68, views: 56 });
 
-  console.log('site operations bridge smoke passed: direct GA4 site totals survive partial landing collection, exact landing paths project article GA4, optimization context sees it, lazy sync defers new articles, and Firestore stays idempotent');
+  // Direct publication may create a lazy article only from a unique exact
+  // handoff source match in the bound snapshot. A mismatched digest is refused.
+  const articleBUrl = 'https://example.com/article-b';
+  const articleBPath = 'content/posts/article-b.mdx';
+  const articleBHash = '3'.repeat(64);
+  sqlite.prepare(`INSERT INTO operation_requests(id,request_key,request_text,objective,constraints_json,permissions_json,budget_json,assumptions_json,status,created_by,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`).run('operation-b', 'fixture:operation-b', 'Verified article B handoff', 'Fixture approval evidence', '{}', '{}', '{}', '[]', 'completed', 'bridge-smoke', t, t);
+  sqlite.prepare(`INSERT INTO operation_artifacts(id,operation_id,project_id,page_id,article_id,artifact_path,content_sha256,source_ids_json,validator_status,build_status,after_hash,manifest_json,generated_at,verified_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run('artifact-b', 'operation-b', 'project-a', 'page-b', 'article-b', articleBPath, articleBHash, '[]', 'passed', 'passed', articleBHash, '{}', t, t, t);
+  const insertDirectReceipt = (id: string, sourcePath: string, sourceHash: string) => {
+    const versionHash = `${id}-version`;
+    const payload = {
+      handoff_id: id, version_hash: versionHash, canonical_origin: 'https://example.com', publication_authorized: true,
+      target_urls: [articleBUrl], target_sources: [{ path: sourcePath, sha256: sourceHash }]
+    };
+    const receipt = {
+      schema_version: 1, event_id: `${id}-event`, handoff_id: id, version_hash: versionHash,
+      status: 'published', occurred_at: publishedAt, evidence_refs: ['fixture:published'], final_urls: [articleBUrl],
+      publication: { confirmed_at: publishedAt, checks: [{ url: articleBUrl, http_status: 200, canonical: articleBUrl }] }
+    };
+    sqlite.prepare(`INSERT INTO blog_handoffs(id,project_id,page_id,version_hash,payload_json,status,published_at,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`).run(id, 'project-a', 'page-b', versionHash, JSON.stringify(payload), 'published', publishedAt, publishedAt, publishedAt);
+    sqlite.prepare(`INSERT INTO blog_receipts(event_id,handoff_id,payload_hash,payload_json,created_at) VALUES(?,?,?,?,?)`)
+      .run(receipt.event_id, id, `${id}-hash`, JSON.stringify(receipt), publishedAt);
+  };
+  const articleBId = `blog_${(await import('node:crypto')).createHash('sha256').update(`site-a\0${articleBPath}`).digest('hex').slice(0, 32)}`;
+  insertDirectReceipt('handoff-bad-source', 'content/posts/missing.mdx', articleBHash);
+  const missingSource = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-bad-source'
+  }) as any;
+  assert.equal(missingSource.articleRegistrySync.status, 'skipped');
+  assert.ok(missingSource.articleRegistrySync.warnings.some((message: string) => message.includes('source path/digest')));
+  assert.equal(docs.has(`${root}articles/${articleBId}`), false, 'unmatched source digest must not create an article');
+
+  snapshotDoc.sources.push({ ...snapshotDoc.sources.find((source: any) => source.source_ref === articleBPath) });
+  sqlite.prepare('UPDATE blog_bindings SET snapshot_json=? WHERE project_id=?').run(JSON.stringify(snapshotDoc), 'project-a');
+  insertDirectReceipt('handoff-ambiguous-source', articleBPath, articleBHash);
+  const ambiguousSource = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-ambiguous-source'
+  }) as any;
+  assert.equal(ambiguousSource.articleRegistrySync.status, 'skipped');
+  assert.ok(ambiguousSource.articleRegistrySync.warnings.some((message: string) => message.includes('source path/digest')));
+  assert.equal(docs.has(`${root}articles/${articleBId}`), false, 'ambiguous bound source mappings must not create an article');
+  snapshotDoc.sources.pop();
+  sqlite.prepare('UPDATE blog_bindings SET snapshot_json=? WHERE project_id=?').run(JSON.stringify(snapshotDoc), 'project-a');
+
+  insertDirectReceipt('handoff-b-create', articleBPath, articleBHash);
+  const createAuditBefore = [...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length;
+  const createdPublication = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-b-create'
+  }) as any;
+  assert.equal(createdPublication.articleRegistrySync.status, 'synced');
+  assert.equal(createdPublication.articleRegistrySync.created, 1);
+  assert.equal(createdPublication.articleRegistrySync.auditRunIds.length, 1);
+  const createdArticle = docs.get(`${root}articles/${articleBId}`);
+  assert.ok(createdArticle, 'a verified publication with an exact bound source creates its missing registry record');
+  assert.equal(decodeField(createdArticle.fields?.localPageId), 'page-b');
+  assert.equal(decodeField(createdArticle.fields?.canonicalUrl), articleBUrl);
+  assert.equal(decodeField(createdArticle.fields?.repo), 'nomuonji/site-a');
+  assert.equal(decodeField(createdArticle.fields?.repoPath), articleBPath);
+  assert.equal(decodeField(createdArticle.fields?.slug), 'article-b');
+  assert.equal(decodeField(createdArticle.fields?.title), 'Article B');
+  assert.equal(decodeField(createdArticle.fields?.status), 'published');
+  assert.equal(decodeField(createdArticle.fields?.publishedAt), publishedAt);
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, createAuditBefore + 1);
+
+  const replayedPublication = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-b-create'
+  }) as any;
+  assert.equal(replayedPublication.articleRegistrySync.status, 'reused');
+  assert.equal(replayedPublication.articleRegistrySync.reused, 1);
+  assert.equal([...docs.values()].filter(doc => decodeField(doc.fields?.command) === 'site_article_save').length, createAuditBefore + 1,
+    'publication replay reuses the exact article without another registry write');
+
+  const pausedRevision = Number(decodeField(createdArticle.fields?.revision));
+  await (await import('../packages/commands/src/remote-site-operations.js')).siteArticleSave({
+    id: articleBId, expectedRevision: pausedRevision, siteId: 'site-a', status: 'paused'
+  });
+  insertDirectReceipt('handoff-b-paused', articleBPath, articleBHash);
+  const pausedPublication = await blogCommands.verifyPublished({ actor: 'agent', actorId: 'bridge-smoke' }, {
+    projectId: 'project-a', handoffId: 'handoff-b-paused'
+  }) as any;
+  assert.equal(pausedPublication.articleRegistrySync.status, 'skipped');
+  assert.ok(pausedPublication.articleRegistrySync.warnings.some((message: string) => message.includes('paused')));
+  assert.equal(decodeField(docs.get(`${root}articles/${articleBId}`).fields?.status), 'paused', 'direct publication never reactivates a paused article');
+
+  console.log('site operations bridge smoke passed: verified publication receipts update exact articles idempotently, ambiguous identities are skipped, GSC article metrics remain mapped, and Firestore stays idempotent');
 } finally {
   globalThis.fetch = originalFetch;
   for (const path of [analyticsPath, dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
     try { rmSync(path, { force: true }); } catch {}
   }
 }
+
