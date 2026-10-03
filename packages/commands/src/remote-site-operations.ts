@@ -950,6 +950,7 @@ export async function seoTaskUpdate(input: unknown) {
   }
 
   const terminalTransition = Boolean(patch.status && ['completed', 'cancelled', 'superseded'].includes(patch.status));
+  const deliveryLaneUpdate = current.status === 'in_progress' && !current.executionClaim && deliveryPatch !== undefined && current.deliveryHandoff.state !== 'none';
   if (current.status === 'in_progress' && current.executionClaim) {
     const matchesClaim = claimRunId === current.executionClaim.runId;
     if (claimIsActive(current.executionClaim) && !matchesClaim) {
@@ -958,7 +959,7 @@ export async function seoTaskUpdate(input: unknown) {
     if (!claimIsActive(current.executionClaim) && !matchesClaim && !terminalTransition) {
       throw new Error('SEO task execution claim expired; reclaim it with seo_task_claim before continuing');
     }
-  } else if (current.status === 'in_progress' && !current.executionClaim && !terminalTransition) {
+  } else if (current.status === 'in_progress' && !current.executionClaim && !terminalTransition && !deliveryLaneUpdate) {
     throw new Error('Legacy in_progress task has no execution claim; reclaim it with seo_task_claim before continuing');
   }
 
