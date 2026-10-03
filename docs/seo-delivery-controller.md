@@ -43,8 +43,9 @@ The controller runs hourly and can also be dispatched manually.
 - `branch_ready`: verify the recorded branch/head SHA and create/reuse a PR.
 - `pr_open`: wait while observed checks/statuses are pending.
 - failing check/status: write `ci_failed`; a later Worker may reclaim and repair the branch.
-- successful checks: merge using an allowed repository merge method.
-- merged PR: record the actual merge/default-branch SHA, set `deliveryHandoff.state=merged`, and set the Sites Operator task to `completed`.
+- successful repository checks: merge using an allowed repository merge method.
+- hosting preview checks from Cloudflare Pages, Vercel or Netlify are not merge gates for `seo/*` delivery; preview deployment may be intentionally disabled to avoid duplicate build spend.
+- merged PR: record the actual merge/default-branch SHA, set `deliveryHandoff.state=merged`, set the Sites Operator task to `completed`, and delete the merged `seo/*` branch.
 - production verification remains independent and normally stays `pending`.
 
 When a repository exposes no checks at all, the controller waits through a short grace period before relying on repository merge rules. Branch protection can still reject the merge.
