@@ -117,7 +117,46 @@ async function handoff(task: any, pushed: { branch: string; headSha: string; bas
   console.log(`HANDOFF ${task.id} ${task.repo}: ${pushed.branch}@${actualHead}; revision=${updated.revision}`);
 }
 
+async function reconcileBridgePrHead() {
+  const all = (await seoTaskList({ status: 'in_progress', limit: 100 })).items;
+  const task: any = all.find((item: any) => item.id === 'b80dbdcc-65b8-4fb2-836b-c16b78042619');
+  if (!task || task.deliveryHandoff?.state !== 'pr_open') return;
+  if (task.repo !== 'nomuonji/job-world' || task.deliveryHandoff.branch !== 'seo/bridge-inspector-qualification-paths') return;
+
+  const ref = await gh<{ object: { sha: string } }>(api(task.repo, `/git/ref/heads/${encodeURIComponent(task.deliveryHandoff.branch)}`));
+  const actualHead = String(ref.object.sha).toLowerCase();
+  const recordedHead = String(task.deliveryHandoff.headSha ?? '').toLowerCase();
+  if (actualHead === recordedHead) return;
+
+  const commit = await gh<{ parents: Array<{ sha: string }>; commit: { message: string } }>(api(task.repo, `/commits/${actualHead}`));
+  const parentMatches = commit.parents?.some(parent => parent.sha.toLowerCase() === recordedHead);
+  if (!parentMatches || commit.commit?.message !== 'Refresh generated data timestamp for CI') {
+    throw new Error(`Refusing bridge handoff HEAD refresh: recorded=${recordedHead}, actual=${actualHead}, expected one verified CI-fix child commit`);
+  }
+
+  const at = new Date().toISOString();
+  const updated = await seoTaskUpdate({
+    id: task.id,
+    expectedRevision: task.revision,
+    deliveryHandoff: {
+      ...task.deliveryHandoff,
+      headSha: actualHead,
+      validationSummary: `${task.deliveryHandoff.validationSummary} Follow-up CI drift fix regenerated src/data/generated/stats.json timestamp only; branch HEAD advanced from ${recordedHead} to ${actualHead}.`.slice(0, 4000),
+      lastError: '',
+      updatedAt: at
+    },
+    appendHistory: {
+      actor: 'seo_delivery_backlog_migration',
+      event: 'delivery_head_refreshed',
+      detail: `Verified direct child CI-drift fix and refreshed PR handoff HEAD from ${recordedHead} to ${actualHead}.`
+    }
+  });
+  console.log(`REFRESH_HANDOFF_HEAD ${task.id}: ${recordedHead} -> ${actualHead}; revision=${updated.revision}`);
+}
+
 async function main() {
+  await reconcileBridgePrHead();
+
   const items = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
     .filter((task: any) => (task.deliveryHandoff?.state ?? 'none') === 'none');
 
