@@ -27,9 +27,10 @@ Minimum practical repository permissions:
 - Contents: Read and write
 - Pull requests: Read and write
 - Actions: Read
-- Checks: Read
-- Commit statuses: Read
+- Commit statuses: Read, when the PAT UI exposes it
 - Metadata: Read
+
+`Checks` permission is optional. Fine-grained PAT configuration may not expose it. The controller treats a 403 from the check-runs endpoint as an unavailable optional signal and continues with GitHub Actions workflow runs plus commit statuses. Repository merge rules remain the final merge gate.
 
 The controller only processes repositories currently present in the active Sites Operator site registry. Its own `GITHUB_TOKEN` remains read-only.
 
