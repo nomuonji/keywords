@@ -193,6 +193,22 @@ async function markFailed(task: SeoTaskRecord, message: string) {
   });
 }
 
+async function recordControllerError(task: SeoTaskRecord, message: string) {
+  const current = await seoTaskGet({ id: task.id });
+  if (!current.deliveryHandoff || current.deliveryHandoff.state === 'none' || current.deliveryHandoff.state === 'merged') return;
+  const handoff = nextHandoff(current.deliveryHandoff, { lastError: message });
+  if (dryRun) {
+    console.log(`[dry-run] controller error for ${task.id}: ${message}`);
+    return;
+  }
+  await seoTaskUpdate({
+    id: task.id,
+    expectedRevision: current.revision,
+    deliveryHandoff: handoff,
+    appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_error', detail: message.slice(0, 2000) }
+  });
+}
+
 async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPull) {
   const current = await seoTaskGet({ id: task.id });
   const handoff = nextHandoff(current.deliveryHandoff, {
@@ -344,9 +360,9 @@ async function main() {
       await processTask(task);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error(`Task ${task.id} delivery error: ${message}`);
-      try { await markFailed(task, message); } catch (recordError) {
-        console.error(`Could not persist delivery error for ${task.id}: ${String(recordError)}`);
+      console.error(`Task ${task.id} controller error: ${message}`);
+      try { await recordControllerError(task, message); } catch (recordError) {
+        console.error(`Could not persist controller error for ${task.id}: ${String(recordError)}`);
       }
     }
   }
