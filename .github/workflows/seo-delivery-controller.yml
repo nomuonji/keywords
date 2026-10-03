@@ -2,8 +2,13 @@ name: seo-delivery-controller
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/seo-delivery-controller.yml'
+      - 'scripts/seo-delivery-backlog-migrate.ts'
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/30 * * * *'
 
 permissions:
   contents: read
@@ -46,6 +51,10 @@ jobs:
       - name: Install dependencies
         if: steps.config.outputs.enabled == 'true'
         run: npm install --ignore-scripts
+
+      - name: Normalize legacy in-progress backlog
+        if: steps.config.outputs.enabled == 'true' && github.event_name == 'push'
+        run: npx tsx scripts/seo-delivery-backlog-migrate.ts
 
       - name: Deliver SEO branches
         if: steps.config.outputs.enabled == 'true'
