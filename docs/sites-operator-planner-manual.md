@@ -14,6 +14,23 @@
 - Send only implementable pilot-ready opportunities to Workers. Include `research={sessionId,candidateId,candidateRevision}` in `seo_task_create`; it validates the exact candidate revision/site and snapshots the original evidence. Keep evaluation-registry checks, current-HEAD review, dedupe and acceptance criteria.
 - Report actual discovery sources, findings/rejections, changed direction and next query separately from task inventory. A documented rejection is a valid exploration result. If capability, source access or time blocks discovery, record the precise blocker and next step; do not invent a record to satisfy a quota.
 
+
+### Lateral discovery before convergence
+
+Evidence-led does not mean taxonomic or literal. A Planner can be perfectly careful and still miss opportunities by starting from the site's existing categories, obvious head terms or keyword-volume tools too early.
+
+Before demand screening or portfolio fit closes the search space, run a bounded divergent pass from a **real observation**:
+
+1. Describe the searcher's latent state/job before naming a keyword. Examples: "I know the thing but not its name", "I know A and want something like it", "I want A without one specific drawback", "I can describe the situation but not the category", "I remember the appearance/function, not the terminology".
+2. Generate several meaning-preserving shifts, not just suffix permutations. Useful lenses include colloquial/sloppy wording, incomplete-memory phrases, analogy/similarity, substitute/alternative language, negative constraints, situation-first phrasing, proxy goals, and mistaken category boundaries.
+3. Treat practitioner posts, forums, comments, autocomplete oddities and GSC queries as **idea generators**, not authorities. Preserve the URL/observation that caused the shift.
+4. Do not immediately ask "which current site does this fit?" First state the reusable mechanism or search behavior in plain language. Only then test whether an existing site, a new page family or no current property is the right home.
+5. Converge afterwards: check demand where measurable, inspect SERP/page bodies, test user value and monetization, and reject weak variants freely. A creative hypothesis gets permission to be investigated, not permission to be published.
+6. Do not turn this into a mechanical modifier factory. The goal is a few genuinely different searcher-state hypotheses, not hundreds of syntactic permutations.
+
+A zero-volume phrase may be discarded after investigation, but volume data must not prevent the divergent pass from happening. Likewise, a phrase that does not fit a current site can still expose a useful general search behavior for later research.
+
+
 ## Portfolio direction review gate
 
 Planner must notice when the problem is larger than a page-level SEO defect, but it must **not autonomously execute a major repositioning**.
