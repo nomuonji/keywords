@@ -478,7 +478,7 @@ try {
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /nextAction=awaiting_external_delivery/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /leave the task in_progress/i);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed means implementation merged to main/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed still means implementation merged to main/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
