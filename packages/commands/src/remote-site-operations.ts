@@ -27,6 +27,8 @@ const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', '
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
+const seoTaskRunId = z.string().trim().min(8).max(120);
+const seoTaskLeaseMinutes = z.number().int().min(15).max(180).default(75);
 const seoTaskDeploymentVerificationPatch = z.object({
   status: seoTaskDeploymentVerificationStatus,
   checkedAt: isoTime.nullable().optional(),
@@ -155,6 +157,21 @@ export const seoTaskListShape = {
   deploymentVerificationStatus: seoTaskDeploymentVerificationStatus.optional(),
   limit: z.number().int().min(1).max(100).default(50)
 };
+export const seoTaskClaimShape = {
+  id: entityId,
+  expectedRevision: z.number().int().min(1),
+  runId: seoTaskRunId.optional(),
+  actor: z.string().trim().min(1).max(120).default('seo_worker'),
+  leaseMinutes: seoTaskLeaseMinutes
+};
+const seoTaskClaimSchema = z.object(seoTaskClaimShape).strict();
+export const seoTaskHeartbeatShape = {
+  id: entityId,
+  expectedRevision: z.number().int().min(1),
+  runId: seoTaskRunId,
+  leaseMinutes: seoTaskLeaseMinutes
+};
+const seoTaskHeartbeatSchema = z.object(seoTaskHeartbeatShape).strict();
 export const seoTaskUpdateShape = {
   id: entityId,
   expectedRevision: z.number().int().min(1),
@@ -166,6 +183,7 @@ export const seoTaskUpdateShape = {
   resultCommitSha: commitSha.nullable().optional(),
   executionSummary: note.optional(),
   deploymentVerification: seoTaskDeploymentVerificationPatch.optional(),
+  claimRunId: seoTaskRunId.optional(),
   appendHistory: historyEntry.optional()
 };
 const seoTaskUpdateSchema = z.object(seoTaskUpdateShape).strict();
@@ -712,12 +730,30 @@ const defaultDeploymentVerification = (task: Partial<SeoTaskRecord>) => ({
   detail: 'Production verification has not been recorded yet.'
 });
 
+const SEO_TASK_CLAIM_DEFAULT_MINUTES = 75;
+const claimIsActive = (claim: SeoTaskRecord['executionClaim'] | null | undefined, at = Date.now()) =>
+  Boolean(claim?.expiresAt && Date.parse(claim.expiresAt) > at);
+const claimLeaseMs = (claim: SeoTaskRecord['executionClaim'] | null | undefined) => {
+  if (!claim) return SEO_TASK_CLAIM_DEFAULT_MINUTES * 60_000;
+  const parsed = Date.parse(claim.expiresAt) - Date.parse(claim.heartbeatAt);
+  if (!Number.isFinite(parsed)) return SEO_TASK_CLAIM_DEFAULT_MINUTES * 60_000;
+  return Math.max(15 * 60_000, Math.min(180 * 60_000, parsed));
+};
+const executionClaim = (runId: string, actor: string, claimedAt: string, heartbeatAt: string, leaseMinutes: number) => ({
+  runId,
+  actor,
+  claimedAt,
+  heartbeatAt,
+  expiresAt: new Date(Date.parse(heartbeatAt) + leaseMinutes * 60_000).toISOString()
+});
+
 const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   ...task,
   directionId: task.directionId ?? null,
   evaluation: task.evaluation ?? null,
   research: task.research ?? null,
-  deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task)
+  deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
+  executionClaim: task.executionClaim ?? null
 });
 
 export async function seoTaskGet(input: unknown) {
@@ -778,6 +814,7 @@ export async function seoTaskCreate(input: unknown) {
     resultCommitSha: null,
     executionSummary: '',
     deploymentVerification: defaultDeploymentVerification({ targetUrls: args.targetUrls }),
+    executionClaim: null,
     history: [{ at: t, actor: args.createdBy, event: 'ready', detail: 'Evidence-backed SEO task recorded in Sites Operator for later implementation; no GitHub Issue required.' }],
     createdBy: args.createdBy,
     revision: 1,
@@ -808,6 +845,69 @@ export async function seoTaskList(input: unknown) {
   return { items };
 }
 
+export async function seoTaskClaim(input: unknown) {
+  const args = seoTaskClaimSchema.parse(input);
+  const previous = await readDocument('seoTasks', args.id);
+  if (!previous) throw new Error('SEO task not found');
+  const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
+  if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and retry the claim');
+  if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
+    throw new Error('SEO task is not claimable in its current status');
+  }
+
+  const t = now();
+  const requestedRunId = args.runId ?? randomUUID();
+  const active = claimIsActive(current.executionClaim);
+  if (active && current.executionClaim?.runId !== requestedRunId) {
+    throw new Error(`SEO task has an active execution claim until ${current.executionClaim?.expiresAt}`);
+  }
+
+  const sameRun = current.executionClaim?.runId === requestedRunId;
+  const reclaimed = current.status === 'in_progress' && !sameRun;
+  const claimedAt = sameRun ? current.executionClaim!.claimedAt : t;
+  const claim = executionClaim(requestedRunId, args.actor, claimedAt, t, args.leaseMinutes);
+  const history = [...(current.history ?? []), {
+    at: t,
+    actor: args.actor,
+    event: sameRun ? 'worker_claim_refreshed' : reclaimed ? 'worker_reclaimed' : 'worker_claimed',
+    detail: reclaimed
+      ? `Reclaimed stale/unleased in_progress work with run ${requestedRunId}; previous claim ${current.executionClaim?.runId ?? 'none'}.`
+      : `Claimed execution with ephemeral run ${requestedRunId}; lease expires ${claim.expiresAt}.`
+  }];
+
+  const record: SeoTaskRecord = {
+    ...current,
+    status: 'in_progress',
+    executionClaim: claim,
+    history: history.slice(-100),
+    revision: args.expectedRevision + 1,
+    updatedAt: t
+  };
+  const auditRunId = await auditWrite('seo_task_claim', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
+  return { ...record, auditRunId };
+}
+
+export async function seoTaskHeartbeat(input: unknown) {
+  const args = seoTaskHeartbeatSchema.parse(input);
+  const previous = await readDocument('seoTasks', args.id);
+  if (!previous) throw new Error('SEO task not found');
+  const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
+  if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task before heartbeat');
+  if (current.status !== 'in_progress' || !current.executionClaim) throw new Error('SEO task has no active execution claim to heartbeat');
+  if (current.executionClaim.runId !== args.runId) throw new Error('Execution claim belongs to a different run');
+
+  const t = now();
+  const claim = executionClaim(args.runId, current.executionClaim.actor, current.executionClaim.claimedAt, t, args.leaseMinutes);
+  const record: SeoTaskRecord = {
+    ...current,
+    executionClaim: claim,
+    revision: args.expectedRevision + 1,
+    updatedAt: t
+  };
+  const auditRunId = await auditWrite('seo_task_heartbeat', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
+  return { ...record, auditRunId };
+}
+
 export async function seoTaskUpdate(input: unknown) {
   const args = seoTaskUpdateSchema.parse(input);
   const previous = await readDocument('seoTasks', args.id);
@@ -815,19 +915,52 @@ export async function seoTaskUpdate(input: unknown) {
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
   const t = now();
-  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, ...patch } = args;
+  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, claimRunId, ...patch } = args;
+  if (current.status !== 'in_progress' && patch.status === 'in_progress') {
+    throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
+  }
+
+  const terminalTransition = Boolean(patch.status && ['completed', 'cancelled', 'superseded'].includes(patch.status));
+  if (current.status === 'in_progress' && current.executionClaim) {
+    const matchesClaim = claimRunId === current.executionClaim.runId;
+    if (claimIsActive(current.executionClaim) && !matchesClaim) {
+      throw new Error(`SEO task has an active execution claim until ${current.executionClaim.expiresAt}; use its claimRunId`);
+    }
+    if (!claimIsActive(current.executionClaim) && !matchesClaim && !terminalTransition) {
+      throw new Error('SEO task execution claim expired; reclaim it with seo_task_claim before continuing');
+    }
+  } else if (current.status === 'in_progress' && !current.executionClaim && !terminalTransition) {
+    throw new Error('Legacy in_progress task has no execution claim; reclaim it with seo_task_claim before continuing');
+  }
+
   const history = [...(current.history ?? [])];
   if (appendHistory) history.push({ ...appendHistory, at: appendHistory.at ?? t });
   const status = patch.status ?? current.status;
   const deploymentVerification = deploymentPatch === undefined
     ? current.deploymentVerification
     : { ...current.deploymentVerification, ...Object.fromEntries(Object.entries(deploymentPatch).filter(([, value]) => value !== undefined)) };
+
+  let nextExecutionClaim = current.executionClaim;
+  if (status !== 'in_progress') {
+    nextExecutionClaim = null;
+  } else if (current.executionClaim && claimRunId === current.executionClaim.runId) {
+    const leaseMinutes = Math.round(claimLeaseMs(current.executionClaim) / 60_000);
+    nextExecutionClaim = executionClaim(
+      current.executionClaim.runId,
+      current.executionClaim.actor,
+      current.executionClaim.claimedAt,
+      t,
+      leaseMinutes
+    );
+  }
+
   const record: SeoTaskRecord = {
     ...current,
     ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
     articleIds: await taskArticleIds(current),
     status,
     deploymentVerification,
+    executionClaim: nextExecutionClaim,
     history: history.slice(-100),
     completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
     revision: expectedRevision + 1,
