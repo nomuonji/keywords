@@ -171,6 +171,20 @@ export type SeoTaskExecutionClaim = {
   expiresAt: string;
 };
 
+export type SeoTaskDeliveryState = 'none' | 'branch_ready' | 'pr_open' | 'ci_failed' | 'merged';
+export type SeoTaskDeliveryHandoff = {
+  state: SeoTaskDeliveryState;
+  branch: string | null;
+  headSha: string | null;
+  baseSha: string | null;
+  validationSummary: string;
+  handedOffAt: string | null;
+  prNumber: number | null;
+  prUrl: string | null;
+  lastError: string;
+  updatedAt: string | null;
+};
+
 export type SeoTaskHistoryEntry = {
   at: string;
   actor: string;
@@ -218,6 +232,8 @@ export type SeoTaskRecord = {
   deploymentVerification: SeoTaskDeploymentVerification;
   /** Temporary run lease. It is not a persistent worker identity and may be reclaimed after expiry. */
   executionClaim: SeoTaskExecutionClaim | null;
+  /** Structured handoff from unattended Worker branch delivery to the centralized GitHub delivery controller. */
+  deliveryHandoff: SeoTaskDeliveryHandoff;
   history: SeoTaskHistoryEntry[];
   createdBy: string;
   revision: number;
