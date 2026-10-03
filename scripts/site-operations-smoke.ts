@@ -520,12 +520,12 @@ try {
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /verified push/i);
-  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /external GitHub delivery lane/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /centralized Keywords GitHub Action/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /deliveryHandoff=\{state:branch_ready/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized GitHub delivery controller/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /completed still means implementation merged to main/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /controller transitions branch_ready -> pr_open -> merged\/completed/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
