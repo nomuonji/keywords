@@ -122,23 +122,45 @@ function latestStatuses(statuses: any[]) {
   return result;
 }
 
+async function optionalGitHubSignal<T>(url: string): Promise<T | null> {
+  try {
+    return await gh<T>(url);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/GitHub 403 Forbidden/.test(message)) {
+      console.log(`Optional GitHub signal unavailable: ${url}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
-  const [checks, combined] = await Promise.all([
-    gh<{ check_runs: any[] }>(api(repo, `/commits/${sha}/check-runs?per_page=100`)),
-    gh<{ statuses: any[] }>(api(repo, `/commits/${sha}/status`))
+  const actionParams = new URLSearchParams({ head_sha: sha, per_page: '100' });
+  const [actions, checks, combined] = await Promise.all([
+    gh<{ workflow_runs: any[] }>(api(repo, `/actions/runs?${actionParams}`)),
+    optionalGitHubSignal<{ check_runs: any[] }>(api(repo, `/commits/${sha}/check-runs?per_page=100`)),
+    optionalGitHubSignal<{ statuses: any[] }>(api(repo, `/commits/${sha}/status`))
   ]);
   const pending: string[] = [];
   const failed: string[] = [];
   const passed: string[] = [];
 
-  for (const run of checks.check_runs ?? []) {
+  for (const run of actions.workflow_runs ?? []) {
+    const name = `actions:${run.name ?? run.id}`;
+    if (run.status !== 'completed') pending.push(name);
+    else if (['success', 'neutral', 'skipped'].includes(run.conclusion)) passed.push(name);
+    else failed.push(`${name}=${run.conclusion ?? 'unknown'}`);
+  }
+
+  for (const run of checks?.check_runs ?? []) {
     const name = `check:${run.name ?? run.id}`;
     if (run.status !== 'completed') pending.push(name);
     else if (['success', 'neutral', 'skipped'].includes(run.conclusion)) passed.push(name);
     else failed.push(`${name}=${run.conclusion ?? 'unknown'}`);
   }
 
-  for (const status of latestStatuses(combined.statuses ?? [])) {
+  for (const status of latestStatuses(combined?.statuses ?? [])) {
     const name = `status:${status.context ?? 'unknown'}`;
     if (status.state === 'pending') pending.push(name);
     else if (status.state === 'success') passed.push(name);
