@@ -27,7 +27,7 @@ const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', '
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
-const seoTaskDeliveryState = z.enum(['none', 'branch_ready', 'pr_open', 'ci_failed', 'merged']);
+const seoTaskDeliveryState = z.enum(['none', 'push_pending', 'branch_ready', 'pr_open', 'ci_failed', 'merged']);
 const seoTaskDeliveryHandoffShape = z.object({
   state: seoTaskDeliveryState,
   branch: z.string().trim().regex(/^seo\/[A-Za-z0-9._\/-]+$/).max(240).nullable(),
@@ -974,6 +974,15 @@ export async function seoTaskUpdate(input: unknown) {
     : { ...defaultDeliveryHandoff(), ...deliveryPatch, updatedAt: t };
   const releasingToDelivery = current.status === 'in_progress' && deliveryPatch?.state === 'branch_ready';
 
+  if (deliveryPatch?.state === 'push_pending') {
+    if (!deliveryPatch.branch || !deliveryPatch.headSha || !deliveryPatch.baseSha) {
+      throw new Error('push_pending delivery handoff requires branch, expected headSha and baseSha before remote push');
+    }
+    if (!claimRunId || claimRunId !== current.executionClaim?.runId) {
+      throw new Error('push_pending delivery handoff must be written by the active Worker claim');
+    }
+  }
+
   if (deliveryPatch?.state === 'branch_ready') {
     if (!deliveryPatch.branch || !deliveryPatch.headSha || !deliveryPatch.baseSha || !deliveryPatch.handedOffAt) {
       throw new Error('branch_ready delivery handoff requires branch, headSha, baseSha and handedOffAt');
@@ -993,7 +1002,11 @@ export async function seoTaskUpdate(input: unknown) {
   if (status !== 'in_progress' || releasingToDelivery) {
     nextExecutionClaim = null;
   } else if (current.executionClaim && claimRunId === current.executionClaim.runId) {
-    const leaseMinutes = Math.round(claimLeaseMs(current.executionClaim) / 60_000);
+    // push_pending is a short write-ahead critical section: the next action should only be the remote push/readback.
+    // Keep the lease bounded so a crashed Worker cannot strand the task for the normal full execution lease.
+    const leaseMinutes = deliveryPatch?.state === 'push_pending'
+      ? 15
+      : Math.round(claimLeaseMs(current.executionClaim) / 60_000);
     nextExecutionClaim = executionClaim(
       current.executionClaim.runId,
       current.executionClaim.actor,
