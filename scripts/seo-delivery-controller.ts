@@ -245,7 +245,7 @@ async function deleteMergedBranch(repo: string, branch: string) {
     console.log(`Deleted merged SEO branch: ${repo}#${branch}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/GitHub 404 Not Found/.test(message)) return;
+    if (/GitHub 404 Not Found/.test(message) || /GitHub 422 Unprocessable Entity: Reference does not exist/.test(message)) return;
     console.log(`Could not delete merged SEO branch ${repo}#${branch}: ${message}`);
   }
 }
