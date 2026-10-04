@@ -548,7 +548,7 @@ try {
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state:push_pending/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /BEFORE the remote push/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=branch_ready/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update PRs/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized GitHub delivery controller/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Task status remains in_progress throughout push_pending, branch_ready and pr_open/);
