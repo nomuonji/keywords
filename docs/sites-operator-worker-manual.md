@@ -134,7 +134,7 @@ A verified implementation branch plus a structured handoff is the successful Wor
 1. Use a dedicated `seo/*` branch for the Task. Reuse the existing Task branch when resuming; do not create duplicate branches for the same intervention.
 2. Self-review the complete diff against the Task acceptance criteria.
 3. Run available targeted/local repository validation. Record pre-existing unrelated failures accurately.
-4. Push or update the `seo/*` branch and read back its HEAD SHA.
+4. Commit and push/update the `seo/*` branch. **Every Worker-created commit on an `seo/*` branch must start its subject with `[CF-Pages-Skip]`.** This suppresses Cloudflare Pages preview deployments without disabling repository CI. Read back the branch HEAD SHA after push.
 5. **Do not call GitHub PR creation/update, auto-merge, or merge mutations from the Worker.**
 6. Immediately call `seo_task_update` with the active `claimRunId` and the complete structured handoff:
    - `state: "branch_ready"`;
@@ -194,12 +194,13 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 2. verifying the recorded `seo/*` branch HEAD still matches the handoff;
 3. creating or reusing the PR;
 4. recording `deliveryHandoff.state=pr_open`;
-5. waiting for observed PR checks/statuses to finish;
-6. refusing merge on pending/failing CI;
-7. merging when checks pass and repository rules permit;
+5. waiting for observed repository PR checks/statuses to finish;
+6. refusing merge on genuine repository-CI failures while ignoring Cloudflare Pages / Vercel / Netlify hosting-preview checks;
+7. merging when repository checks pass and repository rules permit;
 8. reading the merge result SHA;
 9. setting `status=completed`, `resultCommitSha=<actual merge/default-branch SHA>`, and `deliveryHandoff.state=merged`;
-10. appending `delivery_merged` history.
+10. appending `delivery_merged` history;
+11. deleting the merged `seo/*` branch.
 
 Therefore, a Worker must **not spend a later run solely to mark a successfully merged handoff completed**.
 
@@ -273,5 +274,5 @@ Do not say “completed” merely because the implementation branch was pushed. 
 ### Minimal bootstrap
 
 ```text
-Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run. Inspect in_progress executionClaim + deliveryHandoff first: never reclaim branch_ready/pr_open work just to create or merge a PR; reclaim ci_failed for corrective implementation, and reclaim other valid unleased/expired work as allowed. Keep executionClaim.runId for this run and use claimRunId on in-progress updates. Implement and validate one real task, push/update its dedicated seo/* branch, then persist a complete structured deliveryHandoff.state=branch_ready with branch, headSha, baseSha, validationSummary, handedOffAt and null PR fields. Append delivery_handoff_ready and read back the record; branch_ready must release executionClaim. Do not create/update PRs or merge to main. Leave the Task in_progress: centralized Keywords GitHub Actions owns PR, CI, merge, resultCommitSha and completed. Production verification remains separate.
+Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run. Inspect in_progress executionClaim + deliveryHandoff first: never reclaim branch_ready/pr_open work just to create or merge a PR; reclaim ci_failed only for genuine implementation/repository-CI correction, and reclaim other valid unleased/expired work as allowed. Keep executionClaim.runId for this run and use claimRunId on in-progress updates. Implement and validate one real task, commit on its dedicated seo/* branch with a subject beginning [CF-Pages-Skip], push/update the branch, then persist a complete structured deliveryHandoff.state=branch_ready with branch, headSha, baseSha, validationSummary, handedOffAt and null PR fields. Append delivery_handoff_ready and read back the record; branch_ready must release executionClaim. Do not create/update PRs or merge to main. Leave the Task in_progress: centralized Keywords GitHub Actions owns PR, repository CI, merge, resultCommitSha, completed, and merged branch deletion. Hosting-preview checks are not merge gates. Production verification remains separate.
 ```
