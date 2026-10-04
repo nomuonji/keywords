@@ -82,6 +82,19 @@ Validate the **change itself** using the repository's available mechanisms:
 
 Never claim a check ran when it did not.
 
+### Task size, completeness and quality
+
+A larger Task is not permission to implement superficially. The Worker owns the **whole documented outcome**.
+
+- Read every target artifact and acceptance criterion before editing. Do not quietly complete only the easiest part of a bundled Task.
+- For a substantial article revision, validate the full page-level outcome: factual/source integrity, search-job answer, internal links, metadata/canonical/indexability where relevant, and repository build/checks.
+- For a bundled `data_expansion`, verify every included record against the required authoritative source pattern and preserve unknowns individually. Do not validate one representative record and assume the rest are correct.
+- For hub/site-expansion work, verify the actual decision flow as well as underlying data, routes, accessibility/no-JS behavior when relevant, canonical/indexability and build output.
+- For technical/schema work, validate the repository invariant across the files and representative generated outputs named by the Task.
+- Self-review the complete diff for omissions, accidental scope creep and inconsistent treatment across bundled artifacts before `push_pending`.
+
+Do not reduce quality to fit the execution window. If the selected Task is materially broader than its evidence/acceptance criteria allow, or cannot be completed and validated as one coherent branch, do not publish a partial `branch_ready` handoff and do not invent completion evidence. Record the exact scope defect/blocker so Planner can re-scope or split it. Conversely, do not split a coherent Task merely because it touches several files or records.
+
 ### Direction-linked implementation
 
 A Task may carry `directionId` when it materially implements a human-decided site strategy.
