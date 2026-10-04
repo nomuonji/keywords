@@ -171,7 +171,7 @@ export type SeoTaskExecutionClaim = {
   expiresAt: string;
 };
 
-export type SeoTaskDeliveryState = 'none' | 'branch_ready' | 'pr_open' | 'ci_failed' | 'merged';
+export type SeoTaskDeliveryState = 'none' | 'push_pending' | 'branch_ready' | 'pr_open' | 'ci_failed' | 'merged';
 export type SeoTaskDeliveryHandoff = {
   state: SeoTaskDeliveryState;
   branch: string | null;
