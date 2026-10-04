@@ -383,6 +383,17 @@ async function processTask(task: SeoTaskRecord) {
   await markCompleted(task, mergeResult.sha, pr);
 }
 
+async function cleanupMergedSeoBranches(allowedRepos: Set<string>) {
+  const completed = (await seoTaskList({ status: 'completed', limit: 100 })).items
+    .filter(task => allowedRepos.has(task.repo))
+    .filter(task => task.deliveryHandoff?.state === 'merged')
+    .filter(task => task.deliveryHandoff?.branch?.startsWith('seo/'));
+
+  for (const task of completed) {
+    await deleteMergedBranch(task.repo, task.deliveryHandoff.branch ?? '');
+  }
+}
+
 async function main() {
   if (!token) {
     console.log('SEO_DELIVERY_GITHUB_TOKEN is not configured; central delivery controller is idle.');
@@ -408,6 +419,8 @@ async function main() {
       }
     }
   }
+
+  await cleanupMergedSeoBranches(allowedRepos);
 }
 
 await main();
