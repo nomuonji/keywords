@@ -401,7 +401,11 @@ async function main() {
   }
 
   const activeSites = await siteRegistryList({ status: 'active', limit: 100 });
-  const allowedRepos = new Set(activeSites.items.map(site => site.repository));
+  const allowedRepos = new Set<string>(
+    activeSites.items
+      .map(site => site.repository)
+      .filter((repo): repo is string => typeof repo === 'string' && repo.length > 0)
+  );
   const tasks = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
     .filter(task => allowedRepos.has(task.repo))
     .filter(task => ['branch_ready', 'pr_open'].includes(task.deliveryHandoff?.state ?? 'none'))
