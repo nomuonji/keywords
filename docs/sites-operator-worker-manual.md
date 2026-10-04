@@ -4,7 +4,7 @@
 
 ## 1. Worker responsibility
 
-The Worker owns **implementation through a verified push to a dedicated `seo/*` branch plus a structured Sites Operator `deliveryHandoff.state=branch_ready` handoff**.
+The Worker owns **implementation through a crash-recoverable `seo/*` push sequence: `push_pending` before remote push, then verified `branch_ready` after remote HEAD readback**.
 
 The Worker does **not** create/update pull requests or merge to the repository default branch. Those mutations belong to an external GitHub delivery lane. The Worker also does not own the hosting platform, production deployment, cache propagation, or unrelated pre-existing build/deployment failures. A later delivery/reconciliation step records completion only after the exact change is observed on the default branch.
 
@@ -14,8 +14,9 @@ The Worker does **not** create/update pull requests or merge to the repository d
 | Verify current repository state and task scope | yes |
 | Implement the requested bounded change | yes |
 | Validate the change with available targeted/build/CI evidence | yes |
+| Create local `seo/*` commit and persist `deliveryHandoff=push_pending` before remote push | **yes** |
 | Push/update dedicated `seo/*` implementation branch | **yes** |
-| Persist structured `deliveryHandoff=branch_ready` and release execution claim | **yes** |
+| Verify remote HEAD, persist `deliveryHandoff=branch_ready`, release execution claim | **yes** |
 | Create/update PR | **no** — centralized delivery controller |
 | Gate on PR CI and merge to main | **no** — centralized delivery controller |
 | Record actual main result SHA / set `completed` | **no** — centralized delivery controller after merge |
@@ -55,8 +56,9 @@ A Worker execution is an **ephemeral run**, not a durable identity. A later sche
 
 1. Call `seo_agent_context(role=executor)`.
 2. List `in_progress` work before new `ready` work. Read both `executionClaim` and `deliveryHandoff`.
+   - `deliveryHandoff.state = push_pending`: inspect the recorded branch/head SHA first. If the remote `seo/*` branch already exists at that exact SHA, promote to `branch_ready` rather than reimplementing; the central delivery controller can perform the same exact-HEAD reconciliation. If the remote branch is absent or still at an older SHA, the active Worker may still be pushing; after the short lease expires, reclaim only if needed.
    - `deliveryHandoff.state = branch_ready | pr_open`: external delivery is active; do **not** reclaim merely to create/merge a PR.
-   - `deliveryHandoff.state = ci_failed`: reclaim for a corrective Worker pass, inspect the failed CI evidence, fix the same implementation branch, and publish a fresh `branch_ready` handoff.
+   - `deliveryHandoff.state = ci_failed`: reclaim for a corrective Worker pass, inspect the failed CI evidence, fix the same implementation branch, and repeat the `push_pending -> branch_ready` sequence.
    - otherwise, `executionClaim = null` or expired: legacy/stale implementation work is reclaimable when still valid.
    - unexpired claim: another execution may still be active; do not seize it.
 3. For reclaimable work, inspect the current GitHub default branch, implementation branch, Task history/handoff and acceptance scope. Continue from the furthest verified artifact instead of starting over.
@@ -127,28 +129,35 @@ When a targeted/local/repository check fails:
 
 The Worker does not create or mutate PRs to obtain preview checks. PR/merge CI, preview deployment checks, and merge-gate handling belong to the external delivery lane. A later reconciler may inspect their evidence when deciding whether the exact implementation reached the default branch.
 
-## 5. Branch push and centralized delivery handoff
+## 5. Crash-recoverable branch push and centralized delivery handoff
 
-A verified implementation branch plus a structured handoff is the successful Worker result.
+A verified implementation branch plus a structured handoff is the successful Worker result. The push itself is protected by a write-ahead checkpoint.
 
-1. Use a dedicated `seo/*` branch for the Task. Reuse the existing Task branch when resuming; do not create duplicate branches for the same intervention.
+1. Use a dedicated `seo/*` branch for the Task. Reuse the existing Task branch when resuming.
 2. Self-review the complete diff against the Task acceptance criteria.
-3. Run available targeted/local repository validation. Record pre-existing unrelated failures accurately.
-4. Commit and push/update the `seo/*` branch. **Every Worker-created commit on an `seo/*` branch must start its subject with `[CF-Pages-Skip]`.** This suppresses Cloudflare Pages preview deployments without disabling repository CI. Read back the branch HEAD SHA after push.
-5. **Do not call GitHub PR creation/update, auto-merge, or merge mutations from the Worker.**
-6. Immediately call `seo_task_update` with the active `claimRunId` and the complete structured handoff:
-   - `state: "branch_ready"`;
+3. Run available targeted/local repository validation.
+4. Create the local commit **before** pushing. Every Worker-created commit on an `seo/*` branch must start its subject with `[CF-Pages-Skip]`.
+5. Read the exact local commit SHA that will become the remote branch HEAD.
+6. **Before remote push**, call `seo_task_update` with the active `claimRunId` and persist:
+   - `state: "push_pending"`;
    - `branch`;
-   - `headSha`;
-   - `baseSha` (default-branch SHA used as implementation base);
+   - `headSha` = exact local commit SHA about to be pushed;
+   - `baseSha`;
    - `validationSummary`;
-   - `handedOffAt`;
-   - `prNumber: null`, `prUrl: null`, `lastError: ""`;
-   - `updatedAt`.
-7. Append `delivery_handoff_ready` history and keep the Task `in_progress`.
-8. Read the Task back and verify `deliveryHandoff.state=branch_ready`, the exact branch/head SHA, and `executionClaim=null`. Writing `branch_ready` intentionally releases the Worker lease.
+   - `handedOffAt: null`;
+   - null PR fields and empty `lastError`;
+   - append `delivery_push_pending`.
+7. Read the Task back and verify `status=in_progress`, `deliveryHandoff.state=push_pending`, the exact expected SHA, and that the execution claim still exists. The push-pending lease is shortened to 15 minutes.
+8. Push/update the remote `seo/*` branch.
+9. Read the remote branch HEAD from GitHub.
+   - If it does not exactly equal the recorded `headSha`, do **not** publish `branch_ready`.
+   - If it exactly matches, update the same handoff to `state: "branch_ready"`, set `handedOffAt`, append `delivery_handoff_ready`, and keep Task `status=in_progress`.
+10. Read the Task back and verify `branch_ready` plus `executionClaim=null`. Writing `branch_ready` intentionally releases the Worker lease.
+11. **Do not call GitHub PR creation/update, auto-merge, or merge mutations from the Worker.**
 
-Example:
+If the Worker dies after step 8 but before step 9/10, the central delivery controller checks the remote branch. It may promote `push_pending -> branch_ready` **only when the remote HEAD exactly equals the pre-push `headSha`**. Therefore a successful push is not lost merely because the Worker session ends before the post-push write.
+
+Example pre-push checkpoint:
 
 ```json
 {
@@ -156,37 +165,36 @@ Example:
   "expectedRevision": 7,
   "claimRunId": "<executionClaim.runId>",
   "deliveryHandoff": {
-    "state": "branch_ready",
+    "state": "push_pending",
     "branch": "seo/example-change",
-    "headSha": "<branch-head-sha>",
+    "headSha": "<exact-local-commit-sha>",
     "baseSha": "<base-sha>",
     "validationSummary": "<actual validation result>",
-    "handedOffAt": "2026-10-04T00:00:00.000Z",
+    "handedOffAt": null,
     "prNumber": null,
     "prUrl": null,
     "lastError": "",
     "updatedAt": "2026-10-04T00:00:00.000Z"
   },
-  "executionSummary": "Implementation pushed and handed off to centralized delivery.",
   "appendHistory": {
     "actor": "seo_worker",
-    "event": "delivery_handoff_ready",
-    "detail": "Structured branch handoff recorded; centralized delivery controller owns PR/CI/merge/completion."
+    "event": "delivery_push_pending",
+    "detail": "Write-ahead checkpoint persisted before remote push."
   }
 }
 ```
 
-Do not set `resultCommitSha` to a feature-branch SHA.
+After exact remote HEAD verification, publish `branch_ready`. Do not set `resultCommitSha` to a feature-branch SHA.
 
-The centralized `keywords` GitHub Action then owns:
+The centralized `keywords` GitHub Action owns:
 
-`branch_ready -> PR creation -> pr_open -> CI gate -> main merge -> resultCommitSha -> completed`
+`push_pending reconciliation -> branch_ready -> PR creation -> pr_open -> repository CI gate -> main merge -> resultCommitSha -> completed -> seo/* branch deletion`
 
-If CI fails it records `deliveryHandoff.state=ci_failed`. A later Worker may reclaim that Task to correct the implementation, then replace the failed handoff with a fresh `branch_ready` and new head SHA.
+Hosting preview checks are not merge gates. Genuine implementation/repository-CI failures use `ci_failed`, while Task status remains `in_progress`.
 
 ## 6. Completion is controller-owned
 
-A successful Worker branch handoff is **not** `completed`.
+Neither `push_pending` nor a successful Worker `branch_ready` handoff is **`completed`**. Task status remains `in_progress` until main/default-branch merge.
 
 The centralized delivery controller in `nomuonji/keywords` is responsible for:
 
@@ -202,7 +210,7 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 10. appending `delivery_merged` history;
 11. deleting the merged `seo/*` branch.
 
-Therefore, a Worker must **not spend a later run solely to mark a successfully merged handoff completed**.
+Therefore, a Worker must **not spend a later run solely to mark a successfully merged handoff completed**. The controller changes Task status from `in_progress` to `completed` only after merge.
 
 If `deliveryHandoff.state=ci_failed`, the Worker may reclaim the Task because corrective implementation work is again required. After fixing and pushing the same dedicated branch, publish a fresh `branch_ready` handoff.
 
@@ -274,5 +282,5 @@ Do not say “completed” merely because the implementation branch was pushed. 
 ### Minimal bootstrap
 
 ```text
-Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run. Inspect in_progress executionClaim + deliveryHandoff first: never reclaim branch_ready/pr_open work just to create or merge a PR; reclaim ci_failed only for genuine implementation/repository-CI correction, and reclaim other valid unleased/expired work as allowed. Keep executionClaim.runId for this run and use claimRunId on in-progress updates. Implement and validate one real task, commit on its dedicated seo/* branch with a subject beginning [CF-Pages-Skip], push/update the branch, then persist a complete structured deliveryHandoff.state=branch_ready with branch, headSha, baseSha, validationSummary, handedOffAt and null PR fields. Append delivery_handoff_ready and read back the record; branch_ready must release executionClaim. Do not create/update PRs or merge to main. Leave the Task in_progress: centralized Keywords GitHub Actions owns PR, repository CI, merge, resultCommitSha, completed, and merged branch deletion. Hosting-preview checks are not merge gates. Production verification remains separate.
+Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run. Inspect in_progress executionClaim + deliveryHandoff first. For push_pending, compare the recorded expected headSha with the remote seo/* branch before doing new implementation; exact remote match can be promoted to branch_ready. Never reclaim branch_ready/pr_open just to create or merge a PR; reclaim ci_failed only for genuine implementation/repository-CI correction. Implement and validate one real task, create a local seo/* commit whose subject begins [CF-Pages-Skip], then BEFORE remote push persist deliveryHandoff.state=push_pending with branch, exact local headSha, baseSha and validationSummary. Read it back, push, read the remote branch HEAD, and only on exact SHA match persist branch_ready with handedOffAt; branch_ready releases executionClaim. Do not create/update PRs or merge to main. Task status stays in_progress through push_pending/branch_ready/pr_open; centralized Keywords GitHub Actions owns PR, repository CI, merge, resultCommitSha, completed, and merged branch deletion.
 ```
