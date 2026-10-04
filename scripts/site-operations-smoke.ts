@@ -180,24 +180,46 @@ try {
     id: readyTask.id, expectedRevision: heartbeatTask.revision, status: 'completed', claimRunId: 'smoke-run-0001'
   }), /completed SEO task requires resultCommitSha/);
 
-  const handedOffTask = await seoTaskUpdate({
+  const pushPendingTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: heartbeatTask.revision,
     claimRunId: 'smoke-run-0001',
-    executionSummary: 'Implementation pushed to seo/smoke-delivery and handed off.',
+    executionSummary: 'Local implementation commit prepared; write-ahead checkpoint recorded before remote push.',
     deliveryHandoff: {
-      state: 'branch_ready',
+      state: 'push_pending',
       branch: 'seo/smoke-delivery',
       headSha: 'c'.repeat(40),
       baseSha: 'b'.repeat(40),
       validationSummary: 'targeted checks passed',
-      handedOffAt: '2026-10-01T00:00:00.000Z',
+      handedOffAt: null,
       prNumber: null,
       prUrl: null,
       lastError: '',
       updatedAt: '2026-10-01T00:00:00.000Z'
     },
-    appendHistory: { actor: 'site-operations-smoke', event: 'delivery_handoff_ready', detail: 'Structured branch handoff recorded.' }
+    appendHistory: { actor: 'site-operations-smoke', event: 'delivery_push_pending', detail: 'Write-ahead checkpoint before remote push.' }
+  });
+  assert.equal(pushPendingTask.status, 'in_progress');
+  assert.equal(pushPendingTask.deliveryHandoff.state, 'push_pending');
+  assert.equal(pushPendingTask.executionClaim?.runId, 'smoke-run-0001');
+  assert.ok(pushPendingTask.executionClaim);
+  assert.ok(
+    Date.parse(pushPendingTask.executionClaim!.expiresAt) - Date.parse(pushPendingTask.executionClaim!.heartbeatAt) <= 15 * 60_000,
+    'push_pending must shorten the execution lease to at most 15 minutes'
+  );
+
+  const handedOffTask = await seoTaskUpdate({
+    id: readyTask.id,
+    expectedRevision: pushPendingTask.revision,
+    claimRunId: 'smoke-run-0001',
+    executionSummary: 'Remote seo/smoke-delivery HEAD verified at expected commit and handed off.',
+    deliveryHandoff: {
+      ...pushPendingTask.deliveryHandoff,
+      state: 'branch_ready',
+      handedOffAt: '2026-10-01T00:01:00.000Z',
+      updatedAt: '2026-10-01T00:01:00.000Z'
+    },
+    appendHistory: { actor: 'site-operations-smoke', event: 'delivery_handoff_ready', detail: 'Exact remote HEAD verified; structured branch handoff recorded.' }
   });
   assert.equal(handedOffTask.status, 'in_progress');
   assert.equal(handedOffTask.deliveryHandoff.state, 'branch_ready');
@@ -479,7 +501,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.21.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.22.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -523,11 +545,13 @@ try {
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Centralized Keywords GitHub Actions/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /deliveryHandoff=\{state:branch_ready/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state:push_pending/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /BEFORE the remote push/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=branch_ready/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized GitHub delivery controller/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /controller transitions branch_ready -> pr_open -> merged\/completed/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Task status remains in_progress throughout push_pending, branch_ready and pr_open/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
@@ -542,7 +566,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.15.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.16.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
