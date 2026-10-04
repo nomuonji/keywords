@@ -158,11 +158,25 @@ Task count is an operational buffer metric, not a productivity target. One mater
 
 ## Inventory and effort contract
 
-- Maintain a **target inventory of 8 useful `ready` tasks across the managed portfolio**, not an arbitrary per-site quota. Count existing `ready` tasks before implementation planning; legacy `issued` tasks that are genuinely still executable also count. `in_progress` tasks are not unclaimed inventory.
+- Maintain a **target inventory of 8 useful, currently executable `ready` tasks across the managed portfolio**, not an arbitrary per-site quota. Cooldown-blocked/deferred work does not count. Count existing executable `ready` tasks before implementation planning; legacy `issued` tasks that are genuinely still executable also count. `in_progress` tasks are not unclaimed inventory.
 - When inventory is below 8, **aim to save 3–5 genuinely actionable tasks per run** within available execution budget; hard caps are **5 new tasks per run and 2 per repository**. If only 1–2 survive validation, save those promptly rather than returning empty while hunting for five.
 - If initial candidates are stale, duplicated, recently changed, or too speculative, pivot to different sites and interventions. For a repair/inventory planning pass, unless fewer exist, inspect **at least 6 distinct active sites and 12 distinct current article/technical candidates** before declaring zero viable repair work. A rejected discovery candidate or one unavailable source does not waive this cross-site exploration when the ready inventory is below target. These counts describe exploration, *not* a requirement to create weak tasks.
 - Continue exploring until you have filled the batch, the ready buffer is supplied, available run time is materially exhausted, or a real permission/tool/source blocker prevents the work. Never stop just because the first candidate was rejected or because a currently strong page cannot be improved.
 - Preserve a small pipeline of ready work to keep the Worker productive. Avoid flooding a repository or repeatedly rewriting the same URL. A ready task is useful only if a Worker can implement and independently verify it.
+
+## Cooldown-aware executable inventory
+
+A `ready` Task must be executable **now**. Do not count an article Task toward ready inventory when `optimization_context.changeAllowed=false` or another explicit experiment cooldown prevents implementation.
+
+Before creating or promoting an article-level Task with a registered `articleId`, read `optimization_context` for that article. If a prior implemented, unevaluated experiment blocks another change:
+
+- do not create/promote the Task as `ready`;
+- preserve the validated idea as a cooldown-deferred `proposed` Task only when a Task record already exists or durable deferral is useful;
+- append a `cooldown_deferred` history entry with the exact blocking event ID and not-before/evaluate-after timestamp;
+- exclude it from the executable ready target;
+- on later Planner runs, leave a cooldown-deferred proposed Task untouched while its recorded not-before time is still in the future; once eligible, revalidate current HEAD/evidence and promote it to `ready` if still justified.
+
+This is the narrow exception to the general rule against speculative proposed backlogs: the work is already validated but temporarily non-executable. Worker should never need to claim a Task merely to discover a known cooldown.
 
 ## Start-of-run sequence
 
