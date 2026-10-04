@@ -479,7 +479,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.20.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.21.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -520,8 +520,9 @@ try {
   assert.match(JSON.stringify(scaledRisk.structuredContent), /does not establish that SAFE is used by Google Search/i);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
-  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /verified push/i);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /centralized Keywords GitHub Action/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /deliveryHandoff=\{state:branch_ready/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update pull requests/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized GitHub delivery controller/);
