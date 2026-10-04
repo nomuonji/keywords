@@ -62,8 +62,8 @@ A Worker execution is an **ephemeral run**, not a durable identity. A later sche
    - otherwise, `executionClaim = null` or expired: legacy/stale implementation work is reclaimable when still valid.
    - unexpired claim: another execution may still be active; do not seize it.
 3. For reclaimable work, inspect the current GitHub default branch, implementation branch, Task history/handoff and acceptance scope. Continue from the furthest verified artifact instead of starting over.
-4. If no valid stale work should be resumed, select a `ready` task (or eligible legacy `issued` task) and perform the same current-state checks.
-5. Enter execution with `seo_task_claim(id, expectedRevision)`. The response contains an ephemeral `executionClaim.runId`; keep it only for this run.
+4. If no valid stale work should be resumed, inspect candidate `ready` tasks before claiming. For an article-linked Task, read `optimization_context` first. If `changeAllowed=false` because an implemented experiment is still in cooldown/evaluation, skip that Task without claiming it and select another executable ready Task; report the known cooldown so Planner can defer it out of ready inventory.
+5. Enter execution with `seo_task_claim(id, expectedRevision)` only after the selected Task is currently executable. The response contains an ephemeral `executionClaim.runId`; keep it only for this run.
 6. Pass that value as `claimRunId` on every `seo_task_update` while the task remains `in_progress`. Long-running phases should call `seo_task_heartbeat` before the lease can expire. Successful in-progress updates also refresh the lease.
 7. Completion/cancellation/supersession clears the claim automatically.
 
