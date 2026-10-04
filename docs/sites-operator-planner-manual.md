@@ -104,7 +104,7 @@ Prefer a small reversible pilot to repeatedly waiting for certainty. A sourced u
 
 1. Review due existing `optimization_event_list` results and recent completed Tasks. Read linked current artifacts, deployment state and compact digests. Use `optimization_evaluation_context` for registered article events when adequate matched measurements exist.
 2. Record in each experiment Task's existing rationale/evidence: hypothesis, exact artifact, primary metric, baseline dates and completeness (or explicitly unknown), evaluation due date, success/failure criteria and rollback. This is a bounded test, not a guaranteed uplift claim.
-3. Limit a pilot to one intervention on one article, or 1–3 coherent new pages. Keep the 3–5-task batch and per-repository caps. A weak global average, sparse analytics or uncertain uplift is not a blanket stop; choose an independently supported user improvement.
+3. Keep each pilot bounded by one coherent search/user outcome rather than by an artificially tiny diff. A substantial single-page revision, one strong new page, a tightly related 2–3 page mini-cluster, or a homogeneous verified data batch can each be one Task when they share one hypothesis, one rollback boundary and explicit per-artifact acceptance checks. Keep the 3–5-task planning batch and per-repository caps. A weak global average, sparse analytics or uncertain uplift is not a blanket stop; choose an independently supported user improvement.
 4. Link the Task ID to an existing or proposed optimization event for registered articles via event notes and Task history. Do not create a separate experiment database. Worker records the merged artifact and event handoff; main merge remains implementation completion.
 5. A merged artifact is not yet an active traffic experiment. Use a bounded actual public/deployment observation before marking `deploymentVerification=verified` and the event `phase=implemented`. Start `changedAt` and the default 14-day evaluation window from the real publication observation, not an unverified merge. Preserve pending/failed publication blockers separately.
 6. At maturity, use adequate matched evidence to retain/expand, revise, or revert. Persist the actual outcome and reasoning with `optimization_event_update`, and create follow-up implementation Tasks when justified. No causal certainty is implied by a before/after change. Missing, stale or partial metrics stay unknown: put the next review date and exact blocker in notes; do not silently cancel or call them neutral to unlock another change.
@@ -124,6 +124,37 @@ At the start of each Planner run, inspect recently completed tasks with `deploym
 - Preview-only hosting failures remain separate from production failures. A preview check may be ignored as a merge gate only when the delivery policy explicitly classifies it as non-blocking; that does not waive post-merge production recovery.
 
 This recovery lane is part of normal Planner work and takes precedence over creating unrelated inventory when an existing merged SEO change is not actually live.
+
+## Growth-seeking inventory and task granularity
+
+The portfolio mission is traffic growth, not merely defect reduction. Repairs, factual corrections, source cleanup and publication recovery are necessary, but a ready queue composed only of those items is not a healthy growth queue.
+
+During every replenishment run, actively look for at least one **traffic-seeking intervention** before declaring the ready buffer supplied when evidence supports one. Traffic-seeking work includes:
+
+- expanding a page or hub that already has observed search exposure into a stronger decision surface;
+- creating a focused page from a real observed question or unmet search job;
+- adding or improving a comparison/filter/navigation utility that helps users resolve an observed search task;
+- expanding a database/collection around a coherent observed query or decision cluster;
+- testing a lateral-search hypothesis derived from a real observation rather than obvious keyword suffixes.
+
+Low-impression factual fixes and source-ready cleanup remain valid work, especially when they unlock indexability or remove material risk, but they must not crowd out stronger growth opportunities merely because they are easier to justify. When a production blocker, legal/medical/factual risk or indexing defect is urgent, repair may take precedence; otherwise prefer the intervention with the stronger path from observed need to a meaningful Search surface.
+
+### Prefer meaningful work units over micro-tasks
+
+A Task should be the smallest **complete search/user outcome**, not the smallest editable diff. Do not split one coherent hypothesis into several tiny tasks simply to increase task count.
+
+Default granularity:
+
+- **Article revision:** one substantial page-level intervention that resolves the documented search job end-to-end. If title/intro/answer structure/internal link/decision aid are all required by the same hypothesis, keep them in one Task. Avoid micro-tasks such as changing only a heading, one sentence or one metadata field unless that isolated defect is itself materially consequential.
+- **New editorial content:** usually one strong page. A tightly related 2–3 page mini-cluster is acceptable only when each page has a distinct intent, the shared evidence is strong, internal relationships are explicit, and all pages can be independently validated without thin overlap.
+- **Data expansion:** when records share the same schema, source pattern, indexability contract and acceptance checks, prefer a coherent batch of roughly 3–8 verified records instead of serial single-record tasks. A single-record Task is justified when the record already has meaningful search exposure, carries unusual factual/source complexity, or is a deliberate pilot before scaling.
+- **Hub / decision UI / site expansion:** include the complete bounded decision surface and the supporting data/navigation changes needed to make it useful. Do not separate UI chrome from the data or routing it requires when they are one user outcome.
+- **Technical work:** one repository invariant or failure mode may touch multiple files. Keep the repair atomic around that invariant rather than splitting config, validator and generated-output fixes into separate tasks.
+- **Schema expansion:** include the minimal schema/type/validator/template/output set required for one demonstrated recurring need, with representative records and generated pages sufficient to validate the contract.
+
+Do not bundle unrelated intents, unrelated URLs with different evidence, or changes that would need independent rollback decisions. A larger Task is acceptable only when the Worker can still verify every changed artifact against explicit acceptance criteria in one coherent branch.
+
+Task count is an operational buffer metric, not a productivity target. One material, well-validated Task can be better than several cosmetic Tasks.
 
 ## Inventory and effort contract
 
