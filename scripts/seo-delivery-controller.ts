@@ -281,6 +281,68 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
   await deleteMergedBranch(task.repo, current.deliveryHandoff.branch ?? '');
 }
 
+async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord> {
+  const handoff = task.deliveryHandoff;
+  if (handoff?.state !== 'push_pending') return task;
+  if (!handoff.branch?.startsWith('seo/') || !handoff.headSha || !handoff.baseSha) {
+    console.log(`Waiting: ${task.id} has incomplete push_pending metadata; Worker must repair the checkpoint.`);
+    return task;
+  }
+
+  let actualBranchSha: string;
+  try {
+    actualBranchSha = await branchSha(task.repo, handoff.branch);
+  } catch {
+    // The write-ahead checkpoint is intentionally allowed to exist before the remote push.
+    console.log(`Waiting: ${task.id} push_pending branch is not visible remotely yet: ${handoff.branch}`);
+    return task;
+  }
+
+  if (actualBranchSha !== handoff.headSha) {
+    // An older remote branch head may still be visible while the Worker is pushing the expected commit.
+    console.log(`Waiting: ${task.id} push_pending remote HEAD mismatch; expected=${handoff.headSha}, actual=${actualBranchSha}`);
+    return task;
+  }
+
+  const current = await seoTaskGet({ id: task.id });
+  if (current.deliveryHandoff.state !== 'push_pending') return current;
+  const claimRunId = current.executionClaim?.runId;
+  if (!claimRunId) {
+    console.log(`Waiting: ${task.id} push_pending has exact remote HEAD but no execution claim; a Worker must reclaim before promotion.`);
+    return current;
+  }
+
+  const at = new Date().toISOString();
+  if (dryRun) {
+    console.log(`[dry-run] would promote ${task.id} push_pending -> branch_ready after exact remote HEAD verification.`);
+    return current;
+  }
+
+  const promoted = await seoTaskUpdate({
+    id: current.id,
+    expectedRevision: current.revision,
+    claimRunId,
+    deliveryHandoff: {
+      ...current.deliveryHandoff,
+      state: 'branch_ready',
+      handedOffAt: at,
+      lastError: '',
+      updatedAt: at
+    },
+    executionSummary: [
+      current.executionSummary,
+      `Central delivery verified remote branch ${current.deliveryHandoff.branch}@${actualBranchSha} exactly matches the pre-push checkpoint and promoted push_pending to branch_ready.`
+    ].filter(Boolean).join('\n'),
+    appendHistory: {
+      actor: 'seo_delivery_controller',
+      event: 'delivery_push_reconciled',
+      detail: `Exact remote HEAD matched write-ahead checkpoint; promoted push_pending -> branch_ready for ${current.deliveryHandoff.branch}@${actualBranchSha}.`
+    }
+  });
+  console.log(`Reconciled push_pending: ${task.id} -> branch_ready at ${actualBranchSha}`);
+  return promoted;
+}
+
 async function processTask(task: SeoTaskRecord) {
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
@@ -406,12 +468,27 @@ async function main() {
       .map(site => site.repository)
       .filter((repo): repo is string => typeof repo === 'string' && repo.length > 0)
   );
+  const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
+    .filter(task => allowedRepos.has(task.repo));
+
+  for (const pending of initialInProgress.filter(task => task.deliveryHandoff?.state === 'push_pending')) {
+    try {
+      await reconcilePushPending(pending);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`Push reconciliation error for ${pending.id}: ${message}`);
+      try { await recordControllerError(pending, message); } catch (recordError) {
+        console.error(`Could not persist push reconciliation error for ${pending.id}: ${String(recordError)}`);
+      }
+    }
+  }
+
   const tasks = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
     .filter(task => allowedRepos.has(task.repo))
     .filter(task => ['branch_ready', 'pr_open'].includes(task.deliveryHandoff?.state ?? 'none'))
     .slice(0, maxTasks);
 
-  console.log(`SEO delivery controller found ${tasks.length} eligible task(s).`);
+  console.log(`SEO delivery controller found ${tasks.length} eligible task(s) after push reconciliation.`);
   for (const task of tasks) {
     try {
       await processTask(task);
