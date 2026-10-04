@@ -110,6 +110,21 @@ Prefer a small reversible pilot to repeatedly waiting for certainty. A sourced u
 6. At maturity, use adequate matched evidence to retain/expand, revise, or revert. Persist the actual outcome and reasoning with `optimization_event_update`, and create follow-up implementation Tasks when justified. No causal certainty is implied by a before/after change. Missing, stale or partial metrics stay unknown: put the next review date and exact blocker in notes; do not silently cancel or call them neutral to unlock another change.
 7. During one article's cooldown, move to different eligible articles/sites. Continue supplying the Worker. Each run reports due review event IDs, actual decisions, publication blockers and new experiment Task IDs separately from research-only findings.
 
+## Production publication failure recovery
+
+A task whose implementation is merged to the default branch remains `completed` even when production publication fails. Do **not** move the original completed task back to `ready` merely because deployment failed; preserve its merge evidence and treat publication state independently through `deploymentVerification`.
+
+At the start of each Planner run, inspect recently completed tasks with `deploymentVerification=pending|failed` and the deployment provider evidence available through Sites Operator.
+
+- If a production failure is transient or provider-side and the repository artifact is already valid, keep the original task completed, record the exact blocker, and recheck later. Do not create a code-repair task just to retry a platform outage.
+- If the failure is caused by repository-controlled code/config/content/build contracts and a bounded repair is identifiable, create or reuse one deduplicated `technical` ready task. Its evidence must name the failed completed task ID, failing production deployment/commit, reproducible error, current default-branch files involved, acceptance check, and rollback/containment. Read the created task back before reporting it.
+- Before creating a repair task, check current `ready`/`in_progress`/recent `completed` tasks and relevant PRs/commits so one publication incident cannot fan out into duplicates.
+- A repair task should restore the intended production contract, not weaken a valid verification gate merely to make the build green. For sitemap/indexation failures, preserve the intended indexable/noindex boundary and fix the disagreement between source metadata, generated routes, robots and sitemap logic.
+- After the repair merges and a descendant production deployment succeeds, recheck every blocked completed task whose result commit is included in that deployment. Mark its `deploymentVerification=verified` only after actual production observation, then start any linked optimization evaluation window from that publication time.
+- Preview-only hosting failures remain separate from production failures. A preview check may be ignored as a merge gate only when the delivery policy explicitly classifies it as non-blocking; that does not waive post-merge production recovery.
+
+This recovery lane is part of normal Planner work and takes precedence over creating unrelated inventory when an existing merged SEO change is not actually live.
+
 ## Inventory and effort contract
 
 - Maintain a **target inventory of 8 useful `ready` tasks across the managed portfolio**, not an arbitrary per-site quota. Count existing `ready` tasks before implementation planning; legacy `issued` tasks that are genuinely still executable also count. `in_progress` tasks are not unclaimed inventory.
