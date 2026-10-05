@@ -66,7 +66,7 @@ Intent branch roles are:
 
 Never sum search volume across different intent branches as though they were one market.
 
-When `senseSelectionRequired` is true, the phrase itself is semantically underspecified. The agent must name the semantic sense it is analyzing before writing a thesis and reject same-word evidence that belongs to another meaning/category.
+When `senseSelectionRequired` is true, the phrase itself is semantically/intent-wise underspecified. No branch is promoted to primary merely because it is a generic problem/solution/commercial intent. The first packet is discovery-only: inspect the branches and their independent demand evidence, choose one sense/intent, then re-run `market_intelligence_research` with an intent-bearing query before writing a thesis. Ambiguous-root demand expansion samples across multiple intent branches rather than privileging a fixed default branch set.
 
 App Store evidence has `evidenceScope = lexical_search_only`. It includes a bounded `descriptionExcerpt` so the agent can verify semantic fit; a matching app name alone is not commercialization proof for the selected market sense.
 

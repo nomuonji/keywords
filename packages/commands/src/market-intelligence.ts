@@ -273,7 +273,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'career_qualification',
-    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|スクール|教室|学校|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training|school|class)\b/i],
+    patterns: [/資格|試験|検定|求人|転職|採用|キャリア|研修|講座|スクール|教室|学校|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training|school|class)\b/i],
     signals: ['career/qualification marker']
   },
   {
@@ -283,7 +283,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'commercial',
-    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|どれがいい|どっち|どちら|選び方|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
     signals: ['commercial-evaluation marker']
   },
   {
@@ -293,7 +293,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'solution_product',
-    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|テンプレート|プラグイン|拡張機能|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|template|plugin|extension|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
+    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|テンプレート|プラグイン|拡張機能|参考書|教材|テキスト|治療|クリニック|薬|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|template|plugin|extension|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
     signals: ['solution/product marker']
   },
   {
@@ -303,7 +303,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'research_information',
-    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|メリット|デメリット|効果|原因|一覧|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study|pros?|cons?|benefits?|effects?|causes?|overview)\b/i],
+    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|メリット|デメリット|効果|原因|一覧|審査|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study|pros?|cons?|benefits?|effects?|causes?|overview)\b/i],
     signals: ['informational/research marker']
   }
 ];
@@ -346,7 +346,7 @@ function targetIntentsForQuery(query: string): MarketIntentId[] {
   if (classification.primaryIntent !== 'ambiguous') {
     return [...new Set([classification.primaryIntent, ...classification.secondaryIntents.filter(intent => intent !== 'ambiguous')])];
   }
-  return ['problem_need', 'solution_product', 'how_to', 'commercial'];
+  return [];
 }
 
 function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): MarketIntentRole {
@@ -354,6 +354,65 @@ function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): Ma
   if (intent === 'career_qualification' || intent === 'investment') return 'adjacent_market';
   if (intent === 'entity') return 'out_of_scope';
   return 'contextual';
+}
+
+export function selectQueryDemandSeeds(query: string, relatedSearches: string[], maxSeeds = 10): string[] {
+  const targetIntents = targetIntentsForQuery(query);
+  const relatedForDemand = relatedSearches
+    .filter(value => value.length <= 120)
+    .map(value => {
+      const classification = classifyMarketIntent(value, query);
+      return {
+        value,
+        intent: classification.primaryIntent,
+        role: intentRole(classification.primaryIntent, targetIntents)
+      };
+    });
+
+  const selected = (() => {
+    if (targetIntents.length > 0) {
+      return [
+        ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
+        ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
+        ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
+        ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
+      ];
+    }
+
+    const intentOrder: MarketIntentId[] = [
+      'problem_need',
+      'solution_product',
+      'how_to',
+      'commercial',
+      'career_qualification',
+      'investment',
+      'research_information',
+      'news',
+      'ambiguous'
+    ];
+    const grouped = new Map<MarketIntentId, string[]>();
+    for (const item of relatedForDemand) {
+      if (item.role === 'out_of_scope') continue;
+      const list = grouped.get(item.intent) ?? [];
+      list.push(item.value);
+      grouped.set(item.intent, list);
+    }
+    const balanced: string[] = [];
+    for (let round = 0; balanced.length < Math.max(0, maxSeeds - 1); round++) {
+      let added = false;
+      for (const intent of intentOrder) {
+        const value = grouped.get(intent)?.[round];
+        if (!value) continue;
+        balanced.push(value);
+        added = true;
+        if (balanced.length >= Math.max(0, maxSeeds - 1)) break;
+      }
+      if (!added) break;
+    }
+    return balanced;
+  })();
+
+  return [...new Set([query, ...selected])].slice(0, maxSeeds);
 }
 
 function roleRationale(intent: MarketIntentId, role: MarketIntentRole): string {
@@ -467,7 +526,7 @@ export function buildQueryIntentTree(input: {
   const populatedIntents = branches.filter(branch =>
     branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
   );
-  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 1;
+  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 0;
 
   return {
     query: input.query,
@@ -477,9 +536,9 @@ export function buildQueryIntentTree(input: {
     senseSelectionRequired,
     senseGuidance: senseSelectionRequired
       ? [
-          'The root query has no explicit intent marker while observed results span multiple branches.',
-          'Before writing a thesis, state the semantic sense being analyzed and verify that supporting SERP/app evidence uses the same meaning.',
-          'A shared phrase or brand name is not enough to merge distinct product categories or use cases.'
+          'The root query has no explicit intent marker, so no market branch is promoted to primary yet.',
+          'Before writing a thesis, choose the semantic sense/intent supported by the evidence and re-run market_intelligence_research with an intent-bearing query.',
+          'Verify that supporting SERP/app evidence uses the same meaning. A shared phrase or brand name is not enough to merge distinct categories or use cases.'
         ]
       : ['The root query has an explicit intent or does not currently show enough branch diversity to require separate sense selection.'],
     branches,
@@ -870,25 +929,7 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   }
 
   const demandWarnings: string[] = [];
-  const targetIntents = targetIntentsForQuery(query);
-  const relatedForDemand = relatedSearches
-    .filter(value => value.length <= 120)
-    .map(value => {
-      const classification = classifyMarketIntent(value, query);
-      return {
-        value,
-        intent: classification.primaryIntent,
-        role: intentRole(classification.primaryIntent, targetIntents)
-      };
-    });
-
-  const demandSeeds = [...new Set([
-    query,
-    ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
-    ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
-    ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
-    ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
-  ])].slice(0, 10);
+  const demandSeeds = selectQueryDemandSeeds(query, relatedSearches, 10);
 
   let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
   if (geo !== 'JP') {
@@ -1063,7 +1104,7 @@ function buildThesisFrame(
     ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
     ...(commercialization.applicability === 'relevant' ? ['App Store evidence is lexical-search evidence only; same words can describe a different semantic category or direction of use. Review descriptionExcerpt before using it as commercialization support.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
-    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically underspecified across multiple branches. Select and state one semantic sense before writing the thesis.'] : []),
+    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically/intent-wise underspecified. This packet is discovery evidence only: select a sense and re-root with an intent-bearing query before writing the market thesis.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -1078,7 +1119,7 @@ function buildThesisFrame(
       'For each thesis, cite at least two independent observed sources when available.',
       ...(queryFocus.mode === 'hypothesis_led' ? [
         'Declare which intent branch the thesis is about before interpreting demand.',
-        ...(queryFocus.intentTree.senseSelectionRequired ? ['Also state the semantic sense of the root phrase before using same-word SERP/App Store results; reject evidence that uses the phrase in a different sense.'] : []),
+        ...(queryFocus.intentTree.senseSelectionRequired ? ['Do not finalize a thesis from this ambiguous-root packet. Select one semantic sense/intent and re-run market_intelligence_research with a more explicit query; then reject evidence that uses the phrase in a different sense.'] : []),
         'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
         'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
