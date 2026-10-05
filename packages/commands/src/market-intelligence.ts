@@ -655,7 +655,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   if (!query) {
     return {
       source: 'app_store' as const,
-      applicability: 'relevant' as const,
+      applicability: 'not_applicable' as const,
       query,
       url: null,
       totalCount: null,
@@ -715,6 +715,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   } catch (error) {
     return {
       source: 'app_store' as const,
+      applicability: 'relevant' as const,
       query,
       url: url.toString(),
       totalCount: null,
