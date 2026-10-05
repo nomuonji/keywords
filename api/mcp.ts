@@ -139,8 +139,16 @@ function runtimeStatus() {
         primaryQueryCacheMaxAgeHours: 72
       },
       queryModes: {
-        noQuery: 'broad_market_scan',
+        noQuery: 'broad_market_scan_with_generic_social_discovery',
         withQuery: 'hypothesis_led_query_research'
+      },
+      broadDiscovery: {
+        enabled: true,
+        startsFromGenericSocialQueries: true,
+        clusterSource: 'observed_public_social_content_only',
+        rerootsTopObservedClusters: 3,
+        validationGoal: 'social_affiliate',
+        rankingGuard: 'coverage.conclusionAllowed must be true before recommendation'
       },
       intentDecomposition: {
         enabled: true,
@@ -247,7 +255,7 @@ function server() {
   }, async input => structured(await marketSignalScan(input)));
 
   mcp.registerTool('market_intelligence_research', {
-    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it runs hypothesis-led SERP/demand research plus query-relevant indexed TikTok/YouTube Shorts content (and optional Instagram Reels). Social discovery prefers Brave site-restricted search, falls back to the general SERP API, and preserves indexed snippet engagement plus best-effort public-page metrics with provenance. researchGoal=social_affiliate activates an evidence-coverage gate: missing social observations prevents market ranking/recommendation instead of being treated as zero demand. Intent branches remain separated, TikTok Top Ads stays cross-category creative reference only, and App Store evidence stays lexical. Read-only: does not save snapshots, candidates, or ideas.',
+    description: 'On-demand marketing intelligence research. Without query it starts from generic TikTok/YouTube Shorts purchase, comparison, and tool-discovery searches, extracts repeated market clusters only from observed public posts, then re-roots the strongest observed clusters into explicit query research; under researchGoal=social_affiliate the top observed clusters are automatically validated through the normal SERP, Google Ads demand, indexed social-content, engagement-provenance, intent, and coverage gates. With query it runs hypothesis-led SERP/demand research plus query-relevant indexed TikTok/YouTube Shorts content (and optional Instagram Reels). Social discovery prefers Brave site-restricted search, falls back to the general SERP API, and preserves indexed snippet engagement plus best-effort public-page metrics with provenance. Missing social observations prevent market ranking/recommendation instead of being treated as zero demand. Intent branches remain separated, TikTok Top Ads stays cross-category creative reference only, and App Store evidence stays lexical. Read-only: does not save snapshots, candidates, or ideas.',
     inputSchema: marketIntelligenceResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketIntelligenceResearch(input)));
