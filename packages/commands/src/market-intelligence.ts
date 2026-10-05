@@ -248,6 +248,229 @@ function normalizeKey(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/^#/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, '-').slice(0, 160);
 }
 
+const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals: string[] }> = [
+  {
+    intent: 'entity',
+    patterns: [/株式会社|合同会社|有限会社|\b(?:inc\.?|corp\.?|corporation|llc|ltd\.?|company)\b/i, /どのような会社|会社の評判|企業情報|会社概要/i],
+    signals: ['company/entity marker']
+  },
+  {
+    intent: 'investment',
+    patterns: [/銘柄|株価|株式|投資|上場|時価総額|配当|\b(?:stock|shares?|invest(?:ment|or|ing)|ticker)\b/i],
+    signals: ['investment marker']
+  },
+  {
+    intent: 'career_qualification',
+    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training)\b/i],
+    signals: ['career/qualification marker']
+  },
+  {
+    intent: 'news',
+    patterns: [/ニュース|速報|最新情報|事件|発表|\b(?:news|breaking|today|latest update)\b/i],
+    signals: ['news/current-event marker']
+  },
+  {
+    intent: 'commercial',
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy)\b/i],
+    signals: ['commercial-evaluation marker']
+  },
+  {
+    intent: 'problem_need',
+    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain)\w*\b/i],
+    signals: ['problem/risk marker']
+  },
+  {
+    intent: 'solution_product',
+    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
+    signals: ['solution/product marker']
+  },
+  {
+    intent: 'how_to',
+    patterns: [/方法|やり方|使い方|設定|手順|実装|構築|導入方法|始め方|\b(?:how to|setup|set up|guide to|tutorial|configure|implementation)\b/i],
+    signals: ['how-to marker']
+  },
+  {
+    intent: 'research_information',
+    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study)\b/i],
+    signals: ['informational/research marker']
+  }
+];
+
+const INTENT_PRIORITY: MarketIntentId[] = [
+  'entity',
+  'investment',
+  'career_qualification',
+  'news',
+  'commercial',
+  'problem_need',
+  'solution_product',
+  'how_to',
+  'research_information',
+  'ambiguous'
+];
+
+export function classifyMarketIntent(text: string, exactSeed?: string | null): IntentClassification {
+  const normalized = text.normalize('NFKC').trim();
+  const exact = exactSeed && normalized.toLowerCase() === exactSeed.normalize('NFKC').trim().toLowerCase();
+  const matches: Array<{ intent: MarketIntentId; signals: string[] }> = [];
+
+  for (const rule of INTENT_RULES) {
+    const matched = rule.patterns.some(pattern => pattern.test(normalized));
+    if (matched) matches.push({ intent: rule.intent, signals: rule.signals });
+  }
+
+  const intents = [...new Set(matches.map(item => item.intent))];
+  const primaryIntent = INTENT_PRIORITY.find(intent => intents.includes(intent)) ?? 'ambiguous';
+  return {
+    primaryIntent,
+    secondaryIntents: intents.filter(intent => intent !== primaryIntent),
+    matchedSignals: [...new Set(matches.flatMap(item => item.signals))],
+    basis: exact ? 'exact_seed' : matches.length ? 'explicit_rule' : 'generic_default'
+  };
+}
+
+function targetIntentsForQuery(query: string): MarketIntentId[] {
+  const classification = classifyMarketIntent(query, query);
+  if (classification.primaryIntent !== 'ambiguous') {
+    return [...new Set([classification.primaryIntent, ...classification.secondaryIntents.filter(intent => intent !== 'ambiguous')])];
+  }
+  return ['problem_need', 'solution_product', 'how_to', 'commercial'];
+}
+
+function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): MarketIntentRole {
+  if (targetIntents.includes(intent)) return 'primary';
+  if (intent === 'research_information' || intent === 'news' || intent === 'ambiguous') return 'contextual';
+  if (intent === 'career_qualification' || intent === 'investment') return 'adjacent_market';
+  if (intent === 'entity') return 'out_of_scope';
+  return 'adjacent_market';
+}
+
+function roleRationale(intent: MarketIntentId, role: MarketIntentRole): string {
+  if (role === 'primary') return 'Directly matches the query intent selected for market-thesis evidence.';
+  if (role === 'contextual') return 'Useful for interpretation, but should not establish the core demand thesis by itself.';
+  if (role === 'adjacent_market') return 'Represents a distinct monetizable/search market that should be analyzed separately before it influences the main thesis.';
+  return intent === 'entity'
+    ? 'Entity/company-specific navigation is preserved but excluded from the generic market thesis unless the original query is entity-specific.'
+    : 'Preserved for provenance but excluded from the primary thesis.';
+}
+
+export function buildQueryIntentTree(input: {
+  query: string | null;
+  relatedSearches: string[];
+  peopleAlsoAsk: string[];
+  topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  demand: QueryDemandObservation[];
+}): QueryIntentTree {
+  if (!input.query) {
+    return {
+      query: null,
+      queryClassification: null,
+      targetIntents: [],
+      mixedIntent: false,
+      branches: [],
+      primaryEvidenceKeywords: [],
+      excludedFromPrimaryThesis: [],
+      guidance: ['No query supplied; intent decomposition is only used in hypothesis-led query mode.']
+    };
+  }
+
+  const queryClassification = classifyMarketIntent(input.query, input.query);
+  const targetIntents = targetIntentsForQuery(input.query);
+  const demandByKeyword = new Map(input.demand.map(item => [item.keyword.normalize('NFKC').trim().toLowerCase(), item]));
+  const branchMap = new Map<MarketIntentId, MarketIntentBranch>();
+
+  const ensureBranch = (intent: MarketIntentId) => {
+    const current = branchMap.get(intent);
+    if (current) return current;
+    const role = intentRole(intent, targetIntents);
+    const created: MarketIntentBranch = {
+      intent,
+      role,
+      rationale: roleRationale(intent, role),
+      relatedSearches: [],
+      peopleAlsoAsk: [],
+      topResults: [],
+      demand: [],
+      observedDemandSum: null
+    };
+    branchMap.set(intent, created);
+    return created;
+  };
+
+  const exactSeedKey = input.query.normalize('NFKC').trim().toLowerCase();
+  const seedDemand = demandByKeyword.get(exactSeedKey);
+  const seedBranch = ensureBranch(queryClassification.primaryIntent);
+  if (seedDemand) seedBranch.demand.push(seedDemand);
+
+  for (const label of input.relatedSearches) {
+    const classification = classifyMarketIntent(label, input.query);
+    ensureBranch(classification.primaryIntent).relatedSearches.push(label);
+  }
+  for (const label of input.peopleAlsoAsk) {
+    const classification = classifyMarketIntent(label, input.query);
+    ensureBranch(classification.primaryIntent).peopleAlsoAsk.push(label);
+  }
+  for (const result of input.topResults) {
+    const classification = classifyMarketIntent([result.title, result.snippet].filter(Boolean).join(' '), input.query);
+    ensureBranch(classification.primaryIntent).topResults.push(result);
+  }
+  for (const demand of input.demand) {
+    if (demand.keyword.normalize('NFKC').trim().toLowerCase() === exactSeedKey) continue;
+    const classification = classifyMarketIntent(demand.keyword, input.query);
+    ensureBranch(classification.primaryIntent).demand.push(demand);
+  }
+
+  const branches = INTENT_PRIORITY.flatMap(intent => {
+    const branch = branchMap.get(intent);
+    if (!branch) return [];
+    const knownVolumes = branch.demand.flatMap(item => typeof item.avgMonthlySearches === 'number' ? [item.avgMonthlySearches] : []);
+    return [{
+      ...branch,
+      observedDemandSum: knownVolumes.length ? knownVolumes.reduce((sum, value) => sum + value, 0) : null
+    }];
+  });
+
+  const primaryEvidenceKeywords = [...new Set([
+    input.query,
+    ...branches
+      .filter(branch => branch.role === 'primary')
+      .flatMap(branch => [
+        ...branch.relatedSearches,
+        ...branch.demand.map(item => item.keyword)
+      ])
+  ])];
+
+  const excludedFromPrimaryThesis = branches
+    .filter(branch => branch.role === 'adjacent_market' || branch.role === 'out_of_scope')
+    .flatMap(branch => [
+      ...branch.relatedSearches.map(label => ({ label, intent: branch.intent, reason: branch.rationale })),
+      ...branch.peopleAlsoAsk.map(label => ({ label, intent: branch.intent, reason: branch.rationale })),
+      ...branch.demand.map(item => ({ label: item.keyword, intent: branch.intent, reason: branch.rationale }))
+    ])
+    .filter((item, index, all) => all.findIndex(other => other.label === item.label && other.intent === item.intent) === index)
+    .slice(0, 30);
+
+  const populatedIntents = branches.filter(branch =>
+    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.demand.length
+  );
+
+  return {
+    query: input.query,
+    queryClassification,
+    targetIntents,
+    mixedIntent: populatedIntents.length > 1,
+    branches,
+    primaryEvidenceKeywords,
+    excludedFromPrimaryThesis,
+    guidance: [
+      'Do not sum or compare demand across different intent branches as if they were one market.',
+      'Primary branches may support the main market thesis; contextual branches may explain it but should not establish it alone.',
+      'Adjacent-market branches are retained as separate opportunity surfaces and require their own validation before becoming a thesis.',
+      'Entity-specific branches stay out of a generic market thesis unless the original query itself is entity-specific.'
+    ]
+  };
+}
+
 async function fetchText(url: string, accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8') {
   const response = await fetch(url, {
     headers: {
