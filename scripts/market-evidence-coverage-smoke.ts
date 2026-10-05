@@ -80,6 +80,16 @@ const genericFormatLabels = extractObservedMarketClusterLabels({
 assert.ok(!genericFormatLabels.includes('買ってよかったもの'));
 assert.ok(!genericFormatLabels.includes('おすすめ商品'));
 
+const productionLikeNoiseLabels = extractObservedMarketClusterLabels({
+  title: '2025年5月に買ってよかったもの第5位〜第1位を発表します❗️ #ガジェット #神ガジェット #スマホスタンド',
+  snippet: '○特徴 ・クランクを搭載しゲームをプレイ可能 ・高性能ポータブルゲーム機 ・自分でゲームを作成可能'
+});
+assert.ok(productionLikeNoiseLabels.includes('ガジェット'));
+assert.ok(productionLikeNoiseLabels.includes('スマホスタンド'));
+assert.ok(!productionLikeNoiseLabels.some(label => label.includes('クランクを搭載しゲーム')));
+assert.ok(!productionLikeNoiseLabels.some(label => label.includes('高性能ポータブルゲーム')));
+assert.ok(!productionLikeNoiseLabels.some(label => label.includes('自分でゲーム')));
+
 const diversifiedClusters = clusterObservedSocialMarkets([
   {
     platform: 'tiktok',
