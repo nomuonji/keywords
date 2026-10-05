@@ -1128,7 +1128,8 @@ function normalizeObservedMarketLabel(raw: string): string | null {
     .replace(/\s+/g, ' ')
     .trim();
   label = label
-    .replace(/^(?:最新|おすすめ|人気|話題の|本当に|マジで|絶対|202[0-9]年?)+/i, '')
+    .replace(/^(?:最新|おすすめ|人気|話題の|本当に|マジで|絶対|神|無料|202[0-9]年?)+/i, '')
+    .replace(/おすすめ/gi, '')
     .replace(/(?:購入品紹介|商品紹介|ガジェット紹介|レビュー|好きな人と繋がりたい)$/i, '')
     .replace(/\d+\s*(?:商品|選|個|点)$/u, '')
     .trim();
@@ -1151,8 +1152,7 @@ export function extractObservedMarketClusterLabels(observation: Pick<SocialConte
   const phrasePatterns = [
     /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:に|向け|で)?おすすめ/giu,
     /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:を|で)?(?:徹底)?比較/giu,
-    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:ランキング|ベスト\d+)/giu,
-    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?(?:ガジェット|ツール|洗顔料|スキンケア|旅行グッズ|キッチングッズ|キッチンアイテム|日用品|コスメ|家電|ゲーム|アプリ|サービス))/giu
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:ランキング|ベスト\d+)/giu
   ];
   for (const pattern of phrasePatterns) {
     for (const match of text.matchAll(pattern)) {
