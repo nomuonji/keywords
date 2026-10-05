@@ -22,7 +22,7 @@ Default tool for product/marketing opportunity research.
 
 It has two modes:
 
-- **No query**: broad market scan across current public surfaces.
+- **No query**: evidence-first broad market scan. The tool still reads broad Google Trends / TikTok Creative Center / Hacker News context, but it no longer depends on those feeds to invent a candidate market. It first runs generic site-restricted TikTok / YouTube Shorts searches such as purchase, comparison, and free-tool discovery patterns, keeps canonical public posts, preserves best-effort engagement provenance, and extracts repeated market labels from observed titles / snippets / hashtags. These labels are returned in `marketDiscovery.clusters`; their order reflects observed evidence breadth, not an opportunity score. When `researchGoal: "social_affiliate"` is used, the top observed clusters are automatically re-rooted as explicit market queries and passed back through the normal SERP, Google Ads demand, social-content, semantic-intent, and coverage gates. Only `marketDiscovery.validatedCandidates[*].coverage.conclusionAllowed === true` may support a ranking or recommendation.
 - **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus intent-prioritized related search terms. The result also contains an `intentTree` so company/entity, investment, career/qualification, informational, and core problem/solution demand are not silently merged. Japanese corporate suffixes are normalized across spacing variants (for example 株式会社 / 株式 会社), and English company markers avoid incident IDs such as `INC-2026...`. App Store evidence is query-specific and is skipped when the explicit query intent is clearly non-product (for example entity, investment, news, or pure research-information intent).
 
 It then adds:
@@ -172,6 +172,8 @@ This evidence is deliberately separated from TikTok Creative Center and Top Ads:
 - TikTok Top Ads remains cross-category creative reference only.
 
 Use `researchGoal: "social_affiliate"` when the task is to find affiliate markets that can also be expressed through short-form social content. The returned `coverage` object is binding for agent interpretation. If `coverage.conclusionAllowed` is false, do not rank or recommend markets until the missing required evidence is retrieved.
+
+For query-less discovery, the same rule now applies one level earlier: `marketDiscovery.clusters` are only observed hypotheses. The server automatically validates a bounded set of top observed clusters under `social_affiliate`; candidates that fail semantic-sense selection or any required evidence class remain visible but are not eligible for recommendation. Generic discovery never treats search-engine position as native popularity and does not convert the cluster order into a composite score.
 
 `coverage.status` has three states:
 
