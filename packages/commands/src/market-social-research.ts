@@ -34,6 +34,13 @@ export interface SocialPlatformStatus {
   warning: string | null;
 }
 
+export interface SocialFormatSummary {
+  format: string;
+  count: number;
+  platforms: SocialMarketPlatform[];
+  evidence: Array<{ platform: SocialMarketPlatform; title: string; url: string }>;
+}
+
 export interface SocialContentResearchResult {
   source: 'serp_indexed_social_content';
   evidenceScope: 'public_index_plus_best_effort_public_page_metrics';
@@ -41,6 +48,7 @@ export interface SocialContentResearchResult {
   platformsRequested: SocialMarketPlatform[];
   platformsObserved: SocialMarketPlatform[];
   observations: SocialContentObservation[];
+  formatSummary: SocialFormatSummary[];
   platformStatus: SocialPlatformStatus[];
   warnings: string[];
   guidance: string[];
@@ -110,6 +118,26 @@ function isPlatformUrl(platform: SocialMarketPlatform, raw: string) {
 
 export function extractSocialFormatSignals(text: string): string[] {
   return SOCIAL_FORMAT_RULES.filter(rule => rule.pattern.test(text)).map(rule => rule.id);
+}
+
+export function summarizeSocialFormats(observations: SocialContentObservation[]): SocialFormatSummary[] {
+  const grouped = new Map<string, SocialFormatSummary>();
+  for (const observation of observations) {
+    for (const format of observation.formatSignals) {
+      const current = grouped.get(format) ?? { format, count: 0, platforms: [], evidence: [] };
+      current.count += 1;
+      if (!current.platforms.includes(observation.platform)) current.platforms.push(observation.platform);
+      if (current.evidence.length < 5) {
+        current.evidence.push({ platform: observation.platform, title: observation.title, url: observation.url });
+      }
+      grouped.set(format, current);
+    }
+  }
+  return [...grouped.values()].sort((left, right) =>
+    right.count - left.count ||
+    right.platforms.length - left.platforms.length ||
+    left.format.localeCompare(right.format)
+  );
 }
 
 function findTikTokStats(value: unknown, depth = 0): Record<string, unknown> | null {
@@ -208,6 +236,7 @@ export async function socialContentResearch(input: {
       platformsRequested: platforms,
       platformsObserved: [],
       observations: [],
+      formatSummary: [],
       platformStatus: platforms.map(platform => ({
         platform,
         searchQuery: '',
@@ -310,6 +339,7 @@ export async function socialContentResearch(input: {
     platformsRequested: platforms,
     platformsObserved: platforms.filter(platform => deduped.some(item => item.platform === platform)),
     observations: deduped,
+    formatSummary: summarizeSocialFormats(deduped),
     platformStatus,
     warnings,
     guidance: [
@@ -325,6 +355,7 @@ export function assessMarketEvidenceCoverage(input: {
   query: string | null;
   broadSignalCount: number;
   broadSourceCount: number;
+  broadSocialSignalCount: number;
   searchSurfaceCount: number;
   searchDemandCount: number;
   socialContent: SocialContentResearchResult;
@@ -367,20 +398,32 @@ export function assessMarketEvidenceCoverage(input: {
     {
       evidenceClass: 'social_content_patterns',
       required: requiresSocial,
-      status: !queryMode ? 'not_required' : socialPlatformCount >= 2 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable',
-      evidenceCount: socialCount,
-      sources: input.socialContent.platformsObserved,
-      note: 'Query-relevant indexed TikTok/Shorts/Reels content is used to observe actual output formats rather than inventing them from the model.'
+      status: queryMode
+        ? socialPlatformCount >= 2 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable'
+        : requiresSocial
+          ? input.broadSocialSignalCount > 0 ? 'available' : 'unavailable'
+          : 'not_required',
+      evidenceCount: queryMode ? socialCount : input.broadSocialSignalCount,
+      sources: queryMode
+        ? input.socialContent.platformsObserved
+        : input.broadSocialSignalCount > 0 ? ['tiktok_creative_center'] : [],
+      note: queryMode
+        ? 'Query-relevant indexed TikTok/Shorts/Reels content is used to observe actual output formats rather than inventing them from the model.'
+        : 'Broad social-affiliate research requires an observed social trend surface; Google Trends/HN alone cannot stand in for it.'
     },
     {
       evidenceClass: 'social_engagement_metrics',
       required: false,
-      status: !queryMode ? 'not_required' : socialMetricCount > 0 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable',
-      evidenceCount: socialMetricCount,
-      sources: [...new Set(input.socialContent.observations.filter(item =>
-        Object.values(item.metrics).some(value => value !== null)
-      ).map(item => item.metricProvenance).filter(source => source !== 'none'))],
-      note: 'Native-like engagement evidence is best-effort and never inferred from search ranking.'
+      status: queryMode
+        ? socialMetricCount > 0 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable'
+        : input.broadSocialSignalCount > 0 ? 'available' : 'unavailable',
+      evidenceCount: queryMode ? socialMetricCount : input.broadSocialSignalCount,
+      sources: queryMode
+        ? [...new Set(input.socialContent.observations.filter(item =>
+            Object.values(item.metrics).some(value => value !== null)
+          ).map(item => item.metricProvenance).filter(source => source !== 'none'))]
+        : input.broadSocialSignalCount > 0 ? ['tiktok_creative_center'] : [],
+      note: 'Engagement evidence is best-effort and never inferred from search ranking.'
     }
   ];
 
@@ -394,7 +437,9 @@ export function assessMarketEvidenceCoverage(input: {
       ? (input.searchSurfaceCount > 0 || input.searchDemandCount > 0)
       : input.broadSignalCount > 0
   );
-  const strongSocial = !requiresSocial || (socialPlatformCount >= 2 && socialMetricCount > 0);
+  const strongSocial = !requiresSocial || (queryMode
+    ? socialPlatformCount >= 2 && socialMetricCount > 0
+    : input.broadSocialSignalCount > 0);
   const strongSearch = !queryMode || (input.searchSurfaceCount > 0 && input.searchDemandCount > 0);
   const strongBroad = queryMode || input.broadSourceCount >= 2;
   const status: MarketEvidenceCoverage['status'] = !conclusionAllowed
