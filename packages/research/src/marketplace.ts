@@ -350,7 +350,7 @@ const boothAdapter: MarketplaceAdapter = {
     const query = input.query.trim();
     if (!query) throw new Error('query is required.');
     const page = Math.max(1, Math.min(input.page ?? 1, 10));
-    const requestedSorts = input.sorts?.length ? input.sorts : ['popularity'];
+    const requestedSorts: MarketplaceSort[] = input.sorts?.length ? input.sorts : ['popularity'];
     const sorts = [...new Set(requestedSorts)].slice(0, 3);
     const includeSuggestions = input.includeSuggestions ?? true;
     const warnings: string[] = [];
