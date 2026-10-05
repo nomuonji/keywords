@@ -9,7 +9,7 @@ import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 import { attachQuerySignalsToIntentTree, buildQueryIntentTree, classifyMarketIntent, compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.13.1');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.13.2');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
