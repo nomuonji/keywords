@@ -712,7 +712,14 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
         researchedKeywords: [],
         results: [],
         warnings: ['No query supplied; broad market-scan mode does not run exact/adjacent keyword demand research.']
-      }
+      },
+      intentTree: buildQueryIntentTree({
+        query: null,
+        relatedSearches: [],
+        peopleAlsoAsk: [],
+        topResults: [],
+        demand: []
+      })
     };
   }
 
@@ -751,11 +758,24 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   }
 
   const demandWarnings: string[] = [];
+  const targetIntents = targetIntentsForQuery(query);
+  const relatedForDemand = relatedSearches
+    .filter(value => value.length <= 120)
+    .map(value => {
+      const classification = classifyMarketIntent(value, query);
+      return {
+        value,
+        intent: classification.primaryIntent,
+        role: intentRole(classification.primaryIntent, targetIntents)
+      };
+    });
+
   const demandSeeds = [...new Set([
     query,
-    ...relatedSearches
-      .filter(value => value.length <= 120)
-      .slice(0, 8)
+    ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
+    ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
+    ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
+    ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
   ])].slice(0, 10);
 
   let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
@@ -808,7 +828,14 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
       researchedKeywords: demandSeeds,
       results: demandResults,
       warnings: demandWarnings
-    }
+    },
+    intentTree: buildQueryIntentTree({
+      query,
+      relatedSearches,
+      peopleAlsoAsk,
+      topResults,
+      demand: demandResults
+    })
   };
 }
 
