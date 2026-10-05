@@ -123,6 +123,12 @@ function runtimeStatus() {
       queryModes: {
         noQuery: 'broad_market_scan',
         withQuery: 'hypothesis_led_query_research'
+      },
+      intentDecomposition: {
+        enabled: true,
+        branches: ['problem_need', 'solution_product', 'how_to', 'commercial', 'entity', 'investment', 'career_qualification', 'news', 'research_information', 'ambiguous'],
+        thesisUsesPrimaryBranchOnly: true,
+        preservesAdjacentBranches: true
       }
     }
   };
@@ -206,7 +212,7 @@ function server() {
   }, async input => structured(await marketSignalScan(input)));
 
   mcp.registerTool('market_intelligence_research', {
-    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it switches to hypothesis-led mode: query-relevant Hacker News, cached SERP related searches/PAA, Google Ads demand for the query and adjacent search terms, plus App Store commercialization. Broad unrelated trend headlines are excluded from thesis evidence. TikTok Top Ads remains a creative-mechanic reference and Pinterest Trends is best-effort. Read-only: does not save snapshots, candidates, or ideas.',
+    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it switches to hypothesis-led mode and decomposes related searches, PAA, SERP results, demand, and query-relevant signals into intent branches (problem/solution/how-to/commercial/entity/investment/career/news/research/ambiguous). Only the selected primary intent branch supports the main market thesis; adjacent/entity branches are preserved separately. TikTok Top Ads remains a cross-category creative-mechanic reference and App Store commercialization is skipped when the explicit query intent is not product/app oriented. Read-only: does not save snapshots, candidates, or ideas.',
     inputSchema: marketIntelligenceResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketIntelligenceResearch(input)));

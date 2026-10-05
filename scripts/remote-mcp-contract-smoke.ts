@@ -7,9 +7,9 @@ import { screenDemandResults, serpQuotaConfiguration } from '../packages/command
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
-import { compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
+import { attachQuerySignalsToIntentTree, buildQueryIntentTree, classifyMarketIntent, compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.12.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.13.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -217,6 +217,115 @@ assert.equal(hnQuery[0]?.metrics.queryMatch, true);
 assert.match(hnQuery[0]?.url ?? '', /news\.ycombinator\.com\/item\?id=123/);
 
 
+assert.equal(classifyMarketIntent('AI Security 株式会社', 'AI security').primaryIntent, 'entity');
+assert.equal(classifyMarketIntent('AIセキュリティ銘柄', 'AI security').primaryIntent, 'investment');
+assert.equal(classifyMarketIntent('AIセキュリティ資格', 'AI security').primaryIntent, 'career_qualification');
+assert.equal(classifyMarketIntent('生成AIセキュリティ対策', 'AI security').primaryIntent, 'solution_product');
+assert.equal(classifyMarketIntent('AIセキュリティ問題', 'AI security').primaryIntent, 'problem_need');
+assert.equal(classifyMarketIntent('AIセキュリティガイドライン', 'AI security').primaryIntent, 'research_information');
+assert.equal(classifyMarketIntent('AI security', 'AI security').primaryIntent, 'ambiguous');
+
+const intentTree = buildQueryIntentTree({
+  query: 'AI security',
+  relatedSearches: [
+    'AI Security 株式会社',
+    'AIセキュリティ問題',
+    'AIセキュリティ銘柄',
+    'AIセキュリティ資格',
+    'AIセキュリティ対策',
+    'AIセキュリティガイドライン'
+  ],
+  peopleAlsoAsk: [
+    'AI Securityはどのような会社ですか？',
+    'AIセーフティとAIセキュリティの違いは何ですか？'
+  ],
+  topResults: [
+    { position: 1, title: 'AI Security株式会社 会社概要', link: 'https://entity.example/', snippet: '企業情報' },
+    { position: 2, title: '生成AIのセキュリティ対策', link: 'https://market.example/', snippet: '情報漏洩を防止する方法' }
+  ],
+  demand: [
+    { keyword: 'AI security', avgMonthlySearches: 390, averageCpcMicros: 1000, competition: 0.3, competitionIndex: 30, monthlySearchVolumes: [] },
+    { keyword: 'AIセキュリティ問題', avgMonthlySearches: 140, averageCpcMicros: 900, competition: 0.4, competitionIndex: 40, monthlySearchVolumes: [] },
+    { keyword: 'AIセキュリティ銘柄', avgMonthlySearches: 170, averageCpcMicros: null, competition: 0.1, competitionIndex: 10, monthlySearchVolumes: [] },
+    { keyword: 'AIセキュリティ資格', avgMonthlySearches: 140, averageCpcMicros: 800, competition: 0.1, competitionIndex: 10, monthlySearchVolumes: [] },
+    { keyword: 'AIセキュリティ対策', avgMonthlySearches: 480, averageCpcMicros: 1200, competition: 0.5, competitionIndex: 50, monthlySearchVolumes: [] }
+  ]
+});
+assert.deepEqual(intentTree.targetIntents, ['problem_need', 'solution_product', 'how_to', 'commercial']);
+assert.equal(intentTree.mixedIntent, true);
+assert.equal(intentTree.branches.find(branch => branch.intent === 'entity')?.role, 'out_of_scope');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'investment')?.role, 'adjacent_market');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'adjacent_market');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'primary');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'problem_need')?.role, 'primary');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'research_information')?.role, 'contextual');
+assert.ok(intentTree.primaryEvidenceKeywords.includes('AIセキュリティ対策'));
+assert.ok(!intentTree.primaryEvidenceKeywords.includes('AIセキュリティ銘柄'));
+assert.ok(intentTree.excludedFromPrimaryThesis.some(item => item.label === 'AI Security 株式会社' && item.intent === 'entity'));
+
+
+const qualificationTree = buildQueryIntentTree({
+  query: 'AIセキュリティ資格',
+  relatedSearches: ['AIセキュリティ資格 難易度', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(qualificationTree.targetIntents, ['career_qualification']);
+assert.equal(qualificationTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'primary');
+assert.equal(qualificationTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
+
+const investmentTree = buildQueryIntentTree({
+  query: 'AIセキュリティ銘柄',
+  relatedSearches: ['AIセキュリティ銘柄 日本', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(investmentTree.targetIntents, ['investment']);
+assert.equal(investmentTree.branches.find(branch => branch.intent === 'investment')?.role, 'primary');
+assert.equal(investmentTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
+
+const entityTree = buildQueryIntentTree({
+  query: 'AI Security株式会社',
+  relatedSearches: ['AI Security株式会社 評判', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(entityTree.targetIntents, ['entity']);
+assert.equal(entityTree.branches.find(branch => branch.intent === 'entity')?.role, 'primary');
+
+const intentQueryFocus: any = {
+  mode: 'hypothesis_led',
+  query: 'AI security',
+  searchSurface: { source: 'serp', query: 'AI security', relatedSearches: [], peopleAlsoAsk: [], topResults: [], cacheHit: true, warnings: [] },
+  searchDemand: { source: 'google_ads', query: 'AI security', researchedKeywords: [], results: [], warnings: [] },
+  intentTree
+};
+const enrichedIntent = attachQuerySignalsToIntentTree(intentQueryFocus, {
+  fetchedAt: '2026-10-06T00:00:00.000Z',
+  geo: 'JP',
+  sourcesRequested: ['hacker_news'],
+  sourcesSucceeded: ['hacker_news'],
+  warnings: [],
+  interpretationGuardrails: [],
+  results: [{
+    source: 'hacker_news',
+    url: 'https://hn.algolia.com/',
+    signalKind: ['query_relevant_early_adopter_attention'],
+    warnings: [],
+    observations: [
+      { source: 'hacker_news', rank: 1, label: 'AI security tool for local agents', url: 'https://example.com/tool', category: 'story', observedAt: null, metrics: { score: 20 }, related: [] },
+      { source: 'hacker_news', rank: 2, label: 'AI security stocks rally', url: 'https://example.com/stocks', category: 'story', observedAt: null, metrics: { score: 10 }, related: [] }
+    ]
+  }]
+});
+assert.equal(enrichedIntent.intentTree.branches.find((branch: any) => branch.intent === 'solution_product')?.externalSignals.length, 1);
+assert.equal(enrichedIntent.intentTree.branches.find((branch: any) => branch.intent === 'investment')?.externalSignals.length, 1);
+assert.ok(enrichedIntent.intentTree.excludedFromPrimaryThesis.some((item: any) => item.label === 'AI security stocks rally' && item.intent === 'investment'));
+
+
 const topAds = parseTikTokTopAdsHtml(`
 <html><body>
   <div>34K Likes Top 21%CTR High Budget Showcase a real-time comparison between products, while communicating superiority. See analysis</div>
@@ -266,6 +375,8 @@ assert.match(mcpSource, /market_signal_scan/);
 assert.match(mcpSource, /market_intelligence_research/);
 assert.match(mcpSource, /hypothesis-led mode/);
 assert.match(mcpSource, /google_ads_query_demand/);
+assert.match(mcpSource, /intentDecomposition/);
+assert.match(mcpSource, /thesisUsesPrimaryBranchOnly/);
 assert.match(mcpSource, /market_signal_snapshot_save/);
 assert.match(mcpSource, /market_signal_snapshot_compare/);
 assert.match(mcpSource, /marketSensorCapabilities/);

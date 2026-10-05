@@ -87,6 +87,59 @@ export interface PinterestObservation {
   metrics: Record<string, number | string | boolean | null>;
 }
 
+export type MarketIntentId =
+  | 'problem_need'
+  | 'solution_product'
+  | 'how_to'
+  | 'commercial'
+  | 'entity'
+  | 'investment'
+  | 'career_qualification'
+  | 'news'
+  | 'research_information'
+  | 'ambiguous';
+
+export type MarketIntentRole = 'primary' | 'contextual' | 'adjacent_market' | 'out_of_scope';
+
+export interface IntentClassification {
+  primaryIntent: MarketIntentId;
+  secondaryIntents: MarketIntentId[];
+  matchedSignals: string[];
+  basis: 'exact_seed' | 'explicit_rule' | 'generic_default';
+}
+
+export interface QueryDemandObservation {
+  keyword: string;
+  avgMonthlySearches: number | null;
+  averageCpcMicros: number | null;
+  competition: string | number | null;
+  competitionIndex: number | null;
+  monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
+}
+
+export interface MarketIntentBranch {
+  intent: MarketIntentId;
+  role: MarketIntentRole;
+  rationale: string;
+  relatedSearches: string[];
+  peopleAlsoAsk: string[];
+  topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  externalSignals: Array<{ source: string; label: string; url: string | null }>;
+  demand: QueryDemandObservation[];
+  observedDemandSum: number | null;
+}
+
+export interface QueryIntentTree {
+  query: string | null;
+  queryClassification: IntentClassification | null;
+  targetIntents: MarketIntentId[];
+  mixedIntent: boolean;
+  branches: MarketIntentBranch[];
+  primaryEvidenceKeywords: string[];
+  excludedFromPrimaryThesis: Array<{ label: string; intent: MarketIntentId; reason: string }>;
+  guidance: string[];
+}
+
 export interface QueryFocusResearch {
   mode: 'market_scan' | 'hypothesis_led';
   query: string | null;
@@ -103,16 +156,10 @@ export interface QueryFocusResearch {
     source: 'google_ads';
     query: string | null;
     researchedKeywords: string[];
-    results: Array<{
-      keyword: string;
-      avgMonthlySearches: number | null;
-      averageCpcMicros: number | null;
-      competition: string | number | null;
-      competitionIndex: number | null;
-      monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
-    }>;
+    results: QueryDemandObservation[];
     warnings: string[];
   };
+  intentTree: QueryIntentTree;
 }
 
 export interface MarketIntelligencePacket {
@@ -123,6 +170,7 @@ export interface MarketIntelligencePacket {
   queryFocus: QueryFocusResearch;
   creativeEvidence: {
     source: 'tiktok_top_ads';
+    scope: 'cross_category_reference';
     url: string;
     observations: TopAdObservation[];
     mechanics: MarketingMechanicEvidence[];
@@ -136,6 +184,7 @@ export interface MarketIntelligencePacket {
   };
   commercialization: {
     source: 'app_store';
+    applicability: 'relevant' | 'not_applicable';
     query: string | null;
     url: string | null;
     totalCount: number | null;
@@ -200,6 +249,299 @@ function median(values: number[]): number | null {
 
 function normalizeKey(value: string): string {
   return value.normalize('NFKC').toLowerCase().replace(/^#/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().replace(/\s+/g, '-').slice(0, 160);
+}
+
+const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals: string[] }> = [
+  {
+    intent: 'entity',
+    patterns: [/株式会社|合同会社|有限会社|\b(?:inc\.?|corp\.?|corporation|llc|ltd\.?|company)\b/i, /どのような会社|会社の評判|企業情報|会社概要/i],
+    signals: ['company/entity marker']
+  },
+  {
+    intent: 'investment',
+    patterns: [/銘柄|株価|株式|投資|上場|時価総額|配当|\b(?:stock|shares?|invest(?:ment|or|ing)|ticker)\b/i],
+    signals: ['investment marker']
+  },
+  {
+    intent: 'career_qualification',
+    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training)\b/i],
+    signals: ['career/qualification marker']
+  },
+  {
+    intent: 'news',
+    patterns: [/ニュース|速報|最新情報|事件|発表|\b(?:news|breaking|today|latest update)\b/i],
+    signals: ['news/current-event marker']
+  },
+  {
+    intent: 'commercial',
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy)\b/i],
+    signals: ['commercial-evaluation marker']
+  },
+  {
+    intent: 'problem_need',
+    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain)\w*\b/i],
+    signals: ['problem/risk marker']
+  },
+  {
+    intent: 'solution_product',
+    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
+    signals: ['solution/product marker']
+  },
+  {
+    intent: 'how_to',
+    patterns: [/方法|やり方|使い方|設定|手順|実装|構築|導入方法|始め方|\b(?:how to|setup|set up|guide to|tutorial|configure|implementation)\b/i],
+    signals: ['how-to marker']
+  },
+  {
+    intent: 'research_information',
+    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study)\b/i],
+    signals: ['informational/research marker']
+  }
+];
+
+const INTENT_PRIORITY: MarketIntentId[] = [
+  'entity',
+  'investment',
+  'career_qualification',
+  'news',
+  'commercial',
+  'problem_need',
+  'solution_product',
+  'how_to',
+  'research_information',
+  'ambiguous'
+];
+
+export function classifyMarketIntent(text: string, exactSeed?: string | null): IntentClassification {
+  const normalized = text.normalize('NFKC').trim();
+  const exact = exactSeed && normalized.toLowerCase() === exactSeed.normalize('NFKC').trim().toLowerCase();
+  const matches: Array<{ intent: MarketIntentId; signals: string[] }> = [];
+
+  for (const rule of INTENT_RULES) {
+    const matched = rule.patterns.some(pattern => pattern.test(normalized));
+    if (matched) matches.push({ intent: rule.intent, signals: rule.signals });
+  }
+
+  const intents = [...new Set(matches.map(item => item.intent))];
+  const primaryIntent = INTENT_PRIORITY.find(intent => intents.includes(intent)) ?? 'ambiguous';
+  return {
+    primaryIntent,
+    secondaryIntents: intents.filter(intent => intent !== primaryIntent),
+    matchedSignals: [...new Set(matches.flatMap(item => item.signals))],
+    basis: exact ? 'exact_seed' : matches.length ? 'explicit_rule' : 'generic_default'
+  };
+}
+
+function targetIntentsForQuery(query: string): MarketIntentId[] {
+  const classification = classifyMarketIntent(query, query);
+  if (classification.primaryIntent !== 'ambiguous') {
+    return [...new Set([classification.primaryIntent, ...classification.secondaryIntents.filter(intent => intent !== 'ambiguous')])];
+  }
+  return ['problem_need', 'solution_product', 'how_to', 'commercial'];
+}
+
+function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): MarketIntentRole {
+  if (targetIntents.includes(intent)) return 'primary';
+  if (intent === 'career_qualification' || intent === 'investment') return 'adjacent_market';
+  if (intent === 'entity') return 'out_of_scope';
+  return 'contextual';
+}
+
+function roleRationale(intent: MarketIntentId, role: MarketIntentRole): string {
+  if (role === 'primary') return 'Directly matches the query intent selected for market-thesis evidence.';
+  if (role === 'contextual') return 'Useful for interpretation, but should not establish the core demand thesis by itself.';
+  if (role === 'adjacent_market') return 'Represents a distinct monetizable/search market that should be analyzed separately before it influences the main thesis.';
+  return intent === 'entity'
+    ? 'Entity/company-specific navigation is preserved but excluded from the generic market thesis unless the original query is entity-specific.'
+    : 'Preserved for provenance but excluded from the primary thesis.';
+}
+
+export function buildQueryIntentTree(input: {
+  query: string | null;
+  relatedSearches: string[];
+  peopleAlsoAsk: string[];
+  topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  demand: QueryDemandObservation[];
+}): QueryIntentTree {
+  if (!input.query) {
+    return {
+      query: null,
+      queryClassification: null,
+      targetIntents: [],
+      mixedIntent: false,
+      branches: [],
+      primaryEvidenceKeywords: [],
+      excludedFromPrimaryThesis: [],
+      guidance: ['No query supplied; intent decomposition is only used in hypothesis-led query mode.']
+    };
+  }
+
+  const queryClassification = classifyMarketIntent(input.query, input.query);
+  const targetIntents = targetIntentsForQuery(input.query);
+  const demandByKeyword = new Map(input.demand.map(item => [item.keyword.normalize('NFKC').trim().toLowerCase(), item]));
+  const branchMap = new Map<MarketIntentId, MarketIntentBranch>();
+
+  const ensureBranch = (intent: MarketIntentId) => {
+    const current = branchMap.get(intent);
+    if (current) return current;
+    const role = intentRole(intent, targetIntents);
+    const created: MarketIntentBranch = {
+      intent,
+      role,
+      rationale: roleRationale(intent, role),
+      relatedSearches: [],
+      peopleAlsoAsk: [],
+      topResults: [],
+      externalSignals: [],
+      demand: [],
+      observedDemandSum: null
+    };
+    branchMap.set(intent, created);
+    return created;
+  };
+
+  const exactSeedKey = input.query.normalize('NFKC').trim().toLowerCase();
+  const seedDemand = demandByKeyword.get(exactSeedKey);
+  const seedBranch = ensureBranch(queryClassification.primaryIntent);
+  if (seedDemand) seedBranch.demand.push(seedDemand);
+
+  for (const label of input.relatedSearches) {
+    const classification = classifyMarketIntent(label, input.query);
+    ensureBranch(classification.primaryIntent).relatedSearches.push(label);
+  }
+  for (const label of input.peopleAlsoAsk) {
+    const classification = classifyMarketIntent(label, input.query);
+    ensureBranch(classification.primaryIntent).peopleAlsoAsk.push(label);
+  }
+  for (const result of input.topResults) {
+    const classification = classifyMarketIntent([result.title, result.snippet].filter(Boolean).join(' '), input.query);
+    ensureBranch(classification.primaryIntent).topResults.push(result);
+  }
+  for (const demand of input.demand) {
+    if (demand.keyword.normalize('NFKC').trim().toLowerCase() === exactSeedKey) continue;
+    const classification = classifyMarketIntent(demand.keyword, input.query);
+    ensureBranch(classification.primaryIntent).demand.push(demand);
+  }
+
+  const branches = INTENT_PRIORITY.flatMap(intent => {
+    const branch = branchMap.get(intent);
+    if (!branch) return [];
+    const knownVolumes = branch.demand.flatMap(item => typeof item.avgMonthlySearches === 'number' ? [item.avgMonthlySearches] : []);
+    return [{
+      ...branch,
+      observedDemandSum: knownVolumes.length ? knownVolumes.reduce((sum, value) => sum + value, 0) : null
+    }];
+  });
+
+  const primaryEvidenceKeywords = [...new Set([
+    input.query,
+    ...branches
+      .filter(branch => branch.role === 'primary')
+      .flatMap(branch => [
+        ...branch.relatedSearches,
+        ...branch.demand.map(item => item.keyword)
+      ])
+  ])];
+
+  const excludedFromPrimaryThesis = branches
+    .filter(branch => branch.role === 'adjacent_market' || branch.role === 'out_of_scope')
+    .flatMap(branch => [
+      ...branch.relatedSearches.map(label => ({ label, intent: branch.intent, reason: branch.rationale })),
+      ...branch.peopleAlsoAsk.map(label => ({ label, intent: branch.intent, reason: branch.rationale })),
+      ...branch.demand.map(item => ({ label: item.keyword, intent: branch.intent, reason: branch.rationale }))
+    ])
+    .filter((item, index, all) => all.findIndex(other => other.label === item.label && other.intent === item.intent) === index)
+    .slice(0, 30);
+
+  const populatedIntents = branches.filter(branch =>
+    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
+  );
+
+  return {
+    query: input.query,
+    queryClassification,
+    targetIntents,
+    mixedIntent: populatedIntents.length > 1,
+    branches,
+    primaryEvidenceKeywords,
+    excludedFromPrimaryThesis,
+    guidance: [
+      'Do not sum or compare demand across different intent branches as if they were one market.',
+      'Primary branches may support the main market thesis; contextual branches may explain it but should not establish it alone.',
+      'Adjacent-market branches are retained as separate opportunity surfaces and require their own validation before becoming a thesis.',
+      'Entity-specific branches stay out of a generic market thesis unless the original query itself is entity-specific.'
+    ]
+  };
+}
+
+export function attachQuerySignalsToIntentTree(queryFocus: QueryFocusResearch, signals: MarketSignalScanResult): QueryFocusResearch {
+  if (queryFocus.mode !== 'hypothesis_led' || !queryFocus.query) return queryFocus;
+
+  const branches = queryFocus.intentTree.branches.map(branch => ({
+    ...branch,
+    relatedSearches: [...branch.relatedSearches],
+    peopleAlsoAsk: [...branch.peopleAlsoAsk],
+    topResults: [...branch.topResults],
+    externalSignals: [...branch.externalSignals],
+    demand: [...branch.demand]
+  }));
+  const branchMap = new Map(branches.map(branch => [branch.intent, branch]));
+  const ensureBranch = (intent: MarketIntentId) => {
+    const current = branchMap.get(intent);
+    if (current) return current;
+    const role = intentRole(intent, queryFocus.intentTree.targetIntents);
+    const created: MarketIntentBranch = {
+      intent,
+      role,
+      rationale: roleRationale(intent, role),
+      relatedSearches: [],
+      peopleAlsoAsk: [],
+      topResults: [],
+      externalSignals: [],
+      demand: [],
+      observedDemandSum: null
+    };
+    branches.push(created);
+    branchMap.set(intent, created);
+    return created;
+  };
+
+  for (const result of signals.results) {
+    for (const observation of result.observations) {
+      const classification = classifyMarketIntent(observation.label, queryFocus.query);
+      ensureBranch(classification.primaryIntent).externalSignals.push({
+        source: result.source,
+        label: observation.label,
+        url: observation.url
+      });
+    }
+  }
+
+  branches.sort((left, right) => INTENT_PRIORITY.indexOf(left.intent) - INTENT_PRIORITY.indexOf(right.intent));
+  const populated = branches.filter(branch =>
+    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
+  );
+
+  const excludedSignals = branches
+    .filter(branch => branch.role === 'adjacent_market' || branch.role === 'out_of_scope')
+    .flatMap(branch => branch.externalSignals.map(signal => ({
+      label: signal.label,
+      intent: branch.intent,
+      reason: branch.rationale
+    })));
+
+  return {
+    ...queryFocus,
+    intentTree: {
+      ...queryFocus.intentTree,
+      mixedIntent: populated.length > 1,
+      branches,
+      excludedFromPrimaryThesis: [
+        ...queryFocus.intentTree.excludedFromPrimaryThesis,
+        ...excludedSignals
+      ].filter((item, index, all) => all.findIndex(other => other.label === item.label && other.intent === item.intent) === index).slice(0, 40)
+    }
+  };
 }
 
 async function fetchText(url: string, accept = 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8') {
@@ -312,6 +654,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   if (!query) {
     return {
       source: 'app_store' as const,
+      applicability: 'not_applicable' as const,
       query,
       url: null,
       totalCount: null,
@@ -354,6 +697,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
     const ratings = observations.flatMap(item => item.rating === null ? [] : [item.rating]);
     return {
       source: 'app_store' as const,
+      applicability: 'relevant' as const,
       query,
       url: url.toString(),
       totalCount: typeof raw.resultCount === 'number' ? raw.resultCount : observations.length,
@@ -370,6 +714,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   } catch (error) {
     return {
       source: 'app_store' as const,
+      applicability: 'relevant' as const,
       query,
       url: url.toString(),
       totalCount: null,
@@ -378,6 +723,12 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
       warnings: [error instanceof Error ? error.message : String(error)]
     };
   }
+}
+
+function appStoreRelevantForQuery(query: string | null): boolean {
+  if (!query) return false;
+  const classification = classifyMarketIntent(query, query);
+  return !['entity', 'investment', 'news', 'research_information'].includes(classification.primaryIntent);
 }
 
 export function parsePinterestTrendsHtml(html: string, sourceUrl: string, limit = 20): PinterestObservation[] {
@@ -443,7 +794,14 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
         researchedKeywords: [],
         results: [],
         warnings: ['No query supplied; broad market-scan mode does not run exact/adjacent keyword demand research.']
-      }
+      },
+      intentTree: buildQueryIntentTree({
+        query: null,
+        relatedSearches: [],
+        peopleAlsoAsk: [],
+        topResults: [],
+        demand: []
+      })
     };
   }
 
@@ -482,11 +840,24 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   }
 
   const demandWarnings: string[] = [];
+  const targetIntents = targetIntentsForQuery(query);
+  const relatedForDemand = relatedSearches
+    .filter(value => value.length <= 120)
+    .map(value => {
+      const classification = classifyMarketIntent(value, query);
+      return {
+        value,
+        intent: classification.primaryIntent,
+        role: intentRole(classification.primaryIntent, targetIntents)
+      };
+    });
+
   const demandSeeds = [...new Set([
     query,
-    ...relatedSearches
-      .filter(value => value.length <= 120)
-      .slice(0, 8)
+    ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
+    ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
+    ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
+    ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
   ])].slice(0, 10);
 
   let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
@@ -539,7 +910,14 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
       researchedKeywords: demandSeeds,
       results: demandResults,
       warnings: demandWarnings
-    }
+    },
+    intentTree: buildQueryIntentTree({
+      query,
+      relatedSearches,
+      peopleAlsoAsk,
+      topResults,
+      demand: demandResults
+    })
   };
 }
 
@@ -561,7 +939,20 @@ function buildThesisFrame(
 ): MarketIntelligencePacket['thesisFrame'] {
   const evidenceBySignal: Record<string, Array<{ source: string; label: string; fact: string; url: string | null }>> = {};
   for (const result of signals.results) {
-    for (const observation of result.observations.slice(0, 5)) {
+    for (const observation of result.observations.slice(0, 8)) {
+      if (queryFocus.mode === 'hypothesis_led' && queryFocus.query) {
+        const classification = classifyMarketIntent(observation.label, queryFocus.query);
+        const role = intentRole(classification.primaryIntent, queryFocus.intentTree.targetIntents);
+        if (role === 'adjacent_market' || role === 'out_of_scope') continue;
+        const keyPrefix = role === 'contextual' ? 'query_context_external_' : '';
+        for (const kind of result.signalKind) {
+          const key = keyPrefix + kind;
+          const list = evidenceBySignal[key] ?? [];
+          list.push({ source: result.source, label: observation.label, fact: signalFact(observation), url: observation.url });
+          evidenceBySignal[key] = list.slice(0, 12);
+        }
+        continue;
+      }
       for (const kind of result.signalKind) {
         const list = evidenceBySignal[kind] ?? [];
         list.push({ source: result.source, label: observation.label, fact: signalFact(observation), url: observation.url });
@@ -570,7 +961,9 @@ function buildThesisFrame(
     }
   }
   if (queryFocus.mode === 'hypothesis_led') {
+    const primaryKeywordSet = new Set(queryFocus.intentTree.primaryEvidenceKeywords.map(value => value.normalize('NFKC').trim().toLowerCase()));
     const demandEvidence = queryFocus.searchDemand.results
+      .filter(item => primaryKeywordSet.has(item.keyword.normalize('NFKC').trim().toLowerCase()))
       .filter(item => item.avgMonthlySearches !== null || item.averageCpcMicros !== null)
       .slice(0, 10)
       .map(item => ({
@@ -581,25 +974,44 @@ function buildThesisFrame(
       }));
     if (demandEvidence.length) evidenceBySignal.query_search_demand = demandEvidence;
 
+    const primaryBranches = queryFocus.intentTree.branches.filter(branch => branch.role === 'primary');
+    const contextualBranches = queryFocus.intentTree.branches.filter(branch => branch.role === 'contextual');
+
     const surfaceEvidence = [
-      ...queryFocus.searchSurface.relatedSearches.slice(0, 6).map(label => ({
+      ...primaryBranches.flatMap(branch => branch.relatedSearches).slice(0, 6).map(label => ({
         source: 'serp_related_searches',
         label,
-        fact: 'Related search surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        fact: 'Primary-intent related search for query "' + String(queryFocus.query) + '": ' + label,
         url: null
       })),
-      ...queryFocus.searchSurface.peopleAlsoAsk.slice(0, 4).map(label => ({
+      ...primaryBranches.flatMap(branch => branch.peopleAlsoAsk).slice(0, 4).map(label => ({
         source: 'serp_people_also_ask',
         label,
-        fact: 'People-also-ask question surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        fact: 'Primary-intent People-also-ask question for query "' + String(queryFocus.query) + '": ' + label,
         url: null
       }))
     ];
     if (surfaceEvidence.length) evidenceBySignal.query_search_surface = surfaceEvidence;
+
+    const contextEvidence = [
+      ...contextualBranches.flatMap(branch => branch.relatedSearches).slice(0, 4).map(label => ({
+        source: 'serp_context',
+        label,
+        fact: 'Context-only related search for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      })),
+      ...contextualBranches.flatMap(branch => branch.peopleAlsoAsk).slice(0, 3).map(label => ({
+        source: 'serp_context',
+        label,
+        fact: 'Context-only People-also-ask question for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      }))
+    ];
+    if (contextEvidence.length) evidenceBySignal.query_context_surface = contextEvidence;
   }
 
   const commercializationFacts: string[] = [];
-  if (commercialization.query) {
+  if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
       'App Store query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results.'
     );
@@ -611,11 +1023,15 @@ function buildThesisFrame(
         commercializationFacts.push('Median observed rating count: ' + String(Math.round(commercialization.metrics.medianRatingCount)) + '.');
       }
     }
+  } else if (commercialization.query && commercialization.applicability === 'not_applicable') {
+    commercializationFacts.push('App Store commercialization was not treated as applicable to this explicit query intent.');
   }
   const contradictionsAndUnknowns = [
     'Attention/search/ad metrics do not prove willingness to pay or unit sales.',
-    ...(commercialization.query && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
+    ...(commercialization.query && commercialization.applicability === 'relevant' && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
+    ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
+    ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -628,8 +1044,14 @@ function buildThesisFrame(
     requiredAgentOutput: [
       'Write 1-3 market theses only after reading the evidence above.',
       'For each thesis, cite at least two independent observed sources when available.',
-      ...(queryFocus.mode === 'hypothesis_led' ? ['Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary. Do not use unrelated broad trend headlines as support for the supplied query.'] : []),
+      ...(queryFocus.mode === 'hypothesis_led' ? [
+        'Declare which intent branch the thesis is about before interpreting demand.',
+        'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
+        'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
+        'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
+      ] : []),
       'State the underlying behavior/desire, its current fulfillment, and the marketing mechanic that appears to trigger attention.',
+      'Treat Top Ads mechanics as transferable creative hypotheses only; never use them as proof of demand for the selected intent branch.',
       'Propose adjacency dimensions (audience, format, context, social loop, output artifact, distribution, business model) before proposing products.',
       'Classify each resulting concept as copy_like, adjacent, or speculative and explain why.',
       'State disconfirming evidence, payment unknowns, and the next cheapest validation step. Do not invent missing market pain.'
@@ -658,22 +1080,26 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     queryFocusedResearch(query, geo, limit),
     includeTopAds ? tiktokTopAds(geo, Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
-    includeAppStore ? appStoreResearch(query, geo, limit) : Promise.resolve({
+    includeAppStore && appStoreRelevantForQuery(query) ? appStoreResearch(query, geo, limit) : Promise.resolve({
       source: 'app_store' as const,
+      applicability: 'not_applicable' as const,
       query,
       url: null,
       totalCount: null,
       observations: [] as AppStoreObservation[],
       metrics: { observedAppCount: 0, paidAppCount: 0, medianPrice: null, medianRatingCount: null, medianRating: null },
-      warnings: ['App Store commercialization check was disabled for this research call.']
+      warnings: [includeAppStore
+        ? 'App Store commercialization was skipped because the explicit query intent is not product/app oriented.'
+        : 'App Store commercialization check was disabled for this research call.']
     })
   ]);
 
+  const resolvedQueryFocus = attachQuerySignalsToIntentTree(queryFocus, signals);
   const mechanics = mechanicsSummary(topAdsResult.observations);
   const warnings = [
     ...signals.warnings,
-    ...queryFocus.searchSurface.warnings,
-    ...queryFocus.searchDemand.warnings,
+    ...resolvedQueryFocus.searchSurface.warnings,
+    ...resolvedQueryFocus.searchDemand.warnings,
     ...topAdsResult.warnings,
     ...pinterestResult.warnings,
     ...appStoreResult.warnings
@@ -684,9 +1110,10 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     query,
     geo,
     signals,
-    queryFocus,
+    queryFocus: resolvedQueryFocus,
     creativeEvidence: {
       source: 'tiktok_top_ads',
+      scope: 'cross_category_reference',
       url: topAdsResult.url,
       observations: topAdsResult.observations,
       mechanics,
@@ -694,7 +1121,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     },
     pinterest: pinterestResult,
     commercialization: appStoreResult,
-    thesisFrame: buildThesisFrame(signals, queryFocus, mechanics, appStoreResult, warnings),
+    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, mechanics, appStoreResult, warnings),
     warnings
   };
 }
