@@ -796,6 +796,18 @@ function flattenPacket(packet: MarketIntelligencePacket): FlatObservation[] {
       });
     }
   }
+  for (const item of packet.queryFocus?.searchDemand?.results ?? []) {
+    items.push({
+      source: 'google_ads_query_demand',
+      key: normalizeKey(item.keyword),
+      label: item.keyword,
+      metrics: {
+        avgMonthlySearches: item.avgMonthlySearches,
+        averageCpcMicros: item.averageCpcMicros,
+        competitionIndex: item.competitionIndex
+      }
+    });
+  }
   for (const observation of packet.creativeEvidence.observations) {
     items.push({
       source: 'tiktok_top_ads',
