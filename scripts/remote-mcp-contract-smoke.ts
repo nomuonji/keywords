@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
+import { parseBoothSearchHtml } from '../packages/research/src/marketplace.js';
 import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.8.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.9.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -34,9 +35,10 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'seo_source_save',
   'seo_source_scan_record',
   'trend_article_research',
+  'marketplace_research',
   'search_gap_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 27);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 28);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -130,6 +132,39 @@ for (const key of ['exactTitleCount', 'weakDomainCount', 'forumCount', 'stalePag
   assert.equal(typeof analysis[key], 'number');
 }
 
+const boothListing = parseBoothSearchHtml(`
+<html>
+  <head>
+    <meta name="description" content="VRChatの通販・ダウンロード商品は1,234件あります。VRChatに関連する商品のタグには、3D、衣装などがあります。">
+  </head>
+  <body>
+    <b>対象商品 1,234 件</b><div id="js-market-result-pulldown"></div>
+    <ul class="l-cards-5cols">
+      <li data-product-id="101" data-product-brand="alpha" data-product-category="7" data-product-price="500">
+        <a class="item-card__title-anchor--multiline">Sample Tool</a>
+        <img class="js-thumbnail-image" data-original="https://booth.pximg.net/sample.jpg">
+        <div class="item-card__shop-info">
+          <a class="item-card__shop-name-anchor" href="https://sample.booth.pm/"><span class="item-card__shop-name">Sample Shop</span></a>
+        </div>
+      </li>
+      <li data-product-id="102" data-product-brand="beta" data-product-category="8" data-product-price="1200">
+        <a class="item-card__title-anchor--multiline">Second Tool</a>
+        <div class="item-card__shop-info">
+          <a class="item-card__shop-name-anchor" href="/"><span class="item-card__shop-name">Other Shop</span></a>
+        </div>
+      </li>
+    </ul>
+  </body>
+</html>
+`, { query: 'VRChat', sort: 'popularity', url: 'https://booth.pm/ja/search/VRChat?sort=popularity', maxProducts: 10 });
+assert.equal(boothListing.resultCount, 1234);
+assert.equal(boothListing.totalPages, 21);
+assert.deepEqual(boothListing.relatedTags, ['3D', '衣装']);
+assert.equal(boothListing.products.length, 2);
+assert.equal(boothListing.products[0]?.title, 'Sample Tool');
+assert.equal(boothListing.products[0]?.price, 500);
+assert.equal(boothListing.products[0]?.shopName, 'Sample Shop');
+
 const mcpSource = readFileSync(new URL('../api/mcp.ts', import.meta.url), 'utf8');
 assert.match(mcpSource, /forceRefresh:\s*z\.boolean\(\)/);
 assert.match(mcpSource, /serpResearchCached/);
@@ -148,6 +183,8 @@ assert.match(mcpSource, /theme_candidate_challenge/);
 assert.match(mcpSource, /seo_source_pool_context/);
 assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
+assert.match(mcpSource, /marketplace_research/);
+assert.match(mcpSource, /supportedMarketplaceAdapters/);
 assert.match(mcpSource, /KEYWORDS_GROQ_MCP_TOKEN/);
 assert.match(mcpSource, /x-api-key/);
 assert.match(mcpSource, /groqStaticTokenConfigured/);
