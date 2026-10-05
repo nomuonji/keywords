@@ -70,7 +70,7 @@ export interface MarketplaceResearchInput {
   marketplace?: string;
   query: string;
   page?: number;
-  sorts?: MarketplaceSort[];
+  sorts?: string[];
   includeSuggestions?: boolean;
   maxProducts?: number;
 }
@@ -350,8 +350,14 @@ const boothAdapter: MarketplaceAdapter = {
     const query = input.query.trim();
     if (!query) throw new Error('query is required.');
     const page = Math.max(1, Math.min(input.page ?? 1, 10));
-    const requestedSorts: MarketplaceSort[] = input.sorts?.length ? input.sorts : ['popularity'];
-    const sorts = [...new Set(requestedSorts)].slice(0, 3);
+    const requestedSorts = input.sorts?.length ? input.sorts : ['popularity'];
+    const allowedSorts = new Set<MarketplaceSort>(['popularity', 'wish_lists', 'new']);
+    const invalidSorts = requestedSorts.filter(sort => !allowedSorts.has(sort as MarketplaceSort));
+    if (invalidSorts.length > 0) {
+      throw new Error('Unsupported BOOTH sort(s): ' + invalidSorts.join(', ') + '. Supported sorts: popularity, wish_lists, new');
+    }
+    const sorts = [...new Set(requestedSorts)] as MarketplaceSort[];
+    sorts.splice(3);
     const includeSuggestions = input.includeSuggestions ?? true;
     const warnings: string[] = [];
     let suggestions: string[] = [];
