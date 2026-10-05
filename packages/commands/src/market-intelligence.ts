@@ -554,19 +554,36 @@ export async function marketSignalSnapshotSave(input: unknown) {
     packet
   };
   if (Buffer.byteLength(JSON.stringify(doc), 'utf8') > 850000) throw new Error('Market snapshot exceeds Firestore document budget; reduce limit or sources.');
+  const runId = randomUUID();
   await firestore(':commit', {
     method: 'POST',
     body: JSON.stringify({
-      writes: [{
-        update: {
-          name: firestoreDocumentName('marketSignalSnapshots/' + idValue),
-          fields: Object.fromEntries(Object.entries(doc).map(([key, item]) => [key, field(item)]))
+      writes: [
+        {
+          update: {
+            name: firestoreDocumentName('marketSignalSnapshots/' + idValue),
+            fields: Object.fromEntries(Object.entries(doc).map(([key, item]) => [key, field(item)]))
+          },
+          currentDocument: { exists: false }
         },
-        currentDocument: { exists: false }
-      }]
+        {
+          update: {
+            name: firestoreDocumentName('runs/' + runId),
+            fields: Object.fromEntries(Object.entries({
+              id: runId,
+              command: 'market_signal_snapshot_save',
+              targetId: idValue,
+              actor: 'remote_mcp',
+              createdAt,
+              outcome: 'succeeded'
+            }).map(([key, item]) => [key, field(item)]))
+          },
+          currentDocument: { exists: false }
+        }
+      ]
     })
   });
-  return { id: idValue, label: doc.label, query: doc.query, geo: doc.geo, createdAt, packet };
+  return { id: idValue, label: doc.label, query: doc.query, geo: doc.geo, createdAt, runId, packet };
 }
 
 interface FlatObservation {
