@@ -866,7 +866,9 @@ function buildThesisFrame(
     }
   }
   if (queryFocus.mode === 'hypothesis_led') {
+    const primaryKeywordSet = new Set(queryFocus.intentTree.primaryEvidenceKeywords.map(value => value.normalize('NFKC').trim().toLowerCase()));
     const demandEvidence = queryFocus.searchDemand.results
+      .filter(item => primaryKeywordSet.has(item.keyword.normalize('NFKC').trim().toLowerCase()))
       .filter(item => item.avgMonthlySearches !== null || item.averageCpcMicros !== null)
       .slice(0, 10)
       .map(item => ({
@@ -877,21 +879,40 @@ function buildThesisFrame(
       }));
     if (demandEvidence.length) evidenceBySignal.query_search_demand = demandEvidence;
 
+    const primaryBranches = queryFocus.intentTree.branches.filter(branch => branch.role === 'primary');
+    const contextualBranches = queryFocus.intentTree.branches.filter(branch => branch.role === 'contextual');
+
     const surfaceEvidence = [
-      ...queryFocus.searchSurface.relatedSearches.slice(0, 6).map(label => ({
+      ...primaryBranches.flatMap(branch => branch.relatedSearches).slice(0, 6).map(label => ({
         source: 'serp_related_searches',
         label,
-        fact: 'Related search surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        fact: 'Primary-intent related search for query "' + String(queryFocus.query) + '": ' + label,
         url: null
       })),
-      ...queryFocus.searchSurface.peopleAlsoAsk.slice(0, 4).map(label => ({
+      ...primaryBranches.flatMap(branch => branch.peopleAlsoAsk).slice(0, 4).map(label => ({
         source: 'serp_people_also_ask',
         label,
-        fact: 'People-also-ask question surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        fact: 'Primary-intent People-also-ask question for query "' + String(queryFocus.query) + '": ' + label,
         url: null
       }))
     ];
     if (surfaceEvidence.length) evidenceBySignal.query_search_surface = surfaceEvidence;
+
+    const contextEvidence = [
+      ...contextualBranches.flatMap(branch => branch.relatedSearches).slice(0, 4).map(label => ({
+        source: 'serp_context',
+        label,
+        fact: 'Context-only related search for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      })),
+      ...contextualBranches.flatMap(branch => branch.peopleAlsoAsk).slice(0, 3).map(label => ({
+        source: 'serp_context',
+        label,
+        fact: 'Context-only People-also-ask question for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      }))
+    ];
+    if (contextEvidence.length) evidenceBySignal.query_context_surface = contextEvidence;
   }
 
   const commercializationFacts: string[] = [];
@@ -912,6 +933,7 @@ function buildThesisFrame(
     'Attention/search/ad metrics do not prove willingness to pay or unit sales.',
     ...(commercialization.query && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
+    ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -924,7 +946,12 @@ function buildThesisFrame(
     requiredAgentOutput: [
       'Write 1-3 market theses only after reading the evidence above.',
       'For each thesis, cite at least two independent observed sources when available.',
-      ...(queryFocus.mode === 'hypothesis_led' ? ['Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary. Do not use unrelated broad trend headlines as support for the supplied query.'] : []),
+      ...(queryFocus.mode === 'hypothesis_led' ? [
+        'Declare which intent branch the thesis is about before interpreting demand.',
+        'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
+        'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
+        'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
+      ] : []),
       'State the underlying behavior/desire, its current fulfillment, and the marketing mechanic that appears to trigger attention.',
       'Propose adjacency dimensions (audience, format, context, social loop, output artifact, distribution, business model) before proposing products.',
       'Classify each resulting concept as copy_like, adjacent, or speculative and explain why.',
