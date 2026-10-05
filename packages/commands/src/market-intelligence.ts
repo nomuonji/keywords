@@ -120,6 +120,7 @@ export interface MarketIntelligencePacket {
   query: string | null;
   geo: string;
   signals: MarketSignalScanResult;
+  queryFocus: QueryFocusResearch;
   creativeEvidence: {
     source: 'tiktok_top_ads';
     url: string;
