@@ -1204,6 +1204,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
           platformsRequested: socialPlatforms,
           platformsObserved: [] as SocialMarketPlatform[],
           observations: [],
+          formatSummary: [],
           platformStatus: [],
           warnings: ['Query-relevant social-content research was disabled for this research call.'],
           guidance: ['Disabled social research is missing evidence, not evidence that the platforms have no relevant content.']
@@ -1231,6 +1232,9 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     query,
     broadSignalCount: signals.results.reduce((sum, result) => sum + result.observations.length, 0),
     broadSourceCount: signals.sourcesSucceeded.length,
+    broadSocialSignalCount: signals.results
+      .filter(result => result.source === 'tiktok_creative_center')
+      .reduce((sum, result) => sum + result.observations.length, 0),
     searchSurfaceCount:
       resolvedQueryFocus.searchSurface.relatedSearches.length +
       resolvedQueryFocus.searchSurface.peopleAlsoAsk.length +
