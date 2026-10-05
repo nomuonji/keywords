@@ -1012,7 +1012,7 @@ function buildThesisFrame(
   }
 
   const commercializationFacts: string[] = [];
-  if (commercialization.query) {
+  if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
       'App Store query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results.'
     );
@@ -1024,11 +1024,14 @@ function buildThesisFrame(
         commercializationFacts.push('Median observed rating count: ' + String(Math.round(commercialization.metrics.medianRatingCount)) + '.');
       }
     }
+  } else if (commercialization.query && commercialization.applicability === 'not_applicable') {
+    commercializationFacts.push('App Store commercialization was not treated as applicable to this explicit query intent.');
   }
   const contradictionsAndUnknowns = [
     'Attention/search/ad metrics do not prove willingness to pay or unit sales.',
-    ...(commercialization.query && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
+    ...(commercialization.query && commercialization.applicability === 'relevant' && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
+    ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
@@ -1049,6 +1052,7 @@ function buildThesisFrame(
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
       ] : []),
       'State the underlying behavior/desire, its current fulfillment, and the marketing mechanic that appears to trigger attention.',
+      'Treat Top Ads mechanics as transferable creative hypotheses only; never use them as proof of demand for the selected intent branch.',
       'Propose adjacency dimensions (audience, format, context, social loop, output artifact, distribution, business model) before proposing products.',
       'Classify each resulting concept as copy_like, adjacent, or speculative and explain why.',
       'State disconfirming evidence, payment unknowns, and the next cheapest validation step. Do not invent missing market pain.'
