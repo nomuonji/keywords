@@ -297,6 +297,7 @@ const broadIndexedSocial = assessMarketEvidenceCoverage({
   broadSocialSignalCount: 6,
   broadSocialMetricCount: 4,
   broadSocialSources: ['tiktok', 'youtube_shorts'],
+  broadSocialMetricSources: ['tiktok_public_page', 'youtube_public_page'],
   searchSurfaceCount: 0,
   searchDemandCount: 0,
   socialContent: social({ query: null }),
@@ -308,5 +309,27 @@ assert.deepEqual(
   broadIndexedSocial.checks.find(check => check.evidenceClass === 'social_content_patterns')?.sources,
   ['tiktok', 'youtube_shorts']
 );
+assert.deepEqual(
+  broadIndexedSocial.checks.find(check => check.evidenceClass === 'social_engagement_metrics')?.sources,
+  ['tiktok_public_page', 'youtube_public_page']
+);
+assert.ok(!broadIndexedSocial.guidance.some(item => item.includes('engagement strength is not verified')));
+
+const broadWithoutMetrics = assessMarketEvidenceCoverage({
+  researchGoal: 'social_affiliate',
+  query: null,
+  broadSignalCount: 20,
+  broadSourceCount: 2,
+  broadSocialSignalCount: 6,
+  broadSocialMetricCount: 0,
+  broadSocialSources: ['tiktok', 'youtube_shorts'],
+  broadSocialMetricSources: [],
+  searchSurfaceCount: 0,
+  searchDemandCount: 0,
+  socialContent: social({ query: null }),
+  senseSelectionRequired: false
+});
+assert.equal(broadWithoutMetrics.status, 'partial');
+assert.ok(broadWithoutMetrics.guidance.some(item => item.includes('engagement strength is not verified')));
 
 console.log('market evidence coverage smoke passed');

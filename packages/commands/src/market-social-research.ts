@@ -440,6 +440,7 @@ export function assessMarketEvidenceCoverage(input: {
   broadSocialSignalCount: number;
   broadSocialMetricCount?: number;
   broadSocialSources?: string[];
+  broadSocialMetricSources?: string[];
   searchSurfaceCount: number;
   searchDemandCount: number;
   socialContent: SocialContentResearchResult;
@@ -459,6 +460,11 @@ export function assessMarketEvidenceCoverage(input: {
     ? [...new Set(input.broadSocialSources)]
     : input.broadSocialSignalCount > 0
       ? ['tiktok_creative_center']
+      : [];
+  const broadSocialMetricSources = input.broadSocialMetricSources?.length
+    ? [...new Set(input.broadSocialMetricSources)]
+    : broadSocialMetricCount > 0
+      ? broadSocialSources
       : [];
   const checks: MarketEvidenceCheck[] = [
     {
@@ -512,7 +518,7 @@ export function assessMarketEvidenceCoverage(input: {
         ? [...new Set(input.socialContent.observations.filter(item =>
             Object.values(item.metrics).some(value => value !== null)
           ).map(item => item.metricProvenance).filter(source => source !== 'none'))]
-        : broadSocialMetricCount > 0 ? broadSocialSources : [],
+        : broadSocialMetricCount > 0 ? broadSocialMetricSources : [],
       note: 'Engagement evidence is best-effort and never inferred from search ranking.'
     }
   ];
@@ -548,7 +554,7 @@ export function assessMarketEvidenceCoverage(input: {
       ...(conclusionAllowed
         ? ['A market thesis may be formed, but preserve every partial/unavailable evidence class as an explicit limitation.']
         : ['Do not rank or recommend markets from this packet. Retrieve the missing required evidence first.']),
-      ...(requiresSocial && socialMetricCount === 0
+      ...(requiresSocial && (queryMode ? socialMetricCount === 0 : broadSocialMetricCount === 0)
         ? ['Social output patterns may be observed from indexed content, but virality/engagement strength is not verified until native/public-page metrics are present.']
         : []),
       ...(input.researchGoal === 'affiliate' || input.researchGoal === 'social_affiliate'
