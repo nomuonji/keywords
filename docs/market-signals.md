@@ -147,6 +147,10 @@ After `market_intelligence_research`, the agent should produce 1–3 evidence-ba
 
 The goal is **evidence-backed lateral marketing**, not literal market-in cloning and not unconstrained product-out ideation.
 
+## Intent regression discipline
+
+Intent behavior is covered by `scripts/market-intent-regression-smoke.ts` and `npm run test:market-intent`. The regression set deliberately mixes software, finance, education, creator markets, professional services, consumer needs, entities, investment terms, qualifications, and polysemous roots. Changes that broaden a keyword rule should include a negative control so a generic token does not silently start matching unrelated domains.
+
 ## Deferred sources
 
 - **YouTube** — official Data API support is still deferred until a `YOUTUBE_API_KEY` is configured in the Keywords deployment.
