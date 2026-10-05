@@ -317,22 +317,19 @@ export async function marketSignalScan(input: MarketSignalScanInput = {}): Promi
   const limit = Math.max(1, Math.min(input.limit ?? 10, 20));
   const tiktokPeriodDays = input.tiktokPeriodDays ?? 7;
   const hackerNewsFeed = input.hackerNewsFeed ?? 'top';
-  const results: MarketSensorSourceResult[] = [];
   const warnings: string[] = [];
-
-  for (const source of sources) {
+  const settled = await Promise.all(sources.map(async source => {
     try {
-      if (source === 'google_trends') {
-        results.push(await googleTrends(geo, limit));
-      } else if (source === 'tiktok_creative_center') {
-        results.push(await tiktokCreativeCenter(geo, limit, tiktokPeriodDays));
-      } else if (source === 'hacker_news') {
-        results.push(await hackerNews(hackerNewsFeed, limit));
-      }
+      if (source === 'google_trends') return await googleTrends(geo, limit);
+      if (source === 'tiktok_creative_center') return await tiktokCreativeCenter(geo, limit, tiktokPeriodDays);
+      if (source === 'hacker_news') return await hackerNews(hackerNewsFeed, limit);
+      return null;
     } catch (error) {
       warnings.push(source + ': ' + (error instanceof Error ? error.message : String(error)));
+      return null;
     }
-  }
+  }));
+  const results = settled.filter((result): result is MarketSensorSourceResult => Boolean(result));
 
   return {
     fetchedAt: new Date().toISOString(),
