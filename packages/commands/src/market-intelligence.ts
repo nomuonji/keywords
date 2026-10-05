@@ -259,7 +259,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'investment',
-    patterns: [/銘柄|株価|株式|投資|上場|時価総額|配当|\b(?:stock|shares?|invest(?:ment|or|ing)|ticker)\b/i],
+    patterns: [/銘柄|株価|株式(?!会社)|投資|上場|時価総額|配当|\b(?:stock|shares?|invest(?:ment|or|ing)|ticker)\b/i],
     signals: ['investment marker']
   },
   {
