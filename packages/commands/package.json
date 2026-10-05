@@ -43,7 +43,8 @@
     "./remote-keyword-research": "./src/remote-keyword-research.ts",
     "./keyword-research-pipeline": "./src/keyword-research-pipeline.ts",
     "./theme-research": "./src/theme-research.ts",
-    "./seo-source-pool": "./src/seo-source-pool.ts"
+    "./seo-source-pool": "./src/seo-source-pool.ts",
+    "./market-intelligence": "./src/market-intelligence.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
