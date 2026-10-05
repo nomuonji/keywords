@@ -283,12 +283,12 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'commercial',
-    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|rate|rates|booking)\b/i],
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
     signals: ['commercial-evaluation marker']
   },
   {
     intent: 'problem_need',
-    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|できない|動かない|エラー|故障|トラブル|悩み|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain|error|fail(?:ed|ure)?|broken|issue)\w*\b/i],
+    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|できない|動かない|エラー|故障|トラブル|悩み|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain|error|fail(?:ed|ure)?|broken)\w*\b/i],
     signals: ['problem/risk marker']
   },
   {
