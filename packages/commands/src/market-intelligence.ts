@@ -1039,7 +1039,7 @@ function buildThesisFrame(
   const commercializationFacts: string[] = [];
   if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
-      'App Store query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results.'
+      'App Store lexical search query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results; semantic/category fit must be checked from titles/descriptions before treating them as the same market.'
     );
     if (commercialization.metrics.observedAppCount) {
       commercializationFacts.push(
@@ -1057,7 +1057,9 @@ function buildThesisFrame(
     ...(commercialization.query && commercialization.applicability === 'relevant' && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
     ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
+    ...(commercialization.applicability === 'relevant' ? ['App Store evidence is lexical-search evidence only; same words can describe a different semantic category or direction of use. Review descriptionExcerpt before using it as commercialization support.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
+    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically underspecified across multiple branches. Select and state one semantic sense before writing the thesis.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -1072,6 +1074,7 @@ function buildThesisFrame(
       'For each thesis, cite at least two independent observed sources when available.',
       ...(queryFocus.mode === 'hypothesis_led' ? [
         'Declare which intent branch the thesis is about before interpreting demand.',
+        ...(queryFocus.intentTree.senseSelectionRequired ? ['Also state the semantic sense of the root phrase before using same-word SERP/App Store results; reject evidence that uses the phrase in a different sense.'] : []),
         'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
         'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
