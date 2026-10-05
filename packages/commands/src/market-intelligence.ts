@@ -674,6 +674,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   if (!query) {
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'not_applicable' as const,
       query,
       url: null,
@@ -705,6 +706,9 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
         url: typeof item.trackViewUrl === 'string' ? item.trackViewUrl : null,
         seller: typeof item.sellerName === 'string' ? item.sellerName : null,
         primaryGenre: typeof item.primaryGenreName === 'string' ? item.primaryGenreName : null,
+        descriptionExcerpt: typeof item.description === 'string'
+          ? item.description.replace(/\s+/g, ' ').trim().slice(0, 600)
+          : null,
         price: typeof item.price === 'number' ? item.price : null,
         currency: typeof item.currency === 'string' ? item.currency : null,
         rating: typeof item.averageUserRating === 'number' ? item.averageUserRating : null,
@@ -717,6 +721,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
     const ratings = observations.flatMap(item => item.rating === null ? [] : [item.rating]);
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'relevant' as const,
       query,
       url: url.toString(),
@@ -734,6 +739,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   } catch (error) {
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'relevant' as const,
       query,
       url: url.toString(),
@@ -1102,6 +1108,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
     includeAppStore && appStoreRelevantForQuery(query) ? appStoreResearch(query, geo, limit) : Promise.resolve({
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'not_applicable' as const,
       query,
       url: null,
