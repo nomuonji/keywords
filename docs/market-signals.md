@@ -23,7 +23,7 @@ Default tool for product/marketing opportunity research.
 It has two modes:
 
 - **No query**: broad market scan across current public surfaces.
-- **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus up to eight related search terms. App Store evidence remains query-specific.
+- **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus intent-prioritized related search terms. The result also contains an `intentTree` so company/entity, investment, career/qualification, informational, and core problem/solution demand are not silently merged. App Store evidence is query-specific and is skipped when the explicit query intent is clearly non-product (for example entity, investment, news, or pure research-information intent).
 
 It then adds:
 
@@ -43,14 +43,27 @@ Example:
 }
 ```
 
-In query mode, the primary evidence is returned under `queryFocus`:
+In query mode, the primary evidence is returned under `queryFocus`. Read `queryFocus.intentTree` before interpreting any volume:
 
 - `searchSurface.relatedSearches`
 - `searchSurface.peopleAlsoAsk`
 - `searchSurface.topResults`
 - `searchDemand.results`
-- query-relevant Hacker News observations
-- App Store commercialization
+- `intentTree.targetIntents`
+- `intentTree.branches[*].role`
+- `intentTree.primaryEvidenceKeywords`
+- `intentTree.excludedFromPrimaryThesis`
+- query-relevant Hacker News observations, attached to the same intent branches
+- App Store commercialization when applicable
+
+Intent branch roles are:
+
+- `primary` — may establish the main market thesis.
+- `contextual` — may explain the market but cannot establish demand alone.
+- `adjacent_market` — a distinct nearby market (for example investment or qualification demand) that must be re-rooted and validated separately.
+- `out_of_scope` — normally entity/company navigation in a generic market query; preserved for provenance but excluded from the main thesis.
+
+Never sum search volume across different intent branches as though they were one market.
 
 The expected reasoning order is:
 
@@ -106,7 +119,7 @@ Never collapse the sources into one composite Opportunity Score.
 | --- | --- | --- |
 | Google Trends approximate traffic | search attention / spike | purchases |
 | TikTok posts/views | social creation and view attention | willingness to pay |
-| TikTok Top Ads CTR percentile | creative performance relative to displayed ad cohort | absolute conversion or product-market fit |
+| TikTok Top Ads CTR percentile | cross-category creative/mechanic reference | query-specific demand, absolute conversion or product-market fit |
 | HN score/comments | early-adopter attention / discussion | mass-market demand |
 | Pinterest public trend evidence | aspiration/planning signal when available | purchases |
 | App Store rating counts | adoption/engagement proxy | downloads, subscription revenue |
