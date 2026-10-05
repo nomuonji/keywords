@@ -184,6 +184,7 @@ export interface MarketIntelligencePacket {
   };
   commercialization: {
     source: 'app_store';
+    applicability: 'relevant' | 'not_applicable';
     query: string | null;
     url: string | null;
     totalCount: number | null;
@@ -654,6 +655,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   if (!query) {
     return {
       source: 'app_store' as const,
+      applicability: 'relevant' as const,
       query,
       url: null,
       totalCount: null,
@@ -696,6 +698,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
     const ratings = observations.flatMap(item => item.rating === null ? [] : [item.rating]);
     return {
       source: 'app_store' as const,
+      applicability: 'relevant' as const,
       query,
       url: url.toString(),
       totalCount: typeof raw.resultCount === 'number' ? raw.resultCount : observations.length,
@@ -720,6 +723,12 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
       warnings: [error instanceof Error ? error.message : String(error)]
     };
   }
+}
+
+function appStoreRelevantForQuery(query: string | null): boolean {
+  if (!query) return false;
+  const classification = classifyMarketIntent(query, query);
+  return !['entity', 'investment', 'news', 'research_information'].includes(classification.primaryIntent);
 }
 
 export function parsePinterestTrendsHtml(html: string, sourceUrl: string, limit = 20): PinterestObservation[] {
@@ -1067,14 +1076,17 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     queryFocusedResearch(query, geo, limit),
     includeTopAds ? tiktokTopAds(geo, Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
-    includeAppStore ? appStoreResearch(query, geo, limit) : Promise.resolve({
+    includeAppStore && appStoreRelevantForQuery(query) ? appStoreResearch(query, geo, limit) : Promise.resolve({
       source: 'app_store' as const,
+      applicability: 'not_applicable' as const,
       query,
       url: null,
       totalCount: null,
       observations: [] as AppStoreObservation[],
       metrics: { observedAppCount: 0, paidAppCount: 0, medianPrice: null, medianRatingCount: null, medianRating: null },
-      warnings: ['App Store commercialization check was disabled for this research call.']
+      warnings: [includeAppStore
+        ? 'App Store commercialization was skipped because the explicit query intent is not product/app oriented.'
+        : 'App Store commercialization check was disabled for this research call.']
     })
   ]);
 
