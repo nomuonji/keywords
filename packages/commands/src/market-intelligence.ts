@@ -87,6 +87,34 @@ export interface PinterestObservation {
   metrics: Record<string, number | string | boolean | null>;
 }
 
+export interface QueryFocusResearch {
+  mode: 'market_scan' | 'hypothesis_led';
+  query: string | null;
+  searchSurface: {
+    source: 'serp';
+    query: string | null;
+    relatedSearches: string[];
+    peopleAlsoAsk: string[];
+    topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+    cacheHit: boolean | null;
+    warnings: string[];
+  };
+  searchDemand: {
+    source: 'google_ads';
+    query: string | null;
+    researchedKeywords: string[];
+    results: Array<{
+      keyword: string;
+      avgMonthlySearches: number | null;
+      averageCpcMicros: number | null;
+      competition: string | number | null;
+      competitionIndex: number | null;
+      monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
+    }>;
+    warnings: string[];
+  };
+}
+
 export interface MarketIntelligencePacket {
   fetchedAt: string;
   query: string | null;
