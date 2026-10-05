@@ -342,10 +342,9 @@ function targetIntentsForQuery(query: string): MarketIntentId[] {
 
 function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): MarketIntentRole {
   if (targetIntents.includes(intent)) return 'primary';
-  if (intent === 'research_information' || intent === 'news' || intent === 'ambiguous') return 'contextual';
   if (intent === 'career_qualification' || intent === 'investment') return 'adjacent_market';
   if (intent === 'entity') return 'out_of_scope';
-  return 'adjacent_market';
+  return 'contextual';
 }
 
 function roleRationale(intent: MarketIntentId, role: MarketIntentRole): string {
