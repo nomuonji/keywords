@@ -236,23 +236,25 @@ export function parseTikTokTopAdsHtml(html: string, sourceUrl: string, limit = 1
   return observations;
 }
 
-async function tiktokTopAds(limit: number) {
-  const urls = [
-    'https://ads.tiktok.com/business/creativecenter/tiktok-topads-spotlight/pc/en',
-    'https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en'
-  ];
+async function tiktokTopAds(geo: string, limit: number) {
+  const regionalUrl = 'https://ads.tiktok.com/business/creativecenter/inspiration/topads/pc/en?region=' + encodeURIComponent(geo);
+  const spotlightUrl = 'https://ads.tiktok.com/business/creativecenter/tiktok-topads-spotlight/pc/en';
+  const urls = [regionalUrl, spotlightUrl];
   const warnings: string[] = [];
   for (const url of urls) {
     try {
       const response = await fetchText(url);
       const observations = parseTikTokTopAdsHtml(response.text, response.finalUrl, limit);
-      if (observations.length) return { url: response.finalUrl, observations, warnings };
+      if (observations.length) {
+        if (url === spotlightUrl) warnings.push('Regional Top Ads exposed no parseable server-rendered cards; using global Top Ads Spotlight creative examples as fallback.');
+        return { url: response.finalUrl, observations, warnings };
+      }
       warnings.push('TikTok Top Ads page loaded but exposed no parseable public ad cards at ' + url);
     } catch (error) {
       warnings.push(error instanceof Error ? error.message : String(error));
     }
   }
-  return { url: urls[0], observations: [] as TopAdObservation[], warnings };
+  return { url: regionalUrl, observations: [] as TopAdObservation[], warnings };
 }
 
 function mechanicsSummary(observations: TopAdObservation[]): MarketingMechanicEvidence[] {
@@ -468,7 +470,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
       tiktokPeriodDays: args.tiktokPeriodDays,
       hackerNewsFeed: args.hackerNewsFeed
     }),
-    includeTopAds ? tiktokTopAds(Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
+    includeTopAds ? tiktokTopAds(geo, Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
     includeAppStore ? appStoreResearch(query, geo, limit) : Promise.resolve({
       source: 'app_store' as const,
