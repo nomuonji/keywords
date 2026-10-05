@@ -9,7 +9,7 @@ import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 import { attachQuerySignalsToIntentTree, buildQueryIntentTree, classifyMarketIntent, compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.13.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.13.1');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -218,7 +218,11 @@ assert.match(hnQuery[0]?.url ?? '', /news\.ycombinator\.com\/item\?id=123/);
 
 
 assert.equal(classifyMarketIntent('AI Security 株式会社', 'AI security').primaryIntent, 'entity');
+assert.equal(classifyMarketIntent('AI Security 株式 会社', 'AI security').primaryIntent, 'entity');
+assert.equal(classifyMarketIntent('AI Security 合同 会社', 'AI security').primaryIntent, 'entity');
 assert.ok(!classifyMarketIntent('AI Security株式会社', 'AI security').secondaryIntents.includes('investment'));
+assert.ok(!classifyMarketIntent('AI Security 株式 会社', 'AI security').secondaryIntents.includes('investment'));
+assert.notEqual(classifyMarketIntent('Security Incident INC-2026-07-28-01 – UK AI Security Institute', 'AI security').primaryIntent, 'entity');
 assert.equal(classifyMarketIntent('AIセキュリティ銘柄', 'AI security').primaryIntent, 'investment');
 assert.equal(classifyMarketIntent('AIセキュリティ資格', 'AI security').primaryIntent, 'career_qualification');
 assert.equal(classifyMarketIntent('生成AIセキュリティ対策', 'AI security').primaryIntent, 'solution_product');
@@ -254,6 +258,8 @@ const intentTree = buildQueryIntentTree({
 });
 assert.deepEqual(intentTree.targetIntents, ['problem_need', 'solution_product', 'how_to', 'commercial']);
 assert.equal(intentTree.mixedIntent, true);
+assert.equal(intentTree.senseSelectionRequired, true);
+assert.ok(intentTree.senseGuidance.some(item => item.includes('semantic sense')));
 assert.equal(intentTree.branches.find(branch => branch.intent === 'entity')?.role, 'out_of_scope');
 assert.equal(intentTree.branches.find(branch => branch.intent === 'investment')?.role, 'adjacent_market');
 assert.equal(intentTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'adjacent_market');
@@ -273,6 +279,7 @@ const qualificationTree = buildQueryIntentTree({
   demand: []
 });
 assert.deepEqual(qualificationTree.targetIntents, ['career_qualification']);
+assert.equal(qualificationTree.senseSelectionRequired, false);
 assert.equal(qualificationTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'primary');
 assert.equal(qualificationTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
 
@@ -378,6 +385,8 @@ assert.match(mcpSource, /hypothesis-led mode/);
 assert.match(mcpSource, /google_ads_query_demand/);
 assert.match(mcpSource, /intentDecomposition/);
 assert.match(mcpSource, /thesisUsesPrimaryBranchOnly/);
+assert.match(mcpSource, /semanticSenseSelectionForAmbiguousQueries/);
+assert.match(mcpSource, /appStoreEvidenceScope/);
 assert.match(mcpSource, /market_signal_snapshot_save/);
 assert.match(mcpSource, /market_signal_snapshot_compare/);
 assert.match(mcpSource, /marketSensorCapabilities/);
@@ -398,6 +407,9 @@ assert.match(marketIntelligenceSource, /relatedSearches/);
 assert.match(marketIntelligenceSource, /keywordDemand/);
 assert.match(marketIntelligenceSource, /query_search_demand/);
 assert.match(marketIntelligenceSource, /query_search_surface/);
+assert.match(marketIntelligenceSource, /descriptionExcerpt/);
+assert.match(marketIntelligenceSource, /lexical_search_only/);
+assert.match(marketIntelligenceSource, /senseSelectionRequired/);
 
 const researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
 assert.match(researchLedgerSource, /whyStillAlive/);
