@@ -3,6 +3,7 @@ import {
   assessMarketEvidenceCoverage,
   extractSocialFormatSignals,
   parseTikTokPublicMetrics,
+  parseYouTubePublicMetrics,
   type SocialContentResearchResult
 } from '../packages/commands/src/market-social-research.js';
 
@@ -33,6 +34,9 @@ const metrics = parseTikTokPublicMetrics(`
 {"scope":{"video":{"stats":{"playCount":"12345","diggCount":678,"commentCount":19,"shareCount":21}}}}
 </script></body></html>`);
 assert.deepEqual(metrics, { views: 12345, likes: 678, comments: 19, shares: 21 });
+
+const youtubeMetrics = parseYouTubePublicMetrics('<script>var ytInitialPlayerResponse={"videoDetails":{"videoId":"abc","viewCount":"54321"}}</script>');
+assert.deepEqual(youtubeMetrics, { views: 54321, likes: null, comments: null, shares: null });
 
 const missingSocial = assessMarketEvidenceCoverage({
   researchGoal: 'social_affiliate',
