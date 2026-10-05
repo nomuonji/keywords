@@ -467,7 +467,7 @@ export function buildQueryIntentTree(input: {
   const populatedIntents = branches.filter(branch =>
     branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
   );
-  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 1;
+  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 0;
 
   return {
     query: input.query,
@@ -477,9 +477,9 @@ export function buildQueryIntentTree(input: {
     senseSelectionRequired,
     senseGuidance: senseSelectionRequired
       ? [
-          'The root query has no explicit intent marker while observed results span multiple branches.',
-          'Before writing a thesis, state the semantic sense being analyzed and verify that supporting SERP/app evidence uses the same meaning.',
-          'A shared phrase or brand name is not enough to merge distinct product categories or use cases.'
+          'The root query has no explicit intent marker, so no market branch is promoted to primary yet.',
+          'Before writing a thesis, choose the semantic sense/intent supported by the evidence and re-run market_intelligence_research with an intent-bearing query.',
+          'Verify that supporting SERP/app evidence uses the same meaning. A shared phrase or brand name is not enough to merge distinct categories or use cases.'
         ]
       : ['The root query has an explicit intent or does not currently show enough branch diversity to require separate sense selection.'],
     branches,
@@ -1063,7 +1063,7 @@ function buildThesisFrame(
     ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
     ...(commercialization.applicability === 'relevant' ? ['App Store evidence is lexical-search evidence only; same words can describe a different semantic category or direction of use. Review descriptionExcerpt before using it as commercialization support.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
-    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically underspecified across multiple branches. Select and state one semantic sense before writing the thesis.'] : []),
+    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically/intent-wise underspecified. This packet is discovery evidence only: select a sense and re-root with an intent-bearing query before writing the market thesis.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -1078,7 +1078,7 @@ function buildThesisFrame(
       'For each thesis, cite at least two independent observed sources when available.',
       ...(queryFocus.mode === 'hypothesis_led' ? [
         'Declare which intent branch the thesis is about before interpreting demand.',
-        ...(queryFocus.intentTree.senseSelectionRequired ? ['Also state the semantic sense of the root phrase before using same-word SERP/App Store results; reject evidence that uses the phrase in a different sense.'] : []),
+        ...(queryFocus.intentTree.senseSelectionRequired ? ['Do not finalize a thesis from this ambiguous-root packet. Select one semantic sense/intent and re-run market_intelligence_research with a more explicit query; then reject evidence that uses the phrase in a different sense.'] : []),
         'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
         'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
