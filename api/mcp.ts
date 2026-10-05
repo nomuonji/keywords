@@ -119,7 +119,11 @@ function runtimeStatus() {
       onDemandOnly: true,
       snapshotPersistence: 'explicit_call_only',
       tools: ['market_intelligence_research', 'market_signal_snapshot_save', 'market_signal_snapshot_compare'],
-      supplementalSources: ['tiktok_top_ads', 'pinterest_trends', 'app_store']
+      supplementalSources: ['serp_query_context', 'google_ads_query_demand', 'tiktok_top_ads', 'pinterest_trends', 'app_store'],
+      queryModes: {
+        noQuery: 'broad_market_scan',
+        withQuery: 'hypothesis_led_query_research'
+      }
     }
   };
 }
@@ -189,9 +193,10 @@ function server() {
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
   mcp.registerTool('market_signal_scan', {
-    description: 'Read current public market signals on demand before ideation. Uses unauthenticated public Google Trends RSS, TikTok Creative Center public trend pages, and the official Hacker News Firebase API. Returns observed search/social/early-adopter attention only; it does not generate product ideas, persist findings, or compute an opportunity score.',
+    description: 'Read current public market signals on demand before ideation. Without query it scans broad Google Trends RSS, TikTok Creative Center public trends, and Hacker News. With query, Hacker News switches to relevance search; broad Google/TikTok surfaces remain context only. For actual query-focused market research use market_intelligence_research.',
     inputSchema: {
       sources: z.array(z.enum(MARKET_SENSOR_SOURCE_IDS)).min(1).max(3).optional(),
+      query: z.string().trim().min(1).max(200).optional(),
       geo: z.string().length(2).optional(),
       limit: z.number().int().min(1).max(20).optional(),
       tiktokPeriodDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
@@ -201,7 +206,7 @@ function server() {
   }, async input => structured(await marketSignalScan(input)));
 
   mcp.registerTool('market_intelligence_research', {
-    description: 'On-demand marketing intelligence research. Starts from current market signals, adds public TikTok Top Ads creative evidence, best-effort Pinterest Trends, and official Apple App Store commercialization evidence for an optional query. Extracts recurring creative mechanics and returns a thesis frame for the calling agent. Read-only: does not save snapshots, candidates, or ideas.',
+    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it switches to hypothesis-led mode: query-relevant Hacker News, cached SERP related searches/PAA, Google Ads demand for the query and adjacent search terms, plus App Store commercialization. Broad unrelated trend headlines are excluded from thesis evidence. TikTok Top Ads remains a creative-mechanic reference and Pinterest Trends is best-effort. Read-only: does not save snapshots, candidates, or ideas.',
     inputSchema: marketIntelligenceResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketIntelligenceResearch(input)));
