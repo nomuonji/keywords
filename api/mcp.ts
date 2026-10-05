@@ -165,7 +165,7 @@ async function demandWithFallback(input: DemandInput) {
     try {
       const result = await keywordDemand(input);
       googleAdsProxyLastError = null;
-      return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy_retry' as const };
+      return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy' as const };
     } catch (error) {
       proxyProviderError = sanitizeGoogleAdsError(error);
       googleAdsProxyLastError = proxyProviderError;
