@@ -41,7 +41,6 @@ export const marketSignalSnapshotCompareShape = {
   includeAppStore: z.boolean().optional()
 };
 
-type ResearchArgs = z.infer<z.ZodObject<typeof marketIntelligenceResearchShape>>;
 
 export interface MarketingMechanicEvidence {
   mechanic: string;
