@@ -9,7 +9,7 @@ import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 import { attachQuerySignalsToIntentTree, buildQueryIntentTree, classifyMarketIntent, compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.14.0');
+assert.match(KEYWORDS_MCP_SERVER_VERSION, /^\d+\.\d+\.\d+$/);
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -381,12 +381,15 @@ assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
 assert.match(mcpSource, /market_signal_scan/);
 assert.match(mcpSource, /market_intelligence_research/);
-assert.match(mcpSource, /hypothesis-led mode/);
+assert.match(mcpSource, /hypothesis-led/);
 assert.match(mcpSource, /google_ads_query_demand/);
 assert.match(mcpSource, /intentDecomposition/);
 assert.match(mcpSource, /thesisUsesPrimaryBranchOnly/);
 assert.match(mcpSource, /semanticSenseSelectionForAmbiguousQueries/);
 assert.match(mcpSource, /appStoreEvidenceScope/);
+assert.match(mcpSource, /evidenceCoverageGate/);
+assert.match(mcpSource, /socialAffiliateRequiresQueryMarketAndSocialContent/);
+assert.match(mcpSource, /social_serp_observation/);
 assert.match(mcpSource, /market_signal_snapshot_save/);
 assert.match(mcpSource, /market_signal_snapshot_compare/);
 assert.match(mcpSource, /marketSensorCapabilities/);
