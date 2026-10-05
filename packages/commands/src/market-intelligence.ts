@@ -273,7 +273,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'career_qualification',
-    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|スクール|教室|学校|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training|school|class)\b/i],
+    patterns: [/資格|試験|検定|求人|転職|採用|キャリア|研修|講座|スクール|教室|学校|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training|school|class)\b/i],
     signals: ['career/qualification marker']
   },
   {
@@ -283,7 +283,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'commercial',
-    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|どれがいい|どっち|どちら|選び方|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
     signals: ['commercial-evaluation marker']
   },
   {
@@ -293,7 +293,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'solution_product',
-    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|テンプレート|プラグイン|拡張機能|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|template|plugin|extension|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
+    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|テンプレート|プラグイン|拡張機能|参考書|教材|テキスト|治療|クリニック|薬|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|template|plugin|extension|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
     signals: ['solution/product marker']
   },
   {
@@ -303,7 +303,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'research_information',
-    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|メリット|デメリット|効果|原因|一覧|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study|pros?|cons?|benefits?|effects?|causes?|overview)\b/i],
+    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|メリット|デメリット|効果|原因|一覧|審査|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study|pros?|cons?|benefits?|effects?|causes?|overview)\b/i],
     signals: ['informational/research marker']
   }
 ];
@@ -346,7 +346,7 @@ function targetIntentsForQuery(query: string): MarketIntentId[] {
   if (classification.primaryIntent !== 'ambiguous') {
     return [...new Set([classification.primaryIntent, ...classification.secondaryIntents.filter(intent => intent !== 'ambiguous')])];
   }
-  return ['problem_need', 'solution_product', 'how_to', 'commercial'];
+  return [];
 }
 
 function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): MarketIntentRole {
