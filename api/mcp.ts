@@ -34,6 +34,7 @@ import {
 import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
+import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -113,7 +114,13 @@ function runtimeStatus() {
       supportedMarketplaces: supportedMarketplaceAdapters(),
       capabilities: marketplaceAdapterCapabilities()
     },
-    marketSensors: marketSensorCapabilities()
+    marketSensors: marketSensorCapabilities(),
+    marketIntelligence: {
+      onDemandOnly: true,
+      snapshotPersistence: 'explicit_call_only',
+      tools: ['market_intelligence_research', 'market_signal_snapshot_save', 'market_signal_snapshot_compare'],
+      supplementalSources: ['tiktok_top_ads', 'pinterest_trends', 'app_store']
+    }
   };
 }
 
@@ -192,6 +199,24 @@ function server() {
     },
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketSignalScan(input)));
+
+  mcp.registerTool('market_intelligence_research', {
+    description: 'On-demand marketing intelligence research. Starts from current market signals, adds public TikTok Top Ads creative evidence, best-effort Pinterest Trends, and official Apple App Store commercialization evidence for an optional query. Extracts recurring creative mechanics and returns a thesis frame for the calling agent. Read-only: does not save snapshots, candidates, or ideas.',
+    inputSchema: marketIntelligenceResearchShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketIntelligenceResearch(input)));
+
+  mcp.registerTool('market_signal_snapshot_save', {
+    description: 'Explicitly capture and persist one on-demand marketing intelligence snapshot for later velocity comparison. This is never called automatically or on a schedule. It re-runs current evidence collection at save time so the stored snapshot has server-derived provenance.',
+    inputSchema: marketSignalSnapshotSaveShape,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+  }, async input => structured(await marketSignalSnapshotSave(input)));
+
+  mcp.registerTool('market_signal_snapshot_compare', {
+    description: 'Compare a saved market snapshot with another saved snapshot or with a fresh live research packet. Returns entry/exit changes and comparable numeric metric deltas as velocity triggers; it does not save the live comparison or turn velocity into an automatic opportunity score.',
+    inputSchema: marketSignalSnapshotCompareShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketSignalSnapshotCompare(input)));
 
   mcp.registerTool('marketplace_research', {
     description: 'Read-only marketplace keyword research through a shared adapter layer. BOOTH is the first source. Returns search result counts, autocomplete suggestions, observed product cards, prices, wish-list counts when available, shop/category concentration, related tags, and optional cross-sort overlap. This tool does not compute a composite winner score or save/promote candidates.',
