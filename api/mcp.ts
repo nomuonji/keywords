@@ -9,6 +9,7 @@ import * as z from 'zod/v4';
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { marketplaceAdapterCapabilities, marketplaceResearch, supportedMarketplaceAdapters } from '../packages/research/src/marketplace.js';
+import { MARKET_SENSOR_SOURCE_IDS, marketSensorCapabilities, marketSignalScan } from '../packages/research/src/market-sensors.js';
 import { googleAdsDirectConfiguration, googleAdsKeywordHistoricalMetricsDirect, sanitizeGoogleAdsError } from './google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from './mcp-contract.js';
 import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch, siteStructureSaveShape, siteStructureGetShape, siteStructureListShape, siteStructurePatchShape } from '../packages/commands/src/site-structure.js';
@@ -111,7 +112,8 @@ function runtimeStatus() {
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
       capabilities: marketplaceAdapterCapabilities()
-    }
+    },
+    marketSensors: marketSensorCapabilities()
   };
 }
 
@@ -179,6 +181,18 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('market_signal_scan', {
+    description: 'Read current public market signals on demand before ideation. Uses unauthenticated public Google Trends RSS, TikTok Creative Center public trend pages, and the official Hacker News Firebase API. Returns observed search/social/early-adopter attention only; it does not generate product ideas, persist findings, or compute an opportunity score.',
+    inputSchema: {
+      sources: z.array(z.enum(MARKET_SENSOR_SOURCE_IDS)).min(1).max(3).optional(),
+      geo: z.string().length(2).optional(),
+      limit: z.number().int().min(1).max(20).optional(),
+      tiktokPeriodDays: z.union([z.literal(7), z.literal(30), z.literal(90)]).optional(),
+      hackerNewsFeed: z.enum(['top', 'new', 'best']).optional()
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketSignalScan(input)));
+
   mcp.registerTool('marketplace_research', {
     description: 'Read-only marketplace keyword research through a shared adapter layer. BOOTH is the first source. Returns search result counts, autocomplete suggestions, observed product cards, prices, wish-list counts when available, shop/category concentration, related tags, and optional cross-sort overlap. This tool does not compute a composite winner score or save/promote candidates.',
     inputSchema: {
