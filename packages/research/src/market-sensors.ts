@@ -23,6 +23,7 @@ export interface MarketSensorSourceResult {
 
 export interface MarketSignalScanInput {
   sources?: MarketSensorSourceId[];
+  query?: string;
   geo?: string;
   limit?: number;
   tiktokPeriodDays?: 7 | 30 | 90;
@@ -232,6 +233,55 @@ async function tiktokCreativeCenter(geo: string, limit: number, periodDays: 7 | 
   };
 }
 
+export function parseHackerNewsAlgolia(raw: unknown, sourceUrl: string, limit = 20): MarketSignalObservation[] {
+  const record = raw && typeof raw === 'object' ? raw as { hits?: Array<Record<string, unknown>> } : {};
+  const hits = Array.isArray(record.hits) ? record.hits : [];
+  return hits.slice(0, limit).flatMap((item, index): MarketSignalObservation[] => {
+    const title = typeof item.title === 'string' ? item.title : '';
+    if (!title) return [];
+    const objectId = typeof item.objectID === 'string' ? item.objectID : '';
+    const storyUrl = typeof item.url === 'string' && item.url
+      ? item.url
+      : objectId ? 'https://news.ycombinator.com/item?id=' + objectId : null;
+    const createdAt = typeof item.created_at === 'string' ? item.created_at : null;
+    return [{
+      source: 'hacker_news',
+      rank: index + 1,
+      label: title,
+      url: storyUrl,
+      category: 'story',
+      observedAt: createdAt ? new Date(createdAt).toISOString() : null,
+      metrics: {
+        score: typeof item.points === 'number' ? item.points : null,
+        comments: typeof item.num_comments === 'number' ? item.num_comments : null,
+        queryMatch: true
+      },
+      related: []
+    }];
+  });
+}
+
+async function hackerNewsQuery(query: string, limit: number): Promise<MarketSensorSourceResult> {
+  const url = new URL('https://hn.algolia.com/api/v1/search');
+  url.searchParams.set('query', query);
+  url.searchParams.set('tags', 'story');
+  url.searchParams.set('hitsPerPage', String(limit));
+  const response = await fetch(url, {
+    headers: { accept: 'application/json', 'user-agent': 'keywords-market-sensor/1.1' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error('HTTP ' + response.status + ' from Hacker News Algolia');
+  const raw = await response.json();
+  const observations = parseHackerNewsAlgolia(raw, url.toString(), limit);
+  return {
+    source: 'hacker_news',
+    url: url.toString(),
+    signalKind: ['query_relevant_early_adopter_attention', 'query_relevant_problem_expression'],
+    observations,
+    warnings: observations.length ? [] : ['Hacker News query search returned no matching stories for "' + query + '".']
+  };
+}
+
 async function hackerNews(feed: 'top' | 'new' | 'best', limit: number): Promise<MarketSensorSourceResult> {
   const feedUrl = 'https://hacker-news.firebaseio.com/v0/' + feed + 'stories.json';
   const response = await fetch(feedUrl, {
@@ -317,12 +367,13 @@ export async function marketSignalScan(input: MarketSignalScanInput = {}): Promi
   const limit = Math.max(1, Math.min(input.limit ?? 10, 20));
   const tiktokPeriodDays = input.tiktokPeriodDays ?? 7;
   const hackerNewsFeed = input.hackerNewsFeed ?? 'top';
+  const query = input.query?.trim() || null;
   const warnings: string[] = [];
   const settled = await Promise.all(sources.map(async source => {
     try {
       if (source === 'google_trends') return await googleTrends(geo, limit);
       if (source === 'tiktok_creative_center') return await tiktokCreativeCenter(geo, limit, tiktokPeriodDays);
-      if (source === 'hacker_news') return await hackerNews(hackerNewsFeed, limit);
+      if (source === 'hacker_news') return query ? await hackerNewsQuery(query, limit) : await hackerNews(hackerNewsFeed, limit);
       return null;
     } catch (error) {
       warnings.push(source + ': ' + (error instanceof Error ? error.message : String(error)));
@@ -343,7 +394,8 @@ export async function marketSignalScan(input: MarketSignalScanInput = {}): Promi
       'Do not infer sales or willingness to pay from search traffic, views, posts, HN score, or comments.',
       'Look for repeated behavior/desire across independent sources before forming a market thesis.',
       'Preserve source disagreement and missing evidence; do not collapse these signals into one opportunity score.',
-      'TikTok Creative Center observations are limited to public server-rendered rows and may be fewer than the requested limit.'
+      'TikTok Creative Center observations are limited to public server-rendered rows and may be fewer than the requested limit.',
+      ...(query ? ['When query is supplied, Hacker News switches to query relevance search. Google Trends/TikTok broad surfaces are not automatically treated as query evidence.'] : [])
     ]
   };
 }

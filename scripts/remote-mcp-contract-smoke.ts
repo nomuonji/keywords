@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { parseBoothSearchHtml } from '../packages/research/src/marketplace.js';
-import { parseGoogleTrendsRss, parseTikTokCreativeCenterHtml } from '../packages/research/src/market-sensors.js';
+import { parseGoogleTrendsRss, parseHackerNewsAlgolia, parseTikTokCreativeCenterHtml } from '../packages/research/src/market-sensors.js';
 import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 import { compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.11.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.12.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -198,6 +198,25 @@ assert.equal(tiktokTrends[0]?.metrics.posts, 6200);
 assert.equal(tiktokTrends[0]?.metrics.views, 4800000);
 
 
+const hnQuery = parseHackerNewsAlgolia({
+  hits: [
+    {
+      title: 'Local AI security proxy',
+      objectID: '123',
+      points: 87,
+      num_comments: 31,
+      created_at: '2026-10-05T12:00:00.000Z'
+    }
+  ]
+}, 'https://hn.algolia.com/api/v1/search?query=AI%20security&tags=story', 10);
+assert.equal(hnQuery.length, 1);
+assert.equal(hnQuery[0]?.label, 'Local AI security proxy');
+assert.equal(hnQuery[0]?.metrics.score, 87);
+assert.equal(hnQuery[0]?.metrics.comments, 31);
+assert.equal(hnQuery[0]?.metrics.queryMatch, true);
+assert.match(hnQuery[0]?.url ?? '', /news\.ycombinator\.com\/item\?id=123/);
+
+
 const topAds = parseTikTokTopAdsHtml(`
 <html><body>
   <div>34K Likes Top 21%CTR High Budget Showcase a real-time comparison between products, while communicating superiority. See analysis</div>
@@ -245,6 +264,8 @@ assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
 assert.match(mcpSource, /market_signal_scan/);
 assert.match(mcpSource, /market_intelligence_research/);
+assert.match(mcpSource, /hypothesis-led mode/);
+assert.match(mcpSource, /google_ads_query_demand/);
 assert.match(mcpSource, /market_signal_snapshot_save/);
 assert.match(mcpSource, /market_signal_snapshot_compare/);
 assert.match(mcpSource, /marketSensorCapabilities/);
@@ -257,6 +278,14 @@ assert.match(mcpSource, /groqStaticTokenConfigured/);
 const trendArticleSource = readFileSync(new URL('../packages/commands/src/trend-article-research.ts', import.meta.url), 'utf8');
 assert.match(trendArticleSource, /Zero-volume trend terms are not automatically rejected/);
 assert.match(trendArticleSource, /existingPageMatches/);
+
+const marketIntelligenceSource = readFileSync(new URL('../packages/commands/src/market-intelligence.ts', import.meta.url), 'utf8');
+assert.match(marketIntelligenceSource, /queryFocusedResearch/);
+assert.match(marketIntelligenceSource, /sources: query \? \['hacker_news'\]/);
+assert.match(marketIntelligenceSource, /relatedSearches/);
+assert.match(marketIntelligenceSource, /keywordDemand/);
+assert.match(marketIntelligenceSource, /query_search_demand/);
+assert.match(marketIntelligenceSource, /query_search_surface/);
 
 const researchLedgerSource = readFileSync(new URL('../packages/commands/src/theme-research.ts', import.meta.url), 'utf8');
 assert.match(researchLedgerSource, /whyStillAlive/);
