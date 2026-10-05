@@ -185,7 +185,7 @@ function server() {
       marketplace: z.string().min(1).max(50).optional(),
       query: z.string().min(1).max(200),
       page: z.number().int().min(1).max(10).optional(),
-      sorts: z.array(z.enum(['popularity', 'wish_lists', 'new'])).min(1).max(3).optional(),
+      sorts: z.array(z.string().min(1).max(50)).min(1).max(3).optional(),
       includeSuggestions: z.boolean().optional(),
       maxProducts: z.number().int().min(1).max(60).optional()
     },
