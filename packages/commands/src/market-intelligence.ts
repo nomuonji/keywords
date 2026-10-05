@@ -882,13 +882,50 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
       };
     });
 
-  const demandSeeds = [...new Set([
-    query,
-    ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
-    ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
-    ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
-    ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
-  ])].slice(0, 10);
+  const exploratoryRelated = (() => {
+    if (targetIntents.length > 0) {
+      return [
+        ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
+        ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
+        ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
+        ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
+      ];
+    }
+
+    const intentOrder: MarketIntentId[] = [
+      'problem_need',
+      'solution_product',
+      'how_to',
+      'commercial',
+      'career_qualification',
+      'investment',
+      'research_information',
+      'news',
+      'ambiguous'
+    ];
+    const grouped = new Map<MarketIntentId, string[]>();
+    for (const item of relatedForDemand) {
+      if (item.role === 'out_of_scope') continue;
+      const list = grouped.get(item.intent) ?? [];
+      list.push(item.value);
+      grouped.set(item.intent, list);
+    }
+    const balanced: string[] = [];
+    for (let round = 0; balanced.length < 8; round++) {
+      let added = false;
+      for (const intent of intentOrder) {
+        const value = grouped.get(intent)?.[round];
+        if (!value) continue;
+        balanced.push(value);
+        added = true;
+        if (balanced.length >= 8) break;
+      }
+      if (!added) break;
+    }
+    return balanced;
+  })();
+
+  const demandSeeds = [...new Set([query, ...exploratoryRelated])].slice(0, 10);
 
   let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
   if (geo !== 'JP') {
