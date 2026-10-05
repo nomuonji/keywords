@@ -378,6 +378,8 @@ export function buildQueryIntentTree(input: {
       queryClassification: null,
       targetIntents: [],
       mixedIntent: false,
+      senseSelectionRequired: false,
+      senseGuidance: ['No query supplied; semantic-sense selection is not applicable in broad market-scan mode.'],
       branches: [],
       primaryEvidenceKeywords: [],
       excludedFromPrimaryThesis: [],
@@ -465,12 +467,21 @@ export function buildQueryIntentTree(input: {
   const populatedIntents = branches.filter(branch =>
     branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
   );
+  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 1;
 
   return {
     query: input.query,
     queryClassification,
     targetIntents,
     mixedIntent: populatedIntents.length > 1,
+    senseSelectionRequired,
+    senseGuidance: senseSelectionRequired
+      ? [
+          'The root query has no explicit intent marker while observed results span multiple branches.',
+          'Before writing a thesis, state the semantic sense being analyzed and verify that supporting SERP/app evidence uses the same meaning.',
+          'A shared phrase or brand name is not enough to merge distinct product categories or use cases.'
+        ]
+      : ['The root query has an explicit intent or does not currently show enough branch diversity to require separate sense selection.'],
     branches,
     primaryEvidenceKeywords,
     excludedFromPrimaryThesis,
