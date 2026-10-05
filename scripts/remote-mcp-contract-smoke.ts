@@ -218,6 +218,7 @@ assert.match(hnQuery[0]?.url ?? '', /news\.ycombinator\.com\/item\?id=123/);
 
 
 assert.equal(classifyMarketIntent('AI Security 株式会社', 'AI security').primaryIntent, 'entity');
+assert.ok(!classifyMarketIntent('AI Security株式会社', 'AI security').secondaryIntents.includes('investment'));
 assert.equal(classifyMarketIntent('AIセキュリティ銘柄', 'AI security').primaryIntent, 'investment');
 assert.equal(classifyMarketIntent('AIセキュリティ資格', 'AI security').primaryIntent, 'career_qualification');
 assert.equal(classifyMarketIntent('生成AIセキュリティ対策', 'AI security').primaryIntent, 'solution_product');
