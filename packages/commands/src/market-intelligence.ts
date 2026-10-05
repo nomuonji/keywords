@@ -423,6 +423,126 @@ async function pinterestTrends(query: string | null, geo: string, limit: number)
   }
 }
 
+async function queryFocusedResearch(query: string | null, geo: string, limit: number): Promise<QueryFocusResearch> {
+  if (!query) {
+    return {
+      mode: 'market_scan',
+      query: null,
+      searchSurface: {
+        source: 'serp',
+        query: null,
+        relatedSearches: [],
+        peopleAlsoAsk: [],
+        topResults: [],
+        cacheHit: null,
+        warnings: ['No query supplied; broad market-scan mode does not run hypothesis-led SERP research.']
+      },
+      searchDemand: {
+        source: 'google_ads',
+        query: null,
+        researchedKeywords: [],
+        results: [],
+        warnings: ['No query supplied; broad market-scan mode does not run exact/adjacent keyword demand research.']
+      }
+    };
+  }
+
+  const surfaceWarnings: string[] = [];
+  let relatedSearches: string[] = [];
+  let peopleAlsoAsk: string[] = [];
+  let topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }> = [];
+  let cacheHit: boolean | null = null;
+
+  try {
+    const serp = await serpResearchCached({
+      query,
+      country: geo,
+      language: geo === 'JP' ? 'ja' : 'en',
+      num: Math.min(limit, 10),
+      provider: 'api',
+      forceRefresh: false
+    }) as any;
+    relatedSearches = Array.isArray(serp.relatedSearches)
+      ? serp.relatedSearches.map((value: unknown) => String(value).trim()).filter(Boolean).slice(0, 12)
+      : [];
+    peopleAlsoAsk = Array.isArray(serp.peopleAlsoAsk)
+      ? serp.peopleAlsoAsk.map((value: unknown) => String(value).trim()).filter(Boolean).slice(0, 12)
+      : [];
+    topResults = Array.isArray(serp.results)
+      ? serp.results.slice(0, Math.min(limit, 10)).map((item: any) => ({
+          position: typeof item?.position === 'number' ? item.position : null,
+          title: String(item?.title ?? ''),
+          link: String(item?.link ?? ''),
+          snippet: item?.snippet == null ? null : String(item.snippet)
+        })).filter((item: { title: string; link: string }) => item.title && item.link)
+      : [];
+    cacheHit = typeof serp.cache?.hit === 'boolean' ? serp.cache.hit : null;
+  } catch (error) {
+    surfaceWarnings.push('Query-focused SERP research failed: ' + (error instanceof Error ? error.message : String(error)));
+  }
+
+  const demandWarnings: string[] = [];
+  const demandSeeds = [...new Set([
+    query,
+    ...relatedSearches
+      .filter(value => value.length <= 120)
+      .slice(0, 8)
+  ])].slice(0, 10);
+
+  let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
+  if (geo !== 'JP') {
+    demandWarnings.push('Query-focused Google Ads demand expansion currently uses the configured Japan targeting only, so demand lookup is skipped when geo is not JP.');
+  } else {
+    try {
+      const demand = await keywordDemand({
+        keywords: demandSeeds,
+        languageConstant: '1005',
+        geoTargetConstants: ['2392'],
+        includeAdultKeywords: true
+      }) as any;
+      demandResults = Array.isArray(demand?.results)
+        ? demand.results.map((item: any) => ({
+            keyword: String(item?.keyword ?? ''),
+            avgMonthlySearches: typeof item?.avgMonthlySearches === 'number' ? item.avgMonthlySearches : null,
+            averageCpcMicros: typeof item?.averageCpcMicros === 'number' ? item.averageCpcMicros : null,
+            competition: typeof item?.competition === 'string' || typeof item?.competition === 'number' ? item.competition : null,
+            competitionIndex: typeof item?.competitionIndex === 'number' ? item.competitionIndex : null,
+            monthlySearchVolumes: Array.isArray(item?.monthlySearchVolumes)
+              ? item.monthlySearchVolumes.flatMap((month: any) =>
+                  typeof month?.year === 'number' && typeof month?.month === 'number' && typeof month?.searches === 'number'
+                    ? [{ year: month.year, month: month.month, searches: month.searches }]
+                    : []
+                )
+              : []
+          })).filter((item: { keyword: string }) => Boolean(item.keyword))
+        : [];
+    } catch (error) {
+      demandWarnings.push('Query-focused Google Ads demand research failed: ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  return {
+    mode: 'hypothesis_led',
+    query,
+    searchSurface: {
+      source: 'serp',
+      query,
+      relatedSearches,
+      peopleAlsoAsk,
+      topResults,
+      cacheHit,
+      warnings: surfaceWarnings
+    },
+    searchDemand: {
+      source: 'google_ads',
+      query,
+      researchedKeywords: demandSeeds,
+      results: demandResults,
+      warnings: demandWarnings
+    }
+  };
+}
+
 function signalFact(observation: MarketSignalObservation): string {
   const metrics = Object.entries(observation.metrics)
     .filter(([, value]) => value !== null && value !== '')
