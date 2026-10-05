@@ -646,14 +646,16 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   const includePinterest = args.includePinterest ?? true;
   const includeAppStore = args.includeAppStore ?? true;
 
-  const [signals, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
+  const [signals, queryFocus, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
     marketSignalScan({
-      sources: [...MARKET_SENSOR_SOURCE_IDS],
+      sources: query ? ['hacker_news'] : [...MARKET_SENSOR_SOURCE_IDS],
+      query: query ?? undefined,
       geo,
       limit,
       tiktokPeriodDays: args.tiktokPeriodDays,
       hackerNewsFeed: args.hackerNewsFeed
     }),
+    queryFocusedResearch(query, geo, limit),
     includeTopAds ? tiktokTopAds(geo, Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
     includeAppStore ? appStoreResearch(query, geo, limit) : Promise.resolve({
@@ -670,6 +672,8 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   const mechanics = mechanicsSummary(topAdsResult.observations);
   const warnings = [
     ...signals.warnings,
+    ...queryFocus.searchSurface.warnings,
+    ...queryFocus.searchDemand.warnings,
     ...topAdsResult.warnings,
     ...pinterestResult.warnings,
     ...appStoreResult.warnings
@@ -680,6 +684,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     query,
     geo,
     signals,
+    queryFocus,
     creativeEvidence: {
       source: 'tiktok_top_ads',
       url: topAdsResult.url,
@@ -689,7 +694,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     },
     pinterest: pinterestResult,
     commercialization: appStoreResult,
-    thesisFrame: buildThesisFrame(signals, mechanics, appStoreResult, warnings),
+    thesisFrame: buildThesisFrame(signals, queryFocus, mechanics, appStoreResult, warnings),
     warnings
   };
 }
