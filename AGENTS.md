@@ -22,9 +22,11 @@
 
 ## 市場シグナル観測
 
-新規プロダクト・コンテンツ・収益テーマの発想を始めるとき、モデルの一般知識だけから需要を推測しない。依頼時に remote MCP の `market_signal_scan` を使い、現在の公開市場シグナルを先に観測する。定期実行は前提にしない。詳細は `docs/market-signals.md`。
+新規プロダクト・コンテンツ・収益テーマの発想を始めるとき、モデルの一般知識だけから需要を推測しない。単純な現在値だけでよい場合は `market_signal_scan`、商品機会・訴求・ポジショニングまで考える依頼ではまず `market_intelligence_research` を使う。後者はGoogle Trends / TikTok Creative Center / Hacker Newsに加え、TikTok Top Adsの公開クリエイティブ、Pinterest Trendsの公開面（best-effort）、Apple App Storeの商品化状況を束ね、訴求mechanicとmarket thesis用の証拠枠を返す。定期実行は前提にしない。詳細は `docs/market-signals.md`。
 
-Google Trendsの検索トラフィック、TikTok Creative Centerの投稿数・閲覧数、Hacker Newsのscore/commentsはそれぞれ異なる種類の注意・行動シグナルであり、売上や支払意思を直接示さない。複数ソースの反復パターンから行動・欲望・見せ方を抽出してから隣接機会を考え、観測した商品やトレンドをそのまま模倣しない。単一の総合Opportunity Scoreへ潰さない。
+前回との差を見る必要がある場合だけ、ユーザーの依頼または明確な調査目的に基づいて `market_signal_snapshot_save` を明示的に呼ぶ。snapshotは自動保存しない。後で `market_signal_snapshot_compare` を使い、同一ソース・同一ラベルの数値差、ランキング面への新規出現/消失をvelocityのトリガーとして読む。
+
+Google Trendsの検索トラフィック、TikTokの投稿数・閲覧数・広告CTR percentile、HNのscore/comments、App Storeの評価件数はそれぞれ異なる種類の注意・行動・商品化シグナルであり、売上や支払意思を直接示さない。複数ソースの反復パターンから行動・欲望・見せ方を抽出し、Top Adsからはcomparison / social proof / problem-solution / demonstration等の訴求mechanicを読む。その後に audience / format / context / social loop / output artifact / distribution / business model のどこを横にずらせるかを考える。観測した商品をそのまま模倣せず、copy_like / adjacent / speculative を明示する。単一の総合Opportunity Scoreへ潰さない。
 
 ## SEO情報源ウォッチ
 
