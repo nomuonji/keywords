@@ -7,8 +7,9 @@ import { screenDemandResults, serpQuotaConfiguration } from '../packages/command
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
+import { compareMarketPackets, extractMarketingMechanics, parseTikTokTopAdsHtml } from '../packages/commands/src/market-intelligence.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.10.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.11.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -37,10 +38,13 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'seo_source_scan_record',
   'trend_article_research',
   'market_signal_scan',
+  'market_intelligence_research',
+  'market_signal_snapshot_save',
+  'market_signal_snapshot_compare',
   'marketplace_research',
   'search_gap_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 29);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 32);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -193,6 +197,34 @@ assert.equal(tiktokTrends[0]?.label, '#physics');
 assert.equal(tiktokTrends[0]?.metrics.posts, 6200);
 assert.equal(tiktokTrends[0]?.metrics.views, 4800000);
 
+
+const topAds = parseTikTokTopAdsHtml(`
+<html><body>
+  <div>34K Likes Top 21%CTR High Budget Showcase a real-time comparison between products, while communicating superiority. See analysis</div>
+  <div>37K Likes Top 15%CTR High Budget The video starts with a disturbing situation and introduces the product as a solution. See analysis</div>
+</body></html>`, 'https://ads.tiktok.com/business/creativecenter/tiktok-topads-spotlight/pc/en', 10);
+assert.equal(topAds.length, 2);
+assert.equal(topAds[0]?.likes, 34000);
+assert.equal(topAds[0]?.ctrTopPercent, 21);
+assert.deepEqual(topAds[0]?.mechanics, ['comparison', 'demonstration']);
+assert.ok(topAds[1]?.mechanics.includes('problem_solution'));
+assert.deepEqual(extractMarketingMechanics('A testimonial compares two products and shows the solution in action.'), ['comparison', 'social_proof', 'problem_solution', 'demonstration']);
+
+const leftPacket: any = {
+  fetchedAt: '2026-10-01T00:00:00.000Z', query: 'habit tracker', geo: 'JP',
+  signals: { results: [{ source: 'google_trends', observations: [{ label: 'habit tracker', metrics: { approxTraffic: 1000 } }] }] },
+  creativeEvidence: { observations: [] }, pinterest: { observations: [] }, commercialization: { observations: [] }
+};
+const rightPacket: any = {
+  fetchedAt: '2026-10-02T00:00:00.000Z', query: 'habit tracker', geo: 'JP',
+  signals: { results: [{ source: 'google_trends', observations: [{ label: 'habit tracker', metrics: { approxTraffic: 1800 } }, { label: 'new entrant', metrics: { approxTraffic: 500 } }] }] },
+  creativeEvidence: { observations: [] }, pinterest: { observations: [] }, commercialization: { observations: [] }
+};
+const packetDelta = compareMarketPackets(leftPacket, rightPacket);
+assert.equal(packetDelta.sourceSummary.google_trends?.added, 1);
+assert.equal(packetDelta.sourceSummary.google_trends?.changed, 1);
+assert.equal(packetDelta.velocityHighlights[0]?.delta, 800);
+
 const mcpSource = readFileSync(new URL('../api/mcp.ts', import.meta.url), 'utf8');
 assert.match(mcpSource, /forceRefresh:\s*z\.boolean\(\)/);
 assert.match(mcpSource, /serpResearchCached/);
@@ -212,6 +244,9 @@ assert.match(mcpSource, /seo_source_pool_context/);
 assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
 assert.match(mcpSource, /market_signal_scan/);
+assert.match(mcpSource, /market_intelligence_research/);
+assert.match(mcpSource, /market_signal_snapshot_save/);
+assert.match(mcpSource, /market_signal_snapshot_compare/);
 assert.match(mcpSource, /marketSensorCapabilities/);
 assert.match(mcpSource, /marketplace_research/);
 assert.match(mcpSource, /supportedMarketplaceAdapters/);
