@@ -233,19 +233,10 @@ async function tiktokCreativeCenter(geo: string, limit: number, periodDays: 7 | 
   };
 }
 
-async function hackerNewsQuery(query: string, limit: number): Promise<MarketSensorSourceResult> {
-  const url = new URL('https://hn.algolia.com/api/v1/search');
-  url.searchParams.set('query', query);
-  url.searchParams.set('tags', 'story');
-  url.searchParams.set('hitsPerPage', String(limit));
-  const response = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': 'keywords-market-sensor/1.1' },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
-  });
-  if (!response.ok) throw new Error('HTTP ' + response.status + ' from Hacker News Algolia');
-  const raw = await response.json() as { hits?: Array<Record<string, unknown>> };
-  const hits = Array.isArray(raw.hits) ? raw.hits : [];
-  const observations = hits.slice(0, limit).flatMap((item, index): MarketSignalObservation[] => {
+export function parseHackerNewsAlgolia(raw: unknown, sourceUrl: string, limit = 20): MarketSignalObservation[] {
+  const record = raw && typeof raw === 'object' ? raw as { hits?: Array<Record<string, unknown>> } : {};
+  const hits = Array.isArray(record.hits) ? record.hits : [];
+  return hits.slice(0, limit).flatMap((item, index): MarketSignalObservation[] => {
     const title = typeof item.title === 'string' ? item.title : '';
     if (!title) return [];
     const objectId = typeof item.objectID === 'string' ? item.objectID : '';
@@ -268,6 +259,20 @@ async function hackerNewsQuery(query: string, limit: number): Promise<MarketSens
       related: []
     }];
   });
+}
+
+async function hackerNewsQuery(query: string, limit: number): Promise<MarketSensorSourceResult> {
+  const url = new URL('https://hn.algolia.com/api/v1/search');
+  url.searchParams.set('query', query);
+  url.searchParams.set('tags', 'story');
+  url.searchParams.set('hitsPerPage', String(limit));
+  const response = await fetch(url, {
+    headers: { accept: 'application/json', 'user-agent': 'keywords-market-sensor/1.1' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) throw new Error('HTTP ' + response.status + ' from Hacker News Algolia');
+  const raw = await response.json();
+  const observations = parseHackerNewsAlgolia(raw, url.toString(), limit);
   return {
     source: 'hacker_news',
     url: url.toString(),
