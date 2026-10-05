@@ -15,6 +15,7 @@ function social(overrides: Partial<SocialContentResearchResult> = {}): SocialCon
     platformsRequested: ['tiktok', 'youtube_shorts'],
     platformsObserved: [],
     observations: [],
+    formatSummary: [],
     platformStatus: [],
     warnings: [],
     guidance: [],
@@ -43,6 +44,7 @@ const missingSocial = assessMarketEvidenceCoverage({
   query: '海外旅行 eSIM おすすめ',
   broadSignalCount: 0,
   broadSourceCount: 0,
+  broadSocialSignalCount: 0,
   searchSurfaceCount: 12,
   searchDemandCount: 4,
   socialContent: social(),
@@ -57,6 +59,7 @@ const partialSocial = assessMarketEvidenceCoverage({
   query: '海外旅行 eSIM おすすめ',
   broadSignalCount: 0,
   broadSourceCount: 0,
+  broadSocialSignalCount: 0,
   searchSurfaceCount: 12,
   searchDemandCount: 0,
   socialContent: social({
@@ -83,6 +86,7 @@ const sufficientSocial = assessMarketEvidenceCoverage({
   query: '海外旅行 eSIM おすすめ',
   broadSignalCount: 0,
   broadSourceCount: 0,
+  broadSocialSignalCount: 0,
   searchSurfaceCount: 12,
   searchDemandCount: 4,
   socialContent: social({
@@ -122,6 +126,7 @@ const ambiguous = assessMarketEvidenceCoverage({
   query: 'eSIM',
   broadSignalCount: 0,
   broadSourceCount: 0,
+  broadSocialSignalCount: 0,
   searchSurfaceCount: 10,
   searchDemandCount: 4,
   socialContent: sufficientSocial.checks ? social({
@@ -142,5 +147,22 @@ const ambiguous = assessMarketEvidenceCoverage({
 });
 assert.equal(ambiguous.conclusionAllowed, false);
 assert.ok(ambiguous.missingRequired.includes('semantic_sense_selection'));
+
+
+
+const broadMissingSocial = assessMarketEvidenceCoverage({
+  researchGoal: 'social_affiliate',
+  query: null,
+  broadSignalCount: 20,
+  broadSourceCount: 2,
+  broadSocialSignalCount: 0,
+  searchSurfaceCount: 0,
+  searchDemandCount: 0,
+  socialContent: social({ query: null }),
+  senseSelectionRequired: false
+});
+assert.equal(broadMissingSocial.status, 'insufficient');
+assert.equal(broadMissingSocial.conclusionAllowed, false);
+assert.ok(broadMissingSocial.missingRequired.includes('social_content_patterns'));
 
 console.log('market evidence coverage smoke passed');
