@@ -53,7 +53,7 @@ export interface MarketingMechanicEvidence {
   }>;
 }
 
-interface TopAdObservation {
+export interface TopAdObservation {
   key: string;
   label: string;
   url: string;
@@ -65,7 +65,7 @@ interface TopAdObservation {
   mechanics: string[];
 }
 
-interface AppStoreObservation {
+export interface AppStoreObservation {
   key: string;
   label: string;
   url: string | null;
@@ -78,7 +78,7 @@ interface AppStoreObservation {
   currentVersionReleaseDate: string | null;
 }
 
-interface PinterestObservation {
+export interface PinterestObservation {
   key: string;
   label: string;
   url: string;
@@ -533,7 +533,16 @@ async function readSnapshot(idValue: string): Promise<SnapshotDocument> {
 
 export async function marketSignalSnapshotSave(input: unknown) {
   const args = z.object(marketSignalSnapshotSaveShape).strict().parse(input);
-  const packet = await marketIntelligenceResearch(args);
+  const packet = await marketIntelligenceResearch({
+    query: args.query,
+    geo: args.geo,
+    limit: args.limit,
+    tiktokPeriodDays: args.tiktokPeriodDays,
+    hackerNewsFeed: args.hackerNewsFeed,
+    includeTopAds: args.includeTopAds,
+    includePinterest: args.includePinterest,
+    includeAppStore: args.includeAppStore
+  });
   const idValue = args.id ?? ('market-' + Date.now().toString(36) + '-' + randomUUID().slice(0, 8));
   const createdAt = new Date().toISOString();
   const doc: SnapshotDocument = {
