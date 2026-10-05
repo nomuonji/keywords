@@ -751,9 +751,13 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   }
 }
 
-function appStoreRelevantForQuery(query: string | null): boolean {
+export function appStoreRelevantForQuery(query: string | null): boolean {
   if (!query) return false;
   const classification = classifyMarketIntent(query, query);
+  const explicitIntents = new Set([classification.primaryIntent, ...classification.secondaryIntents]);
+  if (explicitIntents.has('solution_product') || explicitIntents.has('commercial') || explicitIntents.has('how_to') || explicitIntents.has('problem_need')) {
+    return true;
+  }
   return !['entity', 'investment', 'news', 'research_information'].includes(classification.primaryIntent);
 }
 
