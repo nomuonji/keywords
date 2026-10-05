@@ -2,13 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { parseBoothSearchHtml } from '../packages/research/src/marketplace.js';
-import { marketSignalSourceCapabilities, parseSteamSearchHtml } from '../packages/research/src/market-signals.js';
 import { screenDemandResults, serpQuotaConfiguration } from '../packages/commands/src/remote-keyword-research.js';
 import { buildGoogleAdsHistoricalMetricsPayload, buildGoogleAdsKeywordIdeasPayload, googleAdsMonthNumber, normalizeGoogleAdsHistoricalResults } from '../api/google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import { selectTrendSerpKeywords } from '../packages/commands/src/trend-article-research.js';
 
-assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.10.0');
+assert.equal(KEYWORDS_MCP_SERVER_VERSION, '1.9.0');
 assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'remote_keyword_status',
   'keyword_demand_research',
@@ -36,11 +35,10 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'seo_source_save',
   'seo_source_scan_record',
   'trend_article_research',
-  'market_signal_research',
   'marketplace_research',
   'search_gap_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 29);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 28);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
@@ -167,32 +165,6 @@ assert.equal(boothListing.products[0]?.title, 'Sample Tool');
 assert.equal(boothListing.products[0]?.price, 500);
 assert.equal(boothListing.products[0]?.shopName, 'Sample Shop');
 
-
-const steamListing = parseSteamSearchHtml(`
-<html><body>
-<div>123 results match your search.</div>
-<a class="search_result_row ds_collapse_flag" data-ds-appid="555" href="https://store.steampowered.com/app/555/Test_Game/">
-  <div class="responsive_search_name_combined">
-    <span class="title">Tiny Strange Game</span>
-    <div class="search_released responsive_secondrow">Sep 30, 2026</div>
-    <div class="discount_block search_discount_block" data-price-final="499">
-      <div class="discount_pct">-20%</div>
-      <div class="discount_final_price">$4.99</div>
-    </div>
-    <span class="search_review_summary positive" data-tooltip-html="Very Positive&lt;br&gt;91% of the 1,234 user reviews for this game are positive."></span>
-  </div>
-</a>
-</body></html>
-`, { url: 'https://store.steampowered.com/search/?filter=popularnew', limit: 10, country: 'US' });
-assert.equal(steamListing.totalCount, 123);
-assert.equal(steamListing.observations.length, 1);
-assert.equal(steamListing.observations[0]?.id, '555');
-assert.equal(steamListing.observations[0]?.title, 'Tiny Strange Game');
-assert.equal(steamListing.observations[0]?.price, 4.99);
-assert.equal(steamListing.observations[0]?.reviewCount, 1234);
-assert.equal(steamListing.observations[0]?.positiveRate, 0.91);
-assert.deepEqual(Object.keys(marketSignalSourceCapabilities()), ['steam', 'app_store', 'hacker_news']);
-
 const mcpSource = readFileSync(new URL('../api/mcp.ts', import.meta.url), 'utf8');
 assert.match(mcpSource, /forceRefresh:\s*z\.boolean\(\)/);
 assert.match(mcpSource, /serpResearchCached/);
@@ -211,9 +183,6 @@ assert.match(mcpSource, /theme_candidate_challenge/);
 assert.match(mcpSource, /seo_source_pool_context/);
 assert.match(mcpSource, /seo_source_scan_record/);
 assert.match(mcpSource, /trend_article_research/);
-assert.match(mcpSource, /market_signal_research/);
-assert.match(mcpSource, /MARKET_SIGNAL_SOURCE_IDS/);
-assert.match(mcpSource, /includeGoogleDemand/);
 assert.match(mcpSource, /marketplace_research/);
 assert.match(mcpSource, /supportedMarketplaceAdapters/);
 assert.match(mcpSource, /KEYWORDS_GROQ_MCP_TOKEN/);

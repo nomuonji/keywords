@@ -9,7 +9,6 @@ import * as z from 'zod/v4';
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { marketplaceAdapterCapabilities, marketplaceResearch, supportedMarketplaceAdapters } from '../packages/research/src/marketplace.js';
-import { MARKET_SIGNAL_SOURCE_IDS, marketSignalResearch, marketSignalSourceCapabilities } from '../packages/research/src/market-signals.js';
 import { googleAdsDirectConfiguration, googleAdsKeywordHistoricalMetricsDirect, sanitizeGoogleAdsError } from './google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from './mcp-contract.js';
 import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch, siteStructureSaveShape, siteStructureGetShape, siteStructureListShape, siteStructurePatchShape } from '../packages/commands/src/site-structure.js';
@@ -112,10 +111,6 @@ function runtimeStatus() {
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
       capabilities: marketplaceAdapterCapabilities()
-    },
-    marketSignals: {
-      supportedSources: [...MARKET_SIGNAL_SOURCE_IDS],
-      capabilities: marketSignalSourceCapabilities()
     }
   };
 }
@@ -184,48 +179,6 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
-  mcp.registerTool('market_signal_research', {
-    description: 'Read current real-market evidence before ideation. Search or discover across Steam, Apple App Store and Hacker News, keeping commercial-adoption proxies separate from attention/problem-expression signals. Discover mode can start from the market without a seed query. This tool does not generate product ideas, compute an opportunity score, or save/promote candidates.',
-    inputSchema: {
-      mode: z.enum(['search', 'discover']).optional(),
-      query: z.string().min(1).max(200).optional(),
-      sources: z.array(z.enum(['steam', 'app_store', 'hacker_news'])).min(1).max(3).optional(),
-      limit: z.number().int().min(1).max(20).optional(),
-      country: z.string().length(2).optional(),
-      steamView: z.enum(['popular_new', 'global_top_sellers']).optional(),
-      hnWindowDays: z.number().int().min(1).max(365).optional(),
-      enrichSteamReviews: z.boolean().optional(),
-      includeGoogleDemand: z.boolean().optional(),
-      languageConstant: z.string().optional(),
-      geoTargetConstants: z.array(z.string()).optional()
-    },
-    annotations: { readOnlyHint: true, openWorldHint: true }
-  }, async input => {
-    const market = await marketSignalResearch({
-      mode: input.mode,
-      query: input.query,
-      sources: input.sources,
-      limit: input.limit,
-      country: input.country,
-      steamView: input.steamView,
-      hnWindowDays: input.hnWindowDays,
-      enrichSteamReviews: input.enrichSteamReviews
-    });
-    let googleDemand = null;
-    if (input.includeGoogleDemand && market.query) {
-      try {
-        googleDemand = await demandWithFallback({
-          keywords: [market.query],
-          languageConstant: input.languageConstant,
-          geoTargetConstants: input.geoTargetConstants
-        });
-      } catch (error) {
-        market.warnings.push('google_ads: ' + (error instanceof Error ? error.message : String(error)));
-      }
-    }
-    return structured({ ...market, googleDemand });
-  });
-
   mcp.registerTool('marketplace_research', {
     description: 'Read-only marketplace keyword research through a shared adapter layer. BOOTH is the first source. Returns search result counts, autocomplete suggestions, observed product cards, prices, wish-list counts when available, shop/category concentration, related tags, and optional cross-sort overlap. This tool does not compute a composite winner score or save/promote candidates.',
     inputSchema: {
