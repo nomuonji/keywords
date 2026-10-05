@@ -17,6 +17,7 @@ import {
   socialContentResearch,
   type MarketEvidenceCoverage,
   type MarketResearchGoal,
+  type SocialContentObservation,
   type SocialContentResearchResult,
   type SocialMarketPlatform
 } from './market-social-research.js';
@@ -182,6 +183,51 @@ export interface QueryFocusResearch {
   intentTree: QueryIntentTree;
 }
 
+export interface ObservedMarketCluster {
+  label: string;
+  evidenceCount: number;
+  platforms: SocialMarketPlatform[];
+  discoveryQueries: string[];
+  formatSignals: string[];
+  metricEvidenceCount: number;
+  evidence: Array<{
+    platform: SocialMarketPlatform;
+    title: string;
+    url: string;
+    views: number | null;
+    likes: number | null;
+  }>;
+}
+
+export interface ValidatedMarketCandidate {
+  clusterLabel: string;
+  query: string;
+  discoveryEvidenceCount: number;
+  discoveryPlatforms: SocialMarketPlatform[];
+  coverage: MarketEvidenceCoverage;
+  searchDemand: QueryDemandObservation[];
+  searchSurface: {
+    relatedSearches: string[];
+    peopleAlsoAsk: string[];
+    topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  };
+  socialContent: {
+    observations: SocialContentObservation[];
+    formatSummary: SocialContentResearchResult['formatSummary'];
+  };
+}
+
+export interface BroadMarketDiscovery {
+  mode: 'not_applicable' | 'generic_social_to_validated_clusters';
+  status: 'not_applicable' | 'available' | 'partial' | 'unavailable';
+  genericQueries: string[];
+  socialContent: SocialContentResearchResult;
+  clusters: ObservedMarketCluster[];
+  validatedCandidates: ValidatedMarketCandidate[];
+  warnings: string[];
+  guidance: string[];
+}
+
 export interface MarketIntelligencePacket {
   fetchedAt: string;
   query: string | null;
@@ -190,6 +236,7 @@ export interface MarketIntelligencePacket {
   queryFocus: QueryFocusResearch;
   socialContent: SocialContentResearchResult;
   coverage: MarketEvidenceCoverage;
+  marketDiscovery: BroadMarketDiscovery;
   creativeEvidence: {
     source: 'tiktok_top_ads';
     scope: 'cross_category_reference';
@@ -1034,6 +1081,293 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   };
 }
 
+
+const GENERIC_MARKET_DISCOVERY_QUERIES_JA = [
+  '"買ってよかった" おすすめ',
+  '"おすすめ" 比較 商品',
+  '"無料" おすすめ ツール'
+] as const;
+
+const GENERIC_MARKET_DISCOVERY_QUERIES_EN = [
+  '"worth buying" recommendations',
+  '"best" comparison products',
+  '"free" recommended tools'
+] as const;
+
+const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
+  'おすすめ', 'おすすめ商品', '人気', '人気商品', '商品', '商品紹介', '紹介',
+  '購入品', '購入品紹介', '買ってよかった', '買って良かった', 'ランキング',
+  '比較', 'レビュー', '口コミ', '話題', '最新', 'ベストバイ', 'bestbuy',
+  'shorts', 'short', 'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral',
+  '便利', 'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版',
+  'amazon', '楽天', 'rakuten', 'shein'
+]);
+
+function normalizeObservedMarketLabel(raw: string): string | null {
+  let label = raw.normalize('NFKC')
+    .replace(/^#+/, '')
+    .replace(/[\[\]【】()（）<>「」『』]/g, '')
+    .replace(/[!！?？:：,，。|｜/\\]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  label = label
+    .replace(/^(?:最新|おすすめ|人気|話題の|本当に|マジで|絶対|202[0-9]年?)+/i, '')
+    .replace(/(?:購入品紹介|商品紹介|ガジェット紹介|レビュー|好きな人と繋がりたい)$/i, '')
+    .replace(/\d+\s*(?:商品|選|個|点)$/u, '')
+    .trim();
+  if (label.length < 2 || label.length > 28) return null;
+  if (!/[A-Za-z\u3040-\u30ff\u3400-\u9fff]/u.test(label)) return null;
+  const normalized = label.toLowerCase();
+  if (GENERIC_MARKET_LABEL_STOPWORDS.has(normalized) || GENERIC_MARKET_LABEL_STOPWORDS.has(label)) return null;
+  return label;
+}
+
+export function extractObservedMarketClusterLabels(observation: Pick<SocialContentObservation, 'title' | 'snippet'>): string[] {
+  const text = [observation.title, observation.snippet].filter(Boolean).join(' ');
+  const candidates: string[] = [];
+
+  for (const match of text.matchAll(/#([^\s#|｜,，。!！?？]{2,32})/gu)) {
+    if (match[1]) candidates.push(match[1]);
+  }
+
+  const phrasePatterns = [
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:に|向け|で)?おすすめ/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:を|で)?(?:徹底)?比較/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:ランキング|ベスト\d+)/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?(?:ガジェット|ツール|洗顔料|スキンケア|旅行グッズ|キッチングッズ|キッチンアイテム|日用品|コスメ|家電|ゲーム|アプリ|サービス))/giu
+  ];
+  for (const pattern of phrasePatterns) {
+    for (const match of text.matchAll(pattern)) {
+      if (match[1]) candidates.push(match[1]);
+    }
+  }
+
+  const normalized = candidates
+    .map(normalizeObservedMarketLabel)
+    .filter((value): value is string => Boolean(value));
+  return [...new Map(normalized.map(label => [label.toLowerCase(), label])).values()];
+}
+
+export function clusterObservedSocialMarkets(observations: SocialContentObservation[]): ObservedMarketCluster[] {
+  const grouped = new Map<string, {
+    label: string;
+    observationUrls: Set<string>;
+    platforms: Set<SocialMarketPlatform>;
+    discoveryQueries: Set<string>;
+    formats: Set<string>;
+    metricUrls: Set<string>;
+    evidence: ObservedMarketCluster['evidence'];
+  }>();
+
+  for (const observation of observations) {
+    const labels = extractObservedMarketClusterLabels(observation);
+    for (const label of labels) {
+      const key = label.toLowerCase();
+      const current = grouped.get(key) ?? {
+        label,
+        observationUrls: new Set<string>(),
+        platforms: new Set<SocialMarketPlatform>(),
+        discoveryQueries: new Set<string>(),
+        formats: new Set<string>(),
+        metricUrls: new Set<string>(),
+        evidence: []
+      };
+      current.observationUrls.add(observation.url);
+      current.platforms.add(observation.platform);
+      current.discoveryQueries.add(observation.searchQuery);
+      observation.formatSignals.forEach(format => current.formats.add(format));
+      if (Object.values(observation.metrics).some(value => value !== null)) current.metricUrls.add(observation.url);
+      if (current.evidence.length < 5 && !current.evidence.some(item => item.url === observation.url)) {
+        current.evidence.push({
+          platform: observation.platform,
+          title: observation.title,
+          url: observation.url,
+          views: observation.metrics.views,
+          likes: observation.metrics.likes
+        });
+      }
+      grouped.set(key, current);
+    }
+  }
+
+  const clusters = [...grouped.values()].map(item => ({
+    label: item.label,
+    evidenceCount: item.observationUrls.size,
+    platforms: [...item.platforms],
+    discoveryQueries: [...item.discoveryQueries],
+    formatSignals: [...item.formats],
+    metricEvidenceCount: item.metricUrls.size,
+    evidence: item.evidence
+  }));
+
+  const stable = clusters.filter(item => item.evidenceCount >= 2 || item.platforms.length >= 2);
+  const source = stable.length >= 3 ? stable : clusters;
+  return source.sort((left, right) =>
+    right.platforms.length - left.platforms.length ||
+    right.evidenceCount - left.evidenceCount ||
+    right.metricEvidenceCount - left.metricEvidenceCount ||
+    left.label.localeCompare(right.label, 'ja')
+  );
+}
+
+function emptyBroadMarketDiscovery(platforms: SocialMarketPlatform[]): BroadMarketDiscovery {
+  return {
+    mode: 'not_applicable',
+    status: 'not_applicable',
+    genericQueries: [],
+    socialContent: {
+      source: 'serp_indexed_social_content',
+      evidenceScope: 'public_index_plus_best_effort_public_page_metrics',
+      query: null,
+      platformsRequested: platforms,
+      platformsObserved: [],
+      observations: [],
+      formatSummary: [],
+      platformStatus: [],
+      warnings: [],
+      guidance: []
+    },
+    clusters: [],
+    validatedCandidates: [],
+    warnings: [],
+    guidance: ['Generic social market discovery runs only when market_intelligence_research is called without a query.']
+  };
+}
+
+function rerootDiscoveredMarketQuery(label: string, geo: string): string {
+  return geo === 'JP' ? label + ' おすすめ' : 'best ' + label;
+}
+
+async function broadSocialMarketDiscovery(input: {
+  geo: string;
+  limit: number;
+  platforms: SocialMarketPlatform[];
+  researchGoal: MarketResearchGoal;
+}): Promise<BroadMarketDiscovery> {
+  const genericQueries = input.geo === 'JP'
+    ? [...GENERIC_MARKET_DISCOVERY_QUERIES_JA]
+    : [...GENERIC_MARKET_DISCOVERY_QUERIES_EN];
+  const results: SocialContentResearchResult[] = [];
+  const warnings: string[] = [];
+
+  // Keep these searches serial. Each seed fans out to multiple site-restricted
+  // SERP calls that share the same quota/cache ledger.
+  for (const discoveryQuery of genericQueries) {
+    try {
+      results.push(await socialContentResearch({
+        query: discoveryQuery,
+        geo: input.geo,
+        limit: Math.min(input.limit, 5),
+        platforms: input.platforms
+      }));
+    } catch (error) {
+      warnings.push('Generic social discovery failed for "' + discoveryQuery + '": ' + (error instanceof Error ? error.message : String(error)));
+    }
+  }
+
+  const observations = results
+    .flatMap(result => result.observations)
+    .filter((item, index, all) => all.findIndex(other => other.url === item.url) === index)
+    .slice(0, 30);
+  const mergedSocial: SocialContentResearchResult = {
+    source: 'serp_indexed_social_content',
+    evidenceScope: 'public_index_plus_best_effort_public_page_metrics',
+    query: null,
+    platformsRequested: input.platforms,
+    platformsObserved: input.platforms.filter(platform => observations.some(item => item.platform === platform)),
+    observations,
+    formatSummary: results.flatMap(result => result.formatSummary)
+      .reduce<SocialContentResearchResult['formatSummary']>((acc, item) => {
+        const existing = acc.find(entry => entry.format === item.format);
+        if (!existing) {
+          acc.push({
+            format: item.format,
+            count: item.count,
+            platforms: [...item.platforms],
+            evidence: [...item.evidence].slice(0, 5)
+          });
+        } else {
+          existing.count += item.count;
+          existing.platforms = [...new Set([...existing.platforms, ...item.platforms])];
+          existing.evidence = [...existing.evidence, ...item.evidence]
+            .filter((evidence, index, all) => all.findIndex(other => other.url === evidence.url) === index)
+            .slice(0, 5);
+        }
+        return acc;
+      }, [])
+      .sort((left, right) => right.count - left.count || right.platforms.length - left.platforms.length || left.format.localeCompare(right.format)),
+    platformStatus: results.flatMap(result => result.platformStatus),
+    warnings: [...new Set([...warnings, ...results.flatMap(result => result.warnings)])],
+    guidance: [
+      'These observations were retrieved from generic purchase/comparison/tool-discovery queries before any market category was selected.',
+      'Cluster ordering reflects evidence breadth and repetition only; it is not an opportunity score or market recommendation.',
+      'A discovered cluster must be re-rooted into an explicit query and pass its own coverage gate before it can support a market conclusion.'
+    ]
+  };
+
+  const clusters = clusterObservedSocialMarkets(observations).slice(0, 12);
+  const validatedCandidates: ValidatedMarketCandidate[] = [];
+
+  if (input.researchGoal === 'social_affiliate') {
+    for (const cluster of clusters.slice(0, 3)) {
+      const validationQuery = rerootDiscoveredMarketQuery(cluster.label, input.geo);
+      try {
+        const packet = await marketIntelligenceResearch({
+          query: validationQuery,
+          geo: input.geo,
+          limit: Math.min(input.limit, 5),
+          includeTopAds: false,
+          includePinterest: false,
+          includeAppStore: false,
+          includeSocialContent: true,
+          socialPlatforms: input.platforms,
+          researchGoal: 'social_affiliate'
+        });
+        validatedCandidates.push({
+          clusterLabel: cluster.label,
+          query: validationQuery,
+          discoveryEvidenceCount: cluster.evidenceCount,
+          discoveryPlatforms: cluster.platforms,
+          coverage: packet.coverage,
+          searchDemand: packet.queryFocus.searchDemand.results.slice(0, 6),
+          searchSurface: {
+            relatedSearches: packet.queryFocus.searchSurface.relatedSearches.slice(0, 8),
+            peopleAlsoAsk: packet.queryFocus.searchSurface.peopleAlsoAsk.slice(0, 5),
+            topResults: packet.queryFocus.searchSurface.topResults.slice(0, 5)
+          },
+          socialContent: {
+            observations: packet.socialContent.observations.slice(0, 8),
+            formatSummary: packet.socialContent.formatSummary.slice(0, 8)
+          }
+        });
+      } catch (error) {
+        warnings.push('Validation failed for discovered cluster "' + cluster.label + '": ' + (error instanceof Error ? error.message : String(error)));
+      }
+    }
+  }
+
+  const status: BroadMarketDiscovery['status'] = observations.length === 0
+    ? 'unavailable'
+    : clusters.length === 0
+      ? 'partial'
+      : 'available';
+
+  return {
+    mode: 'generic_social_to_validated_clusters',
+    status,
+    genericQueries,
+    socialContent: mergedSocial,
+    clusters,
+    validatedCandidates,
+    warnings: [...new Set([...warnings, ...mergedSocial.warnings])],
+    guidance: [
+      'Market categories are extracted from observed social posts before query re-rooting; do not add model-invented categories to this list.',
+      'Only validatedCandidates whose coverage.conclusionAllowed is true may be ranked or recommended for social-affiliate research.',
+      'Affiliate program availability, payout, approval rules, social-media permissions, and conversion terms remain a separate monetization layer.'
+    ]
+  };
+}
+
 function signalFact(observation: MarketSignalObservation): string {
   const metrics = Object.entries(observation.metrics)
     .filter(([, value]) => value !== null && value !== '')
@@ -1050,6 +1384,7 @@ function buildThesisFrame(
   coverage: MarketEvidenceCoverage,
   mechanics: MarketingMechanicEvidence[],
   commercialization: Awaited<ReturnType<typeof appStoreResearch>>,
+  marketDiscovery: BroadMarketDiscovery,
   supplementalWarnings: string[]
 ): MarketIntelligencePacket['thesisFrame'] {
   const evidenceBySignal: Record<string, Array<{ source: string; label: string; fact: string; url: string | null }>> = {};
@@ -1139,6 +1474,16 @@ function buildThesisFrame(
     }));
   }
 
+  const validatedDiscovery = marketDiscovery.validatedCandidates.filter(candidate => candidate.coverage.conclusionAllowed);
+  if (validatedDiscovery.length) {
+    evidenceBySignal.discovered_market_candidates = validatedDiscovery.slice(0, 6).map(candidate => ({
+      source: 'generic_social_discovery',
+      label: candidate.clusterLabel,
+      fact: 'Observed cluster "' + candidate.clusterLabel + '" was re-rooted as "' + candidate.query + '" and passed social-affiliate coverage with discoveryEvidenceCount=' + String(candidate.discoveryEvidenceCount) + '.',
+      url: candidate.socialContent.observations[0]?.url ?? null
+    }));
+  }
+
   const commercializationFacts: string[] = [];
   if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
@@ -1186,7 +1531,10 @@ function buildThesisFrame(
         'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
         'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
-      ] : []),
+      ] : [
+        'Use marketDiscovery.clusters as observed discovery hypotheses, not recommendations.',
+        'For social-affiliate research, rank or recommend only marketDiscovery.validatedCandidates whose coverage.conclusionAllowed is true. Do not invent additional candidate markets from model priors.'
+      ]),
       'State the underlying behavior/desire, its current fulfillment, and the marketing mechanic that appears to trigger attention.',
       'Treat Top Ads mechanics as transferable creative hypotheses only; never use them as proof of demand for the selected intent branch.',
       'Propose adjacency dimensions (audience, format, context, social loop, output artifact, distribution, business model) before proposing products.',
@@ -1254,14 +1602,27 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   ]);
 
   const resolvedQueryFocus = attachQuerySignalsToIntentTree(queryFocus, signals);
+  const marketDiscovery = query
+    ? emptyBroadMarketDiscovery(socialPlatforms)
+    : await broadSocialMarketDiscovery({ geo, limit, platforms: socialPlatforms, researchGoal });
+  const creativeCenterSocialCount = signals.results
+    .filter(result => result.source === 'tiktok_creative_center')
+    .reduce((sum, result) => sum + result.observations.length, 0);
+  const discoveredSocialMetricCount = marketDiscovery.socialContent.observations
+    .filter(item => Object.values(item.metrics).some(value => value !== null))
+    .length;
+  const broadSocialSources = [
+    ...(creativeCenterSocialCount > 0 ? ['tiktok_creative_center'] : []),
+    ...marketDiscovery.socialContent.platformsObserved
+  ];
   const coverage = assessMarketEvidenceCoverage({
     researchGoal,
     query,
-    broadSignalCount: signals.results.reduce((sum, result) => sum + result.observations.length, 0),
+    broadSignalCount: signals.results.reduce((sum, result) => sum + result.observations.length, 0) + marketDiscovery.socialContent.observations.length,
     broadSourceCount: signals.sourcesSucceeded.length,
-    broadSocialSignalCount: signals.results
-      .filter(result => result.source === 'tiktok_creative_center')
-      .reduce((sum, result) => sum + result.observations.length, 0),
+    broadSocialSignalCount: creativeCenterSocialCount + marketDiscovery.socialContent.observations.length,
+    broadSocialMetricCount: creativeCenterSocialCount + discoveredSocialMetricCount,
+    broadSocialSources,
     searchSurfaceCount:
       resolvedQueryFocus.searchSurface.relatedSearches.length +
       resolvedQueryFocus.searchSurface.peopleAlsoAsk.length +
@@ -1273,7 +1634,8 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   const mechanics = mechanicsSummary(topAdsResult.observations);
   const warnings = [
     ...signals.warnings,
-    ...socialContentResult.warnings,
+    ...(query ? socialContentResult.warnings : []),
+    ...marketDiscovery.warnings,
     ...resolvedQueryFocus.searchSurface.warnings,
     ...resolvedQueryFocus.searchDemand.warnings,
     ...topAdsResult.warnings,
@@ -1289,6 +1651,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     queryFocus: resolvedQueryFocus,
     socialContent: socialContentResult,
     coverage,
+    marketDiscovery,
     creativeEvidence: {
       source: 'tiktok_top_ads',
       scope: 'cross_category_reference',
@@ -1299,7 +1662,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     },
     pinterest: pinterestResult,
     commercialization: appStoreResult,
-    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, socialContentResult, coverage, mechanics, appStoreResult, warnings),
+    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, socialContentResult, coverage, mechanics, appStoreResult, marketDiscovery, warnings),
     warnings
   };
 }
