@@ -930,7 +930,20 @@ function buildThesisFrame(
 ): MarketIntelligencePacket['thesisFrame'] {
   const evidenceBySignal: Record<string, Array<{ source: string; label: string; fact: string; url: string | null }>> = {};
   for (const result of signals.results) {
-    for (const observation of result.observations.slice(0, 5)) {
+    for (const observation of result.observations.slice(0, 8)) {
+      if (queryFocus.mode === 'hypothesis_led' && queryFocus.query) {
+        const classification = classifyMarketIntent(observation.label, queryFocus.query);
+        const role = intentRole(classification.primaryIntent, queryFocus.intentTree.targetIntents);
+        if (role === 'adjacent_market' || role === 'out_of_scope') continue;
+        const keyPrefix = role === 'contextual' ? 'query_context_external_' : '';
+        for (const kind of result.signalKind) {
+          const key = keyPrefix + kind;
+          const list = evidenceBySignal[key] ?? [];
+          list.push({ source: result.source, label: observation.label, fact: signalFact(observation), url: observation.url });
+          evidenceBySignal[key] = list.slice(0, 12);
+        }
+        continue;
+      }
       for (const kind of result.signalKind) {
         const list = evidenceBySignal[kind] ?? [];
         list.push({ source: result.source, label: observation.label, fact: signalFact(observation), url: observation.url });
@@ -1065,11 +1078,12 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     })
   ]);
 
+  const resolvedQueryFocus = attachQuerySignalsToIntentTree(queryFocus, signals);
   const mechanics = mechanicsSummary(topAdsResult.observations);
   const warnings = [
     ...signals.warnings,
-    ...queryFocus.searchSurface.warnings,
-    ...queryFocus.searchDemand.warnings,
+    ...resolvedQueryFocus.searchSurface.warnings,
+    ...resolvedQueryFocus.searchDemand.warnings,
     ...topAdsResult.warnings,
     ...pinterestResult.warnings,
     ...appStoreResult.warnings
@@ -1080,7 +1094,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     query,
     geo,
     signals,
-    queryFocus,
+    queryFocus: resolvedQueryFocus,
     creativeEvidence: {
       source: 'tiktok_top_ads',
       scope: 'cross_category_reference',
@@ -1091,7 +1105,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     },
     pinterest: pinterestResult,
     commercialization: appStoreResult,
-    thesisFrame: buildThesisFrame(signals, queryFocus, mechanics, appStoreResult, warnings),
+    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, mechanics, appStoreResult, warnings),
     warnings
   };
 }
