@@ -20,7 +20,12 @@ Use this when you only need the current surface.
 
 Default tool for product/marketing opportunity research.
 
-It runs the current sensor bundle and adds:
+It has two modes:
+
+- **No query**: broad market scan across current public surfaces.
+- **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus up to eight related search terms. App Store evidence remains query-specific.
+
+It then adds:
 
 - **TikTok Top Ads / Spotlight** — public high-performing creative evidence. Extracts visible likes, CTR percentile, budget tier and descriptive creative rationale when exposed. It classifies recurring mechanics such as comparison, social proof, problem-solution, demonstration, transformation, curiosity gap, identity/inclusion, urgency, ranking/list, spectacle and personalization.
 - **Pinterest Trends public surface** — best-effort observation only. Pinterest's official Trends API is restricted, so this adapter does not emulate private APIs. If the public page exposes no machine-readable trend payload it returns a warning instead of fabricating data.
@@ -37,6 +42,15 @@ Example:
   "limit": 10
 }
 ```
+
+In query mode, the primary evidence is returned under `queryFocus`:
+
+- `searchSurface.relatedSearches`
+- `searchSurface.peopleAlsoAsk`
+- `searchSurface.topResults`
+- `searchDemand.results`
+- query-relevant Hacker News observations
+- App Store commercialization
 
 The expected reasoning order is:
 
