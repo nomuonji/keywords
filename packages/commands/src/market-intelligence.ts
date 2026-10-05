@@ -273,7 +273,7 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'career_qualification',
-    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training)\b/i],
+    patterns: [/資格|試験|検定|求人|転職|年収|採用|キャリア|研修|講座|スクール|教室|学校|\b(?:certification|certificate|exam|career|jobs?|salary|hiring|course|training|school|class)\b/i],
     signals: ['career/qualification marker']
   },
   {
@@ -283,27 +283,27 @@ const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals:
   },
   {
     intent: 'commercial',
-    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy)\b/i],
+    patterns: [/価格|料金|費用|比較|おすすめ|ランキング|評判|レビュー|口コミ|無料|有料|購入|販売|見積もり|見積り|金利|相場|最安|予約|申込|導入費|\b(?:price|pricing|cost|best|compare|comparison|review|reviews|free|paid|buy|purchase|quote|booking)\b/i],
     signals: ['commercial-evaluation marker']
   },
   {
     intent: 'problem_need',
-    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain)\w*\b/i],
+    patterns: [/問題|課題|リスク|危険|脅威|情報漏洩|漏えい|侵害|被害|脆弱|攻撃|不安|怖い|困る|できない|動かない|エラー|故障|トラブル|悩み|\b(?:problem|risk|threat|breach|leak|vulnerab|attack|danger|concern|pain|error|fail(?:ed|ure)?|broken)\w*\b/i],
     signals: ['problem/risk marker']
   },
   {
     intent: 'solution_product',
-    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
+    patterns: [/対策|防止|保護|セキュア|ツール|アプリ|製品|サービス|ソフト|システム|テンプレート|プラグイン|拡張機能|VPN|ファイアウォール|ローカルLLM|\b(?:solution|tool|app|software|service|product|template|plugin|extension|protect|prevention|secure|security system|firewall|vpn|local llm)\b/i],
     signals: ['solution/product marker']
   },
   {
     intent: 'how_to',
-    patterns: [/方法|やり方|使い方|設定|手順|実装|構築|導入方法|始め方|\b(?:how to|setup|set up|guide to|tutorial|configure|implementation)\b/i],
+    patterns: [/方法|やり方|使い方|設定|手順|実装|構築|導入方法|始め方|作り方|勉強法|学び方|攻略|手続き|\b(?:how to|setup|set up|guide to|tutorial|configure|implementation|workflow|steps?)\b/i],
     signals: ['how-to marker']
   },
   {
     intent: 'research_information',
-    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study)\b/i],
+    patterns: [/とは|意味|違い|仕組み|定義|ガイドライン|ガイダンス|事例|レポート|調査|研究|論文|カンファレンス|メリット|デメリット|効果|原因|一覧|\b(?:what is|definition|difference|guideline|guidance|report|research|paper|conference|case study|pros?|cons?|benefits?|effects?|causes?|overview)\b/i],
     signals: ['informational/research marker']
   }
 ];
@@ -751,9 +751,13 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   }
 }
 
-function appStoreRelevantForQuery(query: string | null): boolean {
+export function appStoreRelevantForQuery(query: string | null): boolean {
   if (!query) return false;
   const classification = classifyMarketIntent(query, query);
+  const explicitIntents = new Set([classification.primaryIntent, ...classification.secondaryIntents]);
+  if (explicitIntents.has('solution_product') || explicitIntents.has('commercial') || explicitIntents.has('how_to') || explicitIntents.has('problem_need')) {
+    return true;
+  }
   return !['entity', 'investment', 'news', 'research_information'].includes(classification.primaryIntent);
 }
 
