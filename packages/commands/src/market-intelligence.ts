@@ -1095,13 +1095,30 @@ const GENERIC_MARKET_DISCOVERY_QUERIES_EN = [
 ] as const;
 
 const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
-  'おすすめ', 'おすすめ商品', '人気', '人気商品', '商品', '商品紹介', '紹介',
-  '購入品', '購入品紹介', '買ってよかった', '買って良かった', 'ランキング',
-  '比較', 'レビュー', '口コミ', '話題', '最新', 'ベストバイ', 'bestbuy',
-  'shorts', 'short', 'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral',
-  '便利', 'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版',
-  'amazon', '楽天', 'rakuten', 'shein'
+  'おすすめ', 'おすすめ商品', 'おすすめアイテム', 'おすすめグッズ', '人気', '人気商品',
+  '商品', '商品紹介', '紹介', '購入品', '購入品紹介', '買ってよかった', '買って良かった',
+  '買ってよかったもの', '買って良かったもの', '買ってよかった物', '買って良かった物',
+  '買ってよかった商品', '買って良かった商品', 'ランキング', '比較', 'レビュー', '口コミ',
+  '話題', '話題のアイテム', '最新', 'ベストバイ', 'bestbuy', 'shorts', 'short',
+  'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral', '便利', '便利アイテム',
+  'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版', '神アイテム', '神商品',
+  '名品', 'おすすめガイド', 'amazon', '楽天', 'rakuten', 'shein'
 ]);
+
+const GENERIC_MARKET_LABEL_PATTERNS = [
+  /^(?:20\d{2}年(?:上半期|下半期|\d+月)?)?(?:に)?(?:買って|買っ?て)(?:よかった|良かった)(?:もの|物|商品|アイテム)?(?:たち)?$/i,
+  /^(?:おすすめ|人気|話題|最新|便利|神)(?:商品|アイテム|グッズ|ツール|もの|物)?$/i,
+  /^(?:ベストバイ|best\s*buy|ランキング|比較|レビュー|口コミ|まとめ)$/i
+];
+
+const DIRECT_MARKET_CATEGORY_PATTERN = /(?:ガジェット|gadgets?|ツール|tools?|洗顔料|コスメ|日用品|家電|旅行グッズ|トラベルグッズ|キッチングッズ|キッチンアイテム|ゲーム|アプリ|ソフト(?:ウェア)?|サービス|用品|機器)$/i;
+const MARKET_CATEGORY_HINT_PATTERN = /(?:AI|SEO|ガジェット|gadgets?|ツール|tools?|洗顔|スキンケア|コスメ|美容|日用品|家電|旅行|トラベル|キッチン|デスク|PC|スマホ|ゲーム|アプリ|ソフト|サービス|動画|音声|英語|学習|仕事効率|収納|掃除|料理|ファッション|メンズ|レディース)/i;
+
+function marketCategoryPriority(label: string): number {
+  if (DIRECT_MARKET_CATEGORY_PATTERN.test(label)) return 2;
+  if (MARKET_CATEGORY_HINT_PATTERN.test(label)) return 1;
+  return 0;
+}
 
 function normalizeObservedMarketLabel(raw: string): string | null {
   let label = raw.normalize('NFKC')
@@ -1119,6 +1136,7 @@ function normalizeObservedMarketLabel(raw: string): string | null {
   if (!/[A-Za-z\u3040-\u30ff\u3400-\u9fff]/u.test(label)) return null;
   const normalized = label.toLowerCase();
   if (GENERIC_MARKET_LABEL_STOPWORDS.has(normalized) || GENERIC_MARKET_LABEL_STOPWORDS.has(label)) return null;
+  if (GENERIC_MARKET_LABEL_PATTERNS.some(pattern => pattern.test(label))) return null;
   return label;
 }
 
@@ -1200,14 +1218,57 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
     evidence: item.evidence
   }));
 
-  const stable = clusters.filter(item => item.evidenceCount >= 2 || item.platforms.length >= 2);
-  const source = stable.length >= 3 ? stable : clusters;
-  return source.sort((left, right) =>
-    right.platforms.length - left.platforms.length ||
-    right.evidenceCount - left.evidenceCount ||
-    right.metricEvidenceCount - left.metricEvidenceCount ||
-    left.label.localeCompare(right.label, 'ja')
-  );
+  return clusters
+    .filter(item => marketCategoryPriority(item.label) > 0 || item.evidenceCount >= 2 || item.platforms.length >= 2)
+    .sort((left, right) =>
+      marketCategoryPriority(right.label) - marketCategoryPriority(left.label) ||
+      right.platforms.length - left.platforms.length ||
+      right.evidenceCount - left.evidenceCount ||
+      right.metricEvidenceCount - left.metricEvidenceCount ||
+      left.label.localeCompare(right.label, 'ja')
+    );
+}
+
+function clusterBelongsToDiscoverySeed(cluster: ObservedMarketCluster, seed: string): boolean {
+  return cluster.discoveryQueries.some(query => query.includes(seed));
+}
+
+export function selectBroadValidationClusters(
+  clusters: ObservedMarketCluster[],
+  genericQueries: string[],
+  maxCandidates = 3
+): ObservedMarketCluster[] {
+  const selected: ObservedMarketCluster[] = [];
+  const used = new Set<string>();
+
+  const add = (cluster: ObservedMarketCluster | undefined) => {
+    if (!cluster || selected.length >= maxCandidates) return;
+    const key = cluster.label.toLowerCase();
+    if (used.has(key)) return;
+    used.add(key);
+    selected.push(cluster);
+  };
+
+  // Preserve discovery-surface diversity: one concrete observed market from each
+  // generic seed before allowing a single strong seed to consume all validation slots.
+  for (const seed of genericQueries) {
+    const matches = clusters.filter(cluster => clusterBelongsToDiscoverySeed(cluster, seed));
+    const preferred =
+      matches.find(cluster => marketCategoryPriority(cluster.label) === 2) ??
+      matches.find(cluster => marketCategoryPriority(cluster.label) === 1) ??
+      matches[0];
+    add(preferred);
+  }
+
+  for (const cluster of clusters) {
+    if (selected.length >= maxCandidates) break;
+    if (marketCategoryPriority(cluster.label) > 0) add(cluster);
+  }
+  for (const cluster of clusters) {
+    if (selected.length >= maxCandidates) break;
+    add(cluster);
+  }
+  return selected;
 }
 
 function emptyBroadMarketDiscovery(platforms: SocialMarketPlatform[]): BroadMarketDiscovery {
@@ -1305,11 +1366,12 @@ async function broadSocialMarketDiscovery(input: {
     ]
   };
 
-  const clusters = clusterObservedSocialMarkets(observations).slice(0, 12);
+  const clusters = clusterObservedSocialMarkets(observations).slice(0, 20);
+  const validationClusters = selectBroadValidationClusters(clusters, genericQueries, 3);
   const validatedCandidates: ValidatedMarketCandidate[] = [];
 
   if (input.researchGoal === 'social_affiliate') {
-    for (const cluster of clusters.slice(0, 3)) {
+    for (const cluster of validationClusters) {
       const validationQuery = rerootDiscoveredMarketQuery(cluster.label, input.geo);
       try {
         const packet = await marketIntelligenceResearch({
@@ -1361,7 +1423,8 @@ async function broadSocialMarketDiscovery(input: {
     validatedCandidates,
     warnings: [...new Set([...warnings, ...mergedSocial.warnings])],
     guidance: [
-      'Market categories are extracted from observed social posts before query re-rooting; do not add model-invented categories to this list.',
+      'Market categories are extracted from observed social posts before query re-rooting; generic format phrases such as "買ってよかったもの" are excluded from market clusters.',
+      'Validation slots are diversified across the generic discovery seeds before fill-in, so one high-volume social format cannot monopolize the candidate set.',
       'Only validatedCandidates whose coverage.conclusionAllowed is true may be ranked or recommended for social-affiliate research.',
       'Affiliate program availability, payout, approval rules, social-media permissions, and conversion terms remain a separate monetization layer.'
     ]
