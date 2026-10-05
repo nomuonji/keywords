@@ -73,6 +73,7 @@ export interface AppStoreObservation {
   url: string | null;
   seller: string | null;
   primaryGenre: string | null;
+  descriptionExcerpt: string | null;
   price: number | null;
   currency: string | null;
   rating: number | null;
@@ -134,6 +135,8 @@ export interface QueryIntentTree {
   queryClassification: IntentClassification | null;
   targetIntents: MarketIntentId[];
   mixedIntent: boolean;
+  senseSelectionRequired: boolean;
+  senseGuidance: string[];
   branches: MarketIntentBranch[];
   primaryEvidenceKeywords: string[];
   excludedFromPrimaryThesis: Array<{ label: string; intent: MarketIntentId; reason: string }>;
@@ -185,6 +188,7 @@ export interface MarketIntelligencePacket {
   commercialization: {
     source: 'app_store';
     applicability: 'relevant' | 'not_applicable';
+    evidenceScope: 'lexical_search_only';
     query: string | null;
     url: string | null;
     totalCount: number | null;
@@ -254,12 +258,17 @@ function normalizeKey(value: string): string {
 const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals: string[] }> = [
   {
     intent: 'entity',
-    patterns: [/株式会社|合同会社|有限会社|\b(?:inc\.?|corp\.?|corporation|llc|ltd\.?|company)\b/i, /どのような会社|会社の評判|企業情報|会社概要/i],
+    patterns: [
+      /株式\s*会社|合同\s*会社|有限\s*会社/i,
+      /\b(?:corp\.?|corporation|llc|ltd\.?|company)\b/i,
+      /\binc(?:orporated|\.)?(?=\s|$|[,;:()])/i,
+      /どのような会社|会社の評判|企業情報|会社概要/i
+    ],
     signals: ['company/entity marker']
   },
   {
     intent: 'investment',
-    patterns: [/銘柄|株価|株式(?!会社)|投資|上場|時価総額|配当|\b(?:stocks?|shares?|invest(?:ment|or|ing)|ticker)\b/i],
+    patterns: [/銘柄|株価|株式(?!\s*会社)|投資|上場|時価総額|配当|\b(?:stocks?|shares?|invest(?:ment|or|ing)|ticker)\b/i],
     signals: ['investment marker']
   },
   {
