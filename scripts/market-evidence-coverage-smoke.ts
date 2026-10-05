@@ -85,7 +85,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
     platform: 'tiktok',
     searchQuery: 'site:tiktok.com "買ってよかった" おすすめ',
     position: 1,
-    title: '買ってよかったガジェット5選 #ガジェット',
+    title: '買ってよかったガジェット5選 #ガジェット #デスク周り',
     url: 'https://www.tiktok.com/@example/video/20',
     snippet: null,
     formatSignals: ['listicle'],
