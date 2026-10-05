@@ -1253,10 +1253,11 @@ export function selectBroadValidationClusters(
   // generic seed before allowing a single strong seed to consume all validation slots.
   for (const seed of genericQueries) {
     const matches = clusters.filter(cluster => clusterBelongsToDiscoverySeed(cluster, seed));
-    add(matches.find(cluster => marketCategoryPriority(cluster.label) === 2));
-    if (selected.length < Math.min(maxCandidates, genericQueries.length)) {
-      add(matches.find(cluster => marketCategoryPriority(cluster.label) === 1));
-    }
+    const preferred =
+      matches.find(cluster => marketCategoryPriority(cluster.label) === 2) ??
+      matches.find(cluster => marketCategoryPriority(cluster.label) === 1) ??
+      matches[0];
+    add(preferred);
   }
 
   for (const cluster of clusters) {
