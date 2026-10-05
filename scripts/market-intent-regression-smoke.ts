@@ -51,7 +51,9 @@ const seedCases: SeedCase[] = [
   { seed: 'ダイエット', primary: 'ambiguous', note: 'broad consumer goal' },
   { seed: '副業', primary: 'ambiguous', note: 'broad work/income goal' },
   { seed: 'オンラインカジノ', primary: 'ambiguous', note: 'broad category without explicit intent' },
-  { seed: 'Claude', primary: 'ambiguous', note: 'brand/person-name ambiguity' }
+  { seed: 'Claude', primary: 'ambiguous', note: 'brand/person-name ambiguity' },
+  { seed: 'rate limiting software', primary: 'solution_product', note: 'technical rate must not imply financial commercial intent' },
+  { seed: 'GitHub issue tracker software', primary: 'solution_product', note: 'issue tracker is a product category, not automatically a user problem' }
 ];
 
 const failures: Array<{ seed: string; expected: string; actual: string; note: string }> = [];
