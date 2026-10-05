@@ -129,6 +129,8 @@ function runtimeStatus() {
       evidenceCoverageGate: {
         enabled: true,
         socialAffiliateRequiresQueryMarketAndSocialContent: true,
+        socialAffiliateQueryModeRequiresQueryMarketAndSocialContent: true,
+        socialAffiliateBroadModeRequiresObservedGenericSocialContent: true,
         unavailableSourceMeansMissingEvidence: true
       },
       retrievalResilience: {
