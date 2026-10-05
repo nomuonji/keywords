@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  appStoreRelevantForQuery,
   buildQueryIntentTree,
   classifyMarketIntent,
   type MarketIntentId
@@ -82,6 +83,14 @@ for (const testCase of seedCases) {
 }
 
 assert.deepEqual(failures, [], 'Seed classifier regression failures:\n' + JSON.stringify(failures, null, 2));
+
+assert.equal(appStoreRelevantForQuery('AI security'), true);
+assert.equal(appStoreRelevantForQuery('株価アプリ'), true);
+assert.equal(appStoreRelevantForQuery('資格アプリ'), true);
+assert.equal(appStoreRelevantForQuery('AIセキュリティ銘柄'), false);
+assert.equal(appStoreRelevantForQuery('Apple Inc.'), false);
+assert.equal(appStoreRelevantForQuery('最新AIニュース'), false);
+
 
 const genericNotion = buildQueryIntentTree({
   query: 'Notion',
