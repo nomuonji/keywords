@@ -263,6 +263,39 @@ assert.ok(intentTree.primaryEvidenceKeywords.includes('AIセキュリティ対�
 assert.ok(!intentTree.primaryEvidenceKeywords.includes('AIセキュリティ銘柄'));
 assert.ok(intentTree.excludedFromPrimaryThesis.some(item => item.label === 'AI Security 株式会社' && item.intent === 'entity'));
 
+
+const qualificationTree = buildQueryIntentTree({
+  query: 'AIセキュリティ資格',
+  relatedSearches: ['AIセキュリティ資格 難易度', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(qualificationTree.targetIntents, ['career_qualification']);
+assert.equal(qualificationTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'primary');
+assert.equal(qualificationTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
+
+const investmentTree = buildQueryIntentTree({
+  query: 'AIセキュリティ銘柄',
+  relatedSearches: ['AIセキュリティ銘柄 日本', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(investmentTree.targetIntents, ['investment']);
+assert.equal(investmentTree.branches.find(branch => branch.intent === 'investment')?.role, 'primary');
+assert.equal(investmentTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
+
+const entityTree = buildQueryIntentTree({
+  query: 'AI Security株式会社',
+  relatedSearches: ['AI Security株式会社 評判', 'AIセキュリティ対策'],
+  peopleAlsoAsk: [],
+  topResults: [],
+  demand: []
+});
+assert.deepEqual(entityTree.targetIntents, ['entity']);
+assert.equal(entityTree.branches.find(branch => branch.intent === 'entity')?.role, 'primary');
+
 const intentQueryFocus: any = {
   mode: 'hypothesis_led',
   query: 'AI security',
