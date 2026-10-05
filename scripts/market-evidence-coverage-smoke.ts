@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   assessMarketEvidenceCoverage,
   extractSocialFormatSignals,
+  parseIndexedSocialSnippetMetrics,
   parseTikTokPublicMetrics,
   parseYouTubePublicMetrics,
   type SocialContentResearchResult
@@ -38,6 +39,10 @@ assert.deepEqual(metrics, { views: 12345, likes: 678, comments: 19, shares: 21 }
 
 const youtubeMetrics = parseYouTubePublicMetrics('<script>var ytInitialPlayerResponse={"videoDetails":{"videoId":"abc","viewCount":"54321"}}</script>');
 assert.deepEqual(youtubeMetrics, { views: 54321, likes: null, comments: null, shares: null });
+
+const snippetMetrics = parseIndexedSocialSnippetMetrics('tiktok', 'いいねの数：6175コメントの数：124。再生回数：1.2万');
+assert.deepEqual(snippetMetrics, { views: 12000, likes: 6175, comments: 124, shares: null });
+assert.ok(extractSocialFormatSignals('宅配クリーニングの油汚れの落とし方').includes('how_to_demo'));
 
 const missingSocial = assessMarketEvidenceCoverage({
   researchGoal: 'social_affiliate',
