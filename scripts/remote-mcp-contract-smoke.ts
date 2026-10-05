@@ -206,7 +206,7 @@ const topAds = parseTikTokTopAdsHtml(`
 assert.equal(topAds.length, 2);
 assert.equal(topAds[0]?.likes, 34000);
 assert.equal(topAds[0]?.ctrTopPercent, 21);
-assert.deepEqual(topAds[0]?.mechanics, ['comparison']);
+assert.deepEqual(topAds[0]?.mechanics, ['comparison', 'demonstration']);
 assert.ok(topAds[1]?.mechanics.includes('problem_solution'));
 assert.deepEqual(extractMarketingMechanics('A testimonial compares two products and shows the solution in action.'), ['comparison', 'social_proof', 'problem_solution', 'demonstration']);
 
