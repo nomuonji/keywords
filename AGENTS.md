@@ -22,7 +22,7 @@
 
 ## 市場シグナル観測
 
-新規プロダクト・コンテンツ・収益テーマの発想を始めるとき、モデルの一般知識だけから需要を推測しない。単純な現在値だけでよい場合は `market_signal_scan`、商品機会・訴求・ポジショニングまで考える依頼ではまず `market_intelligence_research` を使う。後者はGoogle Trends / TikTok Creative Center / Hacker Newsに加え、TikTok Top Adsの公開クリエイティブ、Pinterest Trendsの公開面（best-effort）、Apple App Storeの商品化状況を束ね、訴求mechanicとmarket thesis用の証拠枠を返す。定期実行は前提にしない。詳細は `docs/market-signals.md`。
+新規プロダクト・コンテンツ・収益テーマの発想を始めるとき、モデルの一般知識だけから需要を推測しない。単純な現在値だけでよい場合は `market_signal_scan`、商品機会・訴求・ポジショニングまで考える依頼ではまず `market_intelligence_research` を使う。queryを指定した調査では broad trend を根拠に流用せず、hypothesis-led mode の query-relevant Hacker News / SERP関連検索・PAA / Google Ads需要 / App Store商品化を主証拠とする。queryなしの場合だけ全体トレンドを探索起点として扱う。後者はGoogle Trends / TikTok Creative Center / Hacker Newsに加え、TikTok Top Adsの公開クリエイティブ、Pinterest Trendsの公開面（best-effort）、Apple App Storeの商品化状況を束ね、訴求mechanicとmarket thesis用の証拠枠を返す。定期実行は前提にしない。詳細は `docs/market-signals.md`。
 
 前回との差を見る必要がある場合だけ、ユーザーの依頼または明確な調査目的に基づいて `market_signal_snapshot_save` を明示的に呼ぶ。snapshotは自動保存しない。後で `market_signal_snapshot_compare` を使い、同一ソース・同一ラベルの数値差、ランキング面への新規出現/消失をvelocityのトリガーとして読む。
 
