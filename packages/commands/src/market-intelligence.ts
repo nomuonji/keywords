@@ -1678,6 +1678,13 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     ...(creativeCenterSocialCount > 0 ? ['tiktok_creative_center'] : []),
     ...marketDiscovery.socialContent.platformsObserved
   ];
+  const broadSocialMetricSources = [
+    ...(creativeCenterSocialCount > 0 ? ['tiktok_creative_center'] : []),
+    ...marketDiscovery.socialContent.observations
+      .filter(item => Object.values(item.metrics).some(value => value !== null))
+      .map(item => item.metricProvenance)
+      .filter(source => source !== 'none')
+  ];
   const coverage = assessMarketEvidenceCoverage({
     researchGoal,
     query,
@@ -1686,6 +1693,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     broadSocialSignalCount: creativeCenterSocialCount + marketDiscovery.socialContent.observations.length,
     broadSocialMetricCount: creativeCenterSocialCount + discoveredSocialMetricCount,
     broadSocialSources,
+    broadSocialMetricSources,
     searchSurfaceCount:
       resolvedQueryFocus.searchSurface.relatedSearches.length +
       resolvedQueryFocus.searchSurface.peopleAlsoAsk.length +
