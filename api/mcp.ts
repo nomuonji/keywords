@@ -42,6 +42,7 @@ if (!configuredToken) throw new Error('KEYWORDS_REMOTE_MCP_TOKEN is required for
 const token: string = configuredToken;
 const groqToken = process.env.KEYWORDS_GROQ_MCP_TOKEN?.trim() || null;
 const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
+let googleAdsProxyLastError: string | null = null;
 let googleAdsDirectLastError: string | null = null;
 
 app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
@@ -108,7 +109,12 @@ function runtimeStatus() {
     googleAdsDemandProviderOrder: ['proxy', 'direct'],
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
+    googleAdsProxyLastError,
     googleAdsDirectLastError,
+    googleAdsDemandHealth: {
+      proxy: googleAdsProxyLastError ? 'last_attempt_failed' : 'ok_or_not_yet_failed',
+      directFallback: googleAdsDirectLastError ? 'last_attempt_failed' : 'unknown_or_last_attempt_succeeded'
+    },
     serpQuotaConfiguration: serpQuotaConfiguration(),
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
@@ -144,17 +150,32 @@ function runtimeStatus() {
 type DemandInput = { keywords: string[]; languageConstant?: string; geoTargetConstants?: string[]; includeAdultKeywords?: boolean };
 async function demandWithFallback(input: DemandInput) {
   let proxyProviderError: string | null = null;
+  let proxyRetryUsed = false;
   try {
     const result = await keywordDemand(input);
-    googleAdsDirectLastError = null;
-    return { ...result, fallbackUsed: false, providerRoute: 'proxy' as const };
+    googleAdsProxyLastError = null;
+    return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy' as const };
   } catch (error) {
     proxyProviderError = sanitizeGoogleAdsError(error);
+    googleAdsProxyLastError = proxyProviderError;
   }
+
+  if (proxyProviderError && /(?:provider failed \(5\d\d|NOT_FOUND|BAD_RESOURCE_ID|timeout|temporar|fetch failed|ECONN)/i.test(proxyProviderError)) {
+    proxyRetryUsed = true;
+    try {
+      const result = await keywordDemand(input);
+      googleAdsProxyLastError = null;
+      return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy_retry' as const };
+    } catch (error) {
+      proxyProviderError = sanitizeGoogleAdsError(error);
+      googleAdsProxyLastError = proxyProviderError;
+    }
+  }
+
   try {
     const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants, includeAdultKeywords: input.includeAdultKeywords });
     googleAdsDirectLastError = null;
-    return { ...result, fallbackUsed: true, providerRoute: 'direct_fallback' as const, proxyProviderError };
+    return { ...result, fallbackUsed: true, proxyRetryUsed, providerRoute: 'direct_fallback' as const, proxyProviderError };
   } catch (error) {
     const directProviderError = sanitizeGoogleAdsError(error);
     googleAdsDirectLastError = directProviderError;
