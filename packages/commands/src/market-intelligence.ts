@@ -124,6 +124,7 @@ export interface MarketIntentBranch {
   relatedSearches: string[];
   peopleAlsoAsk: string[];
   topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  externalSignals: Array<{ source: string; label: string; url: string | null }>;
   demand: QueryDemandObservation[];
   observedDemandSum: number | null;
 }
@@ -169,6 +170,7 @@ export interface MarketIntelligencePacket {
   queryFocus: QueryFocusResearch;
   creativeEvidence: {
     source: 'tiktok_top_ads';
+    scope: 'cross_category_reference';
     url: string;
     observations: TopAdObservation[];
     mechanics: MarketingMechanicEvidence[];
@@ -390,6 +392,7 @@ export function buildQueryIntentTree(input: {
       relatedSearches: [],
       peopleAlsoAsk: [],
       topResults: [],
+      externalSignals: [],
       demand: [],
       observedDemandSum: null
     };
@@ -451,7 +454,7 @@ export function buildQueryIntentTree(input: {
     .slice(0, 30);
 
   const populatedIntents = branches.filter(branch =>
-    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.demand.length
+    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
   );
 
   return {
@@ -468,6 +471,76 @@ export function buildQueryIntentTree(input: {
       'Adjacent-market branches are retained as separate opportunity surfaces and require their own validation before becoming a thesis.',
       'Entity-specific branches stay out of a generic market thesis unless the original query itself is entity-specific.'
     ]
+  };
+}
+
+export function attachQuerySignalsToIntentTree(queryFocus: QueryFocusResearch, signals: MarketSignalScanResult): QueryFocusResearch {
+  if (queryFocus.mode !== 'hypothesis_led' || !queryFocus.query) return queryFocus;
+
+  const branches = queryFocus.intentTree.branches.map(branch => ({
+    ...branch,
+    relatedSearches: [...branch.relatedSearches],
+    peopleAlsoAsk: [...branch.peopleAlsoAsk],
+    topResults: [...branch.topResults],
+    externalSignals: [...branch.externalSignals],
+    demand: [...branch.demand]
+  }));
+  const branchMap = new Map(branches.map(branch => [branch.intent, branch]));
+  const ensureBranch = (intent: MarketIntentId) => {
+    const current = branchMap.get(intent);
+    if (current) return current;
+    const role = intentRole(intent, queryFocus.intentTree.targetIntents);
+    const created: MarketIntentBranch = {
+      intent,
+      role,
+      rationale: roleRationale(intent, role),
+      relatedSearches: [],
+      peopleAlsoAsk: [],
+      topResults: [],
+      externalSignals: [],
+      demand: [],
+      observedDemandSum: null
+    };
+    branches.push(created);
+    branchMap.set(intent, created);
+    return created;
+  };
+
+  for (const result of signals.results) {
+    for (const observation of result.observations) {
+      const classification = classifyMarketIntent(observation.label, queryFocus.query);
+      ensureBranch(classification.primaryIntent).externalSignals.push({
+        source: result.source,
+        label: observation.label,
+        url: observation.url
+      });
+    }
+  }
+
+  branches.sort((left, right) => INTENT_PRIORITY.indexOf(left.intent) - INTENT_PRIORITY.indexOf(right.intent));
+  const populated = branches.filter(branch =>
+    branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
+  );
+
+  const excludedSignals = branches
+    .filter(branch => branch.role === 'adjacent_market' || branch.role === 'out_of_scope')
+    .flatMap(branch => branch.externalSignals.map(signal => ({
+      label: signal.label,
+      intent: branch.intent,
+      reason: branch.rationale
+    })));
+
+  return {
+    ...queryFocus,
+    intentTree: {
+      ...queryFocus.intentTree,
+      mixedIntent: populated.length > 1,
+      branches,
+      excludedFromPrimaryThesis: [
+        ...queryFocus.intentTree.excludedFromPrimaryThesis,
+        ...excludedSignals
+      ].filter((item, index, all) => all.findIndex(other => other.label === item.label && other.intent === item.intent) === index).slice(0, 40)
+    }
   };
 }
 
@@ -1010,6 +1083,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     queryFocus,
     creativeEvidence: {
       source: 'tiktok_top_ads',
+      scope: 'cross_category_reference',
       url: topAdsResult.url,
       observations: topAdsResult.observations,
       mechanics,
