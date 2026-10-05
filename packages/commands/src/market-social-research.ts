@@ -21,7 +21,7 @@ export interface SocialContentObservation {
     comments: number | null;
     shares: number | null;
   };
-  metricProvenance: 'tiktok_public_page' | 'none';
+  metricProvenance: 'tiktok_public_page' | 'youtube_public_page' | 'none';
 }
 
 export interface SocialPlatformStatus {
@@ -96,7 +96,9 @@ function isPlatformUrl(platform: SocialMarketPlatform, raw: string) {
   try {
     const url = new URL(raw);
     const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
-    if (platform === 'tiktok') return hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com');
+    if (platform === 'tiktok') {
+      return (hostname === 'tiktok.com' || hostname.endsWith('.tiktok.com')) && /\/video\/\d+/i.test(url.pathname);
+    }
     if (platform === 'youtube_shorts') {
       return (hostname === 'youtube.com' || hostname.endsWith('.youtube.com')) && /\/shorts(?:\/|$)/i.test(url.pathname);
     }
@@ -156,7 +158,14 @@ export function parseTikTokPublicMetrics(html: string): SocialContentObservation
   return null;
 }
 
-async function enrichTikTokMetrics(url: string) {
+export function parseYouTubePublicMetrics(html: string): SocialContentObservation['metrics'] | null {
+  const match = html.match(/"videoDetails"\s*:\s*\{[\s\S]{0,80000}?"viewCount"\s*:\s*"(\d+)"/i)
+    ?? html.match(/"viewCount"\s*:\s*"?(\d{1,20})"?/i);
+  if (!match?.[1]) return null;
+  return { views: finiteNumber(match[1]), likes: null, comments: null, shares: null };
+}
+
+async function enrichPublicMetrics(platform: SocialMarketPlatform, url: string) {
   try {
     const response = await fetch(url, {
       headers: {
@@ -168,7 +177,16 @@ async function enrichTikTokMetrics(url: string) {
       signal: AbortSignal.timeout(8_000)
     });
     if (!response.ok) return null;
-    return parseTikTokPublicMetrics(await response.text());
+    const html = await response.text();
+    if (platform === 'tiktok') {
+      const metrics = parseTikTokPublicMetrics(html);
+      return metrics ? { metrics, provenance: 'tiktok_public_page' as const } : null;
+    }
+    if (platform === 'youtube_shorts') {
+      const metrics = parseYouTubePublicMetrics(html);
+      return metrics ? { metrics, provenance: 'youtube_public_page' as const } : null;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -240,12 +258,16 @@ export async function socialContentResearch(input: {
         };
       }).filter(item => item.title && item.url);
 
-      if (platform === 'tiktok' && mapped.length) {
-        const enrichments = await Promise.all(mapped.slice(0, 3).map(item => enrichTikTokMetrics(item.url)));
+      if ((platform === 'tiktok' || platform === 'youtube_shorts') && mapped.length) {
+        const enrichments = await Promise.all(mapped.slice(0, 3).map(item => enrichPublicMetrics(platform, item.url)));
         for (let index = 0; index < enrichments.length; index++) {
-          const metrics = enrichments[index];
-          if (!metrics) continue;
-          mapped[index] = { ...mapped[index], metrics, metricProvenance: 'tiktok_public_page' };
+          const enrichment = enrichments[index];
+          if (!enrichment || !mapped[index]) continue;
+          mapped[index] = {
+            ...mapped[index],
+            metrics: enrichment.metrics,
+            metricProvenance: enrichment.provenance
+          };
         }
       }
 
@@ -292,8 +314,8 @@ export async function socialContentResearch(input: {
     warnings,
     guidance: [
       'Indexed social results are real public content observations, but search-engine ranking is not a native TikTok/YouTube/Instagram popularity ranking.',
-      'TikTok engagement metrics are best-effort values parsed from the public video page when exposed; missing metrics mean unavailable evidence, not zero engagement.',
-      'Use titles/snippets and formatSignals to study output patterns. Use native engagement metrics only when metricProvenance is present.'
+      'TikTok and YouTube Shorts engagement metrics are best-effort values parsed from public content pages when exposed; missing metrics mean unavailable evidence, not zero engagement.',
+      'Use titles/snippets and formatSignals to study output patterns. Use engagement metrics only when metricProvenance is present.'
     ]
   };
 }
@@ -355,7 +377,9 @@ export function assessMarketEvidenceCoverage(input: {
       required: false,
       status: !queryMode ? 'not_required' : socialMetricCount > 0 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable',
       evidenceCount: socialMetricCount,
-      sources: socialMetricCount > 0 ? ['tiktok_public_page'] : [],
+      sources: [...new Set(input.socialContent.observations.filter(item =>
+        Object.values(item.metrics).some(value => value !== null)
+      ).map(item => item.metricProvenance).filter(source => source !== 'none'))],
       note: 'Native-like engagement evidence is best-effort and never inferred from search ranking.'
     }
   ];
