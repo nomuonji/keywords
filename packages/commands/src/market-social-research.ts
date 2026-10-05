@@ -285,7 +285,7 @@ export async function socialContentResearch(input: {
           metrics: emptyMetrics(),
           metricProvenance: 'none'
         };
-      }).filter(item => item.title && item.url);
+      }).filter((item: SocialContentObservation) => item.title && item.url);
 
       if ((platform === 'tiktok' || platform === 'youtube_shorts') && mapped.length) {
         const enrichments = await Promise.all(mapped.slice(0, 3).map(item => enrichPublicMetrics(platform, item.url)));
@@ -427,7 +427,7 @@ export function assessMarketEvidenceCoverage(input: {
     }
   ];
 
-  const missingRequired = checks
+  const missingRequired: string[] = checks
     .filter(check => check.required && check.status === 'unavailable')
     .map(check => check.evidenceClass);
   if (input.senseSelectionRequired) missingRequired.push('semantic_sense_selection');
