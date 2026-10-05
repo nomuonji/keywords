@@ -148,6 +148,8 @@ function runtimeStatus() {
         enabled: true,
         startsFromGenericSocialQueries: true,
         clusterSource: 'observed_public_social_content_only',
+        excludesGenericFormatLabels: true,
+        validationSelection: 'one_concrete_market_per_generic_seed_then_fill',
         rerootsTopObservedClusters: 3,
         validationGoal: 'social_affiliate',
         rankingGuard: 'coverage.conclusionAllowed must be true before recommendation'
