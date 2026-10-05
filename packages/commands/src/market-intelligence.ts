@@ -1185,7 +1185,12 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   const socialPlatforms = (args.socialPlatforms?.length ? args.socialPlatforms : [...DEFAULT_SOCIAL_MARKET_PLATFORMS]) as SocialMarketPlatform[];
   const researchGoal = (args.researchGoal ?? 'general') as MarketResearchGoal;
 
-  const [signals, queryFocus, socialContentResult, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
+  // Run the primary query surface first. Both primary SERP research and social
+  // discovery use the shared quota/cache ledger, so serializing this first stage
+  // avoids self-contention in Firestore and reduces upstream search bursts.
+  const queryFocus = await queryFocusedResearch(query, geo, limit);
+
+  const [signals, socialContentResult, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
     marketSignalScan({
       sources: query ? ['hacker_news'] : [...MARKET_SENSOR_SOURCE_IDS],
       query: query ?? undefined,
@@ -1194,7 +1199,6 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
       tiktokPeriodDays: args.tiktokPeriodDays,
       hackerNewsFeed: args.hackerNewsFeed
     }),
-    queryFocusedResearch(query, geo, limit),
     includeSocialContent
       ? socialContentResearch({ query, geo, limit, platforms: socialPlatforms })
       : Promise.resolve({
