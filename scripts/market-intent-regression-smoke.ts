@@ -54,7 +54,11 @@ const seedCases: SeedCase[] = [
   { seed: 'オンラインカジノ', primary: 'ambiguous', note: 'broad category without explicit intent' },
   { seed: 'Claude', primary: 'ambiguous', note: 'brand/person-name ambiguity' },
   { seed: 'rate limiting software', primary: 'solution_product', note: 'technical rate must not imply financial commercial intent' },
-  { seed: 'GitHub issue tracker software', primary: 'solution_product', note: 'issue tracker is a product category, not automatically a user problem' }
+  { seed: 'GitHub issue tracker software', primary: 'solution_product', note: 'issue tracker is a product category, not automatically a user problem' },
+  { seed: '簿記 参考書', primary: 'solution_product', note: 'learning material is a product form' },
+  { seed: '住宅ローン 審査', primary: 'research_information', note: 'loan screening is informational, not career' },
+  { seed: '住宅ローン 年収', primary: 'ambiguous', note: 'income in affordability context must not imply career intent' },
+  { seed: 'AGA 薬', primary: 'solution_product', note: 'treatment/product cue' }
 ];
 
 const failures: Array<{ seed: string; expected: string; actual: string; note: string }> = [];
@@ -90,6 +94,7 @@ assert.equal(appStoreRelevantForQuery('資格アプリ'), true);
 assert.equal(appStoreRelevantForQuery('AIセキュリティ銘柄'), false);
 assert.equal(appStoreRelevantForQuery('Apple Inc.'), false);
 assert.equal(appStoreRelevantForQuery('最新AIニュース'), false);
+assert.equal(appStoreRelevantForQuery('採用管理アプリ'), true);
 
 
 const genericNotion = buildQueryIntentTree({
@@ -101,9 +106,9 @@ const genericNotion = buildQueryIntentTree({
 });
 assert.equal(genericNotion.queryClassification?.primaryIntent, 'ambiguous');
 assert.equal(genericNotion.senseSelectionRequired, true);
-assert.equal(genericNotion.branches.find(branch => branch.intent === 'commercial')?.role, 'primary');
-assert.equal(genericNotion.branches.find(branch => branch.intent === 'how_to')?.role, 'primary');
-assert.equal(genericNotion.branches.find(branch => branch.intent === 'solution_product')?.role, 'primary');
+assert.equal(genericNotion.branches.find(branch => branch.intent === 'commercial')?.role, 'contextual');
+assert.equal(genericNotion.branches.find(branch => branch.intent === 'how_to')?.role, 'contextual');
+assert.equal(genericNotion.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
 assert.equal(genericNotion.branches.find(branch => branch.intent === 'entity')?.role, 'out_of_scope');
 
 const genericBookkeeping = buildQueryIntentTree({
@@ -116,8 +121,8 @@ const genericBookkeeping = buildQueryIntentTree({
 assert.equal(genericBookkeeping.queryClassification?.primaryIntent, 'ambiguous');
 assert.equal(genericBookkeeping.senseSelectionRequired, true);
 assert.equal(genericBookkeeping.branches.find(branch => branch.intent === 'career_qualification')?.role, 'adjacent_market');
-assert.equal(genericBookkeeping.branches.find(branch => branch.intent === 'how_to')?.role, 'primary');
-assert.equal(genericBookkeeping.branches.find(branch => branch.intent === 'commercial')?.role, 'primary');
+assert.equal(genericBookkeeping.branches.find(branch => branch.intent === 'how_to')?.role, 'contextual');
+assert.equal(genericBookkeeping.branches.find(branch => branch.intent === 'commercial')?.role, 'contextual');
 
 const apple = buildQueryIntentTree({
   query: 'Apple',
@@ -130,7 +135,7 @@ assert.equal(apple.queryClassification?.primaryIntent, 'ambiguous');
 assert.equal(apple.senseSelectionRequired, true);
 assert.equal(apple.branches.find(branch => branch.intent === 'investment')?.role, 'adjacent_market');
 assert.equal(apple.branches.find(branch => branch.intent === 'entity')?.role, 'out_of_scope');
-assert.equal(apple.branches.find(branch => branch.intent === 'commercial')?.role, 'primary');
+assert.equal(apple.branches.find(branch => branch.intent === 'commercial')?.role, 'contextual');
 
 const explicitQualification = buildQueryIntentTree({
   query: '簿記 資格',
