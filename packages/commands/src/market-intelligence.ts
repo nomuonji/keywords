@@ -356,6 +356,65 @@ function intentRole(intent: MarketIntentId, targetIntents: MarketIntentId[]): Ma
   return 'contextual';
 }
 
+export function selectQueryDemandSeeds(query: string, relatedSearches: string[], maxSeeds = 10): string[] {
+  const targetIntents = targetIntentsForQuery(query);
+  const relatedForDemand = relatedSearches
+    .filter(value => value.length <= 120)
+    .map(value => {
+      const classification = classifyMarketIntent(value, query);
+      return {
+        value,
+        intent: classification.primaryIntent,
+        role: intentRole(classification.primaryIntent, targetIntents)
+      };
+    });
+
+  const selected = (() => {
+    if (targetIntents.length > 0) {
+      return [
+        ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
+        ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
+        ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
+        ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
+      ];
+    }
+
+    const intentOrder: MarketIntentId[] = [
+      'problem_need',
+      'solution_product',
+      'how_to',
+      'commercial',
+      'career_qualification',
+      'investment',
+      'research_information',
+      'news',
+      'ambiguous'
+    ];
+    const grouped = new Map<MarketIntentId, string[]>();
+    for (const item of relatedForDemand) {
+      if (item.role === 'out_of_scope') continue;
+      const list = grouped.get(item.intent) ?? [];
+      list.push(item.value);
+      grouped.set(item.intent, list);
+    }
+    const balanced: string[] = [];
+    for (let round = 0; balanced.length < Math.max(0, maxSeeds - 1); round++) {
+      let added = false;
+      for (const intent of intentOrder) {
+        const value = grouped.get(intent)?.[round];
+        if (!value) continue;
+        balanced.push(value);
+        added = true;
+        if (balanced.length >= Math.max(0, maxSeeds - 1)) break;
+      }
+      if (!added) break;
+    }
+    return balanced;
+  })();
+
+  return [...new Set([query, ...selected])].slice(0, maxSeeds);
+}
+
 function roleRationale(intent: MarketIntentId, role: MarketIntentRole): string {
   if (role === 'primary') return 'Directly matches the query intent selected for market-thesis evidence.';
   if (role === 'contextual') return 'Useful for interpretation, but should not establish the core demand thesis by itself.';
@@ -870,62 +929,7 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   }
 
   const demandWarnings: string[] = [];
-  const targetIntents = targetIntentsForQuery(query);
-  const relatedForDemand = relatedSearches
-    .filter(value => value.length <= 120)
-    .map(value => {
-      const classification = classifyMarketIntent(value, query);
-      return {
-        value,
-        intent: classification.primaryIntent,
-        role: intentRole(classification.primaryIntent, targetIntents)
-      };
-    });
-
-  const exploratoryRelated = (() => {
-    if (targetIntents.length > 0) {
-      return [
-        ...relatedForDemand.filter(item => item.role === 'primary').map(item => item.value).slice(0, 6),
-        ...relatedForDemand.filter(item => item.role === 'contextual').map(item => item.value).slice(0, 1),
-        ...relatedForDemand.filter(item => item.role === 'adjacent_market').map(item => item.value).slice(0, 2),
-        ...relatedForDemand.filter(item => item.role === 'out_of_scope').map(item => item.value).slice(0, 1)
-      ];
-    }
-
-    const intentOrder: MarketIntentId[] = [
-      'problem_need',
-      'solution_product',
-      'how_to',
-      'commercial',
-      'career_qualification',
-      'investment',
-      'research_information',
-      'news',
-      'ambiguous'
-    ];
-    const grouped = new Map<MarketIntentId, string[]>();
-    for (const item of relatedForDemand) {
-      if (item.role === 'out_of_scope') continue;
-      const list = grouped.get(item.intent) ?? [];
-      list.push(item.value);
-      grouped.set(item.intent, list);
-    }
-    const balanced: string[] = [];
-    for (let round = 0; balanced.length < 8; round++) {
-      let added = false;
-      for (const intent of intentOrder) {
-        const value = grouped.get(intent)?.[round];
-        if (!value) continue;
-        balanced.push(value);
-        added = true;
-        if (balanced.length >= 8) break;
-      }
-      if (!added) break;
-    }
-    return balanced;
-  })();
-
-  const demandSeeds = [...new Set([query, ...exploratoryRelated])].slice(0, 10);
+  const demandSeeds = selectQueryDemandSeeds(query, relatedSearches, 10);
 
   let demandResults: QueryFocusResearch['searchDemand']['results'] = [];
   if (geo !== 'JP') {
