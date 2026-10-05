@@ -10,7 +10,8 @@
     "./sitemap": "./src/sitemap.ts",
     "./blog-runtime": "./src/blog-runtime.ts",
     "./portfolio": "./src/portfolio.ts",
-    "./ga4": "./src/ga4.ts"
+    "./ga4": "./src/ga4.ts",
+    "./marketplace": "./src/marketplace.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
