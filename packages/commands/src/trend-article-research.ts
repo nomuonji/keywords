@@ -147,9 +147,10 @@ export async function trendArticleResearch(input: unknown) {
     usageError = (error instanceof Error ? error.message : String(error)).slice(0, 700);
   }
 
-  const demandByKeyword = new Map(
-    demand.results.map((item: any) => [normalized(String(item.keyword ?? '')), item])
-  );
+  const demandByKeyword = new Map<string, any>();
+  for (const item of demand.results as any[]) {
+    demandByKeyword.set(normalized(String(item.keyword ?? '')), item);
+  }
   const keywordSignals = keywords.map(keyword => {
     const metric: any = demandByKeyword.get(normalized(keyword)) ?? {};
     return {

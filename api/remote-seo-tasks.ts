@@ -36,7 +36,7 @@ app.get('/api/remote-seo-tasks', async c => {
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     completedAt: task.completedAt,
-    lastHistory: task.history?.at(-1) ?? null
+    lastHistory: task.history?.length ? task.history[task.history.length - 1] ?? null : null
   }));
   const planner = seoAgentContext({ role: 'planner' });
   return c.json({
