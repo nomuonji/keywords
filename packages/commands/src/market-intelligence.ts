@@ -920,14 +920,37 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
   let cacheHit: boolean | null = null;
 
   try {
-    const serp = await serpResearchCached({
-      query,
-      country: geo,
-      language: geo === 'JP' ? 'ja' : 'en',
-      num: Math.min(limit, 10),
-      provider: 'api',
-      forceRefresh: false
-    }) as any;
+    let serp: any;
+    let primaryError: string | null = null;
+    try {
+      serp = await serpResearchCached({
+        query,
+        country: geo,
+        language: geo === 'JP' ? 'ja' : 'en',
+        num: Math.min(limit, 10),
+        provider: 'api',
+        forceRefresh: false,
+        maxCacheAgeHours: 72
+      }) as any;
+    } catch (error) {
+      primaryError = error instanceof Error ? error.message : String(error);
+      try {
+        serp = await serpResearchCached({
+          query,
+          country: geo,
+          language: geo === 'JP' ? 'ja' : 'en',
+          num: Math.min(limit, 10),
+          provider: 'brave',
+          forceRefresh: false,
+          maxCacheAgeHours: 72
+        }) as any;
+        surfaceWarnings.push('Primary SERP API failed; Brave fallback supplied the query surface: ' + primaryError);
+      } catch (fallbackError) {
+        const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        throw new Error('primary API failed: ' + primaryError + '; Brave fallback failed: ' + fallbackMessage);
+      }
+    }
+
     relatedSearches = Array.isArray(serp.relatedSearches)
       ? serp.relatedSearches.map((value: unknown) => String(value).trim()).filter(Boolean).slice(0, 12)
       : [];
