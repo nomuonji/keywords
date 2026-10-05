@@ -7,7 +7,7 @@ import {
   parseYouTubePublicMetrics,
   type SocialContentResearchResult
 } from '../packages/commands/src/market-social-research.js';
-import { clusterObservedSocialMarkets, extractObservedMarketClusterLabels } from '../packages/commands/src/market-intelligence.js';
+import { clusterObservedSocialMarkets, extractObservedMarketClusterLabels, selectBroadValidationClusters } from '../packages/commands/src/market-intelligence.js';
 
 function social(overrides: Partial<SocialContentResearchResult> = {}): SocialContentResearchResult {
   return {
@@ -72,6 +72,66 @@ const gadgetCluster = discoveredClusters.find(item => item.label.toLowerCase() =
 assert.ok(gadgetCluster);
 assert.equal(gadgetCluster?.platforms.length, 2);
 assert.equal(gadgetCluster?.evidenceCount, 2);
+
+const genericFormatLabels = extractObservedMarketClusterLabels({
+  title: '2026年上半期 買ってよかったものランキング #買ってよかったもの #おすすめ商品',
+  snippet: '人気商品を紹介'
+});
+assert.ok(!genericFormatLabels.includes('買ってよかったもの'));
+assert.ok(!genericFormatLabels.includes('おすすめ商品'));
+
+const diversifiedClusters = clusterObservedSocialMarkets([
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com "買ってよかった" おすすめ',
+    position: 1,
+    title: '買ってよかったガジェット5選 #ガジェット',
+    url: 'https://www.tiktok.com/@example/video/20',
+    snippet: null,
+    formatSignals: ['listicle'],
+    metrics: { views: 200000, likes: 3000, comments: 20, shares: 10 },
+    metricProvenance: 'tiktok_public_page'
+  },
+  {
+    platform: 'youtube_shorts',
+    searchQuery: 'site:youtube.com/shorts "買ってよかった" おすすめ',
+    position: 1,
+    title: '買ってよかったガジェット3選 #ガジェット',
+    url: 'https://www.youtube.com/shorts/gadget2',
+    snippet: null,
+    formatSignals: ['listicle'],
+    metrics: { views: 120000, likes: null, comments: null, shares: null },
+    metricProvenance: 'youtube_public_page'
+  },
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com "おすすめ" 比較 商品',
+    position: 2,
+    title: 'メンズ洗顔料20商品を比較 #メンズ洗顔料 #メンズスキンケア',
+    url: 'https://www.tiktok.com/@example/video/21',
+    snippet: null,
+    formatSignals: ['comparison'],
+    metrics: { views: 80000, likes: 1200, comments: 5, shares: 4 },
+    metricProvenance: 'tiktok_public_page'
+  },
+  {
+    platform: 'youtube_shorts',
+    searchQuery: 'site:youtube.com/shorts "無料" おすすめ ツール',
+    position: 1,
+    title: '無料AIツールベスト5 #AIツール',
+    url: 'https://www.youtube.com/shorts/ai-tools',
+    snippet: null,
+    formatSignals: ['listicle'],
+    metrics: { views: 60000, likes: null, comments: null, shares: null },
+    metricProvenance: 'youtube_public_page'
+  }
+]);
+const diversifiedSelection = selectBroadValidationClusters(
+  diversifiedClusters,
+  ['"買ってよかった" おすすめ', '"おすすめ" 比較 商品', '"無料" おすすめ ツール'],
+  3
+);
+assert.deepEqual(diversifiedSelection.map(item => item.label), ['ガジェット', 'メンズ洗顔料', 'AIツール']);
 
 const formats = extractSocialFormatSignals('韓国eSIMおすすめ5選を正直レビュー。料金を比較して使い方も解説');
 assert.ok(formats.includes('listicle'));
