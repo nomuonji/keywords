@@ -87,6 +87,58 @@ export interface PinterestObservation {
   metrics: Record<string, number | string | boolean | null>;
 }
 
+export type MarketIntentId =
+  | 'problem_need'
+  | 'solution_product'
+  | 'how_to'
+  | 'commercial'
+  | 'entity'
+  | 'investment'
+  | 'career_qualification'
+  | 'news'
+  | 'research_information'
+  | 'ambiguous';
+
+export type MarketIntentRole = 'primary' | 'contextual' | 'adjacent_market' | 'out_of_scope';
+
+export interface IntentClassification {
+  primaryIntent: MarketIntentId;
+  secondaryIntents: MarketIntentId[];
+  matchedSignals: string[];
+  basis: 'exact_seed' | 'explicit_rule' | 'generic_default';
+}
+
+export interface QueryDemandObservation {
+  keyword: string;
+  avgMonthlySearches: number | null;
+  averageCpcMicros: number | null;
+  competition: string | number | null;
+  competitionIndex: number | null;
+  monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
+}
+
+export interface MarketIntentBranch {
+  intent: MarketIntentId;
+  role: MarketIntentRole;
+  rationale: string;
+  relatedSearches: string[];
+  peopleAlsoAsk: string[];
+  topResults: Array<{ position: number | null; title: string; link: string; snippet: string | null }>;
+  demand: QueryDemandObservation[];
+  observedDemandSum: number | null;
+}
+
+export interface QueryIntentTree {
+  query: string | null;
+  queryClassification: IntentClassification | null;
+  targetIntents: MarketIntentId[];
+  mixedIntent: boolean;
+  branches: MarketIntentBranch[];
+  primaryEvidenceKeywords: string[];
+  excludedFromPrimaryThesis: Array<{ label: string; intent: MarketIntentId; reason: string }>;
+  guidance: string[];
+}
+
 export interface QueryFocusResearch {
   mode: 'market_scan' | 'hypothesis_led';
   query: string | null;
@@ -103,16 +155,10 @@ export interface QueryFocusResearch {
     source: 'google_ads';
     query: string | null;
     researchedKeywords: string[];
-    results: Array<{
-      keyword: string;
-      avgMonthlySearches: number | null;
-      averageCpcMicros: number | null;
-      competition: string | number | null;
-      competitionIndex: number | null;
-      monthlySearchVolumes: Array<{ year: number; month: number; searches: number }>;
-    }>;
+    results: QueryDemandObservation[];
     warnings: string[];
   };
+  intentTree: QueryIntentTree;
 }
 
 export interface MarketIntelligencePacket {
