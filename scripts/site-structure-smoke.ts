@@ -149,7 +149,7 @@ try {
   });
   assert.equal(groqBearerResponse.status, 200);
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 28);
+  assert.equal(listing.tools.length, 29);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_patch' && tool.inputSchema.properties.expectedRevision));
   const saved = await call('tools/call', { name: 'site_structure_save', arguments: { id: 'via-mcp', title: 'MCPから作成', expectedRevision: 0 } });
   assert.ok(!saved.isError, JSON.stringify(saved));
