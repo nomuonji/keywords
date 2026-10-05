@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, firestore, firestoreDocumentName, FirestoreError, value } from '../../db/src/firestore.js';
+import { keywordDemand } from '../../keyword-treasury/src/index.js';
+import { serpResearchCached } from './remote-keyword-research.js';
 import {
   MARKET_SENSOR_SOURCE_IDS,
   marketSignalScan,
