@@ -3,6 +3,7 @@ import {
   appStoreRelevantForQuery,
   buildQueryIntentTree,
   classifyMarketIntent,
+  selectQueryDemandSeeds,
   type MarketIntentId
 } from '../packages/commands/src/market-intelligence.js';
 
@@ -95,6 +96,37 @@ assert.equal(appStoreRelevantForQuery('AIセキュリティ銘柄'), false);
 assert.equal(appStoreRelevantForQuery('Apple Inc.'), false);
 assert.equal(appStoreRelevantForQuery('最新AIニュース'), false);
 assert.equal(appStoreRelevantForQuery('採用管理アプリ'), true);
+
+const ambiguousDemandSeeds = selectQueryDemandSeeds('簿記', [
+  '簿記 問題',
+  '簿記 参考書',
+  '簿記 勉強法',
+  '簿記 おすすめ',
+  '簿記 資格',
+  '簿記 銘柄',
+  '簿記とは',
+  '簿記 ニュース',
+  '簿記 読み方'
+], 8);
+assert.equal(ambiguousDemandSeeds[0], '簿記');
+assert.ok(ambiguousDemandSeeds.includes('簿記 問題'));
+assert.ok(ambiguousDemandSeeds.includes('簿記 参考書'));
+assert.ok(ambiguousDemandSeeds.includes('簿記 勉強法'));
+assert.ok(ambiguousDemandSeeds.includes('簿記 おすすめ'));
+assert.ok(ambiguousDemandSeeds.includes('簿記 資格'));
+assert.ok(ambiguousDemandSeeds.length <= 8);
+
+const explicitDemandSeeds = selectQueryDemandSeeds('簿記 資格', [
+  '簿記 資格 難易度',
+  '簿記 資格 試験日',
+  '簿記 勉強法',
+  '簿記 おすすめ テキスト',
+  '簿記 銘柄'
+], 6);
+assert.equal(explicitDemandSeeds[0], '簿記 資格');
+assert.ok(explicitDemandSeeds.includes('簿記 資格 難易度'));
+assert.ok(explicitDemandSeeds.includes('簿記 資格 試験日'));
+
 
 
 const genericNotion = buildQueryIntentTree({
