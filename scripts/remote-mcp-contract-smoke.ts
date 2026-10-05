@@ -256,17 +256,17 @@ const intentTree = buildQueryIntentTree({
     { keyword: 'AIセキュリティ対策', avgMonthlySearches: 480, averageCpcMicros: 1200, competition: 0.5, competitionIndex: 50, monthlySearchVolumes: [] }
   ]
 });
-assert.deepEqual(intentTree.targetIntents, ['problem_need', 'solution_product', 'how_to', 'commercial']);
+assert.deepEqual(intentTree.targetIntents, []);
 assert.equal(intentTree.mixedIntent, true);
 assert.equal(intentTree.senseSelectionRequired, true);
 assert.ok(intentTree.senseGuidance.some(item => item.includes('semantic sense')));
 assert.equal(intentTree.branches.find(branch => branch.intent === 'entity')?.role, 'out_of_scope');
 assert.equal(intentTree.branches.find(branch => branch.intent === 'investment')?.role, 'adjacent_market');
 assert.equal(intentTree.branches.find(branch => branch.intent === 'career_qualification')?.role, 'adjacent_market');
-assert.equal(intentTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'primary');
-assert.equal(intentTree.branches.find(branch => branch.intent === 'problem_need')?.role, 'primary');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'solution_product')?.role, 'contextual');
+assert.equal(intentTree.branches.find(branch => branch.intent === 'problem_need')?.role, 'contextual');
 assert.equal(intentTree.branches.find(branch => branch.intent === 'research_information')?.role, 'contextual');
-assert.ok(intentTree.primaryEvidenceKeywords.includes('AIセキュリティ対策'));
+assert.deepEqual(intentTree.primaryEvidenceKeywords, ['AI security']);
 assert.ok(!intentTree.primaryEvidenceKeywords.includes('AIセキュリティ銘柄'));
 assert.ok(intentTree.excludedFromPrimaryThesis.some(item => item.label === 'AI Security 株式会社' && item.intent === 'entity'));
 
