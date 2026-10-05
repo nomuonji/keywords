@@ -23,7 +23,7 @@ Default tool for product/marketing opportunity research.
 It has two modes:
 
 - **No query**: broad market scan across current public surfaces.
-- **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus intent-prioritized related search terms. The result also contains an `intentTree` so company/entity, investment, career/qualification, informational, and core problem/solution demand are not silently merged. App Store evidence is query-specific and is skipped when the explicit query intent is clearly non-product (for example entity, investment, news, or pure research-information intent).
+- **With query**: hypothesis-led research. Broad Google/TikTok trend headlines are not used as support for the query. Hacker News switches to relevance search, SERP related searches / People Also Ask are collected through the cached SERP layer, and Google Ads demand is fetched for the query plus intent-prioritized related search terms. The result also contains an `intentTree` so company/entity, investment, career/qualification, informational, and core problem/solution demand are not silently merged. Japanese corporate suffixes are normalized across spacing variants (for example 株式会社 / 株式 会社), and English company markers avoid incident IDs such as `INC-2026...`. App Store evidence is query-specific and is skipped when the explicit query intent is clearly non-product (for example entity, investment, news, or pure research-information intent).
 
 It then adds:
 
@@ -53,6 +53,7 @@ In query mode, the primary evidence is returned under `queryFocus`. Read `queryF
 - `intentTree.branches[*].role`
 - `intentTree.primaryEvidenceKeywords`
 - `intentTree.excludedFromPrimaryThesis`
+- `intentTree.senseSelectionRequired` / `senseGuidance`
 - query-relevant Hacker News observations, attached to the same intent branches
 - App Store commercialization when applicable
 
@@ -64,6 +65,10 @@ Intent branch roles are:
 - `out_of_scope` — normally entity/company navigation in a generic market query; preserved for provenance but excluded from the main thesis.
 
 Never sum search volume across different intent branches as though they were one market.
+
+When `senseSelectionRequired` is true, the phrase itself is semantically underspecified. The agent must name the semantic sense it is analyzing before writing a thesis and reject same-word evidence that belongs to another meaning/category.
+
+App Store evidence has `evidenceScope = lexical_search_only`. It includes a bounded `descriptionExcerpt` so the agent can verify semantic fit; a matching app name alone is not commercialization proof for the selected market sense.
 
 The expected reasoning order is:
 

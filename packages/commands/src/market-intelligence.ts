@@ -73,6 +73,7 @@ export interface AppStoreObservation {
   url: string | null;
   seller: string | null;
   primaryGenre: string | null;
+  descriptionExcerpt: string | null;
   price: number | null;
   currency: string | null;
   rating: number | null;
@@ -134,6 +135,8 @@ export interface QueryIntentTree {
   queryClassification: IntentClassification | null;
   targetIntents: MarketIntentId[];
   mixedIntent: boolean;
+  senseSelectionRequired: boolean;
+  senseGuidance: string[];
   branches: MarketIntentBranch[];
   primaryEvidenceKeywords: string[];
   excludedFromPrimaryThesis: Array<{ label: string; intent: MarketIntentId; reason: string }>;
@@ -185,6 +188,7 @@ export interface MarketIntelligencePacket {
   commercialization: {
     source: 'app_store';
     applicability: 'relevant' | 'not_applicable';
+    evidenceScope: 'lexical_search_only';
     query: string | null;
     url: string | null;
     totalCount: number | null;
@@ -254,12 +258,17 @@ function normalizeKey(value: string): string {
 const INTENT_RULES: Array<{ intent: MarketIntentId; patterns: RegExp[]; signals: string[] }> = [
   {
     intent: 'entity',
-    patterns: [/株式会社|合同会社|有限会社|\b(?:inc\.?|corp\.?|corporation|llc|ltd\.?|company)\b/i, /どのような会社|会社の評判|企業情報|会社概要/i],
+    patterns: [
+      /株式\s*会社|合同\s*会社|有限\s*会社/i,
+      /\b(?:corp\.?|corporation|llc|ltd\.?|company)\b/i,
+      /\binc(?:orporated|\.)?(?=\s|$|[,;:()])/i,
+      /どのような会社|会社の評判|企業情報|会社概要/i
+    ],
     signals: ['company/entity marker']
   },
   {
     intent: 'investment',
-    patterns: [/銘柄|株価|株式(?!会社)|投資|上場|時価総額|配当|\b(?:stocks?|shares?|invest(?:ment|or|ing)|ticker)\b/i],
+    patterns: [/銘柄|株価|株式(?!\s*会社)|投資|上場|時価総額|配当|\b(?:stocks?|shares?|invest(?:ment|or|ing)|ticker)\b/i],
     signals: ['investment marker']
   },
   {
@@ -369,6 +378,8 @@ export function buildQueryIntentTree(input: {
       queryClassification: null,
       targetIntents: [],
       mixedIntent: false,
+      senseSelectionRequired: false,
+      senseGuidance: ['No query supplied; semantic-sense selection is not applicable in broad market-scan mode.'],
       branches: [],
       primaryEvidenceKeywords: [],
       excludedFromPrimaryThesis: [],
@@ -456,12 +467,21 @@ export function buildQueryIntentTree(input: {
   const populatedIntents = branches.filter(branch =>
     branch.relatedSearches.length || branch.peopleAlsoAsk.length || branch.topResults.length || branch.externalSignals.length || branch.demand.length
   );
+  const senseSelectionRequired = queryClassification.primaryIntent === 'ambiguous' && populatedIntents.length > 1;
 
   return {
     query: input.query,
     queryClassification,
     targetIntents,
     mixedIntent: populatedIntents.length > 1,
+    senseSelectionRequired,
+    senseGuidance: senseSelectionRequired
+      ? [
+          'The root query has no explicit intent marker while observed results span multiple branches.',
+          'Before writing a thesis, state the semantic sense being analyzed and verify that supporting SERP/app evidence uses the same meaning.',
+          'A shared phrase or brand name is not enough to merge distinct product categories or use cases.'
+        ]
+      : ['The root query has an explicit intent or does not currently show enough branch diversity to require separate sense selection.'],
     branches,
     primaryEvidenceKeywords,
     excludedFromPrimaryThesis,
@@ -654,6 +674,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   if (!query) {
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'not_applicable' as const,
       query,
       url: null,
@@ -685,6 +706,9 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
         url: typeof item.trackViewUrl === 'string' ? item.trackViewUrl : null,
         seller: typeof item.sellerName === 'string' ? item.sellerName : null,
         primaryGenre: typeof item.primaryGenreName === 'string' ? item.primaryGenreName : null,
+        descriptionExcerpt: typeof item.description === 'string'
+          ? item.description.replace(/\s+/g, ' ').trim().slice(0, 600)
+          : null,
         price: typeof item.price === 'number' ? item.price : null,
         currency: typeof item.currency === 'string' ? item.currency : null,
         rating: typeof item.averageUserRating === 'number' ? item.averageUserRating : null,
@@ -697,6 +721,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
     const ratings = observations.flatMap(item => item.rating === null ? [] : [item.rating]);
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'relevant' as const,
       query,
       url: url.toString(),
@@ -714,6 +739,7 @@ async function appStoreResearch(query: string | null, geo: string, limit: number
   } catch (error) {
     return {
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'relevant' as const,
       query,
       url: url.toString(),
@@ -1013,7 +1039,7 @@ function buildThesisFrame(
   const commercializationFacts: string[] = [];
   if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
-      'App Store query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results.'
+      'App Store lexical search query "' + commercialization.query + '" returned ' + String(commercialization.totalCount ?? commercialization.observations.length) + ' results; semantic/category fit must be checked from titles/descriptions before treating them as the same market.'
     );
     if (commercialization.metrics.observedAppCount) {
       commercializationFacts.push(
@@ -1031,7 +1057,9 @@ function buildThesisFrame(
     ...(commercialization.query && commercialization.applicability === 'relevant' && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
     ...(mechanics.length ? ['TikTok Top Ads mechanics are cross-category creative references, not evidence that the supplied query itself has demand.'] : []),
+    ...(commercialization.applicability === 'relevant' ? ['App Store evidence is lexical-search evidence only; same words can describe a different semantic category or direction of use. Review descriptionExcerpt before using it as commercialization support.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
+    ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically underspecified across multiple branches. Select and state one semantic sense before writing the thesis.'] : []),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -1046,6 +1074,7 @@ function buildThesisFrame(
       'For each thesis, cite at least two independent observed sources when available.',
       ...(queryFocus.mode === 'hypothesis_led' ? [
         'Declare which intent branch the thesis is about before interpreting demand.',
+        ...(queryFocus.intentTree.senseSelectionRequired ? ['Also state the semantic sense of the root phrase before using same-word SERP/App Store results; reject evidence that uses the phrase in a different sense.'] : []),
         'Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary only when they belong to the selected intent branch.',
         'Do not aggregate company/entity, investment, career/qualification, or other adjacent branches into the main market thesis. They may become separate theses only after independently re-rooting and validating them.',
         'Context-only evidence may explain the market but must not establish demand by itself. Do not use unrelated broad trend headlines as support for the supplied query.'
@@ -1082,6 +1111,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
     includeAppStore && appStoreRelevantForQuery(query) ? appStoreResearch(query, geo, limit) : Promise.resolve({
       source: 'app_store' as const,
+      evidenceScope: 'lexical_search_only' as const,
       applicability: 'not_applicable' as const,
       query,
       url: null,
