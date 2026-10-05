@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.15.0';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.15.1';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',

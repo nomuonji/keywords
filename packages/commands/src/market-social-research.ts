@@ -21,7 +21,7 @@ export interface SocialContentObservation {
     comments: number | null;
     shares: number | null;
   };
-  metricProvenance: 'tiktok_public_page' | 'youtube_public_page' | 'none';
+  metricProvenance: 'tiktok_public_page' | 'youtube_public_page' | 'search_snippet' | 'public_page_plus_search_snippet' | 'none';
 }
 
 export interface SocialPlatformStatus {
@@ -31,6 +31,7 @@ export interface SocialPlatformStatus {
   indexedResultCount: number;
   metricResultCount: number;
   cacheHit: boolean | null;
+  searchProvider: 'brave' | 'api' | null;
   warning: string | null;
 }
 
@@ -76,7 +77,7 @@ const SOCIAL_FORMAT_RULES: Array<{ id: string; pattern: RegExp }> = [
   { id: 'listicle', pattern: /(?:\btop\s*\d+\b|\b\d+\s*(?:tips?|ways?|reasons?)\b|\d+選|ランキング|まとめ|おすすめ\s*\d+)/i },
   { id: 'comparison', pattern: /(?:比較|違い|どっち|どちら|vs\.?|versus|compare|comparison)/i },
   { id: 'review_testimonial', pattern: /(?:レビュー|口コミ|正直|使ってみた|買ってみた|試してみた|review|tested|my experience)/i },
-  { id: 'how_to_demo', pattern: /(?:使い方|やり方|方法|設定|手順|実演|検証|how\s*to|tutorial|setup|demo)/i },
+  { id: 'how_to_demo', pattern: /(?:使い方|やり方|落とし方|洗い方|選び方|方法|設定|手順|実演|検証|how\s*to|tutorial|setup|demo)/i },
   { id: 'routine_day_in_life', pattern: /(?:ルーティン|一日|1日|一週間|1週間|vlog|day\s*in\s*(?:my|the)\s*life|routine)/i },
   { id: 'cost_breakdown', pattern: /(?:料金|価格|費用|コスパ|いくら|\d+[,.]?\d*\s*円|price|cost|budget)/i },
   { id: 'before_after', pattern: /(?:ビフォー.?アフター|before\s*(?:\/|&|and)?\s*after|変化|改善)/i },
@@ -98,6 +99,48 @@ function finiteNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(String(value).replaceAll(',', ''));
   return Number.isFinite(number) ? number : null;
+}
+
+function finiteCompactNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = String(value).trim().replaceAll(',', '');
+  const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)\s*([kKmMbB万億])?$/);
+  if (!match?.[1]) return finiteNumber(raw);
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) return null;
+  const unit = match[2]?.toLowerCase() ?? '';
+  const multiplier =
+    unit === 'k' ? 1_000 :
+    unit === 'm' ? 1_000_000 :
+    unit === 'b' ? 1_000_000_000 :
+    unit === '万' ? 10_000 :
+    unit === '億' ? 100_000_000 :
+    1;
+  return Math.round(base * multiplier);
+}
+
+export function parseIndexedSocialSnippetMetrics(platform: SocialMarketPlatform, snippet: string | null): SocialContentObservation['metrics'] | null {
+  if (!snippet) return null;
+  const likes = snippet.match(/(?:いいね(?:の数)?|likes?)\s*[：:]?\s*([0-9][0-9,.]*(?:\.[0-9]+)?\s*[kKmMbB万億]?)/i)?.[1] ?? null;
+  const comments = snippet.match(/(?:コメント(?:の数)?|comments?)\s*[：:]?\s*([0-9][0-9,.]*(?:\.[0-9]+)?\s*[kKmMbB万億]?)/i)?.[1] ?? null;
+  const views = snippet.match(/(?:再生回数|視聴回数|views?)\s*[：:]?\s*([0-9][0-9,.]*(?:\.[0-9]+)?\s*[kKmMbB万億]?)/i)?.[1] ?? null;
+  const metrics = {
+    views: finiteCompactNumber(views),
+    likes: finiteCompactNumber(likes),
+    comments: finiteCompactNumber(comments),
+    shares: null
+  };
+  if (platform === 'instagram_reels' && metrics.views === null && metrics.likes === null && metrics.comments === null) return null;
+  return Object.values(metrics).some(value => value !== null) ? metrics : null;
+}
+
+function mergeMetrics(primary: SocialContentObservation['metrics'], secondary: SocialContentObservation['metrics']) {
+  return {
+    views: primary.views ?? secondary.views,
+    likes: primary.likes ?? secondary.likes,
+    comments: primary.comments ?? secondary.comments,
+    shares: primary.shares ?? secondary.shares
+  };
 }
 
 function isPlatformUrl(platform: SocialMarketPlatform, raw: string) {
@@ -244,6 +287,7 @@ export async function socialContentResearch(input: {
         indexedResultCount: 0,
         metricResultCount: 0,
         cacheHit: null,
+        searchProvider: null,
         warning: 'Query-specific social-content research requires a query.'
       })),
       warnings: ['Query-specific social-content research requires a query.'],
@@ -256,8 +300,21 @@ export async function socialContentResearch(input: {
   const platformStatus: SocialPlatformStatus[] = [];
   const warnings: string[] = [];
 
-  for (const platform of platforms) {
-    const searchQuery = PLATFORM_QUERY[platform](query);
+  async function indexedSearch(searchQuery: string) {
+    let braveError: string | null = null;
+    try {
+      const serp = await serpResearchCached({
+        query: searchQuery,
+        country: input.geo,
+        language: input.geo === 'JP' ? 'ja' : 'en',
+        num: perPlatformLimit,
+        provider: 'brave',
+        forceRefresh: false
+      }) as any;
+      return { serp, provider: 'brave' as const };
+    } catch (error) {
+      braveError = error instanceof Error ? error.message : String(error);
+    }
     try {
       const serp = await serpResearchCached({
         query: searchQuery,
@@ -267,6 +324,19 @@ export async function socialContentResearch(input: {
         provider: 'api',
         forceRefresh: false
       }) as any;
+      warnings.push('Brave social search failed for "' + searchQuery + '"; API fallback succeeded: ' + braveError);
+      return { serp, provider: 'api' as const };
+    } catch (error) {
+      const apiError = error instanceof Error ? error.message : String(error);
+      throw new Error('Brave failed: ' + braveError + '; API fallback failed: ' + apiError);
+    }
+  }
+
+  for (const platform of platforms) {
+    const searchQuery = PLATFORM_QUERY[platform](query);
+    try {
+      const indexed = await indexedSearch(searchQuery);
+      const serp = indexed.serp;
       const candidates = (Array.isArray(serp?.results) ? serp.results : [])
         .filter((item: any) => item?.link && isPlatformUrl(platform, String(item.link)))
         .slice(0, perPlatformLimit);
@@ -274,6 +344,7 @@ export async function socialContentResearch(input: {
       const mapped: SocialContentObservation[] = candidates.map((item: any) => {
         const title = String(item?.title ?? '').trim();
         const snippet = item?.snippet == null ? null : String(item.snippet).trim();
+        const snippetMetrics = parseIndexedSocialSnippetMetrics(platform, snippet);
         return {
           platform,
           searchQuery,
@@ -282,8 +353,8 @@ export async function socialContentResearch(input: {
           url: String(item.link),
           snippet,
           formatSignals: extractSocialFormatSignals([title, snippet].filter(Boolean).join(' ')),
-          metrics: emptyMetrics(),
-          metricProvenance: 'none'
+          metrics: snippetMetrics ?? emptyMetrics(),
+          metricProvenance: snippetMetrics ? 'search_snippet' : 'none'
         };
       }).filter((item: SocialContentObservation) => item.title && item.url);
 
@@ -292,10 +363,13 @@ export async function socialContentResearch(input: {
         for (let index = 0; index < enrichments.length; index++) {
           const enrichment = enrichments[index];
           if (!enrichment || !mapped[index]) continue;
+          const previous = mapped[index];
           mapped[index] = {
-            ...mapped[index],
-            metrics: enrichment.metrics,
-            metricProvenance: enrichment.provenance
+            ...previous,
+            metrics: mergeMetrics(enrichment.metrics, previous.metrics),
+            metricProvenance: previous.metricProvenance === 'search_snippet'
+              ? 'public_page_plus_search_snippet'
+              : enrichment.provenance
           };
         }
       }
@@ -313,6 +387,7 @@ export async function socialContentResearch(input: {
         indexedResultCount: mapped.length,
         metricResultCount,
         cacheHit,
+        searchProvider: indexed.provider,
         warning
       });
       if (warning) warnings.push(warning);
@@ -326,6 +401,7 @@ export async function socialContentResearch(input: {
         indexedResultCount: 0,
         metricResultCount: 0,
         cacheHit: null,
+        searchProvider: null,
         warning
       });
     }
@@ -344,7 +420,8 @@ export async function socialContentResearch(input: {
     warnings,
     guidance: [
       'Indexed social results are real public content observations, but search-engine ranking is not a native TikTok/YouTube/Instagram popularity ranking.',
-      'TikTok and YouTube Shorts engagement metrics are best-effort values parsed from public content pages when exposed; missing metrics mean unavailable evidence, not zero engagement.',
+      'Social engagement metrics are best-effort values from indexed search snippets and public content pages when exposed; missing metrics mean unavailable evidence, not zero engagement.',
+      'Brave is preferred for site-restricted social discovery because it returned materially better TikTok/Shorts coverage in production checks; the general SERP API remains a fallback.',
       'Use titles/snippets and formatSignals to study output patterns. Use engagement metrics only when metricProvenance is present.'
     ]
   };
