@@ -438,6 +438,8 @@ export function assessMarketEvidenceCoverage(input: {
   broadSignalCount: number;
   broadSourceCount: number;
   broadSocialSignalCount: number;
+  broadSocialMetricCount?: number;
+  broadSocialSources?: string[];
   searchSurfaceCount: number;
   searchDemandCount: number;
   socialContent: SocialContentResearchResult;
@@ -452,6 +454,12 @@ export function assessMarketEvidenceCoverage(input: {
 
   const requiresQueryMarket = queryMode && ['affiliate', 'social_affiliate', 'product_ideation'].includes(input.researchGoal);
   const requiresSocial = input.researchGoal === 'social_affiliate';
+  const broadSocialMetricCount = input.broadSocialMetricCount ?? input.broadSocialSignalCount;
+  const broadSocialSources = input.broadSocialSources?.length
+    ? [...new Set(input.broadSocialSources)]
+    : input.broadSocialSignalCount > 0
+      ? ['tiktok_creative_center']
+      : [];
   const checks: MarketEvidenceCheck[] = [
     {
       evidenceClass: 'broad_market_signals',
@@ -488,23 +496,23 @@ export function assessMarketEvidenceCoverage(input: {
       evidenceCount: queryMode ? socialCount : input.broadSocialSignalCount,
       sources: queryMode
         ? input.socialContent.platformsObserved
-        : input.broadSocialSignalCount > 0 ? ['tiktok_creative_center'] : [],
+        : broadSocialSources,
       note: queryMode
         ? 'Query-relevant indexed TikTok/Shorts/Reels content is used to observe actual output formats rather than inventing them from the model.'
-        : 'Broad social-affiliate research requires an observed social trend surface; Google Trends/HN alone cannot stand in for it.'
+        : 'Broad social-affiliate research may use generic indexed TikTok/Shorts discovery in addition to TikTok Creative Center. Google Trends/HN alone cannot stand in for social evidence.'
     },
     {
       evidenceClass: 'social_engagement_metrics',
       required: false,
       status: queryMode
         ? socialMetricCount > 0 ? 'available' : socialCount > 0 ? 'partial' : 'unavailable'
-        : input.broadSocialSignalCount > 0 ? 'available' : 'unavailable',
-      evidenceCount: queryMode ? socialMetricCount : input.broadSocialSignalCount,
+        : broadSocialMetricCount > 0 ? 'available' : input.broadSocialSignalCount > 0 ? 'partial' : 'unavailable',
+      evidenceCount: queryMode ? socialMetricCount : broadSocialMetricCount,
       sources: queryMode
         ? [...new Set(input.socialContent.observations.filter(item =>
             Object.values(item.metrics).some(value => value !== null)
           ).map(item => item.metricProvenance).filter(source => source !== 'none'))]
-        : input.broadSocialSignalCount > 0 ? ['tiktok_creative_center'] : [],
+        : broadSocialMetricCount > 0 ? broadSocialSources : [],
       note: 'Engagement evidence is best-effort and never inferred from search ranking.'
     }
   ];
@@ -521,7 +529,7 @@ export function assessMarketEvidenceCoverage(input: {
   );
   const strongSocial = !requiresSocial || (queryMode
     ? socialPlatformCount >= 2 && socialMetricCount > 0
-    : input.broadSocialSignalCount > 0);
+    : input.broadSocialSignalCount > 0 && broadSocialMetricCount > 0);
   const strongSearch = !queryMode || (input.searchSurfaceCount > 0 && input.searchDemandCount > 0);
   const strongBroad = queryMode || input.broadSourceCount >= 2;
   const status: MarketEvidenceCoverage['status'] = !conclusionAllowed
