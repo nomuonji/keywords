@@ -20,6 +20,12 @@
 
 このリサーチでは総合スコア・自動ランキング・単一指標による勝者選定を作らない。検索量、成果単価、EPC、確定率、SERP観測などの数値は証拠として保存し、残存理由、致命傷、未確認点、次の反証を文章で更新する。候補を落とした理由は保持し、新しい証拠なしに killed 候補を再提案しない。観察から次の検索を変える探索は既存台帳の `discovery` に保存する。管理サイトでは `seo-discovery-{siteId}` を使い、新規収益テーマ台帳と混ぜない。スケジュール実行では実際の証拠がある批判検証結果または具体的な取得阻害要因を残し、次のセッションがチャット履歴なしで再開できる状態を残す。
 
+## 市場intent回帰
+
+`packages/commands/src/market-intelligence.ts` のintent分類・query分解・commercialization適用条件を変更するときは、`npm run test:market-intent` を必ず通す。fixtureは特定テーマ専用にせず、B2B/B2C・日本語/英語・entity・investment・qualification・commercial・problem・solution・how-to・polysemy・negative controlを横断する。
+
+新しい実市場調査で誤分類を発見した場合は、その単語だけを場当たり修正して終わらせない。まず再現seedを `scripts/market-intent-regression-smoke.ts` に追加し、一般化できるintent signalか、特定entity/domain固有の意味かを切り分けてから分類器を変更する。広い語彙を追加する場合は、同時に過剰一致のnegative controlも追加する。
+
 ## 市場シグナル観測
 
 新規プロダクト・コンテンツ・収益テーマの発想を始めるとき、モデルの一般知識だけから需要を推測しない。単純な現在値だけでよい場合は `market_signal_scan`、商品機会・訴求・ポジショニングまで考える依頼ではまず `market_intelligence_research` を使う。queryを指定した調査では broad trend を根拠に流用せず、hypothesis-led mode の query-relevant Hacker News / SERP関連検索・PAA / Google Ads需要 / App Store商品化を使う。さらに related search / PAA / SERP / demand / query-relevant外部シグナルを intent tree に分解し、problem_need / solution_product / how_to / commercial / entity / investment / career_qualification / news / research_information / ambiguous を混同しない。root queryがambiguousかつ複数枝に分かれる場合は `senseSelectionRequired` に従い、market thesisを書く前に「同じ文字列のどの意味を分析しているか」を明示する。同名ブランド・別カテゴリ・語の向き（例: Xを守る／Xを使って守る）を字面一致だけで同市場扱いしない。generic queryでは problem/solution/how-to/commercial を主枝とし、entityはout_of_scope、investmentとcareer/qualificationはadjacent_market、research/news/ambiguousはcontextualとして保持する。元query自体が資格・投資・entity等を明示している場合は、その枝を主枝へ切り替える。queryなしの場合だけ全体トレンドを探索起点として扱う。後者はGoogle Trends / TikTok Creative Center / Hacker Newsに加え、TikTok Top Adsの公開クリエイティブ、Pinterest Trendsの公開面（best-effort）、Apple App Storeの商品化状況を束ね、訴求mechanicとmarket thesis用の証拠枠を返す。定期実行は前提にしない。詳細は `docs/market-signals.md`。
