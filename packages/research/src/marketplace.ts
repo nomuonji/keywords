@@ -112,7 +112,7 @@ function extractAttr(fragment: string, name: string): string | null {
 
 function classText(fragment: string, className: string): string | null {
   const expression = new RegExp(
-    '<[^>]+class=["\\'][^"\\']*' + className + '[^"\\']*["\\'][^>]*>([\\s\\S]*?)<\\/[^>]+>',
+    "<[^>]+class=[\"'][^\"']*" + className + "[^\"']*[\"'][^>]*>([\\s\\S]*?)<\\/[^>]+>",
     'i'
   );
   const match = fragment.match(expression);
@@ -121,7 +121,7 @@ function classText(fragment: string, className: string): string | null {
 
 function classAttr(fragment: string, className: string, attrName: string): string | null {
   const expression = new RegExp(
-    '<[^>]+class=["\\'][^"\\']*' + className + '[^"\\']*["\\'][^>]*>',
+    "<[^>]+class=[\"'][^\"']*" + className + "[^\"']*[\"'][^>]*>",
     'i'
   );
   const match = fragment.match(expression);
