@@ -554,6 +554,7 @@ function signalFact(observation: MarketSignalObservation): string {
 
 function buildThesisFrame(
   signals: MarketSignalScanResult,
+  queryFocus: QueryFocusResearch,
   mechanics: MarketingMechanicEvidence[],
   commercialization: Awaited<ReturnType<typeof appStoreResearch>>,
   supplementalWarnings: string[]
@@ -568,6 +569,35 @@ function buildThesisFrame(
       }
     }
   }
+  if (queryFocus.mode === 'hypothesis_led') {
+    const demandEvidence = queryFocus.searchDemand.results
+      .filter(item => item.avgMonthlySearches !== null || item.averageCpcMicros !== null)
+      .slice(0, 10)
+      .map(item => ({
+        source: 'google_ads',
+        label: item.keyword,
+        fact: item.keyword + ' (avgMonthlySearches=' + String(item.avgMonthlySearches ?? 'n/a') + ', averageCpcMicros=' + String(item.averageCpcMicros ?? 'n/a') + ', competitionIndex=' + String(item.competitionIndex ?? 'n/a') + ')',
+        url: null
+      }));
+    if (demandEvidence.length) evidenceBySignal.query_search_demand = demandEvidence;
+
+    const surfaceEvidence = [
+      ...queryFocus.searchSurface.relatedSearches.slice(0, 6).map(label => ({
+        source: 'serp_related_searches',
+        label,
+        fact: 'Related search surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      })),
+      ...queryFocus.searchSurface.peopleAlsoAsk.slice(0, 4).map(label => ({
+        source: 'serp_people_also_ask',
+        label,
+        fact: 'People-also-ask question surfaced for query "' + String(queryFocus.query) + '": ' + label,
+        url: null
+      }))
+    ];
+    if (surfaceEvidence.length) evidenceBySignal.query_search_surface = surfaceEvidence;
+  }
+
   const commercializationFacts: string[] = [];
   if (commercialization.query) {
     commercializationFacts.push(
@@ -586,6 +616,8 @@ function buildThesisFrame(
     'Attention/search/ad metrics do not prove willingness to pay or unit sales.',
     ...(commercialization.query && commercialization.observations.length === 0 ? ['No App Store commercialization evidence was retrieved for the supplied query.'] : []),
     ...(mechanics.length === 0 ? ['No reliable creative mechanic was extracted from the currently public Top Ads surface.'] : []),
+    ...queryFocus.searchSurface.warnings,
+    ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
   ];
   return {
@@ -596,6 +628,7 @@ function buildThesisFrame(
     requiredAgentOutput: [
       'Write 1-3 market theses only after reading the evidence above.',
       'For each thesis, cite at least two independent observed sources when available.',
+      ...(queryFocus.mode === 'hypothesis_led' ? ['Treat query_search_demand, query_search_surface, query-relevant Hacker News, and commercialization evidence as primary. Do not use unrelated broad trend headlines as support for the supplied query.'] : []),
       'State the underlying behavior/desire, its current fulfillment, and the marketing mechanic that appears to trigger attention.',
       'Propose adjacency dimensions (audience, format, context, social loop, output artifact, distribution, business model) before proposing products.',
       'Classify each resulting concept as copy_like, adjacent, or speculative and explain why.',
