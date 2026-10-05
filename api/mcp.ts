@@ -8,6 +8,7 @@ import * as z from 'zod/v4';
 // independently of npm workspace links.
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
 import { analyzeSerp } from '../packages/research/src/index.js';
+import { marketplaceAdapterCapabilities, marketplaceResearch, supportedMarketplaceAdapters } from '../packages/research/src/marketplace.js';
 import { googleAdsDirectConfiguration, googleAdsKeywordHistoricalMetricsDirect, sanitizeGoogleAdsError } from './google-ads-direct.js';
 import { KEYWORDS_MCP_SERVER_VERSION, KEYWORDS_MCP_TOOL_NAMES } from './mcp-contract.js';
 import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch, siteStructureSaveShape, siteStructureGetShape, siteStructureListShape, siteStructurePatchShape } from '../packages/commands/src/site-structure.js';
@@ -106,7 +107,11 @@ function runtimeStatus() {
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
     googleAdsDirectLastError,
-    serpQuotaConfiguration: serpQuotaConfiguration()
+    serpQuotaConfiguration: serpQuotaConfiguration(),
+    marketplaceResearch: {
+      supportedMarketplaces: supportedMarketplaceAdapters(),
+      capabilities: marketplaceAdapterCapabilities()
+    }
   };
 }
 
@@ -174,6 +179,18 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('marketplace_research', {
+    description: 'Read-only marketplace keyword research through a shared adapter layer. BOOTH is the first source. Returns search result counts, autocomplete suggestions, observed product cards, prices, wish-list counts when available, shop/category concentration, related tags, and optional cross-sort overlap. This tool does not compute a composite winner score or save/promote candidates.',
+    inputSchema: {
+      marketplace: z.string().min(1).max(50).optional(),
+      query: z.string().min(1).max(200),
+      page: z.number().int().min(1).max(10).optional(),
+      sorts: z.array(z.enum(['popularity', 'wish_lists', 'new'])).min(1).max(3).optional(),
+      includeSuggestions: z.boolean().optional(),
+      maxProducts: z.number().int().min(1).max(60).optional()
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketplaceResearch(input)));
   mcp.registerTool('search_gap_research', {
     description: 'Read a bounded SERP plus actual top-page bodies and optional observation source URLs for a concrete user question. Returns text, truncation, failures and provider provenance; the agent must compare answers and save its findings in the existing theme ledger. Does not invent an answer gap or save/promote a candidate.',
     inputSchema: searchGapResearchShape,
