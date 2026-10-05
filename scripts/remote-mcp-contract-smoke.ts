@@ -391,6 +391,7 @@ assert.match(mcpSource, /evidenceCoverageGate/);
 assert.match(mcpSource, /socialAffiliateRequiresQueryMarketAndSocialContent/);
 assert.match(mcpSource, /broadDiscovery/);
 assert.match(mcpSource, /generic_social_to_validated_clusters|startsFromGenericSocialQueries/);
+assert.match(mcpSource, /one_concrete_market_per_generic_seed_then_fill/);
 assert.match(mcpSource, /social_serp_observation/);
 assert.match(mcpSource, /market_signal_snapshot_save/);
 assert.match(mcpSource, /market_signal_snapshot_compare/);
