@@ -9,6 +9,17 @@ import {
   type MarketSignalObservation,
   type MarketSignalScanResult
 } from '../../research/src/market-sensors.js';
+import {
+  DEFAULT_SOCIAL_MARKET_PLATFORMS,
+  MARKET_RESEARCH_GOALS,
+  SOCIAL_MARKET_PLATFORMS,
+  assessMarketEvidenceCoverage,
+  socialContentResearch,
+  type MarketEvidenceCoverage,
+  type MarketResearchGoal,
+  type SocialContentResearchResult,
+  type SocialMarketPlatform
+} from './market-social-research.js';
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const snapshotId = z.string().regex(/^[a-zA-Z0-9_-]{1,120}$/);
@@ -21,7 +32,10 @@ export const marketIntelligenceResearchShape = {
   hackerNewsFeed: z.enum(['top', 'new', 'best']).optional(),
   includeTopAds: z.boolean().optional(),
   includePinterest: z.boolean().optional(),
-  includeAppStore: z.boolean().optional()
+  includeAppStore: z.boolean().optional(),
+  includeSocialContent: z.boolean().optional(),
+  socialPlatforms: z.array(z.enum(SOCIAL_MARKET_PLATFORMS)).min(1).max(3).optional(),
+  researchGoal: z.enum(MARKET_RESEARCH_GOALS).optional()
 };
 
 export const marketSignalSnapshotSaveShape = {
@@ -40,7 +54,10 @@ export const marketSignalSnapshotCompareShape = {
   hackerNewsFeed: z.enum(['top', 'new', 'best']).optional(),
   includeTopAds: z.boolean().optional(),
   includePinterest: z.boolean().optional(),
-  includeAppStore: z.boolean().optional()
+  includeAppStore: z.boolean().optional(),
+  includeSocialContent: z.boolean().optional(),
+  socialPlatforms: z.array(z.enum(SOCIAL_MARKET_PLATFORMS)).min(1).max(3).optional(),
+  researchGoal: z.enum(MARKET_RESEARCH_GOALS).optional()
 };
 
 
@@ -171,6 +188,8 @@ export interface MarketIntelligencePacket {
   geo: string;
   signals: MarketSignalScanResult;
   queryFocus: QueryFocusResearch;
+  socialContent: SocialContentResearchResult;
+  coverage: MarketEvidenceCoverage;
   creativeEvidence: {
     source: 'tiktok_top_ads';
     scope: 'cross_category_reference';
@@ -1004,6 +1023,8 @@ function signalFact(observation: MarketSignalObservation): string {
 function buildThesisFrame(
   signals: MarketSignalScanResult,
   queryFocus: QueryFocusResearch,
+  socialContent: SocialContentResearchResult,
+  coverage: MarketEvidenceCoverage,
   mechanics: MarketingMechanicEvidence[],
   commercialization: Awaited<ReturnType<typeof appStoreResearch>>,
   supplementalWarnings: string[]
@@ -1081,6 +1102,20 @@ function buildThesisFrame(
     if (contextEvidence.length) evidenceBySignal.query_context_surface = contextEvidence;
   }
 
+  if (socialContent.observations.length) {
+    evidenceBySignal.query_social_content = socialContent.observations.slice(0, 12).map(item => ({
+      source: item.platform,
+      label: item.title,
+      fact: [
+        item.title,
+        item.formatSignals.length ? 'formats=' + item.formatSignals.join(',') : null,
+        item.metrics.views !== null ? 'views=' + String(item.metrics.views) : null,
+        item.metrics.likes !== null ? 'likes=' + String(item.metrics.likes) : null
+      ].filter(Boolean).join(' | '),
+      url: item.url
+    }));
+  }
+
   const commercializationFacts: string[] = [];
   if (commercialization.query && commercialization.applicability === 'relevant') {
     commercializationFacts.push(
@@ -1105,6 +1140,8 @@ function buildThesisFrame(
     ...(commercialization.applicability === 'relevant' ? ['App Store evidence is lexical-search evidence only; same words can describe a different semantic category or direction of use. Review descriptionExcerpt before using it as commercialization support.'] : []),
     ...(queryFocus.intentTree.mixedIntent ? ['The query surface contains multiple search intents. Do not aggregate them into one market thesis; use the intent tree.'] : []),
     ...(queryFocus.intentTree.senseSelectionRequired ? ['The root query is semantically/intent-wise underspecified. This packet is discovery evidence only: select a sense and re-root with an intent-bearing query before writing the market thesis.'] : []),
+    ...coverage.missingRequired.map(item => 'Required evidence is missing: ' + item + '.'),
+    ...socialContent.warnings.slice(0, 5),
     ...queryFocus.searchSurface.warnings,
     ...queryFocus.searchDemand.warnings,
     ...supplementalWarnings.slice(0, 5)
@@ -1115,8 +1152,11 @@ function buildThesisFrame(
     commercializationFacts,
     contradictionsAndUnknowns: [...new Set(contradictionsAndUnknowns)],
     requiredAgentOutput: [
-      'Write 1-3 market theses only after reading the evidence above.',
+      coverage.conclusionAllowed
+        ? 'Write 1-3 market theses only after reading the evidence above.'
+        : 'Do not finalize, rank, or recommend markets from this packet because required evidence coverage is insufficient.',
       'For each thesis, cite at least two independent observed sources when available.',
+      'Read coverage before making any recommendation. An unavailable source is missing evidence, not evidence of zero demand or zero social activity.',
       ...(queryFocus.mode === 'hypothesis_led' ? [
         'Declare which intent branch the thesis is about before interpreting demand.',
         ...(queryFocus.intentTree.senseSelectionRequired ? ['Do not finalize a thesis from this ambiguous-root packet. Select one semantic sense/intent and re-run market_intelligence_research with a more explicit query; then reject evidence that uses the phrase in a different sense.'] : []),
@@ -1141,8 +1181,11 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   const includeTopAds = args.includeTopAds ?? true;
   const includePinterest = args.includePinterest ?? true;
   const includeAppStore = args.includeAppStore ?? true;
+  const includeSocialContent = args.includeSocialContent ?? Boolean(query);
+  const socialPlatforms = (args.socialPlatforms?.length ? args.socialPlatforms : [...DEFAULT_SOCIAL_MARKET_PLATFORMS]) as SocialMarketPlatform[];
+  const researchGoal = (args.researchGoal ?? 'general') as MarketResearchGoal;
 
-  const [signals, queryFocus, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
+  const [signals, queryFocus, socialContentResult, topAdsResult, pinterestResult, appStoreResult] = await Promise.all([
     marketSignalScan({
       sources: query ? ['hacker_news'] : [...MARKET_SENSOR_SOURCE_IDS],
       query: query ?? undefined,
@@ -1152,6 +1195,20 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
       hackerNewsFeed: args.hackerNewsFeed
     }),
     queryFocusedResearch(query, geo, limit),
+    includeSocialContent
+      ? socialContentResearch({ query, geo, limit, platforms: socialPlatforms })
+      : Promise.resolve({
+          source: 'serp_indexed_social_content' as const,
+          evidenceScope: 'public_index_plus_best_effort_public_page_metrics' as const,
+          query,
+          platformsRequested: socialPlatforms,
+          platformsObserved: [] as SocialMarketPlatform[],
+          observations: [],
+          formatSummary: [],
+          platformStatus: [],
+          warnings: ['Query-relevant social-content research was disabled for this research call.'],
+          guidance: ['Disabled social research is missing evidence, not evidence that the platforms have no relevant content.']
+        }),
     includeTopAds ? tiktokTopAds(geo, Math.min(limit, 10)) : Promise.resolve({ url: '', observations: [] as TopAdObservation[], warnings: ['TikTok Top Ads was disabled for this research call.'] }),
     includePinterest ? pinterestTrends(query, geo, limit) : Promise.resolve({ source: 'pinterest_trends' as const, url: '', observations: [] as PinterestObservation[], warnings: ['Pinterest Trends was disabled for this research call.'] }),
     includeAppStore && appStoreRelevantForQuery(query) ? appStoreResearch(query, geo, limit) : Promise.resolve({
@@ -1170,9 +1227,26 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
   ]);
 
   const resolvedQueryFocus = attachQuerySignalsToIntentTree(queryFocus, signals);
+  const coverage = assessMarketEvidenceCoverage({
+    researchGoal,
+    query,
+    broadSignalCount: signals.results.reduce((sum, result) => sum + result.observations.length, 0),
+    broadSourceCount: signals.sourcesSucceeded.length,
+    broadSocialSignalCount: signals.results
+      .filter(result => result.source === 'tiktok_creative_center')
+      .reduce((sum, result) => sum + result.observations.length, 0),
+    searchSurfaceCount:
+      resolvedQueryFocus.searchSurface.relatedSearches.length +
+      resolvedQueryFocus.searchSurface.peopleAlsoAsk.length +
+      resolvedQueryFocus.searchSurface.topResults.length,
+    searchDemandCount: resolvedQueryFocus.searchDemand.results.length,
+    socialContent: socialContentResult,
+    senseSelectionRequired: resolvedQueryFocus.intentTree.senseSelectionRequired
+  });
   const mechanics = mechanicsSummary(topAdsResult.observations);
   const warnings = [
     ...signals.warnings,
+    ...socialContentResult.warnings,
     ...resolvedQueryFocus.searchSurface.warnings,
     ...resolvedQueryFocus.searchDemand.warnings,
     ...topAdsResult.warnings,
@@ -1186,6 +1260,8 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     geo,
     signals,
     queryFocus: resolvedQueryFocus,
+    socialContent: socialContentResult,
+    coverage,
     creativeEvidence: {
       source: 'tiktok_top_ads',
       scope: 'cross_category_reference',
@@ -1196,7 +1272,7 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     },
     pinterest: pinterestResult,
     commercialization: appStoreResult,
-    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, mechanics, appStoreResult, warnings),
+    thesisFrame: buildThesisFrame(signals, resolvedQueryFocus, socialContentResult, coverage, mechanics, appStoreResult, warnings),
     warnings
   };
 }
@@ -1234,7 +1310,10 @@ export async function marketSignalSnapshotSave(input: unknown) {
     hackerNewsFeed: args.hackerNewsFeed,
     includeTopAds: args.includeTopAds,
     includePinterest: args.includePinterest,
-    includeAppStore: args.includeAppStore
+    includeAppStore: args.includeAppStore,
+    includeSocialContent: args.includeSocialContent,
+    socialPlatforms: args.socialPlatforms,
+    researchGoal: args.researchGoal
   });
   const idValue = args.id ?? ('market-' + Date.now().toString(36) + '-' + randomUUID().slice(0, 8));
   const createdAt = new Date().toISOString();
@@ -1307,6 +1386,19 @@ function flattenPacket(packet: MarketIntelligencePacket): FlatObservation[] {
         avgMonthlySearches: item.avgMonthlySearches,
         averageCpcMicros: item.averageCpcMicros,
         competitionIndex: item.competitionIndex
+      }
+    });
+  }
+  for (const observation of packet.socialContent?.observations ?? []) {
+    items.push({
+      source: 'social_' + observation.platform,
+      key: normalizeKey(observation.url),
+      label: observation.title,
+      metrics: {
+        views: observation.metrics.views,
+        likes: observation.metrics.likes,
+        comments: observation.metrics.comments,
+        shares: observation.metrics.shares
       }
     });
   }
@@ -1421,7 +1513,10 @@ export async function marketSignalSnapshotCompare(input: unknown) {
     hackerNewsFeed: args.hackerNewsFeed,
     includeTopAds: args.includeTopAds,
     includePinterest: args.includePinterest,
-    includeAppStore: args.includeAppStore
+    includeAppStore: args.includeAppStore,
+    includeSocialContent: args.includeSocialContent,
+    socialPlatforms: args.socialPlatforms,
+    researchGoal: args.researchGoal
   });
   return {
     baseline: { id: left.id, label: left.label, createdAt: left.createdAt, query: left.query, geo: left.geo },

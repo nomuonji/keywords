@@ -32,6 +32,8 @@
 
 前回との差を見る必要がある場合だけ、ユーザーの依頼または明確な調査目的に基づいて `market_signal_snapshot_save` を明示的に呼ぶ。snapshotは自動保存しない。後で `market_signal_snapshot_compare` を使い、同一ソース・同一ラベルの数値差、ランキング面への新規出現/消失をvelocityのトリガーとして読む。
 
+アフィリエイト市場やSNS出力パターンを比較する依頼では、query付き `market_intelligence_research` に `researchGoal: "social_affiliate"` を指定する。query付き調査はTikTok / YouTube Shorts（必要ならInstagram Reels）の公開インデックス上の実在コンテンツを観測し、取得できるTikTok公開ページでは再生・いいね等をbest-effortで補完する。`coverage.conclusionAllowed=false` の場合は、SEO/SERP側だけで市場順位や推奨を確定してはならない。0件取得は市場不在ではなく取得不能/証拠不足として扱う。SNSの検索順位はネイティブ人気順位ではないため、formatSignalsは出力パターン観測に使い、engagementはmetricProvenance付きの値だけを根拠にする。
+
 Google Trendsの検索トラフィック、TikTokの投稿数・閲覧数・広告CTR percentile、HNのscore/comments、App Storeの評価件数はそれぞれ異なる種類の注意・行動・商品化シグナルであり、売上や支払意思を直接示さない。複数ソースの反復パターンから行動・欲望・見せ方を抽出する。ただしmarket thesisを書く前に対象intent branchを明示し、別枝の検索量を合算しない。副枝は捨てず、別市場として独立検証するときだけ別thesisへ昇格させる。Top Adsからはcomparison / social proof / problem-solution / demonstration等の訴求mechanicを読むが、これはcross-categoryの訴求参考値であり対象queryの需要証拠ではない。App Store Searchもlexical search evidenceに留め、タイトルとdescriptionExcerptの意味が選択したsenseと合うことを確認してから商品化根拠へ使う。その後に audience / format / context / social loop / output artifact / distribution / business model のどこを横にずらせるかを考える。観測した商品をそのまま模倣せず、copy_like / adjacent / speculative を明示する。単一の総合Opportunity Scoreへ潰さない。
 
 ## SEO情報源ウォッチ

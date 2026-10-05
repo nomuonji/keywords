@@ -157,3 +157,26 @@ Intent behavior is covered by `scripts/market-intent-regression-smoke.ts` and `n
 - **Meta Ad Library** — general commercial-ad discovery still lacks a stable unauthenticated official machine interface suitable for this MCP contract.
 
 RapidAPI can still be used selectively for missing fields, but it is not the primary market-sensor foundation because free tiers are too restrictive for broad scanning.
+
+
+## Query-relevant social output evidence
+
+For query-focused market research, `market_intelligence_research` can inspect real public content indexed from TikTok, YouTube Shorts, and optionally Instagram Reels. The default query-focused pass uses TikTok and YouTube Shorts.
+
+This evidence is deliberately separated from TikTok Creative Center and Top Ads:
+
+- indexed social results answer **what output formats actually exist around this query**;
+- TikTok public-page hydration, when exposed, can add best-effort views / likes / comments / shares;
+- search-engine position is not treated as native social popularity;
+- missing indexed results or missing metrics mean **unavailable evidence**, never zero demand or zero engagement;
+- TikTok Top Ads remains cross-category creative reference only.
+
+Use `researchGoal: "social_affiliate"` when the task is to find affiliate markets that can also be expressed through short-form social content. The returned `coverage` object is binding for agent interpretation. If `coverage.conclusionAllowed` is false, do not rank or recommend markets until the missing required evidence is retrieved.
+
+`coverage.status` has three states:
+
+- `sufficient`: query market evidence, multiple social surfaces, and at least some engagement evidence are present;
+- `partial`: enough evidence exists to form a thesis, but one or more strengthening evidence classes are unavailable;
+- `insufficient`: a required class such as query market evidence, social output evidence, or semantic-sense selection is missing.
+
+Affiliate program availability, payout, approval conditions, and conversion rules remain a separate verification step; market attention alone must not be called easy monetization.

@@ -42,6 +42,7 @@ if (!configuredToken) throw new Error('KEYWORDS_REMOTE_MCP_TOKEN is required for
 const token: string = configuredToken;
 const groqToken = process.env.KEYWORDS_GROQ_MCP_TOKEN?.trim() || null;
 const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
+let googleAdsProxyLastError: string | null = null;
 let googleAdsDirectLastError: string | null = null;
 
 app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
@@ -108,7 +109,12 @@ function runtimeStatus() {
     googleAdsDemandProviderOrder: ['proxy', 'direct'],
     googleAdsDirectConfigured: googleAdsDirect.configured,
     googleAdsDirectConfiguration: googleAdsDirect,
+    googleAdsProxyLastError,
     googleAdsDirectLastError,
+    googleAdsDemandHealth: {
+      proxy: googleAdsProxyLastError ? 'last_attempt_failed' : 'ok_or_not_yet_failed',
+      directFallback: googleAdsDirectLastError ? 'last_attempt_failed' : 'unknown_or_last_attempt_succeeded'
+    },
     serpQuotaConfiguration: serpQuotaConfiguration(),
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
@@ -119,7 +125,12 @@ function runtimeStatus() {
       onDemandOnly: true,
       snapshotPersistence: 'explicit_call_only',
       tools: ['market_intelligence_research', 'market_signal_snapshot_save', 'market_signal_snapshot_compare'],
-      supplementalSources: ['serp_query_context', 'google_ads_query_demand', 'tiktok_top_ads', 'pinterest_trends', 'app_store'],
+      supplementalSources: ['serp_query_context', 'google_ads_query_demand', 'social_serp_observation', 'tiktok_public_page_metrics', 'tiktok_top_ads', 'pinterest_trends', 'app_store'],
+      evidenceCoverageGate: {
+        enabled: true,
+        socialAffiliateRequiresQueryMarketAndSocialContent: true,
+        unavailableSourceMeansMissingEvidence: true
+      },
       queryModes: {
         noQuery: 'broad_market_scan',
         withQuery: 'hypothesis_led_query_research'
@@ -139,17 +150,32 @@ function runtimeStatus() {
 type DemandInput = { keywords: string[]; languageConstant?: string; geoTargetConstants?: string[]; includeAdultKeywords?: boolean };
 async function demandWithFallback(input: DemandInput) {
   let proxyProviderError: string | null = null;
+  let proxyRetryUsed = false;
   try {
     const result = await keywordDemand(input);
-    googleAdsDirectLastError = null;
-    return { ...result, fallbackUsed: false, providerRoute: 'proxy' as const };
+    googleAdsProxyLastError = null;
+    return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy' as const };
   } catch (error) {
     proxyProviderError = sanitizeGoogleAdsError(error);
+    googleAdsProxyLastError = proxyProviderError;
   }
+
+  if (proxyProviderError && /(?:provider failed \(5\d\d|NOT_FOUND|BAD_RESOURCE_ID|timeout|temporar|fetch failed|ECONN)/i.test(proxyProviderError)) {
+    proxyRetryUsed = true;
+    try {
+      const result = await keywordDemand(input);
+      googleAdsProxyLastError = null;
+      return { ...result, fallbackUsed: false, proxyRetryUsed, providerRoute: 'proxy_retry' as const };
+    } catch (error) {
+      proxyProviderError = sanitizeGoogleAdsError(error);
+      googleAdsProxyLastError = proxyProviderError;
+    }
+  }
+
   try {
     const result = await googleAdsKeywordHistoricalMetricsDirect({ keywords: input.keywords, languageId: input.languageConstant, geoTargetIds: input.geoTargetConstants, includeAdultKeywords: input.includeAdultKeywords });
     googleAdsDirectLastError = null;
-    return { ...result, fallbackUsed: true, providerRoute: 'direct_fallback' as const, proxyProviderError };
+    return { ...result, fallbackUsed: true, proxyRetryUsed, providerRoute: 'direct_fallback' as const, proxyProviderError };
   } catch (error) {
     const directProviderError = sanitizeGoogleAdsError(error);
     googleAdsDirectLastError = directProviderError;
@@ -214,7 +240,7 @@ function server() {
   }, async input => structured(await marketSignalScan(input)));
 
   mcp.registerTool('market_intelligence_research', {
-    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it switches to hypothesis-led mode and decomposes related searches, PAA, SERP results, demand, and query-relevant signals into intent branches (problem/solution/how-to/commercial/entity/investment/career/news/research/ambiguous). Only the selected primary intent branch supports the main market thesis; adjacent/entity branches are preserved separately. TikTok Top Ads remains a cross-category creative-mechanic reference and App Store commercialization is skipped when the explicit query intent is not product/app oriented. Read-only: does not save snapshots, candidates, or ideas.',
+    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it runs hypothesis-led SERP/demand research plus query-relevant indexed TikTok/YouTube Shorts content (and optional Instagram Reels), with best-effort TikTok public-page engagement metrics. researchGoal=social_affiliate activates an evidence-coverage gate: missing social observations prevents market ranking/recommendation instead of being treated as zero demand. Intent branches remain separated, TikTok Top Ads stays cross-category creative reference only, and App Store evidence stays lexical. Read-only: does not save snapshots, candidates, or ideas.',
     inputSchema: marketIntelligenceResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketIntelligenceResearch(input)));
