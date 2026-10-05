@@ -296,6 +296,9 @@ export async function socialContentResearch(input: {
   }
 
   const perPlatformLimit = Math.max(1, Math.min(input.limit, 5));
+  // Search deeper than the requested output count before filtering to canonical
+  // video/reel URLs. TikTok often ranks discover/profile pages above videos.
+  const discoveryFetchSize = Math.min(20, Math.max(10, perPlatformLimit * 3));
   const observations: SocialContentObservation[] = [];
   const platformStatus: SocialPlatformStatus[] = [];
   const warnings: string[] = [];
@@ -307,9 +310,10 @@ export async function socialContentResearch(input: {
         query: searchQuery,
         country: input.geo,
         language: input.geo === 'JP' ? 'ja' : 'en',
-        num: perPlatformLimit,
+        num: discoveryFetchSize,
         provider: 'brave',
-        forceRefresh: false
+        forceRefresh: false,
+        maxCacheAgeHours: 24
       }) as any;
       return { serp, provider: 'brave' as const };
     } catch (error) {
@@ -320,9 +324,10 @@ export async function socialContentResearch(input: {
         query: searchQuery,
         country: input.geo,
         language: input.geo === 'JP' ? 'ja' : 'en',
-        num: perPlatformLimit,
+        num: discoveryFetchSize,
         provider: 'api',
-        forceRefresh: false
+        forceRefresh: false,
+        maxCacheAgeHours: 24
       }) as any;
       warnings.push('Brave social search failed for "' + searchQuery + '"; API fallback succeeded: ' + braveError);
       return { serp, provider: 'api' as const };
