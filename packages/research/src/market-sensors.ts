@@ -113,7 +113,7 @@ export function parseGoogleTrendsRss(xml: string, sourceUrl: string, limit = 20)
     const published = xmlText(item, 'pubDate');
     const link = xmlText(item, 'link');
     const newsTitles = [...item.matchAll(/<(?:ht:)?news_item_title\b[^>]*>([\s\S]*?)<\/(?:ht:)?news_item_title>/gi)]
-      .map(match => compactText(match[1]))
+      .map(match => compactText((match[1] ?? '').replace(/^<!\\[CDATA\\[|\\]\\]>$/g, '')))
       .filter((value): value is string => Boolean(value))
       .slice(0, 5);
     observations.push({
