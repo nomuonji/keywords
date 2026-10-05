@@ -128,7 +128,9 @@ function runtimeStatus() {
         enabled: true,
         branches: ['problem_need', 'solution_product', 'how_to', 'commercial', 'entity', 'investment', 'career_qualification', 'news', 'research_information', 'ambiguous'],
         thesisUsesPrimaryBranchOnly: true,
-        preservesAdjacentBranches: true
+        preservesAdjacentBranches: true,
+        semanticSenseSelectionForAmbiguousQueries: true,
+        appStoreEvidenceScope: 'lexical_search_only'
       }
     }
   };
