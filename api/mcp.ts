@@ -119,7 +119,12 @@ function runtimeStatus() {
       onDemandOnly: true,
       snapshotPersistence: 'explicit_call_only',
       tools: ['market_intelligence_research', 'market_signal_snapshot_save', 'market_signal_snapshot_compare'],
-      supplementalSources: ['serp_query_context', 'google_ads_query_demand', 'tiktok_top_ads', 'pinterest_trends', 'app_store'],
+      supplementalSources: ['serp_query_context', 'google_ads_query_demand', 'social_serp_observation', 'tiktok_public_page_metrics', 'tiktok_top_ads', 'pinterest_trends', 'app_store'],
+      evidenceCoverageGate: {
+        enabled: true,
+        socialAffiliateRequiresQueryMarketAndSocialContent: true,
+        unavailableSourceMeansMissingEvidence: true
+      },
       queryModes: {
         noQuery: 'broad_market_scan',
         withQuery: 'hypothesis_led_query_research'
@@ -214,7 +219,7 @@ function server() {
   }, async input => structured(await marketSignalScan(input)));
 
   mcp.registerTool('market_intelligence_research', {
-    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it switches to hypothesis-led mode and decomposes related searches, PAA, SERP results, demand, and query-relevant signals into intent branches (problem/solution/how-to/commercial/entity/investment/career/news/research/ambiguous). Only the selected primary intent branch supports the main market thesis; adjacent/entity branches are preserved separately. TikTok Top Ads remains a cross-category creative-mechanic reference and App Store commercialization is skipped when the explicit query intent is not product/app oriented. Read-only: does not save snapshots, candidates, or ideas.',
+    description: 'On-demand marketing intelligence research. Without query it performs broad market scanning. With query it runs hypothesis-led SERP/demand research plus query-relevant indexed TikTok/YouTube Shorts content (and optional Instagram Reels), with best-effort TikTok public-page engagement metrics. researchGoal=social_affiliate activates an evidence-coverage gate: missing social observations prevents market ranking/recommendation instead of being treated as zero demand. Intent branches remain separated, TikTok Top Ads stays cross-category creative reference only, and App Store evidence stays lexical. Read-only: does not save snapshots, candidates, or ideas.',
     inputSchema: marketIntelligenceResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketIntelligenceResearch(input)));
