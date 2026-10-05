@@ -131,6 +131,13 @@ function runtimeStatus() {
         socialAffiliateRequiresQueryMarketAndSocialContent: true,
         unavailableSourceMeansMissingEvidence: true
       },
+      retrievalResilience: {
+        primaryQuerySerpProviderOrder: ['api', 'brave'],
+        socialDiscoveryProviderOrder: ['brave', 'api'],
+        socialDiscoveryFetchBeforeFilterMin: 10,
+        socialCacheMaxAgeHours: 24,
+        primaryQueryCacheMaxAgeHours: 72
+      },
       queryModes: {
         noQuery: 'broad_market_scan',
         withQuery: 'hypothesis_led_query_research'
