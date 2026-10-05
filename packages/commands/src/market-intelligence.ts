@@ -186,7 +186,7 @@ async function fetchText(url: string, accept = 'text/html,application/xhtml+xml;
 }
 
 const MECHANIC_RULES: Array<{ mechanic: string; pattern: RegExp }> = [
-  { mechanic: 'comparison', pattern: /\b(compare|comparison|versus|\bvs\b|superior|superiority|difference between|real differences?)\b/i },
+  { mechanic: 'comparison', pattern: /\b(compar(?:e|es|ed|ing|ison)|versus|\bvs\b|superior|superiority|difference between|real differences?)\b/i },
   { mechanic: 'social_proof', pattern: /\b(testimonial|testimony|review|customers?|users?|people (?:say|love|share))\b/i },
   { mechanic: 'problem_solution', pattern: /\b(problem|pain|struggle|disturbing situation|annoying|frustrating|solution|solve|fix)\b/i },
   { mechanic: 'demonstration', pattern: /\b(showcase|demonstrat(?:e|ion)|how to|tutorial|step[- ]by[- ]step|in action|use case|feature)\b/i },
