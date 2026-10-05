@@ -1,57 +1,123 @@
-# On-demand market signals
+# On-demand market intelligence
 
-`market_signal_scan` is a read-only pre-ideation sensor for current public market/culture signals. It is intentionally **not scheduled** and does not persist or score findings.
+The market-research layer is intentionally **on demand**. Nothing in this feature schedules scans or silently persists them.
 
-## Sources
+## Tool roles
 
-- **Google Trends** — official public Trending RSS. Signal: current search intent / attention spikes. Fields include trend title, approximate traffic, publish time and related news titles when present.
-- **TikTok Creative Center** — official public trend pages. Signal: social attention and content creation. The adapter only reads server-rendered public hashtag rows (rank, hashtag, category, posts, views); it does not emulate TikTok's signed/private internal APIs.
-- **Hacker News** — official public Firebase API. Signal: early-adopter attention, new-product expression and technical/problem discussion.
+### `market_signal_scan`
 
-YouTube is intentionally deferred until a `YOUTUBE_API_KEY` is configured. General Meta Ad Library ingestion is deferred because there is no stable unauthenticated official machine API for general commercial ads that fits this MCP contract.
+Low-level current-signal sensor.
 
-## Usage
+Sources:
 
-Default Japan snapshot:
+- **Google Trends** — official public Trending RSS. Search intent / attention spikes.
+- **TikTok Creative Center trends** — public hashtag rows when server-rendered. Social attention / content creation.
+- **Hacker News** — official public Firebase API. Early-adopter attention, launches, technical/problem discussion.
 
-```text
-market_signal_scan
-{}
-```
+Use this when you only need the current surface.
 
-Explicit sources:
+### `market_intelligence_research`
+
+Default tool for product/marketing opportunity research.
+
+It runs the current sensor bundle and adds:
+
+- **TikTok Top Ads / Spotlight** — public high-performing creative evidence. Extracts visible likes, CTR percentile, budget tier and descriptive creative rationale when exposed. It classifies recurring mechanics such as comparison, social proof, problem-solution, demonstration, transformation, curiosity gap, identity/inclusion, urgency, ranking/list, spectacle and personalization.
+- **Pinterest Trends public surface** — best-effort observation only. Pinterest's official Trends API is restricted, so this adapter does not emulate private APIs. If the public page exposes no machine-readable trend payload it returns a warning instead of fabricating data.
+- **Apple App Store Search API** — official keyword-oriented commercialization check when `query` is supplied. Returns observed apps, price, genre, ratings/rating counts and current-version release dates.
+
+The tool returns a `thesisFrame` rather than an automatic product recommendation. The calling agent must write the actual market thesis from the returned evidence.
+
+Example:
 
 ```json
 {
-  "sources": ["google_trends", "tiktok_creative_center"],
+  "query": "habit tracker",
   "geo": "JP",
-  "limit": 10,
-  "tiktokPeriodDays": 7
+  "limit": 10
 }
 ```
 
-HN new stories:
-
-```json
-{
-  "sources": ["hacker_news"],
-  "limit": 20,
-  "hackerNewsFeed": "new"
-}
-```
-
-## Reasoning boundary
-
-The tool returns observations, not ideas. An agent should reason in this order:
+The expected reasoning order is:
 
 ```text
-observed current signals
--> repeated behavior / desire / framing
--> independent corroboration or contradiction
--> adjacent opportunity hypothesis
--> targeted validation
+observed signals
+-> underlying behavior / desire
+-> current fulfillment
+-> creative mechanic that triggers attention
+-> independent commercialization evidence
+-> adjacency dimensions
+-> concept
+-> disconfirming evidence / next validation
 ```
 
-Never treat search traffic, TikTok views/posts, or HN score/comments as unit sales or willingness to pay. Never collapse heterogeneous signals into one automatic opportunity score.
+For concepts, explicitly classify distance from the incumbent as:
 
-Use `marketplace_research`, keyword demand/SERP tools, or later commercial evidence only after a behavioral/desire thesis has been formed from observed evidence.
+- `copy_like`
+- `adjacent`
+- `speculative`
+
+Do not jump directly from a popular product or ad to a clone.
+
+## Velocity snapshots
+
+### `market_signal_snapshot_save`
+
+Explicitly performs a fresh `market_intelligence_research` call and persists that packet in Firestore.
+
+Snapshots are **never automatic**. Do not call this tool merely because research ran. Save only when the user asks to preserve a baseline or when a concrete longitudinal research objective requires one.
+
+### `market_signal_snapshot_compare`
+
+Compare:
+
+- one saved snapshot with another saved snapshot, or
+- one saved snapshot with a fresh live research packet.
+
+The result includes:
+
+- entries newly appearing on observed surfaces;
+- entries no longer observed;
+- same-source/same-label numeric deltas;
+- relative deltas where the previous value is non-zero;
+- a bounded velocity highlight list.
+
+An entry appearing/disappearing from a ranked surface is not itself proof of demand growth/collapse. Treat velocity as a trigger for investigation.
+
+## Evidence semantics
+
+Never collapse the sources into one composite Opportunity Score.
+
+| Observation | Useful as | Does not prove |
+| --- | --- | --- |
+| Google Trends approximate traffic | search attention / spike | purchases |
+| TikTok posts/views | social creation and view attention | willingness to pay |
+| TikTok Top Ads CTR percentile | creative performance relative to displayed ad cohort | absolute conversion or product-market fit |
+| HN score/comments | early-adopter attention / discussion | mass-market demand |
+| Pinterest public trend evidence | aspiration/planning signal when available | purchases |
+| App Store rating counts | adoption/engagement proxy | downloads, subscription revenue |
+| App Store upfront price | one commercialization form | overall monetization strength |
+
+Missing or blocked evidence stays missing. Do not infer a positive or negative result from a source that failed to return data.
+
+## Market-thesis requirement
+
+After `market_intelligence_research`, the agent should produce 1–3 evidence-backed theses. Each thesis should state:
+
+1. observed behavior/desire;
+2. at least two independent supporting observations when available;
+3. the current way that desire is fulfilled;
+4. the creative/marketing mechanic associated with attention;
+5. adjacency dimensions worth testing (audience, format, context, social loop, output artifact, distribution, business model);
+6. concept distance: copy-like, adjacent or speculative;
+7. contrary evidence and payment unknowns;
+8. the cheapest next validation.
+
+The goal is **evidence-backed lateral marketing**, not literal market-in cloning and not unconstrained product-out ideation.
+
+## Deferred sources
+
+- **YouTube** — official Data API support is still deferred until a `YOUTUBE_API_KEY` is configured in the Keywords deployment.
+- **Meta Ad Library** — general commercial-ad discovery still lacks a stable unauthenticated official machine interface suitable for this MCP contract.
+
+RapidAPI can still be used selectively for missing fields, but it is not the primary market-sensor foundation because free tiers are too restrictive for broad scanning.
