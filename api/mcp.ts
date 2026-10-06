@@ -152,7 +152,8 @@ function runtimeStatus() {
         excludesGenericFormatLabels: true,
         rejectsSentenceFragmentLabels: true,
         categoryLexicalPriority: false,
-        validationSelection: 'evidence_first_one_per_discovery_lens_then_fill',
+        validationSelection: 'evidence_first_one_per_discovery_lens_no_force_fill',
+        minimumClusterEvidence: 'repeated_observation_or_cross_platform',
         rerootsTopObservedClusters: 3,
         validationGoal: 'social_affiliate',
         rankingGuard: 'coverage.conclusionAllowed must be true before recommendation'
