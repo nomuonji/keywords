@@ -84,6 +84,19 @@ const singlePostClusters = clusterObservedSocialMarkets([{
   metrics: { views: 999999, likes: 50000, comments: 500, shares: 100 },
   metricProvenance: 'tiktok_public_page'
 }]);
+assert.equal(singlePostClusters.length, 0, 'One post must not become a broad market cluster by itself.');
+
+const singlePostClusters = clusterObservedSocialMarkets([{
+  platform: 'tiktok',
+  searchQuery: 'site:tiktok.com やめてよかった',
+  position: 1,
+  title: 'NISAやめてよかった #NISA',
+  url: 'https://www.tiktok.com/@example/video/nisa-single',
+  snippet: null,
+  formatSignals: [],
+  metrics: { views: 999999, likes: 50000, comments: 500, shares: 100 },
+  metricProvenance: 'tiktok_public_page'
+}]);
 assert.equal(singlePostClusters.length, 0, 'One viral post must not become a broad market cluster by itself.');
 
 const genericFormatLabels = extractObservedMarketClusterLabels({
