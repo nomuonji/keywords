@@ -204,6 +204,7 @@ export interface ValidatedMarketCandidate {
   clusterLabel: string;
   query: string;
   discoveryEvidenceCount: number;
+  discoveryContextualEvidenceCount: number;
   discoveryPlatforms: SocialMarketPlatform[];
   coverage: MarketEvidenceCoverage;
   searchDemand: QueryDemandObservation[];
@@ -1447,6 +1448,7 @@ async function broadSocialMarketDiscovery(input: {
           clusterLabel: cluster.label,
           query: validationQuery,
           discoveryEvidenceCount: cluster.evidenceCount,
+          discoveryContextualEvidenceCount: cluster.contextualEvidenceCount,
           discoveryPlatforms: cluster.platforms,
           coverage: packet.coverage,
           searchDemand: packet.queryFocus.searchDemand.results.slice(0, 6),
@@ -1481,7 +1483,7 @@ async function broadSocialMarketDiscovery(input: {
     validatedCandidates,
     warnings: [...new Set([...warnings, ...mergedSocial.warnings])],
     guidance: [
-      'Market categories are extracted from observed social posts before query re-rooting; generic format phrases such as "買ってよかったもの" are excluded from market clusters.',
+      'Broad market labels require at least one contextual title/snippet phrase before query re-rooting; hashtags can support an anchored label but cannot create a market cluster by themselves.',
       'Validation slots are selected from at most one representative per discovery lens and ranked only by observed evidence breadth; weak lenses are allowed to contribute no candidate, and category names such as AI, gadgets, or skincare receive no lexical preference.',
       'Only validatedCandidates whose coverage.conclusionAllowed is true may be ranked or recommended for social-affiliate research.',
       'Affiliate program availability, payout, approval rules, social-media permissions, and conversion terms remain a separate monetization layer.'
