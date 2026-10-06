@@ -93,55 +93,92 @@ assert.ok(!productionLikeNoiseLabels.some(label => label.includes('自分でゲ�
 const diversifiedClusters = clusterObservedSocialMarkets([
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "買ってよかった" おすすめ',
+    searchQuery: 'site:tiktok.com "初めて" "やってみた"',
     position: 1,
-    title: '買ってよかったガジェット5選 #ガジェット #デスク周り',
-    url: 'https://www.tiktok.com/@example/video/20',
+    title: '初めて陶芸をやってみた #陶芸',
+    url: 'https://www.tiktok.com/@example/video/pottery1',
     snippet: null,
-    formatSignals: ['listicle'],
-    metrics: { views: 200000, likes: 3000, comments: 20, shares: 10 },
+    formatSignals: [],
+    metrics: { views: 45000, likes: 900, comments: 20, shares: 10 },
     metricProvenance: 'tiktok_public_page'
   },
   {
     platform: 'youtube_shorts',
-    searchQuery: 'site:youtube.com/shorts "買ってよかった" おすすめ',
+    searchQuery: 'site:youtube.com/shorts "初めて" "やってみた"',
     position: 1,
-    title: '買ってよかったガジェット3選 #ガジェット',
-    url: 'https://www.youtube.com/shorts/gadget2',
+    title: '陶芸を初体験 #陶芸',
+    url: 'https://www.youtube.com/shorts/pottery2',
     snippet: null,
-    formatSignals: ['listicle'],
-    metrics: { views: 120000, likes: null, comments: null, shares: null },
+    formatSignals: [],
+    metrics: { views: 12000, likes: null, comments: null, shares: null },
     metricProvenance: 'youtube_public_page'
   },
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "おすすめ" 比較 商品',
-    position: 2,
-    title: 'メンズ洗顔料20商品を比較 #メンズ洗顔料 #メンズスキンケア',
-    url: 'https://www.tiktok.com/@example/video/21',
+    searchQuery: 'site:tiktok.com "一人で" "行ってみた"',
+    position: 1,
+    title: '一人で居酒屋に行ってみた #一人飲み',
+    url: 'https://www.tiktok.com/@example/video/solo1',
     snippet: null,
-    formatSignals: ['comparison'],
-    metrics: { views: 80000, likes: 1200, comments: 5, shares: 4 },
+    formatSignals: ['routine_day_in_life'],
+    metrics: { views: 210000, likes: 4200, comments: 120, shares: 60 },
     metricProvenance: 'tiktok_public_page'
   },
   {
     platform: 'youtube_shorts',
-    searchQuery: 'site:youtube.com/shorts "無料" おすすめ ツール',
+    searchQuery: 'site:youtube.com/shorts "一人で" "行ってみた"',
     position: 1,
-    title: '無料AIツールベスト5 #AIツール',
-    url: 'https://www.youtube.com/shorts/ai-tools',
+    title: '初めての一人飲み #一人飲み',
+    url: 'https://www.youtube.com/shorts/solo2',
     snippet: null,
-    formatSignals: ['listicle'],
-    metrics: { views: 60000, likes: null, comments: null, shares: null },
+    formatSignals: [],
+    metrics: { views: 70000, likes: null, comments: null, shares: null },
+    metricProvenance: 'youtube_public_page'
+  },
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com "最近ハマってる"',
+    position: 2,
+    title: '最近ハマってるガジェット #ガジェット',
+    url: 'https://www.tiktok.com/@example/video/gadget1',
+    snippet: null,
+    formatSignals: [],
+    metrics: { views: 500000, likes: 9000, comments: 80, shares: 40 },
+    metricProvenance: 'tiktok_public_page'
+  },
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com "困った" "解決"',
+    position: 2,
+    title: '肌荒れで困った #メンズ洗顔料',
+    url: 'https://www.tiktok.com/@example/video/facewash1',
+    snippet: null,
+    formatSignals: ['problem_solution'],
+    metrics: { views: 180000, likes: 2500, comments: 25, shares: 12 },
+    metricProvenance: 'tiktok_public_page'
+  },
+  {
+    platform: 'youtube_shorts',
+    searchQuery: 'site:youtube.com/shorts "やめてよかった"',
+    position: 1,
+    title: '使うのをやめてよかったAIツール #AIツール',
+    url: 'https://www.youtube.com/shorts/ai1',
+    snippet: null,
+    formatSignals: [],
+    metrics: { views: 300000, likes: null, comments: null, shares: null },
     metricProvenance: 'youtube_public_page'
   }
 ]);
 const diversifiedSelection = selectBroadValidationClusters(
   diversifiedClusters,
-  ['"買ってよかった" おすすめ', '"おすすめ" 比較 商品', '"無料" おすすめ ツール'],
-  3
+  ['"初めて" "やってみた"', '"最近ハマってる"', '"一人で" "行ってみた"', '"困った" "解決"', '"やめてよかった"', '"買ってよかった"'],
+  2
 );
-assert.deepEqual(diversifiedSelection.map(item => item.label), ['ガジェット', 'メンズ洗顔料', 'AIツール']);
+assert.deepEqual(
+  new Set(diversifiedSelection.map(item => item.label)),
+  new Set(['陶芸', '一人飲み']),
+  'Broad validation should prefer repeated cross-platform evidence, not hard-coded category names.'
+);
 
 const formats = extractSocialFormatSignals('韓国eSIMおすすめ5選を正直レビュー。料金を比較して使い方も解説');
 assert.ok(formats.includes('listicle'));
