@@ -1296,6 +1296,28 @@ function rerootDiscoveredMarketQuery(label: string, geo: string): string {
   return geo === 'JP' ? label + ' おすすめ' : 'best ' + label;
 }
 
+export function mergeBroadDiscoveryObservations(
+  results: SocialContentResearchResult[],
+  maxObservations = 30
+): SocialContentObservation[] {
+  const observations: SocialContentObservation[] = [];
+  const seenUrls = new Set<string>();
+  const maxDepth = results.reduce((max, result) => Math.max(max, result.observations.length), 0);
+
+  // Round-robin across discovery lenses so array order cannot silently make the
+  // earliest lens consume the observation cap.
+  for (let index = 0; index < maxDepth && observations.length < maxObservations; index++) {
+    for (const result of results) {
+      const observation = result.observations[index];
+      if (!observation || seenUrls.has(observation.url)) continue;
+      seenUrls.add(observation.url);
+      observations.push(observation);
+      if (observations.length >= maxObservations) break;
+    }
+  }
+  return observations;
+}
+
 async function broadSocialMarketDiscovery(input: {
   geo: string;
   limit: number;
@@ -1323,10 +1345,7 @@ async function broadSocialMarketDiscovery(input: {
     }
   }
 
-  const observations = results
-    .flatMap(result => result.observations)
-    .filter((item, index, all) => all.findIndex(other => other.url === item.url) === index)
-    .slice(0, 30);
+  const observations = mergeBroadDiscoveryObservations(results, 30);
   const mergedSocial: SocialContentResearchResult = {
     source: 'serp_indexed_social_content',
     evidenceScope: 'public_index_plus_best_effort_public_page_metrics',
