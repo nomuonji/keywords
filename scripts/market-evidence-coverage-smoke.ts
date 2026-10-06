@@ -7,7 +7,7 @@ import {
   parseYouTubePublicMetrics,
   type SocialContentResearchResult
 } from '../packages/commands/src/market-social-research.js';
-import { clusterObservedSocialMarkets, extractObservedMarketClusterLabels, selectBroadValidationClusters } from '../packages/commands/src/market-intelligence.js';
+import { clusterObservedSocialMarkets, extractObservedMarketClusterLabels, mergeBroadDiscoveryObservations, selectBroadValidationClusters } from '../packages/commands/src/market-intelligence.js';
 
 function social(overrides: Partial<SocialContentResearchResult> = {}): SocialContentResearchResult {
   return {
@@ -178,6 +178,34 @@ assert.deepEqual(
   new Set(diversifiedSelection.map(item => item.label)),
   new Set(['陶芸', '一人飲み']),
   'Broad validation should prefer repeated cross-platform evidence, not hard-coded category names.'
+);
+
+const mergedDiscoveryObservations = mergeBroadDiscoveryObservations([
+  social({
+    query: '"初めて" "やってみた"',
+    observations: [
+      { platform: 'tiktok', searchQuery: 'seed-a', position: 1, title: 'A1', url: 'https://www.tiktok.com/@example/video/a1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' },
+      { platform: 'tiktok', searchQuery: 'seed-a', position: 2, title: 'A2', url: 'https://www.tiktok.com/@example/video/a2', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' }
+    ]
+  }),
+  social({
+    query: '"最近ハマってる"',
+    observations: [
+      { platform: 'youtube_shorts', searchQuery: 'seed-b', position: 1, title: 'B1', url: 'https://www.youtube.com/shorts/b1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'youtube_public_page' },
+      { platform: 'youtube_shorts', searchQuery: 'seed-b', position: 2, title: 'B2', url: 'https://www.youtube.com/shorts/b2', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'youtube_public_page' }
+    ]
+  }),
+  social({
+    query: '"一人で" "行ってみた"',
+    observations: [
+      { platform: 'tiktok', searchQuery: 'seed-c', position: 1, title: 'C1', url: 'https://www.tiktok.com/@example/video/c1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' }
+    ]
+  })
+], 3);
+assert.deepEqual(
+  mergedDiscoveryObservations.map(item => item.title),
+  ['A1', 'B1', 'C1'],
+  'Broad discovery observation caps should be balanced across lenses instead of truncating later lenses.'
 );
 
 const formats = extractSocialFormatSignals('韓国eSIMおすすめ5選を正直レビュー。料金を比較して使い方も解説');
