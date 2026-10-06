@@ -1083,15 +1083,21 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
 
 
 const GENERIC_MARKET_DISCOVERY_QUERIES_JA = [
-  '"買ってよかった" おすすめ',
-  '"おすすめ" 比較 商品',
-  '"無料" おすすめ ツール'
+  '"初めて" "やってみた"',
+  '"最近ハマってる"',
+  '"一人で" "行ってみた"',
+  '"困った" "解決"',
+  '"やめてよかった"',
+  '"買ってよかった"'
 ] as const;
 
 const GENERIC_MARKET_DISCOVERY_QUERIES_EN = [
-  '"worth buying" recommendations',
-  '"best" comparison products',
-  '"free" recommended tools'
+  '"tried for the first time"',
+  '"recently obsessed with"',
+  '"went alone" "first time"',
+  '"struggled with" "solution"',
+  '"glad I quit"',
+  '"worth buying"'
 ] as const;
 
 const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
@@ -1111,13 +1117,18 @@ const GENERIC_MARKET_LABEL_PATTERNS = [
   /^(?:ベストバイ|best\s*buy|ランキング|比較|レビュー|口コミ|まとめ)$/i
 ];
 
-const DIRECT_MARKET_CATEGORY_PATTERN = /(?:ガジェット|gadgets?|ツール|tools?|洗顔料|コスメ|日用品|家電|旅行グッズ|トラベルグッズ|キッチングッズ|キッチンアイテム|ゲーム|アプリ|ソフト(?:ウェア)?|サービス|用品|機器)$/i;
-const MARKET_CATEGORY_HINT_PATTERN = /(?:AI|SEO|ガジェット|gadgets?|ツール|tools?|洗顔|スキンケア|コスメ|美容|日用品|家電|旅行|トラベル|キッチン|デスク|PC|スマホ|ゲーム|アプリ|ソフト|サービス|動画|音声|英語|学習|仕事効率|収納|掃除|料理|ファッション|メンズ|レディース)/i;
+function compareObservedMarketClusters(left: ObservedMarketCluster, right: ObservedMarketCluster): number {
+  return (
+    right.platforms.length - left.platforms.length ||
+    right.evidenceCount - left.evidenceCount ||
+    right.metricEvidenceCount - left.metricEvidenceCount ||
+    right.formatSignals.length - left.formatSignals.length ||
+    left.label.localeCompare(right.label, 'ja')
+  );
+}
 
-function marketCategoryPriority(label: string): number {
-  if (DIRECT_MARKET_CATEGORY_PATTERN.test(label)) return 2;
-  if (MARKET_CATEGORY_HINT_PATTERN.test(label)) return 1;
-  return 0;
+function hasEnoughObservedMarketEvidence(item: ObservedMarketCluster): boolean {
+  return item.platforms.length >= 2 || item.evidenceCount >= 2 || item.metricEvidenceCount >= 1;
 }
 
 function normalizeObservedMarketLabel(raw: string): string | null {
@@ -1219,14 +1230,8 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
   }));
 
   return clusters
-    .filter(item => marketCategoryPriority(item.label) > 0 || item.evidenceCount >= 2 || item.platforms.length >= 2)
-    .sort((left, right) =>
-      marketCategoryPriority(right.label) - marketCategoryPriority(left.label) ||
-      right.platforms.length - left.platforms.length ||
-      right.evidenceCount - left.evidenceCount ||
-      right.metricEvidenceCount - left.metricEvidenceCount ||
-      left.label.localeCompare(right.label, 'ja')
-    );
+    .filter(hasEnoughObservedMarketEvidence)
+    .sort(compareObservedMarketClusters);
 }
 
 function clusterBelongsToDiscoverySeed(cluster: ObservedMarketCluster, seed: string): boolean {
@@ -1249,25 +1254,17 @@ export function selectBroadValidationClusters(
     selected.push(cluster);
   };
 
-  // Preserve discovery-surface diversity: one concrete observed market from each
-  // generic seed before allowing a single strong seed to consume all validation slots.
-  for (const seed of genericQueries) {
-    const matches = clusters.filter(cluster => clusterBelongsToDiscoverySeed(cluster, seed));
-    const preferred =
-      matches.find(cluster => marketCategoryPriority(cluster.label) === 2) ??
-      matches.find(cluster => marketCategoryPriority(cluster.label) === 1) ??
-      matches[0];
-    add(preferred);
-  }
+  // Pick at most one representative from each discovery lens, then rank those
+  // representatives by observed evidence breadth. No market category receives
+  // lexical priority: a gadget, beauty item, hobby, behavior, or social ritual
+  // must all earn their slot through the same evidence rules.
+  const representatives = genericQueries
+    .map(seed => clusters.find(cluster => clusterBelongsToDiscoverySeed(cluster, seed)))
+    .filter((cluster): cluster is ObservedMarketCluster => Boolean(cluster))
+    .sort(compareObservedMarketClusters);
 
-  for (const cluster of clusters) {
-    if (selected.length >= maxCandidates) break;
-    if (marketCategoryPriority(cluster.label) > 0) add(cluster);
-  }
-  for (const cluster of clusters) {
-    if (selected.length >= maxCandidates) break;
-    add(cluster);
-  }
+  for (const cluster of representatives) add(cluster);
+  for (const cluster of clusters) add(cluster);
   return selected;
 }
 
@@ -1299,6 +1296,28 @@ function rerootDiscoveredMarketQuery(label: string, geo: string): string {
   return geo === 'JP' ? label + ' おすすめ' : 'best ' + label;
 }
 
+export function mergeBroadDiscoveryObservations(
+  results: SocialContentResearchResult[],
+  maxObservations = 30
+): SocialContentObservation[] {
+  const observations: SocialContentObservation[] = [];
+  const seenUrls = new Set<string>();
+  const maxDepth = results.reduce((max, result) => Math.max(max, result.observations.length), 0);
+
+  // Round-robin across discovery lenses so array order cannot silently make the
+  // earliest lens consume the observation cap.
+  for (let index = 0; index < maxDepth && observations.length < maxObservations; index++) {
+    for (const result of results) {
+      const observation = result.observations[index];
+      if (!observation || seenUrls.has(observation.url)) continue;
+      seenUrls.add(observation.url);
+      observations.push(observation);
+      if (observations.length >= maxObservations) break;
+    }
+  }
+  return observations;
+}
+
 async function broadSocialMarketDiscovery(input: {
   geo: string;
   limit: number;
@@ -1326,10 +1345,7 @@ async function broadSocialMarketDiscovery(input: {
     }
   }
 
-  const observations = results
-    .flatMap(result => result.observations)
-    .filter((item, index, all) => all.findIndex(other => other.url === item.url) === index)
-    .slice(0, 30);
+  const observations = mergeBroadDiscoveryObservations(results, 30);
   const mergedSocial: SocialContentResearchResult = {
     source: 'serp_indexed_social_content',
     evidenceScope: 'public_index_plus_best_effort_public_page_metrics',
@@ -1360,7 +1376,7 @@ async function broadSocialMarketDiscovery(input: {
     platformStatus: results.flatMap(result => result.platformStatus),
     warnings: [...new Set([...warnings, ...results.flatMap(result => result.warnings)])],
     guidance: [
-      'These observations were retrieved from generic purchase/comparison/tool-discovery queries before any market category was selected.',
+      'These observations were retrieved through multiple category-agnostic discovery lenses spanning first attempts, emerging interests, solo behavior, problems/workarounds, quitting/substitution, and purchases.',
       'Cluster ordering reflects evidence breadth and repetition only; it is not an opportunity score or market recommendation.',
       'A discovered cluster must be re-rooted into an explicit query and pass its own coverage gate before it can support a market conclusion.'
     ]
@@ -1424,7 +1440,7 @@ async function broadSocialMarketDiscovery(input: {
     warnings: [...new Set([...warnings, ...mergedSocial.warnings])],
     guidance: [
       'Market categories are extracted from observed social posts before query re-rooting; generic format phrases such as "買ってよかったもの" are excluded from market clusters.',
-      'Validation slots are diversified across the generic discovery seeds before fill-in, so one high-volume social format cannot monopolize the candidate set.',
+      'Validation slots are selected from one representative per discovery lens and ranked only by observed evidence breadth; category names such as AI, gadgets, or skincare receive no lexical preference.',
       'Only validatedCandidates whose coverage.conclusionAllowed is true may be ranked or recommended for social-affiliate research.',
       'Affiliate program availability, payout, approval rules, social-media permissions, and conversion terms remain a separate monetization layer.'
     ]
