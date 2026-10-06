@@ -1159,7 +1159,8 @@ function normalizeObservedMarketLabel(raw: string): string | null {
     .replace(/(?:です|でした)$/u, '')
     .replace(/\d+\s*(?:商品|選|個|点)$/u, '')
     .trim();
-  if (label.length < 2 || label.length > 28) return null;
+  if (label.length < 1 || label.length > 28) return null;
+  if (label.length === 1 && !/[\u3400-\u9fff]/u.test(label)) return null;
   if (!/[A-Za-z\u3040-\u30ff\u3400-\u9fff]/u.test(label)) return null;
   const normalized = label.toLowerCase();
   if (GENERIC_MARKET_LABEL_STOPWORDS.has(normalized) || GENERIC_MARKET_LABEL_STOPWORDS.has(label)) return null;
