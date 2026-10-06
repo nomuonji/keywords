@@ -69,14 +69,14 @@ const anchoredSingle = clusterObservedSocialMarkets([{
   platform: 'tiktok',
   searchQuery: 'site:tiktok.com やめてよかった',
   position: 1,
-  title: '株をやめてよかった人の特徴',
+  title: '株式投資をやめてよかった人の特徴',
   url: 'https://www.tiktok.com/@example/video/stocks1',
   snippet: null,
   formatSignals: [],
   metrics: { views: 120000, likes: 1500, comments: 30, shares: 12 },
   metricProvenance: 'tiktok_public_page'
 }]);
-const stockCluster = anchoredSingle.find(item => item.label === '株');
+const stockCluster = anchoredSingle.find(item => item.label === '株式投資');
 assert.ok(stockCluster);
 assert.equal(stockCluster?.contextualEvidenceCount, 1);
 
