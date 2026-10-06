@@ -1083,21 +1083,21 @@ async function queryFocusedResearch(query: string | null, geo: string, limit: nu
 
 
 const GENERIC_MARKET_DISCOVERY_QUERIES_JA = [
-  '"初めて" "やってみた"',
-  '"最近ハマってる"',
-  '"一人で" "行ってみた"',
-  '"困った" "解決"',
-  '"やめてよかった"',
-  '"買ってよかった"'
+  '初めて やってみた',
+  '最近 ハマってる',
+  '一人で 行ってみた',
+  '困った 解決',
+  'やめてよかった',
+  '買ってよかった'
 ] as const;
 
 const GENERIC_MARKET_DISCOVERY_QUERIES_EN = [
-  '"tried for the first time"',
-  '"recently obsessed with"',
-  '"went alone" "first time"',
-  '"struggled with" "solution"',
-  '"glad I quit"',
-  '"worth buying"'
+  'tried for the first time',
+  'recently obsessed with',
+  'went alone first time',
+  'struggled with solution',
+  'glad I quit',
+  'worth buying'
 ] as const;
 
 const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
@@ -1108,7 +1108,7 @@ const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
   '話題', '話題のアイテム', '最新', 'ベストバイ', 'bestbuy', 'shorts', 'short',
   'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral', '便利', '便利アイテム',
   'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版', '神アイテム', '神商品',
-  '名品', 'おすすめガイド', 'amazon', '楽天', 'rakuten', 'shein'
+  '名品', 'おすすめガイド', 'オススメ', 'amazon', '楽天', 'rakuten', 'shein'
 ]);
 
 const GENERIC_MARKET_LABEL_PATTERNS = [
@@ -1128,14 +1128,17 @@ function compareObservedMarketClusters(left: ObservedMarketCluster, right: Obser
 }
 
 function hasEnoughObservedMarketEvidence(item: ObservedMarketCluster): boolean {
-  return item.platforms.length >= 2 || item.evidenceCount >= 2 || item.metricEvidenceCount >= 1;
+  // A single indexed post, even with engagement metrics, is an observation—not a market.
+  // Broad discovery requires repetition or cross-platform corroboration before a label
+  // may consume a validation slot.
+  return item.platforms.length >= 2 || item.evidenceCount >= 2;
 }
 
 function normalizeObservedMarketLabel(raw: string): string | null {
   let label = raw.normalize('NFKC')
     .replace(/^#+/, '')
     .replace(/[\[\]【】()（）<>「」『』]/g, '')
-    .replace(/[!！?？:：,，。|｜/\\]+/g, ' ')
+    .replace(/[!！?？:：,，。|｜/\\"'“”‘’]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   label = label
@@ -1264,7 +1267,10 @@ export function selectBroadValidationClusters(
     .sort(compareObservedMarketClusters);
 
   for (const cluster of representatives) add(cluster);
-  for (const cluster of clusters) add(cluster);
+
+  // Do not force-fill validation slots from a lens that already contributed a
+  // candidate. Returning fewer strong candidates is preferable to manufacturing
+  // breadth from repeated variants of the same discovery surface.
   return selected;
 }
 
@@ -1440,7 +1446,7 @@ async function broadSocialMarketDiscovery(input: {
     warnings: [...new Set([...warnings, ...mergedSocial.warnings])],
     guidance: [
       'Market categories are extracted from observed social posts before query re-rooting; generic format phrases such as "買ってよかったもの" are excluded from market clusters.',
-      'Validation slots are selected from one representative per discovery lens and ranked only by observed evidence breadth; category names such as AI, gadgets, or skincare receive no lexical preference.',
+      'Validation slots are selected from at most one representative per discovery lens and ranked only by observed evidence breadth; weak lenses are allowed to contribute no candidate, and category names such as AI, gadgets, or skincare receive no lexical preference.',
       'Only validatedCandidates whose coverage.conclusionAllowed is true may be ranked or recommended for social-affiliate research.',
       'Affiliate program availability, payout, approval rules, social-media permissions, and conversion terms remain a separate monetization layer.'
     ]
