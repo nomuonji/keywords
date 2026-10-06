@@ -394,6 +394,7 @@ assert.match(mcpSource, /generic_social_to_validated_clusters|startsFromGenericS
 assert.match(mcpSource, /evidence_first_one_per_discovery_lens_no_force_fill/);
 assert.match(mcpSource, /categoryLexicalPriority:\s*false/);
 assert.match(mcpSource, /minimumClusterEvidence/);
+assert.match(mcpSource, /hashtagRole:\s*'support_only'/);
 assert.match(mcpSource, /first_attempt/);
 assert.match(mcpSource, /solo_behavior/);
 assert.match(mcpSource, /rejectsSentenceFragmentLabels/);
