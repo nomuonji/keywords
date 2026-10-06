@@ -1122,7 +1122,8 @@ const GENERIC_MARKET_LABEL_PATTERNS = [
   /^(?:おすすめ)?(?:に)?(?:のりたい|乗りたい|載りたい)$/i,
   /^(?:fyp.*|tiktoks?rp|pr.*)$/i,
   /^top\d+$/i,
-  /^こと(?:\d+選|教えて.*|について.*)?$/i
+  /^こと(?:\d+選|教えて.*|について.*)?$/i,
+  /^(?:20\d{2}年)?\d{1,2}月に購入した$/i
 ];
 
 function compareObservedMarketClusters(left: ObservedMarketCluster, right: ObservedMarketCluster): number {
@@ -1159,8 +1160,7 @@ function normalizeObservedMarketLabel(raw: string): string | null {
     .replace(/(?:です|でした)$/u, '')
     .replace(/\d+\s*(?:商品|選|個|点)$/u, '')
     .trim();
-  if (label.length < 1 || label.length > 28) return null;
-  if (label.length === 1 && !/[\u3400-\u9fff]/u.test(label)) return null;
+  if (label.length < 2 || label.length > 28) return null;
   if (!/[A-Za-z\u3040-\u30ff\u3400-\u9fff]/u.test(label)) return null;
   const normalized = label.toLowerCase();
   if (GENERIC_MARKET_LABEL_STOPWORDS.has(normalized) || GENERIC_MARKET_LABEL_STOPWORDS.has(label)) return null;
