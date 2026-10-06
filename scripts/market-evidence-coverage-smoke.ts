@@ -73,6 +73,19 @@ assert.ok(gadgetCluster);
 assert.equal(gadgetCluster?.platforms.length, 2);
 assert.equal(gadgetCluster?.evidenceCount, 2);
 
+const singlePostClusters = clusterObservedSocialMarkets([{
+  platform: 'tiktok',
+  searchQuery: 'site:tiktok.com やめてよかった',
+  position: 1,
+  title: 'NISAやめてよかった #NISA',
+  url: 'https://www.tiktok.com/@example/video/nisa-single',
+  snippet: null,
+  formatSignals: [],
+  metrics: { views: 999999, likes: 50000, comments: 500, shares: 100 },
+  metricProvenance: 'tiktok_public_page'
+}]);
+assert.equal(singlePostClusters.length, 0, 'One post must not become a broad market cluster by itself.');
+
 const genericFormatLabels = extractObservedMarketClusterLabels({
   title: '2026年上半期 買ってよかったものランキング #買ってよかったもの #おすすめ商品',
   snippet: '人気商品を紹介'
@@ -93,7 +106,7 @@ assert.ok(!productionLikeNoiseLabels.some(label => label.includes('自分でゲ�
 const diversifiedClusters = clusterObservedSocialMarkets([
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "初めて" "やってみた"',
+    searchQuery: 'site:tiktok.com 初めて やってみた',
     position: 1,
     title: '初めて陶芸をやってみた #陶芸',
     url: 'https://www.tiktok.com/@example/video/pottery1',
@@ -104,7 +117,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'youtube_shorts',
-    searchQuery: 'site:youtube.com/shorts "初めて" "やってみた"',
+    searchQuery: 'site:youtube.com/shorts 初めて やってみた',
     position: 1,
     title: '陶芸を初体験 #陶芸',
     url: 'https://www.youtube.com/shorts/pottery2',
@@ -115,7 +128,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "一人で" "行ってみた"',
+    searchQuery: 'site:tiktok.com 一人で 行ってみた',
     position: 1,
     title: '一人で居酒屋に行ってみた #一人飲み',
     url: 'https://www.tiktok.com/@example/video/solo1',
@@ -126,7 +139,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'youtube_shorts',
-    searchQuery: 'site:youtube.com/shorts "一人で" "行ってみた"',
+    searchQuery: 'site:youtube.com/shorts 一人で 行ってみた',
     position: 1,
     title: '初めての一人飲み #一人飲み',
     url: 'https://www.youtube.com/shorts/solo2',
@@ -137,7 +150,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "最近ハマってる"',
+    searchQuery: 'site:tiktok.com 最近 ハマってる',
     position: 2,
     title: '最近ハマってるガジェット #ガジェット',
     url: 'https://www.tiktok.com/@example/video/gadget1',
@@ -148,7 +161,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'tiktok',
-    searchQuery: 'site:tiktok.com "困った" "解決"',
+    searchQuery: 'site:tiktok.com 困った 解決',
     position: 2,
     title: '肌荒れで困った #メンズ洗顔料',
     url: 'https://www.tiktok.com/@example/video/facewash1',
@@ -159,7 +172,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
   },
   {
     platform: 'youtube_shorts',
-    searchQuery: 'site:youtube.com/shorts "やめてよかった"',
+    searchQuery: 'site:youtube.com/shorts やめてよかった',
     position: 1,
     title: '使うのをやめてよかったAIツール #AIツール',
     url: 'https://www.youtube.com/shorts/ai1',
@@ -171,7 +184,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
 ]);
 const diversifiedSelection = selectBroadValidationClusters(
   diversifiedClusters,
-  ['"初めて" "やってみた"', '"最近ハマってる"', '"一人で" "行ってみた"', '"困った" "解決"', '"やめてよかった"', '"買ってよかった"'],
+  ['初めて やってみた', '最近 ハマってる', '一人で 行ってみた', '困った 解決', 'やめてよかった', '買ってよかった'],
   2
 );
 assert.deepEqual(
@@ -182,21 +195,21 @@ assert.deepEqual(
 
 const mergedDiscoveryObservations = mergeBroadDiscoveryObservations([
   social({
-    query: '"初めて" "やってみた"',
+    query: '初めて やってみた',
     observations: [
       { platform: 'tiktok', searchQuery: 'seed-a', position: 1, title: 'A1', url: 'https://www.tiktok.com/@example/video/a1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' },
       { platform: 'tiktok', searchQuery: 'seed-a', position: 2, title: 'A2', url: 'https://www.tiktok.com/@example/video/a2', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' }
     ]
   }),
   social({
-    query: '"最近ハマってる"',
+    query: '最近 ハマってる',
     observations: [
       { platform: 'youtube_shorts', searchQuery: 'seed-b', position: 1, title: 'B1', url: 'https://www.youtube.com/shorts/b1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'youtube_public_page' },
       { platform: 'youtube_shorts', searchQuery: 'seed-b', position: 2, title: 'B2', url: 'https://www.youtube.com/shorts/b2', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'youtube_public_page' }
     ]
   }),
   social({
-    query: '"一人で" "行ってみた"',
+    query: '一人で 行ってみた',
     observations: [
       { platform: 'tiktok', searchQuery: 'seed-c', position: 1, title: 'C1', url: 'https://www.tiktok.com/@example/video/c1', snippet: null, formatSignals: [], metrics: { views: 1, likes: null, comments: null, shares: null }, metricProvenance: 'tiktok_public_page' }
     ]
