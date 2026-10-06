@@ -1111,7 +1111,8 @@ const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
   'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral', '便利', '便利アイテム',
   'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版', '神アイテム', '神商品',
   '名品', 'おすすめガイド', 'オススメ', 'amazon', '楽天', 'rakuten', 'shein',
-  'もの', '物', 'こと', '食べ物', '曲', '動画', 'vlog', '日常', 'シリーズ', 'やり方'
+  'もの', '物', 'こと', '食べ物', '曲', '動画', 'vlog', '日常', 'シリーズ', 'やり方',
+  '特徴', '人の特徴'
 ]);
 
 const GENERIC_MARKET_LABEL_PATTERNS = [
