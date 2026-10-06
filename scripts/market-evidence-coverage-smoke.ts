@@ -7,7 +7,7 @@ import {
   parseYouTubePublicMetrics,
   type SocialContentResearchResult
 } from '../packages/commands/src/market-social-research.js';
-import { clusterObservedSocialMarkets, extractObservedMarketClusterLabels, mergeBroadDiscoveryObservations, selectBroadValidationClusters } from '../packages/commands/src/market-intelligence.js';
+import { clusterObservedSocialMarkets, extractContextualObservedMarketClusterLabels, extractObservedMarketClusterLabels, mergeBroadDiscoveryObservations, selectBroadValidationClusters } from '../packages/commands/src/market-intelligence.js';
 
 function social(overrides: Partial<SocialContentResearchResult> = {}): SocialContentResearchResult {
   return {
@@ -32,6 +32,53 @@ const discoveredLabels = extractObservedMarketClusterLabels({
 assert.ok(discoveredLabels.includes('メンズ洗顔料'));
 assert.ok(discoveredLabels.includes('メンズスキンケア'));
 assert.ok(!discoveredLabels.includes('買ってよかった'));
+
+const contextualLabels = extractContextualObservedMarketClusterLabels({
+  title: '絵伝言ゲームやってみた！ #shorts',
+  snippet: null
+});
+assert.deepEqual(contextualLabels, ['絵伝言ゲーム']);
+
+const hashtagOnlyNoise = clusterObservedSocialMarkets([
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com やめてよかった',
+    position: 1,
+    title: '人生で一番やめてよかったこと #孫GONG',
+    url: 'https://www.tiktok.com/@example/video/noise1',
+    snippet: null,
+    formatSignals: [],
+    metrics: { views: 10000, likes: 500, comments: 10, shares: 2 },
+    metricProvenance: 'tiktok_public_page'
+  },
+  {
+    platform: 'tiktok',
+    searchQuery: 'site:tiktok.com やめてよかった',
+    position: 2,
+    title: '孫GONG 名言集 #孫GONG',
+    url: 'https://www.tiktok.com/@example/video/noise2',
+    snippet: null,
+    formatSignals: [],
+    metrics: { views: 9000, likes: 400, comments: 8, shares: 1 },
+    metricProvenance: 'tiktok_public_page'
+  }
+]);
+assert.equal(hashtagOnlyNoise.length, 0, 'Repeated hashtags without contextual phrase evidence must not become market clusters.');
+
+const anchoredSingle = clusterObservedSocialMarkets([{
+  platform: 'tiktok',
+  searchQuery: 'site:tiktok.com やめてよかった',
+  position: 1,
+  title: '株をやめてよかった人の特徴',
+  url: 'https://www.tiktok.com/@example/video/stocks1',
+  snippet: null,
+  formatSignals: [],
+  metrics: { views: 120000, likes: 1500, comments: 30, shares: 12 },
+  metricProvenance: 'tiktok_public_page'
+}]);
+const stockCluster = anchoredSingle.find(item => item.label === '株');
+assert.ok(stockCluster);
+assert.equal(stockCluster?.contextualEvidenceCount, 1);
 
 const discoveredClusters = clusterObservedSocialMarkets([
   {
@@ -72,19 +119,7 @@ const gadgetCluster = discoveredClusters.find(item => item.label.toLowerCase() =
 assert.ok(gadgetCluster);
 assert.equal(gadgetCluster?.platforms.length, 2);
 assert.equal(gadgetCluster?.evidenceCount, 2);
-
-const singlePostClusters = clusterObservedSocialMarkets([{
-  platform: 'tiktok',
-  searchQuery: 'site:tiktok.com やめてよかった',
-  position: 1,
-  title: 'NISAやめてよかった #NISA',
-  url: 'https://www.tiktok.com/@example/video/nisa-single',
-  snippet: null,
-  formatSignals: [],
-  metrics: { views: 999999, likes: 50000, comments: 500, shares: 100 },
-  metricProvenance: 'tiktok_public_page'
-}]);
-assert.equal(singlePostClusters.length, 0, 'One post must not become a broad market cluster by itself.');
+assert.ok((gadgetCluster?.contextualEvidenceCount ?? 0) >= 1);
 
 const genericFormatLabels = extractObservedMarketClusterLabels({
   title: '2026年上半期 買ってよかったものランキング #買ってよかったもの #おすすめ商品',
@@ -141,7 +176,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
     platform: 'youtube_shorts',
     searchQuery: 'site:youtube.com/shorts 一人で 行ってみた',
     position: 1,
-    title: '初めての一人飲み #一人飲み',
+    title: '一人飲みをやってみた #一人飲み',
     url: 'https://www.youtube.com/shorts/solo2',
     snippet: null,
     formatSignals: [],
@@ -190,7 +225,7 @@ const diversifiedSelection = selectBroadValidationClusters(
 assert.deepEqual(
   new Set(diversifiedSelection.map(item => item.label)),
   new Set(['陶芸', '一人飲み']),
-  'Broad validation should prefer repeated cross-platform evidence, not hard-coded category names.'
+  'Broad validation should prefer contextually anchored evidence, not hard-coded category names.'
 );
 
 const mergedDiscoveryObservations = mergeBroadDiscoveryObservations([
