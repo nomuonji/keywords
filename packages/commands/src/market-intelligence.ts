@@ -1122,7 +1122,8 @@ const GENERIC_MARKET_LABEL_PATTERNS = [
   /^(?:おすすめ)?(?:に)?(?:のりたい|乗りたい|載りたい)$/i,
   /^(?:fyp.*|tiktoks?rp|pr.*)$/i,
   /^top\d+$/i,
-  /^こと(?:\d+選|教えて.*|について.*)?$/i
+  /^こと(?:\d+選|教えて.*|について.*)?$/i,
+  /^(?:20\d{2}年)?\d{1,2}月に購入した$/i
 ];
 
 function compareObservedMarketClusters(left: ObservedMarketCluster, right: ObservedMarketCluster): number {
