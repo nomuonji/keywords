@@ -147,10 +147,12 @@ function runtimeStatus() {
       broadDiscovery: {
         enabled: true,
         startsFromGenericSocialQueries: true,
+        discoveryLenses: ['first_attempt', 'emerging_interest', 'solo_behavior', 'problem_workaround', 'quit_substitution', 'purchase'],
         clusterSource: 'observed_public_social_content_only',
         excludesGenericFormatLabels: true,
         rejectsSentenceFragmentLabels: true,
-        validationSelection: 'one_concrete_market_per_generic_seed_then_fill',
+        categoryLexicalPriority: false,
+        validationSelection: 'evidence_first_one_per_discovery_lens_then_fill',
         rerootsTopObservedClusters: 3,
         validationGoal: 'social_affiliate',
         rankingGuard: 'coverage.conclusionAllowed must be true before recommendation'
