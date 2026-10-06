@@ -186,6 +186,7 @@ export interface QueryFocusResearch {
 export interface ObservedMarketCluster {
   label: string;
   evidenceCount: number;
+  contextualEvidenceCount: number;
   platforms: SocialMarketPlatform[];
   discoveryQueries: string[];
   formatSignals: string[];
@@ -1108,18 +1109,22 @@ const GENERIC_MARKET_LABEL_STOPWORDS = new Set([
   '話題', '話題のアイテム', '最新', 'ベストバイ', 'bestbuy', 'shorts', 'short',
   'youtube', 'tiktok', 'fyp', 'pr', '広告', 'viral', '便利', '便利アイテム',
   'アイテム', 'グッズ', 'ツール', '無料', 'まとめ', '保存版', '神アイテム', '神商品',
-  '名品', 'おすすめガイド', 'オススメ', 'amazon', '楽天', 'rakuten', 'shein'
+  '名品', 'おすすめガイド', 'オススメ', 'amazon', '楽天', 'rakuten', 'shein',
+  'もの', '物', 'こと', '食べ物', '曲', '動画', 'vlog', '日常', 'シリーズ', 'やり方'
 ]);
 
 const GENERIC_MARKET_LABEL_PATTERNS = [
   /^(?:20\d{2}年(?:上半期|下半期|\d+月)?)?(?:に)?(?:買って|買っ?て)(?:よかった|良かった)(?:もの|物|商品|アイテム)?(?:たち)?$/i,
   /^(?:おすすめ|人気|話題|最新|便利|神)(?:商品|アイテム|グッズ|ツール|もの|物)?$/i,
-  /^(?:ベストバイ|best\s*buy|ランキング|比較|レビュー|口コミ|まとめ)$/i
+  /^(?:ベストバイ|best\s*buy|ランキング|比較|レビュー|口コミ|まとめ)$/i,
+  /^(?:おすすめ)?(?:に)?(?:のりたい|乗りたい|載りたい)$/i,
+  /^(?:fyp.*|tiktoks?rp|pr.*)$/i
 ];
 
 function compareObservedMarketClusters(left: ObservedMarketCluster, right: ObservedMarketCluster): number {
   return (
     right.platforms.length - left.platforms.length ||
+    right.contextualEvidenceCount - left.contextualEvidenceCount ||
     right.evidenceCount - left.evidenceCount ||
     right.metricEvidenceCount - left.metricEvidenceCount ||
     right.formatSignals.length - left.formatSignals.length ||
@@ -1128,10 +1133,11 @@ function compareObservedMarketClusters(left: ObservedMarketCluster, right: Obser
 }
 
 function hasEnoughObservedMarketEvidence(item: ObservedMarketCluster): boolean {
-  // A single indexed post, even with engagement metrics, is an observation—not a market.
-  // Broad discovery requires repetition or cross-platform corroboration before a label
-  // may consume a validation slot.
-  return item.platforms.length >= 2 || item.evidenceCount >= 2;
+  // Hashtags are supporting evidence only. A label becomes a broad discovery
+  // hypothesis only when at least one observed title/snippet names it in a
+  // contextual phrase. The second-stage re-rooted query decides whether that
+  // hypothesis has enough independent evidence for a conclusion.
+  return item.contextualEvidenceCount >= 1;
 }
 
 function normalizeObservedMarketLabel(raw: string): string | null {
@@ -1143,8 +1149,10 @@ function normalizeObservedMarketLabel(raw: string): string | null {
     .trim();
   label = label
     .replace(/^(?:最新|おすすめ|人気|話題の|本当に|マジで|絶対|神|無料|202[0-9]年?)+/i, '')
+    .replace(/^(?:初めて|はじめて)(?:の)?/i, '')
     .replace(/おすすめ/gi, '')
     .replace(/(?:購入品紹介|商品紹介|ガジェット紹介|レビュー|好きな人と繋がりたい)$/i, '')
+    .replace(/(?:です|でした)$/u, '')
     .replace(/\d+\s*(?:商品|選|個|点)$/u, '')
     .trim();
   if (label.length < 2 || label.length > 28) return null;
@@ -1155,6 +1163,39 @@ function normalizeObservedMarketLabel(raw: string): string | null {
   return label;
 }
 
+function contextualObservedMarketLabelCandidates(text: string): string[] {
+  const withoutHashtags = stripTags(text).replace(/#[^\s#|｜,，。!！?？]+/gu, ' ');
+  const candidates: string[] = [];
+  const phrasePatterns = [
+    /買って(?:よかった|良かった)([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:\d+\s*(?:選|個|点)|を|[!！#、。]|$)/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{1,18})をやめて(?:よかった|良かった)/giu,
+    /^([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})\s+やめて(?:よかった|良かった)/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:を)?やってみた/giu,
+    /初めて(?:の)?([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:[!！#、。]|$|\s)/giu,
+    /最近(?:ハマって(?:る|いる)|ハマった)([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:[!！#、。]|$|\s)/giu,
+    /一人で([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:に)?行ってみた/giu,
+    /(ひとり旅|一人旅|ソロ活|おひとりさま)/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:に|向け|で)?おすすめ/giu,
+    /おすすめ([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:を|が|で|[!！#、。]|$|\s)/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:を|で)?(?:徹底)?比較/giu,
+    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:ランキング|ベスト\d+)/giu
+  ];
+  for (const pattern of phrasePatterns) {
+    for (const match of withoutHashtags.matchAll(pattern)) {
+      if (match[1]) candidates.push(match[1]);
+    }
+  }
+  return candidates;
+}
+
+export function extractContextualObservedMarketClusterLabels(observation: Pick<SocialContentObservation, 'title' | 'snippet'>): string[] {
+  const text = [observation.title, observation.snippet].filter(Boolean).join(' ');
+  const normalized = contextualObservedMarketLabelCandidates(text)
+    .map(normalizeObservedMarketLabel)
+    .filter((value): value is string => Boolean(value));
+  return [...new Map(normalized.map(label => [label.toLowerCase(), label])).values()];
+}
+
 export function extractObservedMarketClusterLabels(observation: Pick<SocialContentObservation, 'title' | 'snippet'>): string[] {
   const text = [observation.title, observation.snippet].filter(Boolean).join(' ');
   const candidates: string[] = [];
@@ -1162,17 +1203,7 @@ export function extractObservedMarketClusterLabels(observation: Pick<SocialConte
   for (const match of text.matchAll(/#([^\s#|｜,，。!！?？]{2,32})/gu)) {
     if (match[1]) candidates.push(match[1]);
   }
-
-  const phrasePatterns = [
-    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:に|向け|で)?おすすめ/giu,
-    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18})(?:を|で)?(?:徹底)?比較/giu,
-    /([A-Za-z0-9\u3040-\u30ff\u3400-\u9fffー・]{2,18}?)(?:ランキング|ベスト\d+)/giu
-  ];
-  for (const pattern of phrasePatterns) {
-    for (const match of text.matchAll(pattern)) {
-      if (match[1]) candidates.push(match[1]);
-    }
-  }
+  candidates.push(...contextualObservedMarketLabelCandidates(text));
 
   const normalized = candidates
     .map(normalizeObservedMarketLabel)
@@ -1184,6 +1215,7 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
   const grouped = new Map<string, {
     label: string;
     observationUrls: Set<string>;
+    contextualUrls: Set<string>;
     platforms: Set<SocialMarketPlatform>;
     discoveryQueries: Set<string>;
     formats: Set<string>;
@@ -1193,11 +1225,13 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
 
   for (const observation of observations) {
     const labels = extractObservedMarketClusterLabels(observation);
+    const contextualKeys = new Set(extractContextualObservedMarketClusterLabels(observation).map(label => label.toLowerCase()));
     for (const label of labels) {
       const key = label.toLowerCase();
       const current = grouped.get(key) ?? {
         label,
         observationUrls: new Set<string>(),
+        contextualUrls: new Set<string>(),
         platforms: new Set<SocialMarketPlatform>(),
         discoveryQueries: new Set<string>(),
         formats: new Set<string>(),
@@ -1205,6 +1239,7 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
         evidence: []
       };
       current.observationUrls.add(observation.url);
+      if (contextualKeys.has(key)) current.contextualUrls.add(observation.url);
       current.platforms.add(observation.platform);
       current.discoveryQueries.add(observation.searchQuery);
       observation.formatSignals.forEach(format => current.formats.add(format));
@@ -1225,6 +1260,7 @@ export function clusterObservedSocialMarkets(observations: SocialContentObservat
   const clusters = [...grouped.values()].map(item => ({
     label: item.label,
     evidenceCount: item.observationUrls.size,
+    contextualEvidenceCount: item.contextualUrls.size,
     platforms: [...item.platforms],
     discoveryQueries: [...item.discoveryQueries],
     formatSignals: [...item.formats],
