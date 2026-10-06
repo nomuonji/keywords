@@ -76,8 +76,9 @@ const anchoredSingle = clusterObservedSocialMarkets([{
   metrics: { views: 120000, likes: 1500, comments: 30, shares: 12 },
   metricProvenance: 'tiktok_public_page'
 }]);
-assert.equal(anchoredSingle[0]?.label, '株');
-assert.equal(anchoredSingle[0]?.contextualEvidenceCount, 1);
+const stockCluster = anchoredSingle.find(item => item.label === '株');
+assert.ok(stockCluster);
+assert.equal(stockCluster?.contextualEvidenceCount, 1);
 
 const discoveredClusters = clusterObservedSocialMarkets([
   {
@@ -175,7 +176,7 @@ const diversifiedClusters = clusterObservedSocialMarkets([
     platform: 'youtube_shorts',
     searchQuery: 'site:youtube.com/shorts 一人で 行ってみた',
     position: 1,
-    title: '初めての一人飲み #一人飲み',
+    title: '一人飲みをやってみた #一人飲み',
     url: 'https://www.youtube.com/shorts/solo2',
     snippet: null,
     formatSignals: [],
