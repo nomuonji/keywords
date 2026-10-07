@@ -343,7 +343,8 @@ export async function siteIndexationInspect(input: unknown) {
   } else {
     records = await listDue(site.id, args.limit);
   }
-  records = records.filter(row => row.inventoryState === 'current' && row.indexable).slice(0, args.limit);
+  const take = args.urls?.length ? Math.min(args.urls.length, 50) : args.limit;
+  records = records.filter(row => row.inventoryState === 'current' && row.indexable).slice(0, take);
   if (!records.length) return { siteId: site.id, property: site.searchConsoleProperty, inspected: 0, failed: 0, skipped: 0, reason: 'no_due_urls', quota: await readQuota(site.searchConsoleProperty) };
   const reservation = await reserveQuota(site.searchConsoleProperty, records.length);
   const selected = records.slice(0, reservation.reserved);
