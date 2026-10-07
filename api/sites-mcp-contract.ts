@@ -17,7 +17,6 @@ export const SITES_MCP_TOOL_NAMES = [
   'cloudflare_pages_set_preview_branch_exclusions',
   'cloudflare_pages_deployment_logs',
   'cloudflare_worker_set_subdomain',
-  'cloudflare_worker_set_subdomain',
   'site_article_list',
   'site_article_get',
   'site_article_save',
