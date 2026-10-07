@@ -17,6 +17,7 @@ process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({
 });
 process.env.FIREBASE_PROJECT_ID = 'test';
 process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN = 'test-gsc-token';
+process.env.KEYWORDS_ALLOW_PRIVATE_FETCH = '1';
 process.env.SITES_INDEXATION_DAILY_BUDGET = '2';
 
 const root = 'projects/test/databases/(default)/documents/';
