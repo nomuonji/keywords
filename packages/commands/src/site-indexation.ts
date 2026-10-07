@@ -290,42 +290,66 @@ async function runWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
 export async function siteIndexationInventorySave(input: unknown) {
   const args = z.object(siteIndexationInventorySaveShape).strict().parse(input);
   const site = await readSite(args.siteId);
-  let created = 0, updated = 0, unchanged = 0, removed = 0, scheduled = 0;
+  const buildInventoryRecord = (normalized: string, row: z.infer<typeof inventoryRow>, current: IndexationUrlRecord | null, t: string) => {
+    const base = current ?? baseRecord(site.id, normalized, t);
+    const fingerprintChanged = Boolean(current && row.sourceFingerprint !== undefined && row.sourceFingerprint !== current.sourceFingerprint);
+    const changedAtChanged = Boolean(current && row.lastChangedAt !== undefined && row.lastChangedAt !== current.lastChangedAt);
+    const isCurrentIndexable = row.inventoryState === 'current' && row.indexable;
+    const reactivated = Boolean(current && isCurrentIndexable && (current.inventoryState !== 'current' || !current.indexable || !current.nextInspectionAt));
+    let nextInspectionAt = base.nextInspectionAt;
+    if (!isCurrentIndexable) nextInspectionAt = null;
+    else if (!current || reactivated) nextInspectionAt = daysFrom(t, 2);
+    else if (fingerprintChanged || changedAtChanged) nextInspectionAt = daysFrom(t, 3);
+    return {
+      ...base,
+      url: normalized,
+      pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
+      inventoryState: row.inventoryState,
+      indexable: row.indexable,
+      sourceFingerprint: row.sourceFingerprint === undefined ? base.sourceFingerprint : row.sourceFingerprint,
+      lastPublishedAt: row.lastPublishedAt === undefined ? base.lastPublishedAt : row.lastPublishedAt,
+      lastChangedAt: row.lastChangedAt === undefined ? base.lastChangedAt : row.lastChangedAt,
+      nextInspectionAt
+    } as IndexationUrlRecord;
+  };
+  const equivalent = (a: IndexationUrlRecord, b: IndexationUrlRecord) =>
+    a.url === b.url &&
+    a.pageFamily === b.pageFamily &&
+    a.inventoryState === b.inventoryState &&
+    a.indexable === b.indexable &&
+    a.sourceFingerprint === b.sourceFingerprint &&
+    a.lastPublishedAt === b.lastPublishedAt &&
+    a.lastChangedAt === b.lastChangedAt &&
+    a.nextInspectionAt === b.nextInspectionAt;
+
   const results = await runWithConcurrency(args.records, 10, async row => {
     const normalized = assertUrlWithinSite(site, row.url);
     const t = now();
+    const existingDoc = await readPath(cachePath(site.id, urlId(normalized)));
+    const existing = existingDoc ? decodeRecord(existingDoc) : null;
+    const preview = buildInventoryRecord(normalized, row, existing, t);
+    if (existing && equivalent(existing, preview)) {
+      return { kind: 'unchanged' as const, record: existing };
+    }
     const saved = await saveWithRetry(site.id, normalized, current => {
-      const base = current ?? baseRecord(site.id, normalized, t);
-      const fingerprintChanged = current && row.sourceFingerprint !== undefined && row.sourceFingerprint !== current.sourceFingerprint;
-      const changedAtChanged = current && row.lastChangedAt !== undefined && row.lastChangedAt !== current.lastChangedAt;
-      const isCurrentIndexable = row.inventoryState === 'current' && row.indexable;
-      let nextInspectionAt = base.nextInspectionAt;
-      if (!isCurrentIndexable) nextInspectionAt = null;
-      else if (!current) nextInspectionAt = daysFrom(t, 2);
-      else if (fingerprintChanged || changedAtChanged) nextInspectionAt = daysFrom(t, 3);
-      return {
-        ...base,
-        url: normalized,
-        pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
-        inventoryState: row.inventoryState,
-        indexable: row.indexable,
-        sourceFingerprint: row.sourceFingerprint === undefined ? base.sourceFingerprint : row.sourceFingerprint,
-        lastPublishedAt: row.lastPublishedAt === undefined ? base.lastPublishedAt : row.lastPublishedAt,
-        lastChangedAt: row.lastChangedAt === undefined ? base.lastChangedAt : row.lastChangedAt,
-        nextInspectionAt,
-        revision: base.revision + 1,
-        updatedAt: t
-      };
+      const next = buildInventoryRecord(normalized, row, current, t);
+      return { ...next, revision: (current?.revision ?? 0) + 1, updatedAt: t };
     });
-    if (saved.inventoryState === 'removed') removed++;
-    if (saved.nextInspectionAt) scheduled++;
-    const existed = saved.revision > 1;
-    if (!existed) created++; else updated++;
-    return { id: saved.id, url: saved.url, revision: saved.revision, nextInspectionAt: saved.nextInspectionAt };
+    return { kind: existing ? 'updated' as const : 'created' as const, record: saved };
   });
-  for (const result of results) if (!result.ok && /unchanged/i.test(result.error)) unchanged++;
+  const successes = results.flatMap(result => result.ok ? [result.value] : []);
   const failures = results.flatMap((result, index) => result.ok ? [] : [{ url: args.records[index].url, error: result.error }]);
-  return { siteId: site.id, received: args.records.length, created, updated, unchanged, removed, scheduled, failed: failures.length, failures: failures.slice(0, 20) };
+  return {
+    siteId: site.id,
+    received: args.records.length,
+    created: successes.filter(item => item.kind === 'created').length,
+    updated: successes.filter(item => item.kind === 'updated').length,
+    unchanged: successes.filter(item => item.kind === 'unchanged').length,
+    removed: successes.filter(item => item.record.inventoryState === 'removed').length,
+    scheduled: successes.filter(item => Boolean(item.record.nextInspectionAt)).length,
+    failed: failures.length,
+    failures: failures.slice(0, 20)
+  };
 }
 
 export async function siteIndexationInspect(input: unknown) {
