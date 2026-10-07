@@ -265,6 +265,44 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       ? deploymentsEnvelope.result.deployments
       : [];
     const domainsRaw = Array.isArray(domainsEnvelope.result) ? domainsEnvelope.result : [];
+    const activeVersionId = deploymentsRaw
+      .flatMap((deployment: any) => Array.isArray(deployment?.versions) ? deployment.versions : [])
+      .find((version: any) => Number(version?.percentage ?? 0) === 100)?.version_id ?? null;
+
+    let activeVersion: any = null;
+    let activeVersionError: string | null = null;
+    if (activeVersionId) {
+      try {
+        const versionEnvelope = await cloudflare<any>(
+          `/workers/workers/${encodeURIComponent(workerName)}/versions/${encodeURIComponent(activeVersionId)}`
+        );
+        const version = versionEnvelope.result;
+        activeVersion = {
+          id: version?.id ?? activeVersionId,
+          number: version?.number ?? null,
+          createdOn: version?.created_on ?? null,
+          source: version?.source ?? null,
+          mainModule: version?.main_module ?? null,
+          urls: Array.isArray(version?.urls) ? version.urls : [],
+          compatibilityDate: version?.compatibility_date ?? null,
+          compatibilityFlags: Array.isArray(version?.compatibility_flags) ? version.compatibility_flags : [],
+          assets: version?.assets?.config ? {
+            basePath: version.assets.config.base_path ?? null,
+            htmlHandling: version.assets.config.html_handling ?? null,
+            notFoundHandling: version.assets.config.not_found_handling ?? null,
+            runWorkerFirst: version.assets.config.run_worker_first ?? null
+          } : null,
+          bindings: Array.isArray(version?.bindings)
+            ? version.bindings.map((binding: any) => ({
+                name: binding?.name ?? null,
+                type: binding?.type ?? null
+              }))
+            : []
+        };
+      } catch (error: any) {
+        activeVersionError = error?.message ?? String(error);
+      }
+    }
 
     return {
       site: {
@@ -281,6 +319,8 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
           enabled: Boolean(scriptSubdomain.result?.enabled),
           previewsEnabled: Boolean(scriptSubdomain.result?.previews_enabled)
         },
+        activeVersion,
+        activeVersionError,
         deployments: deploymentsRaw.map((deployment: any) => ({
           id: deployment?.id ?? null,
           createdOn: deployment?.created_on ?? null,
