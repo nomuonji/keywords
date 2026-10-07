@@ -480,11 +480,12 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 34);
+  assert.equal(listing.tools.length, 35);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_worker_set_subdomain'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
@@ -566,7 +567,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.16.1');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.16.2');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');

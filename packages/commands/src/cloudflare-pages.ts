@@ -22,9 +22,17 @@ export const cloudflarePagesPreviewBranchesShape = {
   excludeBranches: z.array(z.string().trim().min(1).max(200)).min(1).max(20).default(['seo/*'])
 };
 
+export const cloudflareWorkerSubdomainShape = {
+  siteId: entityId,
+  workerName: z.string().trim().regex(/^[a-zA-Z0-9-]{1,63}$/).optional(),
+  enabled: z.boolean().default(true),
+  previewsEnabled: z.boolean().default(true)
+};
+
 const siteStatusSchema = z.object(cloudflarePagesSiteStatusShape).strict();
 const deploymentLogsSchema = z.object(cloudflarePagesDeploymentLogsShape).strict();
 const previewBranchesSchema = z.object(cloudflarePagesPreviewBranchesShape).strict();
+const workerSubdomainSchema = z.object(cloudflareWorkerSubdomainShape).strict();
 
 type SiteTarget = {
   id: string;
@@ -72,7 +80,7 @@ export function cloudflarePagesRuntimeStatus() {
     configured: config.configured,
     accountIdConfigured: Boolean(config.accountId),
     apiTokenConfigured: Boolean(config.apiToken),
-    permissions: 'Pages Read is sufficient for Pages diagnostics; Workers CI Read is required for Workers Builds diagnostics; Pages Edit is required to change preview branch controls'
+    permissions: 'Pages Read is sufficient for Pages diagnostics; Workers CI Read is required for Workers Builds diagnostics; Workers Scripts Write is required to change workers.dev routing; Pages Edit is required to change preview branch controls'
   };
 }
 
@@ -313,6 +321,49 @@ export async function cloudflarePagesSetPreviewBranchExclusions(input: unknown, 
       projectResolution: resolution,
       changed: true,
       project: safe
+    }
+  };
+}
+
+function resolveWorkerName(site: SiteTarget, explicit?: string) {
+  if (explicit) return explicit;
+  const repository = site.repository?.trim();
+  if (!repository) throw new Error(`Site ${site.id} has no repository from which to infer a Worker name`);
+  const [, repoName] = repository.split('/');
+  if (!repoName || !/^[a-zA-Z0-9-]{1,63}$/.test(repoName)) {
+    throw new Error(`Could not infer a valid Worker name from repository ${repository}`);
+  }
+  return repoName;
+}
+
+export async function cloudflareWorkerSetSubdomain(input: unknown, site: SiteTarget) {
+  const args = workerSubdomainSchema.parse(input);
+  if (args.siteId !== site.id) throw new Error('Resolved site does not match requested siteId');
+  const workerName = resolveWorkerName(site, args.workerName);
+
+  const result = (await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+    `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: args.enabled,
+        previews_enabled: args.previewsEnabled
+      })
+    }
+  )).result;
+
+  return {
+    site: {
+      id: site.id,
+      repository: site.repository ?? null,
+      productionUrl: site.productionUrl ?? null
+    },
+    cloudflare: {
+      workerName,
+      workersDev: {
+        enabled: Boolean(result?.enabled),
+        previewsEnabled: Boolean(result?.previews_enabled)
+      }
     }
   };
 }
