@@ -927,7 +927,7 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
       && typeof module?.content_type === 'string'
     );
   const safeToApply =
-    modulesReady &&
+    (modulesReady || targetModules.length === 0) &&
     source.result?.id === sourceVersionId &&
     target.result?.id === targetVersionId &&
     expectedSource && expectedTarget && expectedSettings &&
@@ -946,28 +946,31 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     mainModule,
     modulesReady,
     hasAssetsJwt: Boolean(target.result?.assets?.jwt),
+    canAttemptConfigOnlyVersion: targetModules.length === 0,
     safeToApply
   };
   if (args.dryRun) return { preflight, applied: false };
   if (!safeToApply) throw new Error('Secret inheritance preflight failed: ' + JSON.stringify(preflight));
 
   const requestedBindings = [
-    { type: 'assets', name: 'ASSETS' },
+    { type: 'inherit', name: 'ASSETS', version_id: 'latest' },
     ...secretNames.map(name => ({ type: 'inherit', name, version_id: sourceVersionId }))
   ];
   const copyVersion: Record<string, unknown> = {
-    main_module: mainModule,
-    modules: targetModules.map((module: any) => ({
-      name: module.name,
-      content_base64: module.content_base64,
-      content_type: module.content_type
-    })),
     bindings: requestedBindings,
     compatibility_date: target.result.compatibility_date,
     compatibility_flags: Array.isArray(target.result.compatibility_flags)
       ? target.result.compatibility_flags : [],
     annotations: { 'workers/message': 'Restore original secret bindings onto known-good Worker bundle' }
   };
+  if (modulesReady) {
+    copyVersion.main_module = mainModule;
+    copyVersion.modules = targetModules.map((module: any) => ({
+      name: module.name,
+      content_base64: module.content_base64,
+      content_type: module.content_type
+    }));
+  }
   if (target.result?.assets?.jwt) {
     copyVersion.assets = target.result.assets;
   }
@@ -991,7 +994,8 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     .some((b: any) => b?.name === 'ASSETS' && b?.type === 'assets');
   const confirmed = secretNames.every(name => confirmedSecrets.includes(name))
     && confirmedSecrets.length === secretNames.length
-    && hasAssets;
+    && hasAssets
+    && createdVersion.result?.main_module === mainModule;
   if (!confirmed) {
     return {
       preflight,
