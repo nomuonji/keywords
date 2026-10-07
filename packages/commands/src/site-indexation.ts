@@ -47,6 +47,8 @@ export type IndexationUrlRecord = {
   id: string;
   siteId: string;
   url: string;
+  /** Exact sitemap/canonical URL inspected by Google; identity url deliberately ignores trailing slash. */
+  inspectionUrl: string;
   pageFamily: string | null;
   inventoryState: InventoryState;
   indexable: boolean;
@@ -86,6 +88,14 @@ function normalizeWebIdentity(input: string) {
   return url.toString();
 }
 
+function inspectionIdentity(input: string) {
+  // Keep slash fidelity when talking to Search Console. The normalized,
+  // slash-insensitive URL remains the Firestore document key only.
+  const url = new URL(input);
+  url.hash = '';
+  if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) url.port = '';
+  return url.toString();
+}
 function urlId(url: string) { return hash(normalizeWebIdentity(url)).slice(0, 40); }
 function cachePath(siteId: string, id: string) { return `sites/${siteId}/indexationUrls/${id}`; }
 
@@ -113,7 +123,7 @@ function assertUrlWithinSite(site: SiteRecord, input: string) {
 
 function baseRecord(siteId: string, url: string, createdAt: string): IndexationUrlRecord {
   return {
-    id: urlId(url), siteId, url, pageFamily: null, inventoryState: 'current', indexable: true,
+    id: urlId(url), siteId, url, inspectionUrl: url, pageFamily: null, inventoryState: 'current', indexable: true,
     sourceFingerprint: null, lastPublishedAt: null, lastChangedAt: null, siteUrl: null,
     observedIndexState: 'unknown', verdict: null, coverageState: null, robotsTxtState: null,
     indexingState: null, pageFetchState: null, googleCanonical: null, userCanonical: null,
@@ -127,6 +137,7 @@ function decodeRecord(doc: any): IndexationUrlRecord {
   return {
     ...baseRecord(String(row.siteId ?? ''), String(row.url ?? ''), String(row.createdAt ?? now())),
     ...row,
+    inspectionUrl: row.inspectionUrl ?? row.url,
     pageFamily: row.pageFamily ?? null,
     inventoryState: row.inventoryState ?? 'current',
     indexable: row.indexable !== false,
@@ -235,7 +246,7 @@ async function listDue(siteId: string, limit: number): Promise<IndexationUrlReco
 
 async function inspectOne(site: SiteRecord, record: IndexationUrlRecord) {
   if (!site.searchConsoleProperty) throw new Error(`Site ${site.id} has no Search Console property`);
-  const observation = await searchConsoleInspect({ url: record.url, siteUrl: site.searchConsoleProperty });
+  const observation = await searchConsoleInspect({ url: record.inspectionUrl, siteUrl: site.searchConsoleProperty });
   const previousSignature = inspectionSignature(record);
   const nextSignature = inspectionSignature({
     verdict: observation.verdict,
@@ -252,6 +263,7 @@ async function inspectOne(site: SiteRecord, record: IndexationUrlRecord) {
     const base = current ?? record;
     return {
       ...base,
+      inspectionUrl: record.inspectionUrl,
       siteUrl: site.searchConsoleProperty,
       observedIndexState: normalizedIndexState(observation.verdict),
       verdict: observation.verdict,
@@ -292,6 +304,8 @@ export async function siteIndexationInventorySave(input: unknown) {
   const site = await readSite(args.siteId);
   const buildInventoryRecord = (normalized: string, row: z.infer<typeof inventoryRow>, current: IndexationUrlRecord | null, t: string) => {
     const base = current ?? baseRecord(site.id, normalized, t);
+    const exactInspectionUrl = inspectionIdentity(row.url);
+    const inspectionTargetChanged = Boolean(current && current.inspectionUrl !== exactInspectionUrl);
     const fingerprintChanged = Boolean(current && row.sourceFingerprint !== undefined && row.sourceFingerprint !== current.sourceFingerprint);
     const changedAtChanged = Boolean(current && row.lastChangedAt !== undefined && row.lastChangedAt !== current.lastChangedAt);
     const isCurrentIndexable = row.inventoryState === 'current' && row.indexable;
@@ -299,10 +313,18 @@ export async function siteIndexationInventorySave(input: unknown) {
     let nextInspectionAt = base.nextInspectionAt;
     if (!isCurrentIndexable) nextInspectionAt = null;
     else if (!current || reactivated) nextInspectionAt = daysFrom(t, 2);
+    else if (inspectionTargetChanged) nextInspectionAt = t; // repair prior non-canonical observations immediately
     else if (fingerprintChanged || changedAtChanged) nextInspectionAt = daysFrom(t, 3);
     return {
       ...base,
       url: normalized,
+      inspectionUrl: exactInspectionUrl,
+      ...(inspectionTargetChanged ? {
+        lastInspectedAt: null, observedIndexState: 'unknown' as ObservedIndexState,
+        verdict: null, coverageState: null, robotsTxtState: null,
+        indexingState: null, pageFetchState: null, googleCanonical: null,
+        userCanonical: null, lastCrawlTime: null, consecutiveSameResults: 0
+      } : {}),
       pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
       inventoryState: row.inventoryState,
       indexable: row.indexable,
@@ -314,6 +336,7 @@ export async function siteIndexationInventorySave(input: unknown) {
   };
   const equivalent = (a: IndexationUrlRecord, b: IndexationUrlRecord) =>
     a.url === b.url &&
+    a.inspectionUrl === b.inspectionUrl &&
     a.pageFamily === b.pageFamily &&
     a.inventoryState === b.inventoryState &&
     a.indexable === b.indexable &&
@@ -362,7 +385,10 @@ export async function siteIndexationInspect(input: unknown) {
     for (const inputUrl of args.urls) {
       const url = assertUrlWithinSite(site, inputUrl);
       const doc = await readPath(cachePath(site.id, urlId(url)));
-      records.push(doc ? decodeRecord(doc) : baseRecord(site.id, url, now()));
+      const stored = doc ? decodeRecord(doc) : baseRecord(site.id, url, now());
+      // Explicit reinspection must honor the caller's exact URL, not the
+      // old slash-stripped cache value; it also corrects the cache target.
+      records.push({ ...stored, inspectionUrl: inspectionIdentity(inputUrl) });
     }
   } else {
     records = await listDue(site.id, args.limit);
@@ -383,7 +409,7 @@ export async function siteIndexationInspect(input: unknown) {
     failed: failures.length,
     skipped: records.length - selected.length,
     quota: reservation,
-    results: succeeded.map(row => ({ url: row.url, observedIndexState: row.observedIndexState, verdict: row.verdict, coverageState: row.coverageState, lastInspectedAt: row.lastInspectedAt, nextInspectionAt: row.nextInspectionAt })),
+    results: succeeded.map(row => ({ url: row.url, inspectionUrl: row.inspectionUrl, observedIndexState: row.observedIndexState, verdict: row.verdict, coverageState: row.coverageState, lastInspectedAt: row.lastInspectedAt, nextInspectionAt: row.nextInspectionAt })),
     failures: failures.slice(0, 20)
   };
 }
