@@ -413,7 +413,7 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks'],
+    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
     analyticsStoragePolicy: {
       rawMeasurementRows: 'ephemeral_sqlite_only',
       planningDigest: 'one_overwrite_document_per_site',
@@ -421,6 +421,17 @@ export function remoteSitesStatus() {
       maxQueriesPerWindowPerPage: 3,
       maxSerializedBytes: 500000,
       durableGrowth: 'seoTasks_only_when_evidence_backed_material_action_is_ready'
+    },
+    indexationStoragePolicy: {
+      urlCache: 'one_mutable_document_per_url_under_site',
+      history: 'weekly_site_and_page_family_snapshot_only',
+      inspectionAcquisition: 'search_console_url_inspection_on_due_or_explicit_urls_only',
+      defaultDailyInspectionBudgetPerProperty: Math.max(1, Math.min(Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500) || 1500, 1900)),
+      stablePassCadenceDays: 90,
+      ordinaryPassCadenceDays: 30,
+      nonPassCadenceDays: 7,
+      newUrlDelayDays: 2,
+      changedUrlDelayDays: 3
     },
     optimizationPolicy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14 }
   };
