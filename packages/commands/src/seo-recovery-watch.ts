@@ -174,6 +174,7 @@ export async function runSeoRecoveryCircuitBreaker() {
       expectedRevision: Number(portfolio.revision ?? 0),
       mode: 'recovery',
       incidentId,
+      incidentCategory: 'search_visibility',
       title: 'Automatic cross-site SEO recovery circuit breaker',
       reason: 'Conservative multi-site indexation/visibility thresholds were exceeded. Growth is frozen as a risk-control action; this does not identify a Google update or private enforcement system as the cause.',
       evidence: [
