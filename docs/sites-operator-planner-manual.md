@@ -19,7 +19,7 @@ When the durable portfolio record says `mode=recovery`, recovery governance over
 - read the current `scaled_content_operation_risk` evaluator during recovery planning, but do not claim that a particular Google update or private spam system caused the incident without direct evidence;
 - treat task count, article count, publishing velocity, and worker utilization as non-objectives during recovery.
 
-The task API enforces the growth freeze on **new** creation and **new** claims. Old ready growth tasks cannot be newly claimed, but tasks already in progress and already delivered to the GitHub Actions PR/merge lane are not interrupted. This is a moderate operational guardrail, **not** an emergency kill switch.
+The task API enforces the growth freeze on **new** creation and **new** claims. Old ready growth tasks cannot be newly claimed, but tasks already in progress can be resumed/reclaimed with their normal lease checks, and work already delivered to GitHub Actions PR/merge is not interrupted. This is a moderate operational guardrail, **not** an emergency kill switch.
 
 The same incident record supports categories `search_visibility`, `content_quality`, `technical_integrity`, `measurement_integrity`, and `other`. The automatic circuit breaker currently detects only specific Search visibility/indexation symptoms; it must not be presented as a detector for every incident category.
 
