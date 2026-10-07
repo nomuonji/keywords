@@ -8,6 +8,8 @@ import { metricsCommands } from '../packages/commands/src/metrics.js';
 import { captureProjectGa4Metrics } from '../packages/commands/src/ga4-metrics.js';
 import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest-refresh.js';
 import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/src/recovery-context.js';
+import { siteRegistryResolve } from '../packages/commands/src/remote-site-operations.js';
+import { siteIndexationInventorySave, siteIndexationList } from '../packages/commands/src/site-indexation.js';
 
 /**
  * On-demand site measurement batch. Runs anywhere the workspace code and
@@ -56,6 +58,88 @@ async function ensureProject(job: { projectId: string; name?: string; domain?: s
   return { reused: false };
 }
 
+function normalizeInventoryUrl(input: string) {
+  const url = new URL(input);
+  url.hash = '';
+  if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) url.port = '';
+  if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '') || '/';
+  return url.toString();
+}
+
+function pageFamilyFor(input: string) {
+  const url = new URL(input);
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (!parts.length) return '/';
+  return `/${parts[0]}/*`;
+}
+
+function sitemapUrlsObservedAt(projectId: string, syncedAt: string) {
+  const rows = sqlite.prepare('SELECT url FROM pages WHERE project_id=? AND url IS NOT NULL AND last_seen_at=?').all(projectId, syncedAt) as Array<{ url: string }>;
+  return [...new Set(rows.map(row => normalizeInventoryUrl(row.url)))].sort();
+}
+
+async function cachedIndexationInventory(siteId: string) {
+  const items: any[] = [];
+  let pageToken: string | undefined;
+  do {
+    const result = await siteIndexationList({ siteId, limit: 500, ...(pageToken ? { pageToken } : {}) }) as any;
+    items.push(...result.items);
+    pageToken = result.nextPageToken ?? undefined;
+  } while (pageToken);
+  return items;
+}
+
+async function reconcileIndexationInventory(projectId: string, sitemapUrls: string[], complete: boolean) {
+  const resolved = await siteRegistryResolve({ localProjectId: projectId }) as any;
+  const site = resolved.site;
+  if (!site) return { status: 'skipped', reason: 'site_not_registered', currentUrls: sitemapUrls.length };
+
+  const cached = await cachedIndexationInventory(site.id);
+  const cachedByUrl = new Map(cached.map((row: any) => [normalizeInventoryUrl(row.url), row]));
+  const current = new Set(sitemapUrls.map(normalizeInventoryUrl));
+  const changes: any[] = [];
+
+  for (const url of current) {
+    const previous: any = cachedByUrl.get(url);
+    const pageFamily = pageFamilyFor(url);
+    if (!previous || previous.inventoryState !== 'current' || previous.indexable !== true || previous.pageFamily !== pageFamily) {
+      changes.push({ url, pageFamily, indexable: true, inventoryState: 'current' });
+    }
+  }
+
+  if (complete) {
+    for (const [url, previous] of cachedByUrl) {
+      const row: any = previous;
+      if (!current.has(url) && row.inventoryState === 'current') {
+        changes.push({ url, pageFamily: row.pageFamily ?? pageFamilyFor(url), indexable: false, inventoryState: 'removed' });
+      }
+    }
+  }
+
+  let created = 0, updated = 0, unchanged = 0, failed = 0;
+  for (let offset = 0; offset < changes.length; offset += 200) {
+    const result = await siteIndexationInventorySave({ siteId: site.id, records: changes.slice(offset, offset + 200) }) as any;
+    created += Number(result.created ?? 0);
+    updated += Number(result.updated ?? 0);
+    unchanged += Number(result.unchanged ?? 0);
+    failed += Number(result.failed ?? 0);
+  }
+
+  return {
+    status: failed ? 'partial' : 'synced',
+    siteId: site.id,
+    sitemapComplete: complete,
+    currentUrls: current.size,
+    cachedUrls: cached.length,
+    changes: changes.length,
+    created,
+    updated,
+    unchanged,
+    failed,
+    removalsSuppressed: !complete
+  };
+}
+
 async function main() {
   const summary: Array<Record<string, unknown>> = [];
   for (const job of jobs) {
@@ -84,6 +168,7 @@ async function main() {
         imported = await blogCommands.importContext(sctx, { projectId: job.projectId, snapshot });
       }
       const sync = await siteCommands.syncSitemap(sctx, { projectId: job.projectId, sitemapUrl: job.sitemapUrl });
+      const sitemapInventoryUrls = sitemapUrlsObservedAt(job.projectId, sync.syncedAt);
       const endDate = recoveryDate();
       const context = recoveryContext(job.projectId);
       const siteUrl = job.gscProperty ?? context.latest?.property;
@@ -113,11 +198,18 @@ async function main() {
       }
       const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), periods);
       const digest = await refreshSeoPlanningDigest(job.projectId, endDate);
+      let indexationInventory: any;
+      try {
+        indexationInventory = await reconcileIndexationInventory(job.projectId, sitemapInventoryUrls, sync.complete);
+      } catch (error) {
+        indexationInventory = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+      const indexationOk = !['failed', 'partial'].includes(String(indexationInventory.status));
       await operationCommands.complete({ ...sctx, workSessionId: undefined }, {
         operationId: started.operation.id,
-        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 160)}; sitemap=${sync.discovered}; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4=${(ga4 as any)?.status}; compact digest selected=${digest.selectedCount}/inventory=${digest.inventoryCount}; local rows queries=${capturedRows.queries}, pages=${capturedRows.pages}, queryPages=${capturedRows.queryPages}. Firestore writes analytics as one overwrite-only digest document, not per-page snapshots.`,
+        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 160)}; sitemap=${sync.discovered}; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4=${(ga4 as any)?.status}; compact digest selected=${digest.selectedCount}/inventory=${digest.inventoryCount}; local rows queries=${capturedRows.queries}, pages=${capturedRows.pages}, queryPages=${capturedRows.queryPages}; indexation inventory=${indexationInventory.status}, changes=${indexationInventory.changes ?? 'n/a'}. Firestore analytics remain one overwrite-only digest per site; URL indexation state is reconciled only when sitemap inventory changes.`,
       });
-      summary.push({ projectId: label, ok: true, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, digest, localRows: capturedRows });
+      summary.push({ projectId: label, ok: indexationOk, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, digest, localRows: capturedRows, indexationInventory });
     } catch (error) {
       summary.push({ projectId: label, ok: false, error: error instanceof Error ? error.message : String(error) });
     }
