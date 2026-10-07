@@ -70,6 +70,7 @@ function pageFamilyFor(input: string) {
   const url = new URL(input);
   const parts = url.pathname.split('/').filter(Boolean);
   if (!parts.length) return '/';
+  if (parts.length === 1) return '/(root-level)/*';
   return `/${parts[0]}/*`;
 }
 
