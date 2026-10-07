@@ -39,7 +39,11 @@ const shared = {
     rule: 'A site that is visible in site-monitor but absent/paused/archived in Sites Operator is not agent-managed and must not receive new SEO tasks from this workflow.'
   },
   recoveryGovernance: {
-    source: 'Durable portfolio/site recovery state via seo_recovery_status. Read immediately after this context on every Planner and Executor run.',
+    source: 'Live SEO operational incident state is embedded in seo_agent_context.recovery. Use seo_recovery_status to inspect a specific site or update the incident.',
+    incidentCategories: ['search_visibility', 'content_quality', 'technical_integrity', 'measurement_integrity', 'other'],
+    applicability: 'Reusable within SEO operations. New incident types can share the same workflow, but the current action policy only pauses acquisition of NEW growth work; it is not a global emergency kill switch.',
+    inFlight: 'Existing claimed/in_progress tasks and verified branch_ready/pr_open delivery are deliberately allowed to finish. Never retroactively cancel claims, branches, PRs or merges solely because recovery mode was activated.',
+    normalReturn: 'Return to normal through an explicit portfolio update with resolutionEvidence. Do not auto-exit; audit open work and revalidate the next new task on claim.',
     priority: 'An active portfolio recovery incident overrides normal discovery, expansion, ready-buffer, and publishing-volume targets.',
     growthFreeze: 'During recovery, new_article/site_expansion/data_expansion/schema_expansion are blocked by the control plane unless the target site is explicitly cleared for the current incident.',
     repairLane: 'Allowed work is bounded revise/merge/delete/internal_links/technical recovery work, subject to existing direction gates for broad deletion/noindex/positioning changes.',
@@ -83,7 +87,7 @@ const shared = {
 
 const plannerInstructions = [
   'Read this context first, then read the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The live policy and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
-  'Immediately call seo_recovery_status before inventory/discovery. If portfolio.mode=recovery, switch to recovery operations: do not replenish the normal growth queue, do not pursue net-new Search-surface expansion, and plan only evidence-backed recovery/repair work on uncleared sites. The API hard-gates growth task creation and claims; do not route around it.',
+  'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. If portfolio.mode=recovery, do not replenish the normal growth queue or pursue new Search-surface expansion on uncleared sites. Existing in-progress implementation and delivery handoffs continue. The API gates new growth task creation/claims; do not route around it.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
   'In normal mode, reserve a bounded discovery pass alongside active experiment supply. In portfolio recovery mode, suspend growth-oriented discovery as a required run obligation; use research only when it directly supports recovery diagnosis, consolidation, quality repair, or a site-clearance decision.',
@@ -121,6 +125,7 @@ const plannerInstructions = [
 
 const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
+  'The live incident is embedded in this context. Recovery pauses creation/NEW claims of uncleared growth tasks, but never interrupts an already claimed in_progress task or the central PR delivery lane. Continue those validated handoffs normally.',
   'Treat every scheduled/manual execution as a new ephemeral run: there is no persistent worker identity or "previous self" across sessions. Inspect in_progress work first. An active executionClaim is temporarily protected. push_pending is a Worker write-ahead state immediately before remote push; if the recorded seo/* branch already exists remotely at the exact recorded headSha, promote it to branch_ready instead of reimplementing. branch_ready or pr_open belongs to the external delivery lane and must not be reclaimed merely to create/merge a PR. ci_failed is reclaimable for a corrective Worker pass. Other unleased/expired in_progress work is reclaimable when still valid.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
   'If the selected SEO task has directionId, read that Site Direction record before implementation. It must be decided and belong to the same site; treat its decision/constraints as implementation boundaries and preserve the directionId in task history. If the record is not decided or has been superseded, stop that strategic implementation and report the mismatch.',
