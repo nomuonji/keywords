@@ -403,8 +403,14 @@ try {
   const activeRecovery = await seoRecoveryStatus({});
   assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, true);
   assert.equal(activeRecovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
-  const continuedInFlight = await seoTaskUpdate({
+  // Claim refresh for the same already-running task must not be blocked by the
+  // recovery intake gate; lease/collision safety remains in effect.
+  const refreshedInFlight = await seoTaskClaim({
     id: claimedBeforeIncident.id, expectedRevision: claimedBeforeIncident.revision,
+    runId: 'pre-incident-claim', actor: 'site-operations-smoke', leaseMinutes: 75
+  });
+  const continuedInFlight = await seoTaskUpdate({
+    id: refreshedInFlight.id, expectedRevision: refreshedInFlight.revision,
     claimRunId: 'pre-incident-claim',
     executionSummary: 'Implementation continues because it was claimed before the incident.'
   });
@@ -492,6 +498,12 @@ try {
 
   // A subsequent incident can be about technical integrity rather than spam;
   // old site clearances do not authorize new growth in another incident.
+  await assert.rejects(seoRecoveryPortfolioUpdate({
+    expectedRevision: normal.revision, mode: 'recovery',
+    incidentId: 'spam-recovery-2026-10',
+    reason: 'Unsafe reuse of an old resolved incident.',
+    evidence: ['Old incident would inherit stale site clearance.']
+  }), /new, distinct incidentId/);
   const technicalIncident = await seoRecoveryPortfolioUpdate({
     expectedRevision: normal.revision, mode: 'recovery',
     incidentId: 'technical-integrity-incident',
@@ -661,7 +673,7 @@ try {
   assert.equal(agentPolicy.structuredContent.policyVersion, '1.25.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.equal(agentPolicy.structuredContent.recovery.portfolio.incidentCategory, 'technical_integrity');
-  assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'new_task_create_and_new_claim_only');
+  assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'new_task_create_and_unstarted_ready_claim_only');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
