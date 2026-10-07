@@ -912,7 +912,22 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
   const expectedSettings = settingsBindings.length === 1
     && settingsBindings[0]?.name === 'ASSETS'
     && settingsBindings[0]?.type === 'assets';
+  const targetModules = Array.isArray(target.result?.modules)
+    ? target.result.modules : [];
+  const mainModule = String(target.result?.main_module ?? '');
+  const modulesReady = Boolean(mainModule)
+    && targetModules.some((module: any) =>
+      module?.name === mainModule
+      && typeof module?.content_base64 === 'string'
+      && module.content_base64.length > 0
+    )
+    && targetModules.every((module: any) =>
+      typeof module?.name === 'string'
+      && typeof module?.content_base64 === 'string'
+      && typeof module?.content_type === 'string'
+    );
   const safeToApply =
+    modulesReady &&
     source.result?.id === sourceVersionId &&
     target.result?.id === targetVersionId &&
     expectedSource && expectedTarget && expectedSettings &&
@@ -927,6 +942,10 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     latestVersion,
     activeVersionId: activeVersions[0] ?? null,
     targetScriptHandlers: targetScript?.handlers ?? [],
+    targetModuleCount: targetModules.length,
+    mainModule,
+    modulesReady,
+    hasAssetsJwt: Boolean(target.result?.assets?.jwt),
     safeToApply
   };
   if (args.dryRun) return { preflight, applied: false };
@@ -936,42 +955,82 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     { type: 'assets', name: 'ASSETS' },
     ...secretNames.map(name => ({ type: 'inherit', name, version_id: sourceVersionId }))
   ];
-  const settingsForm = new FormData();
-  settingsForm.append('settings', JSON.stringify({
-    bindings: requestedBindings
-  }));
-  await cloudflare<any>(
-    `/workers/scripts/${script}/settings`,
-    {
-      method: 'PATCH',
-      body: settingsForm
-    }
+  const copyVersion: Record<string, unknown> = {
+    main_module: mainModule,
+    modules: targetModules.map((module: any) => ({
+      name: module.name,
+      content_base64: module.content_base64,
+      content_type: module.content_type
+    })),
+    bindings: requestedBindings,
+    compatibility_date: target.result.compatibility_date,
+    compatibility_flags: Array.isArray(target.result.compatibility_flags)
+      ? target.result.compatibility_flags : [],
+    annotations: { 'workers/message': 'Restore original secret bindings onto known-good Worker bundle' }
+  };
+  if (target.result?.assets?.jwt) {
+    copyVersion.assets = target.result.assets;
+  }
+
+  const created = await cloudflare<any>(versionPath, {
+    method: 'POST',
+    body: JSON.stringify(copyVersion)
+  });
+  const createdId = String(created.result?.id ?? '');
+  if (!/^[a-f0-9-]{36}$/.test(createdId)) {
+    throw new Error('Version creation returned no valid version ID; refusing deploy');
+  }
+
+  const createdVersion = await cloudflare<any>(`${versionPath}/${createdId}`);
+  const confirmedSecrets = (Array.isArray(createdVersion.result?.bindings)
+    ? createdVersion.result.bindings : [])
+    .filter((b: any) => b?.type === 'secret_text')
+    .map((b: any) => String(b.name));
+  const hasAssets = (Array.isArray(createdVersion.result?.bindings)
+    ? createdVersion.result.bindings : [])
+    .some((b: any) => b?.name === 'ASSETS' && b?.type === 'assets');
+  const confirmed = secretNames.every(name => confirmedSecrets.includes(name))
+    && confirmedSecrets.length === secretNames.length
+    && hasAssets;
+  if (!confirmed) {
+    return {
+      preflight,
+      applied: true,
+      deployed: false,
+      createdVersionId: createdId,
+      secretsConfirmed: false,
+      secretNames: confirmedSecrets,
+      reason: 'Created version did not confirm all bindings; refusing deploy'
+    };
+  }
+
+  await cloudflare<any>(`/workers/scripts/${script}/deployments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      strategy: 'percentage',
+      versions: [{ percentage: 100, version_id: createdId }],
+      annotations: { 'workers/message': 'Deploy Learning OS with retained secret bindings' }
+    })
+  });
+  const afterDeployments = await cloudflare<any>(
+    `/workers/scripts/${script}/deployments?per_page=1&page=1`
   );
-  const [afterSettings, afterVersions, afterDeployments] = await Promise.all([
-    cloudflare<any>(`/workers/scripts/${script}/settings`),
-    cloudflare<any>(`${versionPath}?per_page=25&page=1`),
-    cloudflare<any>(`/workers/scripts/${script}/deployments?per_page=1&page=1`)
-  ]);
-  const bindings = Array.isArray(afterSettings.result?.bindings)
-    ? afterSettings.result.bindings : [];
-  const confirmedSecrets = bindings
-    .filter((b: any) => b?.type === 'secret_text').map((b: any) => String(b.name));
-  const afterVersionsRaw = Array.isArray(afterVersions.result) ? afterVersions.result
-    : Array.isArray(afterVersions.result?.versions) ? afterVersions.result.versions : [];
-  const newestVersion = afterVersionsRaw
-    .map((v: any) => ({ id: String(v?.id ?? ''), number: Number(v?.number ?? 0) }))
-    .sort((a: any, b: any) => b.number - a.number)[0] ?? null;
-  const top = Array.isArray(afterDeployments.result?.deployments)
+  const latestDeployment = Array.isArray(afterDeployments.result?.deployments)
     ? afterDeployments.result.deployments[0] : null;
-  const newActive = (Array.isArray(top?.versions) ? top.versions : [])
-    .find((v: any) => Number(v.percentage) === 100)?.version_id ?? null;
+  const confirmedDeployed = Array.isArray(latestDeployment?.versions)
+    && latestDeployment.versions.some((v: any) =>
+      v?.version_id === createdId && Number(v?.percentage) === 100
+    );
+  if (!confirmedDeployed) {
+    throw new Error('Created version with secrets but deployment confirmation failed');
+  }
   return {
     preflight,
     applied: true,
-    secretsConfirmed: secretNames.every(name => confirmedSecrets.includes(name)),
-    secretNames: confirmedSecrets,
-    newestVersion,
-    activeVersionId: newActive
+    deployed: true,
+    createdVersionId: createdId,
+    secretsConfirmed: confirmed,
+    secretNames: confirmedSecrets
   };
 }
 
