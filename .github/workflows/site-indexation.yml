@@ -1,0 +1,55 @@
+# Quota-aware Search Console URL Inspection acquisition.
+#
+# Google currently documents 2,000 QPD / 600 QPM per Search Console site.
+# Sites Operator deliberately uses a lower 1,500 QPD hard guard and this
+# schedule targets at most 1,320 inspections/day/property (330 x 4), leaving
+# capacity for explicit diagnostics and retry noise.
+name: site-indexation
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:00, 10:00, 16:00, 22:00 JST.
+    - cron: '0 1,7,13,19 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-indexation
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITES_INDEXATION_DAILY_BUDGET: '1500'
+      SITE_INDEXATION_PROPERTY_RUN_BUDGET: '330'
+      SITE_INDEXATION_SITE_CHUNK: '25'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Write Google service account file
+        shell: bash
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS_JSON" ]; then
+            echo "GOOGLE_APPLICATION_CREDENTIALS secret is empty; runner will use any available machine credentials"
+            exit 0
+          fi
+          printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/google-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
+
+      - name: Inspect due URLs within property budgets
+        run: npx tsx scripts/site-indexation-sweep.ts
