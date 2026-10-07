@@ -460,6 +460,56 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       workerZoneAccountsDiagnosticError = error?.message ?? String(error);
     }
 
+    const requestTraces: Array<{ url: string; statusCode: number | null; workerSteps: any[] }> = [];
+    let requestTraceDiagnosticError: string | null = null;
+    if (site.id === 'learning-os') {
+      try {
+        const traceUrls = [
+          'https://antonbase.com/__learning_os_edge_probe_7f6c',
+          'https://shihoshoshi.antonbase.com/',
+          'https://learning-os.youfree731.workers.dev/'
+        ];
+        for (const url of traceUrls) {
+          const envelope = await cloudflare<any>(
+            '/request-tracer/trace',
+            {
+              method: 'POST',
+              body: JSON.stringify({ method: 'GET', url })
+            }
+          );
+          const rawTrace = Array.isArray(envelope.result?.trace) ? envelope.result.trace : [];
+          const workerSteps: any[] = [];
+          const visit = (items: any[]) => {
+            for (const item of items) {
+              const stepName = String(item?.step_name ?? '');
+              const type = String(item?.type ?? '');
+              const name = String(item?.name ?? '');
+              const description = String(item?.description ?? '');
+              if (/worker/i.test(stepName) || /worker/i.test(type) || /worker/i.test(name) || /worker/i.test(description)) {
+                workerSteps.push({
+                  stepName: item?.step_name ?? null,
+                  type: item?.type ?? null,
+                  name: item?.name ?? null,
+                  description: item?.description ?? null,
+                  matched: item?.matched ?? null,
+                  action: item?.action ?? null
+                });
+              }
+              if (Array.isArray(item?.trace)) visit(item.trace);
+            }
+          };
+          visit(rawTrace);
+          requestTraces.push({
+            url,
+            statusCode: typeof envelope.result?.status_code === 'number' ? envelope.result.status_code : null,
+            workerSteps
+          });
+        }
+      } catch (error: any) {
+        requestTraceDiagnosticError = error?.message ?? String(error);
+      }
+    }
+
     const betaWorker = betaWorkerEnvelope.result ? {
       id: betaWorkerEnvelope.result?.id ?? null,
       name: betaWorkerEnvelope.result?.name ?? null,
@@ -587,6 +637,8 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         workerRoutesDiagnosticError,
         workerZoneAccounts,
         workerZoneAccountsDiagnosticError,
+        requestTraces,
+        requestTraceDiagnosticError,
         workersBuilds,
         workersBuildsDiagnosticError,
         workersBuildTriggers,
