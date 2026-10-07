@@ -16,8 +16,8 @@ name: site-measurement
 on:
   workflow_dispatch:
   schedule:
-    # Once per day: 17:00 UTC = 02:00 JST.
-    - cron: '0 17 * * *'
+    # Once per day, deliberately off the top of the hour: 17:23 UTC = 02:23 JST.
+    - cron: '23 17 * * *'
 permissions:
   contents: read
 

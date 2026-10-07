@@ -9,8 +9,8 @@ name: site-indexation
 on:
   workflow_dispatch:
   schedule:
-    # 04:00, 10:00, 16:00, 22:00 JST.
-    - cron: '0 1,7,13,19 * * *'
+    # 04:17, 10:17, 16:17, 22:17 JST; offset from :00 to reduce schedule contention.
+    - cron: '17 1,7,13,19 * * *'
 
 permissions:
   contents: read
