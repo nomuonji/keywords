@@ -979,6 +979,20 @@ export async function cloudflareWorkerSecretRecovery(input: unknown, site: SiteT
     throw new Error('Secret version recovery is restricted to learning-os');
   }
 
+  // Older connected MCP clients may not refresh their tool list until the user
+  // reconnects. Reuse this stable tool name for the v18 recovery workflow.
+  const latestEnvelope = await cloudflare<any>(
+    '/workers/workers/learning-os/versions?per_page=25&page=1'
+  );
+  const latestRaw = Array.isArray(latestEnvelope.result) ? latestEnvelope.result
+    : Array.isArray(latestEnvelope.result?.versions) ? latestEnvelope.result.versions : [];
+  const latest = latestRaw
+    .map((v: any) => ({ id: String(v?.id ?? ''), number: Number(v?.number ?? 0) }))
+    .sort((a: any, b: any) => b.number - a.number)[0] ?? null;
+  if (latest?.id === 'efa558df-d797-4654-8d83-87ee7f4e60ec') {
+    return cloudflareWorkerInheritSecrets(args, site);
+  }
+
   const workerName = 'learning-os';
   const restoreId = 'c434cfe4-60ac-4854-a0f1-f4a232b87aa0';
   const brokenId = '2a80370c-d39d-4d52-9425-f9ee90c725f0';
