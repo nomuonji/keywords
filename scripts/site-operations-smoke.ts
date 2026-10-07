@@ -14,6 +14,9 @@ import {
   siteDirectionGet,
   siteDirectionList,
   siteDirectionUpdate,
+  seoRecoveryStatus,
+  seoRecoveryPortfolioUpdate,
+  seoRecoverySiteUpdate,
   seoTaskClaim,
   seoTaskCreate,
   seoTaskGet,
@@ -65,7 +68,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json(rows);
   }
 
-  if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks)$/.test(path)) {
+  if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks|seoRecoveryControls|seoRecoverySites)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
@@ -362,6 +365,91 @@ try {
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'data_expansion' })).items.length, 1);
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'schema_expansion' })).items.length, 1);
 
+  // Portfolio recovery is a control-plane mode, not a prompt convention.
+  // It must block both new growth-task creation and claims of already-ready
+  // growth tasks until the site is explicitly cleared for the active incident.
+  const recovery = await seoRecoveryPortfolioUpdate({
+    expectedRevision: 0,
+    mode: 'recovery',
+    incidentId: 'spam-recovery-2026-10',
+    title: 'Cross-site organic visibility and indexation recovery',
+    reason: 'Multiple managed sites show broad URL Inspection exclusion and sharp Search visibility deterioration.',
+    evidence: [
+      'Direct URL Inspection observations across multiple managed sites show broad exclusion.',
+      'Google scaled-content policy is a primary risk-control source; causality of a specific update is not asserted.'
+    ]
+  });
+  assert.equal(recovery.mode, 'recovery');
+  assert.equal((await seoRecoveryStatus({})).effectivePolicy.growthFrozenByDefault, true);
+
+  const confirmed = await seoRecoverySiteUpdate({
+    siteId: 'site-a',
+    expectedRevision: 0,
+    state: 'confirmed',
+    strategy: 'consolidate',
+    reason: 'Test site is treated as affected for the active recovery incident.',
+    evidence: ['Synthetic smoke evidence for broad indexation/visibility decline.'],
+    releaseCriteria: ['Fresh recovery observations support explicit clearance.', 'No unresolved technical/indexation blocker remains.']
+  });
+  assert.equal(confirmed.incidentId, 'spam-recovery-2026-10');
+
+  await assert.rejects(seoTaskCreate({
+    id: 'seo-recovery-block-new',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/new-search-surface'],
+    repo: 'nomuonji/site-a',
+    taskType: 'new_article',
+    title: 'Should be blocked during recovery',
+    rationale: 'Recovery must override ordinary growth supply.',
+    evidence: ['This is intentionally a net-new Search-surface task.'],
+    dedupeKey: 'site-a:recovery:block-new'
+  }), /SEO recovery mode blocks taskType=new_article/);
+
+  await assert.rejects(seoTaskClaim({
+    id: siteExpansionTask.id,
+    expectedRevision: siteExpansionTask.revision,
+    runId: 'recovery-blocked-claim',
+    actor: 'site-operations-smoke',
+    leaseMinutes: 75
+  }), /SEO recovery mode blocks taskType=site_expansion/);
+
+  const recoveryRepair = await seoTaskCreate({
+    id: 'seo-recovery-repair',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/article-a'],
+    repo: 'nomuonji/site-a',
+    taskType: 'technical',
+    title: 'Verify recovery indexing contract',
+    rationale: 'Recovery mode still allows bounded repair work.',
+    evidence: ['Repair is bounded and does not add a new Search surface.'],
+    dedupeKey: 'site-a:recovery:technical-repair'
+  });
+  assert.equal(recoveryRepair.status, 'ready');
+
+  const cleared = await seoRecoverySiteUpdate({
+    siteId: 'site-a',
+    expectedRevision: confirmed.revision,
+    state: 'cleared',
+    strategy: 'protect',
+    reason: 'Smoke test clearance after fresh evidence.',
+    evidence: ['Fresh observations satisfy the synthetic release criteria.'],
+    releaseCriteria: ['Satisfied in smoke test.']
+  });
+  assert.equal(cleared.state, 'cleared');
+
+  const clearedGrowth = await seoTaskCreate({
+    id: 'seo-recovery-cleared-growth',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/cleared-growth'],
+    repo: 'nomuonji/site-a',
+    taskType: 'site_expansion',
+    title: 'Growth allowed after incident-specific clearance',
+    rationale: 'The site is explicitly cleared for the active incident.',
+    evidence: ['Incident-specific site state is cleared.'],
+    dedupeKey: 'site-a:recovery:cleared-growth'
+  });
+  assert.equal(clearedGrowth.status, 'ready');
+
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
     repo: 'nomuonji/site-a', repoPath: 'content/posts/article-a.mdx', currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A',
@@ -480,7 +568,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 39);
+  assert.equal(listing.tools.length, 42);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
@@ -490,6 +578,9 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_status'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_portfolio_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_site_update'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_site_status'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_set_preview_branch_exclusions'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_deployment_logs'));
@@ -574,7 +665,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.18.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.19.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
