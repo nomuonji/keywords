@@ -436,6 +436,30 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       workerRoutesDiagnosticError = error?.message ?? String(error);
     }
 
+    const workerZoneAccounts: Array<{ zoneName: string | null; configuredAccountMatches: boolean | null }> = [];
+    let workerZoneAccountsDiagnosticError: string | null = null;
+    try {
+      const config = cloudflareConfiguration();
+      const zones = new Map<string, string | null>();
+      for (const domain of domainsRaw) {
+        const zoneId = String(domain?.zone_id ?? '');
+        if (!zoneId) continue;
+        zones.set(zoneId, domain?.zone_name ? String(domain.zone_name) : null);
+      }
+      for (const [zoneId, zoneName] of zones) {
+        const envelope = await cloudflareZone<any>(zoneId, '');
+        const zoneAccountId = envelope.result?.account?.id ? String(envelope.result.account.id) : null;
+        workerZoneAccounts.push({
+          zoneName,
+          configuredAccountMatches: zoneAccountId && config.accountId
+            ? zoneAccountId === config.accountId
+            : null
+        });
+      }
+    } catch (error: any) {
+      workerZoneAccountsDiagnosticError = error?.message ?? String(error);
+    }
+
     const betaWorker = betaWorkerEnvelope.result ? {
       id: betaWorkerEnvelope.result?.id ?? null,
       name: betaWorkerEnvelope.result?.name ?? null,
@@ -561,6 +585,8 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         dnsDiagnosticError,
         workerRoutes,
         workerRoutesDiagnosticError,
+        workerZoneAccounts,
+        workerZoneAccountsDiagnosticError,
         workersBuilds,
         workersBuildsDiagnosticError,
         workersBuildTriggers,
