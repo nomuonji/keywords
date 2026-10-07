@@ -1057,7 +1057,7 @@ export async function optimizationContext(input: unknown) {
   if (!args.articleId) {
     try {
       const digest: any = await seoPlanningDigestGet({ siteId: args.siteId });
-      if (digest?.generatedAt) {
+      if (digest?.generatedAt && digest.siteMetrics?.current7) {
         const eventRows = (await queryBySite('optimizationEvents', args.siteId, 500))
           .sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
         const active = eventRows.find((event: any) => event.phase === 'implemented' && event.result === 'pending') as OptimizationEvent | undefined;
