@@ -605,7 +605,8 @@ try {
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
-  assert.match(agentPolicy.structuredContent.runContract.successCondition, /ready Sites Operator record/);
+  assert.match(agentPolicy.structuredContent.runContract.successCondition, /Recovery mode: preserve the growth freeze/);
+  assert.match(agentPolicy.structuredContent.runContract.successCondition, /Normal mode:/);
   assert.match(agentPolicy.structuredContent.runContract.manual, /sites-operator-planner-manual.md$/);
   assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
