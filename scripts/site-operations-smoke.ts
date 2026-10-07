@@ -480,7 +480,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 35);
+  assert.equal(listing.tools.length, 40);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
@@ -501,6 +501,11 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_claim'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_inventory_save'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_inspect'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_list'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
   assert.equal(agentPolicy.structuredContent.policyVersion, '1.22.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
@@ -567,7 +572,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.16.5');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.17.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
