@@ -129,7 +129,7 @@ function server() {
   });
 
   mcp.registerTool('cloudflare_pages_deployment_logs', {
-    description: 'Read Cloudflare Pages build logs for a Sites Operator site. When deploymentId is omitted, selects the most recent failed deployment in the requested environment, falling back to the latest deployment. Returns only safe deployment metadata and bounded log lines; it does not retry or mutate Cloudflare.',
+    description: 'Read Cloudflare build logs for a Sites Operator site. Cloudflare Pages sites use Pages deployment history; non-Pages sites use Workers Builds when a deploymentId/build UUID is supplied. Returns only safe deployment metadata and bounded log lines; it does not retry or mutate Cloudflare.',
     inputSchema: cloudflarePagesDeploymentLogsShape,
     annotations: { readOnlyHint: true }
   }, async input => {

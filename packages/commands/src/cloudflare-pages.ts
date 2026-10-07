@@ -72,7 +72,7 @@ export function cloudflarePagesRuntimeStatus() {
     configured: config.configured,
     accountIdConfigured: Boolean(config.accountId),
     apiTokenConfigured: Boolean(config.apiToken),
-    permissions: 'Pages Read is sufficient for diagnostics; Pages Edit is required to change preview branch controls'
+    permissions: 'Pages Read is sufficient for Pages diagnostics; Workers CI Read is required for Workers Builds diagnostics; Pages Edit is required to change preview branch controls'
   };
 }
 
@@ -317,9 +317,85 @@ export async function cloudflarePagesSetPreviewBranchExclusions(input: unknown, 
   };
 }
 
+function safeWorkersBuild(build: any) {
+  const trigger = build?.build_trigger_metadata ?? {};
+  return {
+    id: build?.build_uuid ?? null,
+    outcome: build?.build_outcome ?? null,
+    status: build?.status ?? null,
+    createdAt: build?.created_at ?? build?.created_on ?? null,
+    completedAt: build?.completed_at ?? build?.completed_on ?? null,
+    trigger: {
+      source: trigger?.build_trigger_source ?? null,
+      branch: trigger?.branch ?? null,
+      commitHash: trigger?.commit_hash ?? null,
+      commitMessage: trigger?.commit_message ?? null,
+      buildCommand: trigger?.build_command ?? null,
+      deployCommand: trigger?.deploy_command ?? null,
+      rootDirectory: trigger?.root_directory ?? null,
+      providerType: trigger?.provider_type ?? null,
+      providerAccountName: trigger?.provider_account_name ?? null,
+      repoName: trigger?.repo_name ?? trigger?.repo_connection?.repo_name ?? null
+    }
+  };
+}
+
+async function cloudflareWorkersBuildLogs(
+  args: z.infer<typeof deploymentLogsSchema>,
+  site: SiteTarget
+) {
+  if (!args.deploymentId) {
+    throw new Error('Workers Builds diagnostics currently require deploymentId/build UUID');
+  }
+
+  const buildId = args.deploymentId;
+  const [buildEnvelope, logsEnvelope] = await Promise.all([
+    cloudflare<any>(`/builds/builds/${encodeURIComponent(buildId)}`),
+    cloudflare<{ cursor?: string; lines?: unknown[]; truncated?: boolean }>(
+      `/builds/builds/${encodeURIComponent(buildId)}/logs`
+    )
+  ]);
+
+  const rawLines = Array.isArray(logsEnvelope.result?.lines) ? logsEnvelope.result.lines : [];
+  const lines = rawLines.slice(-args.maxLines).map((entry: any) => {
+    if (Array.isArray(entry)) {
+      const [ts, ...rest] = entry;
+      return {
+        ts: typeof ts === 'number' || typeof ts === 'string' ? ts : null,
+        line: rest.map(value => String(value ?? '')).join(' ')
+      };
+    }
+    return { ts: null, line: String(entry ?? '') };
+  });
+
+  return {
+    site: {
+      id: site.id,
+      repository: site.repository ?? null,
+      productionUrl: site.productionUrl ?? null,
+      registryDeploymentProvider: site.deploymentProvider ?? null
+    },
+    cloudflare: {
+      platform: 'workers_builds',
+      build: safeWorkersBuild(buildEnvelope.result),
+      logs: {
+        returnedLines: lines.length,
+        truncated: Boolean(logsEnvelope.result?.truncated),
+        cursor: logsEnvelope.result?.cursor ?? null,
+        lines
+      }
+    }
+  };
+}
+
 export async function cloudflarePagesDeploymentLogs(input: unknown, site: SiteTarget) {
   const args = deploymentLogsSchema.parse(input);
   if (args.siteId !== site.id) throw new Error('Resolved site does not match requested siteId');
+
+  if (site.deploymentProvider !== 'cloudflare_pages') {
+    return cloudflareWorkersBuildLogs(args, site);
+  }
+
   const { project, resolution } = await resolveProject(site);
 
   let selected: any | null = null;
