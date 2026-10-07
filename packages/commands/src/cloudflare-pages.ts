@@ -256,6 +256,17 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       const subdomain = currentAccountSubdomain.result?.subdomain;
       if (!subdomain) throw new Error('Cloudflare account workers.dev subdomain is missing');
 
+      const currentDomainsEnvelope = await cloudflare<any[]>(
+        `/workers/domains?service=${encodeURIComponent(workerName)}`
+      );
+      const currentDomains = Array.isArray(currentDomainsEnvelope.result)
+        ? currentDomainsEnvelope.result
+        : [];
+
+      await cloudflare<any>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
+        { method: 'DELETE' }
+      );
       const workerRepair = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
         `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
         {
@@ -263,9 +274,18 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
           body: JSON.stringify({ enabled: true, previews_enabled: true })
         }
       );
+
       const publicDomains = ['shihoshoshi.antonbase.com', 'english.antonbase.com'];
       const domainRepairs = [];
       for (const hostname of publicDomains) {
+        const existing = currentDomains.find((domain: any) => domain?.hostname === hostname);
+        if (existing?.id) {
+          await cloudflare<any>(
+            `/workers/domains/${encodeURIComponent(String(existing.id))}`,
+            { method: 'DELETE' }
+          );
+        }
+
         const repaired = await cloudflare<any>(
           '/workers/domains',
           {
@@ -279,13 +299,16 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         );
         domainRepairs.push({
           hostname: repaired.result?.hostname ?? hostname,
+          previousId: existing?.id ?? null,
           id: repaired.result?.id ?? null,
           service: repaired.result?.service ?? null,
           zoneName: repaired.result?.zone_name ?? null
         });
       }
+
       repairApplied = true;
       repairResults = {
+        mode: 'hard_reset_routes',
         accountWorkersSubdomain: subdomain,
         workersDev: {
           enabled: Boolean(workerRepair.result?.enabled),
