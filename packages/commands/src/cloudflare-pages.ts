@@ -510,6 +510,76 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       }
     }
 
+    let workerScriptSummary: any = null;
+    let workerScriptSummaryDiagnosticError: string | null = null;
+    try {
+      const scriptsEnvelope = await cloudflare<any[]>('/workers/scripts');
+      const scripts = Array.isArray(scriptsEnvelope.result) ? scriptsEnvelope.result : [];
+      const script = scripts.find((item: any) => String(item?.id ?? '') === workerName) ?? null;
+      workerScriptSummary = script ? {
+        id: script?.id ?? null,
+        etag: script?.etag ?? null,
+        createdOn: script?.created_on ?? null,
+        modifiedOn: script?.modified_on ?? null,
+        handlers: Array.isArray(script?.handlers) ? script.handlers : [],
+        lastDeployedFrom: script?.last_deployed_from ?? null,
+        compatibilityDate: script?.compatibility_date ?? null,
+        compatibilityFlags: Array.isArray(script?.compatibility_flags) ? script.compatibility_flags : [],
+        usageModel: script?.usage_model ?? null,
+        placementMode: script?.placement_mode ?? script?.placement?.mode ?? null
+      } : null;
+    } catch (error: any) {
+      workerScriptSummaryDiagnosticError = error?.message ?? String(error);
+    }
+
+    let workerScriptVersionSettings: any = null;
+    let workerScriptVersionSettingsDiagnosticError: string | null = null;
+    try {
+      const settingsEnvelope = await cloudflare<any>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/settings`
+      );
+      const settings = settingsEnvelope.result;
+      workerScriptVersionSettings = settings ? {
+        mainModule: settings?.main_module ?? null,
+        compatibilityDate: settings?.compatibility_date ?? null,
+        compatibilityFlags: Array.isArray(settings?.compatibility_flags) ? settings.compatibility_flags : [],
+        bindings: Array.isArray(settings?.bindings)
+          ? settings.bindings.map((binding: any) => ({
+              name: binding?.name ?? null,
+              type: binding?.type ?? null
+            }))
+          : [],
+        assets: settings?.assets ? {
+          binding: settings.assets?.binding ?? null,
+          config: settings.assets?.config ?? null
+        } : null
+      } : null;
+    } catch (error: any) {
+      workerScriptVersionSettingsDiagnosticError = error?.message ?? String(error);
+    }
+
+    let workerScriptSettings: any = null;
+    let workerScriptSettingsDiagnosticError: string | null = null;
+    try {
+      const settingsEnvelope = await cloudflare<any>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/script-settings`
+      );
+      const settings = settingsEnvelope.result;
+      workerScriptSettings = settings ? {
+        logpush: settings?.logpush ?? null,
+        observability: settings?.observability ?? null,
+        tailConsumers: Array.isArray(settings?.tail_consumers)
+          ? settings.tail_consumers.map((consumer: any) => ({
+              service: consumer?.service ?? null,
+              environment: consumer?.environment ?? null,
+              namespace: consumer?.namespace ?? null
+            }))
+          : []
+      } : null;
+    } catch (error: any) {
+      workerScriptSettingsDiagnosticError = error?.message ?? String(error);
+    }
+
     const betaWorker = betaWorkerEnvelope.result ? {
       id: betaWorkerEnvelope.result?.id ?? null,
       name: betaWorkerEnvelope.result?.name ?? null,
@@ -594,6 +664,18 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
           createdOn: version?.created_on ?? null,
           source: version?.source ?? null,
           mainModule: version?.main_module ?? null,
+          handlers: Array.isArray(version?.handlers)
+            ? version.handlers
+            : Array.isArray(version?.script?.handlers)
+              ? version.script.handlers
+              : Array.isArray(version?.resources?.script?.handlers)
+                ? version.resources.script.handlers
+                : [],
+          etag: version?.etag ?? version?.script?.etag ?? version?.resources?.script?.etag ?? null,
+          lastDeployedFrom: version?.last_deployed_from
+            ?? version?.script?.last_deployed_from
+            ?? version?.resources?.script?.last_deployed_from
+            ?? null,
           urls: Array.isArray(version?.urls) ? version.urls : [],
           compatibilityDate: version?.compatibility_date ?? null,
           compatibilityFlags: Array.isArray(version?.compatibility_flags) ? version.compatibility_flags : [],
@@ -639,6 +721,12 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         workerZoneAccountsDiagnosticError,
         requestTraces,
         requestTraceDiagnosticError,
+        workerScriptSummary,
+        workerScriptSummaryDiagnosticError,
+        workerScriptVersionSettings,
+        workerScriptVersionSettingsDiagnosticError,
+        workerScriptSettings,
+        workerScriptSettingsDiagnosticError,
         workersBuilds,
         workersBuildsDiagnosticError,
         workersBuildTriggers,
