@@ -338,7 +338,7 @@ export async function siteIndexationInventorySave(input: unknown) {
     return { kind: existing ? 'updated' as const : 'created' as const, record: saved };
   });
   const successes = results.flatMap(result => result.ok ? [result.value] : []);
-  const failures = results.flatMap((result, index) => result.ok ? [] : [{ url: args.records[index].url, error: result.error }]);
+  const failures = results.flatMap((result, index) => 'error' in result ? [{ url: args.records[index].url, error: result.error }] : []);
   return {
     siteId: site.id,
     received: args.records.length,
@@ -374,7 +374,7 @@ export async function siteIndexationInspect(input: unknown) {
   const selected = records.slice(0, reservation.reserved);
   const results = await runWithConcurrency(selected, 5, record => inspectOne(site, record));
   const succeeded = results.flatMap(result => result.ok ? [result.value] : []);
-  const failures = results.flatMap((result, index) => result.ok ? [] : [{ url: selected[index].url, error: result.error }]);
+  const failures = results.flatMap((result, index) => 'error' in result ? [{ url: selected[index].url, error: result.error }] : []);
   return {
     siteId: site.id,
     property: site.searchConsoleProperty,
