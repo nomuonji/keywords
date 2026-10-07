@@ -65,6 +65,11 @@ function normalizeInventoryUrl(input: string) {
   if (url.pathname !== '/') url.pathname = url.pathname.replace(/\/+$/, '') || '/';
   return url.toString();
 }
+function preserveSitemapUrl(input: string) {
+  const url = new URL(input);
+  url.hash = '';
+  return url.toString();
+}
 
 function pageFamilyFor(input: string) {
   const url = new URL(input);
@@ -76,7 +81,12 @@ function pageFamilyFor(input: string) {
 
 function sitemapUrlsObservedAt(projectId: string, syncedAt: string) {
   const rows = sqlite.prepare('SELECT url FROM pages WHERE project_id=? AND url IS NOT NULL AND last_seen_at=?').all(projectId, syncedAt) as Array<{ url: string }>;
-  return [...new Set(rows.map(row => normalizeInventoryUrl(row.url)))].sort();
+  // Dedupe by stable identity, but retain the EXACT sitemap URL for Inspection.
+  // Stripping trailing slashes here caused Google to inspect redirect variants
+  // instead of the URLs that appear in Search.
+  const byIdentity = new Map<string, string>();
+  for (const row of rows) byIdentity.set(normalizeInventoryUrl(row.url), preserveSitemapUrl(row.url));
+  return [...byIdentity.values()].sort();
 }
 
 async function cachedIndexationInventory(siteId: string) {
@@ -97,14 +107,15 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
 
   const cached = await cachedIndexationInventory(site.id);
   const cachedByUrl = new Map(cached.map((row: any) => [normalizeInventoryUrl(row.url), row]));
-  const current = new Set(sitemapUrls.map(normalizeInventoryUrl));
+  const current = new Map(sitemapUrls.map(url => [normalizeInventoryUrl(url), preserveSitemapUrl(url)]));
   const changes: any[] = [];
 
-  for (const url of current) {
-    const previous: any = cachedByUrl.get(url);
-    const pageFamily = pageFamilyFor(url);
-    if (!previous || previous.inventoryState !== 'current' || previous.indexable !== true || previous.pageFamily !== pageFamily) {
-      changes.push({ url, pageFamily, indexable: true, inventoryState: 'current' });
+  for (const [identity, inspectionUrl] of current) {
+    const previous: any = cachedByUrl.get(identity);
+    const pageFamily = pageFamilyFor(identity);
+    if (!previous || previous.inventoryState !== 'current' || previous.indexable !== true ||
+        previous.pageFamily !== pageFamily || previous.inspectionUrl !== inspectionUrl) {
+      changes.push({ url: inspectionUrl, pageFamily, indexable: true, inventoryState: 'current' });
     }
   }
 
