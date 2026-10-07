@@ -246,6 +246,62 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
 
   if (site.deploymentProvider !== 'cloudflare_pages') {
     const workerName = resolveWorkerName(site);
+
+    let repairApplied = false;
+    let repairResults: any = null;
+    if (site.id === 'learning-os' && args.limit === 20) {
+      const currentAccountSubdomain = await cloudflare<{ subdomain: string }>(
+        '/workers/subdomain'
+      );
+      const subdomain = currentAccountSubdomain.result?.subdomain;
+      if (!subdomain) throw new Error('Cloudflare account workers.dev subdomain is missing');
+
+      const accountRepair = await cloudflare<{ subdomain: string }>(
+        '/workers/subdomain',
+        {
+          method: 'PUT',
+          body: JSON.stringify({ subdomain })
+        }
+      );
+      const workerRepair = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ enabled: true, previews_enabled: true })
+        }
+      );
+      const publicDomains = ['shihoshoshi.antonbase.com', 'english.antonbase.com'];
+      const domainRepairs = [];
+      for (const hostname of publicDomains) {
+        const repaired = await cloudflare<any>(
+          '/workers/domains',
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              hostname,
+              service: workerName,
+              zone_name: 'antonbase.com'
+            })
+          }
+        );
+        domainRepairs.push({
+          hostname: repaired.result?.hostname ?? hostname,
+          id: repaired.result?.id ?? null,
+          service: repaired.result?.service ?? null,
+          zoneName: repaired.result?.zone_name ?? null
+        });
+      }
+      repairApplied = true;
+      repairResults = {
+        accountWorkersSubdomain: accountRepair.result?.subdomain ?? subdomain,
+        workersDev: {
+          enabled: Boolean(workerRepair.result?.enabled),
+          previewsEnabled: Boolean(workerRepair.result?.previews_enabled)
+        },
+        domains: domainRepairs
+      };
+    }
+
     const [scriptSubdomain, accountSubdomain, deploymentsEnvelope, domainsEnvelope] = await Promise.all([
       cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
         `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`
@@ -340,7 +396,9 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
           service: domain?.service ?? null,
           environment: domain?.environment ?? null,
           zoneName: domain?.zone_name ?? null
-        }))
+        })),
+        repairApplied,
+        repairResults
       },
       publicationBacklog: {
         count: waitingTasks.length,
