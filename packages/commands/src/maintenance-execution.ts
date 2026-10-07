@@ -5,7 +5,7 @@ import { siteCommands } from './site.js';
 import { metricsCommands } from './metrics.js';
 import { operationCommands } from './operation.js';
 import { captureProjectGa4Metrics } from './ga4-metrics.js';
-import { projectSiteOperationsMetrics } from './site-operations-bridge.js';
+import { refreshSeoPlanningDigest } from './seo-planning-digest-refresh.js';
 
 export const MAINTENANCE_KINDS = ['capture_recovery', 'sync_site', 'capture_metrics'] as const;
 
@@ -37,12 +37,12 @@ export async function executeMaintenance(ctx: CommandContext, claim: { operation
     } catch {
       ga4Collection = { status: 'failed', reason: 'ga4_collection_failed' };
     }
-    // Firestore projection is an additive cloud control-plane step. A missing
-    // Firebase credential or unlinked site returns `skipped`; a projection
-    // failure is reported without discarding the already-persisted local metrics.
+    // Firestore analytics projection has one canonical durable target:
+    // seoPlanningDigests/{siteId}. URL/page rows remain ephemeral SQLite evidence.
+    // Legacy metricSnapshots/siteDigests are never written by maintenance.
     let cloudProjection: unknown;
     try {
-      cloudProjection = await projectSiteOperationsMetrics(claim.projectId);
+      cloudProjection = await refreshSeoPlanningDigest(claim.projectId, endDate);
     } catch (error) {
       cloudProjection = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
     }
