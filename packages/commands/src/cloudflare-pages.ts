@@ -928,8 +928,7 @@ export async function cloudflareWorkerSecretRecovery(input: unknown, site: SiteT
         strategy: 'percentage',
         versions: [{ percentage: 100, version_id: restoreId }],
         annotations: {
-          'workers/message': 'Restore retained secret bindings before migrating to cf build output',
-          'workers/triggered_by': 'learning-os-secret-recovery'
+          'workers/message': 'Restore retained secret bindings before migrating to cf build output'
         }
       })
     }
