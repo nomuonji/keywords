@@ -946,7 +946,8 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     mainModule,
     modulesReady,
     hasAssetsJwt: Boolean(target.result?.assets?.jwt),
-    canAttemptConfigOnlyVersion: targetModules.length === 0,
+    stagingOnly: true,
+    stagingWillNotDeploy: true,
     safeToApply
   };
   if (args.dryRun) return { preflight, applied: false };
