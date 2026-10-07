@@ -480,7 +480,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 40);
+  assert.equal(listing.tools.length, 39);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
@@ -497,6 +497,8 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'optimization_evaluation_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_query_opportunities'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_planning_digest_get'));
+  assert.ok(!listing.tools.some((tool: any) => tool.name === 'site_metric_snapshot_save'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'site_metric_snapshot_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_claim'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_task_heartbeat'));
@@ -572,7 +574,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.17.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.18.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
