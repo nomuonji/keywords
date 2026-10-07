@@ -74,13 +74,19 @@ Primary evidence:
 
 Important limitation: this is an internal synthesis of public crawl/index guidance, not a claim that Google has a single "database quality" ranking factor or a universal page/link-count threshold.
 
-### `scaled_content_operation_risk@1.0.0`
+### `scaled_content_operation_risk@1.1.0`
 
-Experimental portfolio-risk lens.
+Active portfolio recovery-risk gate. Version 1.0.0 remains historical and non-current.
 
-Core inference: operation-level patterns may be relevant to abuse detection, so cross-site templating, semantic overlap, and synchronized high-volume production are worth monitoring when they coincide with low user value.
+The current evaluator does **not** claim that Google SAFE, the September 2026 spam update, or any unpublished Google system caused a portfolio incident. Its blocking authority comes from a different combination:
 
-Important limitation: the 2026 SAFE research concerns adversarial synthetic media and coordinated channel abuse. It does **not** establish that SAFE is a Google Search ranking/spam component. Search Engine Journal's connection to the September 2026 spam update remains secondary-source interpretation. This evaluator therefore cannot block a task by itself.
+1. primary Google Search scaled-content policy;
+2. direct Sites Operator observations showing broad indexation/visibility deterioration; and
+3. a durable human-approved portfolio recovery incident.
+
+While that recovery incident is active, Site Operator freezes net-new Search-surface growth by default and permits bounded recovery work. The actual hard enforcement is in the recovery control plane and task create/claim gates; the evaluator records the reasoning framework and falsification conditions.
+
+A site must be explicitly cleared for the current incident before growth resumes. One rewritten page, raw publishing volume, or a single improved metric is not clearance evidence.
 
 ## Task provenance
 
