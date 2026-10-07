@@ -1,5 +1,17 @@
 # SEO回復を優先する自動運転
 
+> 2026-10-08: 現行の全ポートフォリオ統御は Sites Operator の `seo_recovery_status / seo_recovery_portfolio_update / seo_recovery_site_update` が正本。以下のSQLiteベース `recovery.capture` は観測・解除判定の補助ロジックとして残す。回復モード中のgrowth task create/claimはFirestore control plane側でhard gateされる。
+
+## 現行Site Operator回復モード
+
+- Firestore `seoRecoveryControls/organic-search` がportfolio modeの正本。
+- `seoRecoverySites/{siteId}` がincident単位のsite stateと暫定strategy、release criteriaを保持する。
+- portfolioが`recovery`なら、未clearサイトでは `new_article / site_expansion / data_expansion / schema_expansion` を新規作成できず、既存ready taskもclaimできない。
+- 許可されるのは原則 `revise / merge / delete / internal_links / technical` の回復作業。ただし broad delete/noindex/positioning変更等は従来どおりSite Directionのhuman gateが必要。
+- 通常時のready 8件、3–5件/run、discovery必須はrecovery mode中は停止する。task数・公開速度は回復KPIにしない。
+- 原因は断定しない。直接のURL Inspection/GSC観測とGoogleの公開policyを制御根拠にし、特定spam updateや非公開検出器を原因と決めつけない。
+- 解除はincident-specific。別incidentのclearanceは再利用しない。
+
 2026-09-11更新。Keywordsの共有SQL・commands・work sessionを使う。別のエージェント用進捗ファイルは作らない。
 
 ## 判断の順序

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SeoTaskType } from '../../db/src/site-operations-schema.js';
 
-export const SEO_EVALUATION_REGISTRY_VERSION = '1.1.0';
+export const SEO_EVALUATION_REGISTRY_VERSION = '1.2.0';
 
 const evaluatorId = z.string().trim().regex(/^[a-z0-9_]{3,100}$/);
 const evaluatorVersion = z.string().trim().regex(/^\d+\.\d+\.\d+$/);
@@ -323,13 +323,13 @@ const evaluators: SeoEvaluator[] = [
   {
     id: 'scaled_content_operation_risk',
     version: '1.0.0',
-    current: true,
+    current: false,
     title: 'Scaled-content operation risk',
     status: 'experimental',
     scopes: ['new_article', 'content_revision', 'portfolio_operations'],
     applicableTaskTypes: ['new_article', 'revise'],
-    purpose: 'Make cross-site production-pattern risk visible without pretending that an unpublished Google Search detection model is known.',
-    decisionRule: 'Use this evaluator as a cautionary portfolio lens, never as a standalone blocking rule. A task should be blocked only when primary Search policy or direct evidence independently supports the decision.',
+    purpose: 'Historical experimental portfolio-risk lens retained for provenance.',
+    decisionRule: 'Use as a cautionary portfolio lens only; this historical version cannot independently block work.',
     principles: [
       'Cross-site templating, semantic overlap, and synchronized volume can be operational risk indicators when they coincide with low user value.',
       'Do not infer a penalty merely from shared infrastructure, automation, or AI use.',
@@ -342,35 +342,76 @@ const evaluators: SeoEvaluator[] = [
       'Repeated page families that differ mainly by keyword/entity substitution.',
       'Portfolio behavior that appears designed to distribute or conceal essentially duplicated scaled content.'
     ],
+    antiMetrics: ['Raw publication count','Use of AI','Shared templates or infrastructure by themselves','A single-site similarity observation without portfolio context'],
+    inference: {
+      statement: 'Operation-level patterns may be relevant to abuse detection, but this version did not have enough direct portfolio evidence to act as a hard operational gate.',
+      confidence: 'low_to_medium',
+      caveats: ['SAFE is not evidence of a Google Search ranking/spam deployment mechanism.']
+    },
+    evidenceSourceIds: ['google_scaled_content_policy','google_ai_content_guidance','google_research_safe_2026','sej_safe_2026'],
+    falsification: ['New primary evidence materially changes the interpretation of scaled-content risk.'],
+    reviewTriggers: ['Meaningful internal evidence of cross-site duplication, deindexing, or traffic changes associated with these patterns.'],
+    updatedAt: '2026-10-01'
+  },
+  {
+    id: 'scaled_content_operation_risk',
+    version: '1.1.0',
+    current: true,
+    title: 'Scaled-content operation and recovery risk',
+    status: 'active',
+    scopes: ['new_article', 'content_revision', 'portfolio_operations'],
+    applicableTaskTypes: ['new_article','revise','merge','delete','internal_links','technical','site_expansion','data_expansion','schema_expansion'],
+    purpose: 'Make scaled-content risk a first-class portfolio operating constraint when primary Search policy and direct portfolio observations justify a recovery response, without claiming knowledge of Google\'s private enforcement mechanism.',
+    decisionRule: 'When durable Sites Operator recovery mode is active because direct portfolio evidence shows broad indexation/visibility deterioration, suspend net-new Search-surface expansion by default. Allow only bounded repair, consolidation, quality, internal-link, or technical work until a site is explicitly cleared for the active incident. This is a risk-control decision, not a causal claim that a specific Google update penalized the site.',
+    principles: [
+      'Primary Google Search policy and direct portfolio observations outrank speculative abuse-detection analogies.',
+      'A broad cross-site indexation or visibility collapse is sufficient reason to stop adding Search surface while diagnosis is unresolved.',
+      'Recovery work should reduce low-value duplication, strengthen unique user value, repair verified technical defects, and clarify the intended indexable surface.',
+      'Do not infer that AI use, shared infrastructure, or raw publishing volume alone caused the incident.',
+      'Do not resume growth merely because a page was rewritten; require explicit site clearance backed by fresh indexation and search evidence.'
+    ],
+    hardGates: [
+      { id: 'active_recovery_growth_freeze', description: 'While durable portfolio recovery mode is active, new_article/site_expansion/data_expansion/schema_expansion are blocked unless the site is cleared for the current incident.' },
+      { id: 'keyword_substitution_without_value', description: 'Do not create or preserve page families that mainly substitute entities/keywords without distinct user-facing utility.' },
+      { id: 'scale_pressure_overrides_user_value', description: 'Task-buffer or publishing-volume targets cannot justify adding Search surface during recovery.' }
+    ],
+    decisionSignals: [
+      'Multiple managed sites show broad URL Inspection exclusion or a sudden Search visibility collapse in the same operating period.',
+      'Pages or page families were created in synchronized batches around keyword/entity permutations with weak incremental value.',
+      'A site has a narrow, source-backed, distinctive product surface worth protecting rather than indiscriminately shrinking.',
+      'Consolidation can reduce overlap while preserving a stronger destination and redirect path.',
+      'Fresh indexation plus complete Search observations show sustained recovery sufficient for explicit site clearance.'
+    ],
     antiMetrics: [
-      'Raw publication count',
-      'Use of AI',
-      'Shared templates or infrastructure by themselves',
-      'A single-site similarity observation without portfolio context'
+      'Raw article count',
+      'Raw task count',
+      'Use of AI by itself',
+      'One URL Inspection result by itself',
+      'A single week of improvement as automatic recovery proof'
     ],
     inference: {
-      statement: 'Operation-level patterns may become increasingly useful for abuse detection, so Sites Operator should monitor portfolio behavior in addition to page text; however SAFE is not evidence of a Google Search ranking or spam-deployment mechanism.',
-      confidence: 'low_to_medium',
+      statement: 'Given Google\'s public scaled-content policy and direct portfolio evidence of broad deindexation/visibility deterioration, a temporary growth freeze is a prudent internal control until each site demonstrates recovery. The control does not assert which Google system caused the deterioration.',
+      confidence: 'medium_to_high',
       caveats: [
-        'SAFE is research on adversarial synthetic media and coordinated channel abuse, not a Search ranking paper.',
-        'The Search Engine Journal connection to the September 2026 spam update is secondary-source interpretation.',
-        'This evaluator must not turn circumstantial similarity into a claim of Google enforcement.'
+        'The September 2026 spam update is temporally relevant but causality is not established.',
+        'URL Inspection reports the inspected URL state and must not be generalized beyond the observed inventory.',
+        'Some affected sites may have unrelated technical, topic, adult-content, or quality causes and require separate diagnosis.'
       ]
     },
-    evidenceSourceIds: ['google_scaled_content_policy', 'google_ai_content_guidance', 'google_research_safe_2026', 'sej_safe_2026'],
+    evidenceSourceIds: ['google_scaled_content_policy','google_ai_content_guidance'],
     falsification: [
-      'Google explicitly states that the inferred operation-level pattern class is not used for Search abuse enforcement.',
-      'Sustained internal evidence shows that the flagged portfolio patterns have no relationship to low-value duplication or adverse outcomes while user value remains strong.',
-      'New primary evidence provides a materially different explanation for SAFE or Search spam enforcement.'
+      'Direct portfolio evidence shows the sites remained broadly indexed and visible despite the incident observations being corrected as measurement error.',
+      'Google materially revises public scaled-content policy in a way that makes the recovery control inappropriate.',
+      'Repeated recovery outcomes show that the freeze creates harm without reducing duplicated/low-value Search surfaces or improving durable indexation.'
     ],
     reviewTriggers: [
-      'New Google Search spam update documentation or public enforcement guidance.',
-      'New Google Research publication connecting operation-level synthetic-abuse analysis directly to Search.',
-      'Meaningful internal evidence of cross-site duplication, deindexing, or traffic changes associated with these patterns.'
+      'Google marks the September 2026 spam update complete or publishes additional relevant guidance.',
+      'A managed site reaches its explicit recovery release criteria.',
+      'A new cross-site indexation snapshot materially contradicts the incident diagnosis.',
+      'The portfolio returns to normal mode.'
     ],
-    updatedAt: '2026-10-01'
-  }
-];
+    updatedAt: '2026-10-08'
+  }];
 
 function resolveEvaluator(id: string, version?: string) {
   const matches = evaluators.filter(item => item.id === id);

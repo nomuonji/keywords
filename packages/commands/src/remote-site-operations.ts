@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
-import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
+import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, SeoRecoverySiteRecord, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
 import { seoPlanningDigestGet } from './seo-planning-digest.js';
@@ -25,6 +25,9 @@ const optimizationPhase = z.enum(['proposed', 'implemented', 'evaluated', 'cance
 const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened', 'inconclusive']);
 const siteDirectionStatus = z.enum(['open', 'monitor', 'decided', 'rejected', 'superseded']);
 const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', 'content_scope', 'monetization_model', 'page_family', 'other']);
+const seoRecoveryPortfolioMode = z.enum(['normal', 'recovery']);
+const seoRecoverySiteState = z.enum(['suspected', 'confirmed', 'recovering', 'cleared']);
+const seoRecoveryStrategy = z.enum(['unassessed', 'protect', 'consolidate', 'shrink', 'special_review']);
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
 const seoTaskStatus = z.enum(['proposed', 'ready', 'issued', 'in_progress', 'completed', 'cancelled', 'superseded']);
 const seoTaskDeploymentVerificationStatus = z.enum(['pending', 'verified', 'failed', 'not_required']);
@@ -143,6 +146,28 @@ export const siteDirectionUpdateShape = {
   appendHistory: historyEntry.optional()
 };
 const siteDirectionUpdateSchema = z.object(siteDirectionUpdateShape).strict();
+
+export const seoRecoveryStatusShape = { siteId: entityId.optional() };
+export const seoRecoveryPortfolioUpdateShape = {
+  expectedRevision: z.number().int().min(0),
+  mode: seoRecoveryPortfolioMode,
+  incidentId: entityId.nullable().optional(),
+  title: z.string().trim().max(300).optional(),
+  reason: note.optional(),
+  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).optional()
+};
+const seoRecoveryPortfolioUpdateSchema = z.object(seoRecoveryPortfolioUpdateShape).strict();
+
+export const seoRecoverySiteUpdateShape = {
+  siteId: entityId,
+  expectedRevision: z.number().int().min(0),
+  state: seoRecoverySiteState,
+  strategy: seoRecoveryStrategy.default('unassessed'),
+  reason: note.refine(value => value.trim().length > 0),
+  evidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30),
+  releaseCriteria: z.array(z.string().trim().min(1).max(1200)).min(1).max(20)
+};
+const seoRecoverySiteUpdateSchema = z.object(seoRecoverySiteUpdateShape).strict();
 
 export const seoTaskGetShape = { id: entityId };
 export const seoTaskCreateShape = {
@@ -285,6 +310,37 @@ async function ensureArticle(articleId: string, siteId?: string) {
   return article;
 }
 
+const RECOVERY_PORTFOLIO_ID = 'organic-search';
+const RECOVERY_GROWTH_TASK_TYPES = new Set(['new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
+const RECOVERY_REPAIR_TASK_TYPES = ['revise', 'merge', 'delete', 'internal_links', 'technical'] as const;
+
+function defaultRecoveryPortfolio(): SeoRecoveryPortfolioRecord {
+  return {
+    id: RECOVERY_PORTFOLIO_ID, mode: 'normal', incidentId: null, title: '', reason: '', evidence: [],
+    startedAt: null, resolvedAt: null, revision: 0, createdAt: '', updatedAt: ''
+  };
+}
+
+async function readRecoveryPortfolio(): Promise<{ record: SeoRecoveryPortfolioRecord; doc: any | null }> {
+  const doc = await readDocument('seoRecoveryControls', RECOVERY_PORTFOLIO_ID);
+  return { record: doc ? ({ ...defaultRecoveryPortfolio(), ...decoded(doc) } as SeoRecoveryPortfolioRecord) : defaultRecoveryPortfolio(), doc };
+}
+
+async function readRecoverySite(siteId: string): Promise<{ record: SeoRecoverySiteRecord | null; doc: any | null }> {
+  const doc = await readDocument('seoRecoverySites', siteId);
+  return { record: doc ? (decoded(doc) as SeoRecoverySiteRecord) : null, doc };
+}
+
+async function assertSeoRecoveryTaskAllowed(siteId: string, taskType: string) {
+  const { record: portfolio } = await readRecoveryPortfolio();
+  if (portfolio.mode !== 'recovery') return;
+  const { record: site } = await readRecoverySite(siteId);
+  const clearedForIncident = Boolean(site && site.state === 'cleared' && site.incidentId && site.incidentId === portfolio.incidentId);
+  if (RECOVERY_GROWTH_TASK_TYPES.has(taskType) && !clearedForIncident) {
+    throw new Error(`SEO recovery mode blocks taskType=${taskType} for site ${siteId} until the site is explicitly cleared for incident ${portfolio.incidentId ?? 'active'}`);
+  }
+}
+
 async function commitAuditWrites(command: string, targetId: string, items: Array<{ data: object; previous?: any | null }>, auditDetail?: object) {
   const runId = randomUUID();
   const createdAt = now();
@@ -363,7 +419,7 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
+    collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'seoRecoveryControls', 'seoRecoverySites', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
     legacyCollections: {
       metricSnapshots: 'read_only_compatibility_for_historical_optimization_evidence',
       siteDigests: 'deprecated_no_new_reads_or_writes'
@@ -591,6 +647,89 @@ const normalizeSiteDirection = (direction: SiteDirectionRecord): SiteDirectionRe
   decidedAt: direction.decidedAt ?? null
 });
 
+export async function seoRecoveryStatus(input: unknown = {}) {
+  const args = z.object(seoRecoveryStatusShape).strict().parse(input);
+  const { record: portfolio } = await readRecoveryPortfolio();
+  let sites: SeoRecoverySiteRecord[] = [];
+  if (args.siteId) {
+    await ensureSite(args.siteId);
+    const { record } = await readRecoverySite(args.siteId);
+    if (record) sites = [record];
+  } else {
+    const listed = await listDocuments('seoRecoverySites', { limit: 100, orderBy: 'updatedAt desc' });
+    sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
+  }
+  return {
+    portfolio,
+    sites,
+    effectivePolicy: portfolio.mode === 'recovery' ? {
+      growthFrozenByDefault: true,
+      blockedTaskTypesUntilSiteClearance: [...RECOVERY_GROWTH_TASK_TYPES],
+      allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
+      existingBlockedGrowthTasksAreNotClaimable: true,
+      queueRule: 'Do not replenish the normal growth ready-buffer while portfolio recovery is active. Create only evidence-backed recovery/repair work; task count is not a target.',
+      clearanceRule: 'Site state must be cleared for the current incident before growth task types become creatable or claimable.'
+    } : {
+      growthFrozenByDefault: false,
+      blockedTaskTypesUntilSiteClearance: [],
+      allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
+      existingBlockedGrowthTasksAreNotClaimable: false,
+      queueRule: 'Normal SEO operating policy applies.',
+      clearanceRule: 'No recovery clearance is required while portfolio mode is normal.'
+    }
+  };
+}
+
+export async function seoRecoveryPortfolioUpdate(input: unknown) {
+  const args = seoRecoveryPortfolioUpdateSchema.parse(input);
+  const { record: current, doc: previous } = await readRecoveryPortfolio();
+  if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read seo_recovery_status and retry the portfolio recovery update');
+  const t = now();
+  if (args.mode === 'recovery' && !args.incidentId && !current.incidentId) throw new Error('incidentId is required when entering recovery mode');
+  const incidentId = args.incidentId === undefined ? current.incidentId : args.incidentId;
+  const record: SeoRecoveryPortfolioRecord = {
+    ...current,
+    mode: args.mode,
+    incidentId,
+    title: args.title === undefined ? current.title : args.title,
+    reason: args.reason === undefined ? current.reason : args.reason,
+    evidence: args.evidence === undefined ? current.evidence : args.evidence,
+    startedAt: args.mode === 'recovery' ? (current.mode === 'recovery' ? current.startedAt : t) : current.startedAt,
+    resolvedAt: args.mode === 'normal' ? t : null,
+    revision: args.expectedRevision + 1,
+    createdAt: current.createdAt || t,
+    updatedAt: t
+  };
+  if (record.mode === 'recovery' && (!record.reason.trim() || !record.evidence.length)) throw new Error('Recovery mode requires a concrete reason and evidence');
+  const runId = await auditWrite('seo_recovery_portfolio_update', record.id, { __write: { collection: 'seoRecoveryControls', id: record.id, fields: record } }, previous);
+  return { ...record, runId };
+}
+
+export async function seoRecoverySiteUpdate(input: unknown) {
+  const args = seoRecoverySiteUpdateSchema.parse(input);
+  await ensureSite(args.siteId);
+  const { record: portfolio } = await readRecoveryPortfolio();
+  const { record: current, doc: previous } = await readRecoverySite(args.siteId);
+  if ((current?.revision ?? 0) !== args.expectedRevision) throw new Error('Revision conflict: read seo_recovery_status for the site and retry');
+  if (args.state === 'cleared' && portfolio.mode === 'recovery' && !portfolio.incidentId) throw new Error('Cannot clear a site while the active recovery incident has no incidentId');
+  const t = now();
+  const record: SeoRecoverySiteRecord = {
+    id: args.siteId,
+    siteId: args.siteId,
+    incidentId: portfolio.mode === 'recovery' ? portfolio.incidentId : (current?.incidentId ?? null),
+    state: args.state,
+    strategy: args.strategy,
+    reason: args.reason,
+    evidence: args.evidence,
+    releaseCriteria: args.releaseCriteria,
+    revision: args.expectedRevision + 1,
+    createdAt: current?.createdAt ?? t,
+    updatedAt: t
+  };
+  const runId = await auditWrite('seo_recovery_site_update', record.id, { __write: { collection: 'seoRecoverySites', id: record.id, fields: record } }, previous);
+  return { ...record, runId };
+}
+
 export async function siteDirectionGet(input: unknown) {
   const args = z.object(siteDirectionGetShape).strict().parse(input);
   const doc = await readDocument('siteDirections', args.id);
@@ -774,6 +913,7 @@ export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
   const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
   await ensureSite(args.siteId);
+  await assertSeoRecoveryTaskAllowed(args.siteId, args.taskType);
   if (args.directionId) await ensureDecidedDirection(args.directionId, args.siteId);
   const research = args.research ? await themeCandidateForTask(args.research.sessionId, args.research.candidateId, args.research.candidateRevision, args.siteId) : null;
   for (const articleId of args.articleIds) await ensureArticle(articleId, args.siteId);
@@ -853,6 +993,7 @@ export async function seoTaskClaim(input: unknown) {
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
+  await assertSeoRecoveryTaskAllowed(current.siteId, current.taskType);
 
   const t = now();
   const requestedRunId = args.runId ?? randomUUID();

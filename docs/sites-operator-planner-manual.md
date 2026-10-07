@@ -4,6 +4,30 @@
 
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
+
+## Portfolio SEO recovery override
+
+Every Planner run must call `seo_recovery_status` immediately after `seo_agent_context`.
+
+When the durable portfolio record says `mode=recovery`, recovery governance overrides the ordinary growth-supply contract:
+
+- suspend the normal ready-buffer target and the requirement to create 3–5 tasks;
+- suspend growth-oriented discovery as a mandatory run outcome;
+- do not create or claim `new_article`, `site_expansion`, `data_expansion`, or `schema_expansion` for a site unless its recovery state is `cleared` for the current incident;
+- use `revise`, `merge`, `delete`, `internal_links`, and `technical` only for bounded recovery work with concrete evidence;
+- broad deletion/noindex, site pause, positioning changes, cross-site consolidation, or other strategic changes still require the ordinary Site Direction human gate;
+- read the current `scaled_content_operation_risk` evaluator during recovery planning, but do not claim that a particular Google update or private spam system caused the incident without direct evidence;
+- treat task count, article count, publishing velocity, and worker utilization as non-objectives during recovery.
+
+The task API enforces the growth freeze on both creation and claim. This prevents old ready growth tasks from bypassing a later recovery incident.
+
+Per-site states are `suspected`, `confirmed`, `recovering`, and `cleared`. Clearance is incident-specific. A prior clearance does not carry into a new incident.
+
+Default release evidence should include a fresh, representative URL Inspection sample, no unresolved robots/fetch/canonical blocker, materially recovered indexation, and sustained complete Search observations rather than one good day or one rewritten page. The existing recovery measurement convention of a stable 20-URL cohort, at least 70% indexed, and improving complete weekly Search observations is an operational starting point, not a Google ranking threshold.
+
+If evidence is insufficient, keep the site in `suspected`/`recovering`; do not clear it merely to resume the normal queue.
+
+
 ## Discovery pass before repair inventory
 
 - Reserve part of every run for one active site's search opportunity exploration, even when the ready buffer is full. Resume `seo-discovery-{siteId}` using `theme_research_context(sessionId=...)`; create a genuinely missing session with `research_session_create`. The default `seo-theme-research` remains for new monetization themes. Rotate sites from saved history.

@@ -150,6 +150,38 @@ export type SiteDirectionRecord = {
 };
 
 
+export type SeoRecoveryPortfolioMode = 'normal' | 'recovery';
+export type SeoRecoverySiteState = 'suspected' | 'confirmed' | 'recovering' | 'cleared';
+export type SeoRecoveryStrategy = 'unassessed' | 'protect' | 'consolidate' | 'shrink' | 'special_review';
+
+export type SeoRecoveryPortfolioRecord = {
+  id: 'organic-search';
+  mode: SeoRecoveryPortfolioMode;
+  incidentId: string | null;
+  title: string;
+  reason: string;
+  evidence: string[];
+  startedAt: string | null;
+  resolvedAt: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SeoRecoverySiteRecord = {
+  id: string;
+  siteId: string;
+  incidentId: string | null;
+  state: SeoRecoverySiteState;
+  strategy: SeoRecoveryStrategy;
+  reason: string;
+  evidence: string[];
+  releaseCriteria: string[];
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type SeoTaskType = 'revise' | 'merge' | 'delete' | 'internal_links' | 'technical' | 'new_article' | 'site_expansion' | 'data_expansion' | 'schema_expansion';
 /** ready is the record-only planner handoff; proposed/issued are retained for historical records. */
 export type SeoTaskStatus = 'proposed' | 'ready' | 'issued' | 'in_progress' | 'completed' | 'cancelled' | 'superseded';

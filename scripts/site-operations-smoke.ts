@@ -14,6 +14,9 @@ import {
   siteDirectionGet,
   siteDirectionList,
   siteDirectionUpdate,
+  seoRecoveryStatus,
+  seoRecoveryPortfolioUpdate,
+  seoRecoverySiteUpdate,
   seoTaskClaim,
   seoTaskCreate,
   seoTaskGet,
@@ -65,7 +68,7 @@ globalThis.fetch = async (input, init) => {
     return Response.json(rows);
   }
 
-  if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks)$/.test(path)) {
+  if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks|seoRecoveryControls|seoRecoverySites)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
@@ -362,6 +365,91 @@ try {
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'data_expansion' })).items.length, 1);
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'schema_expansion' })).items.length, 1);
 
+  // Portfolio recovery is a control-plane mode, not a prompt convention.
+  // It must block both new growth-task creation and claims of already-ready
+  // growth tasks until the site is explicitly cleared for the active incident.
+  const recovery = await seoRecoveryPortfolioUpdate({
+    expectedRevision: 0,
+    mode: 'recovery',
+    incidentId: 'spam-recovery-2026-10',
+    title: 'Cross-site organic visibility and indexation recovery',
+    reason: 'Multiple managed sites show broad URL Inspection exclusion and sharp Search visibility deterioration.',
+    evidence: [
+      'Direct URL Inspection observations across multiple managed sites show broad exclusion.',
+      'Google scaled-content policy is a primary risk-control source; causality of a specific update is not asserted.'
+    ]
+  });
+  assert.equal(recovery.mode, 'recovery');
+  assert.equal((await seoRecoveryStatus({})).effectivePolicy.growthFrozenByDefault, true);
+
+  const confirmed = await seoRecoverySiteUpdate({
+    siteId: 'site-a',
+    expectedRevision: 0,
+    state: 'confirmed',
+    strategy: 'consolidate',
+    reason: 'Test site is treated as affected for the active recovery incident.',
+    evidence: ['Synthetic smoke evidence for broad indexation/visibility decline.'],
+    releaseCriteria: ['Fresh recovery observations support explicit clearance.', 'No unresolved technical/indexation blocker remains.']
+  });
+  assert.equal(confirmed.incidentId, 'spam-recovery-2026-10');
+
+  await assert.rejects(seoTaskCreate({
+    id: 'seo-recovery-block-new',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/new-search-surface'],
+    repo: 'nomuonji/site-a',
+    taskType: 'new_article',
+    title: 'Should be blocked during recovery',
+    rationale: 'Recovery must override ordinary growth supply.',
+    evidence: ['This is intentionally a net-new Search-surface task.'],
+    dedupeKey: 'site-a:recovery:block-new'
+  }), /SEO recovery mode blocks taskType=new_article/);
+
+  await assert.rejects(seoTaskClaim({
+    id: siteExpansionTask.id,
+    expectedRevision: siteExpansionTask.revision,
+    runId: 'recovery-blocked-claim',
+    actor: 'site-operations-smoke',
+    leaseMinutes: 75
+  }), /SEO recovery mode blocks taskType=site_expansion/);
+
+  const recoveryRepair = await seoTaskCreate({
+    id: 'seo-recovery-repair',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/article-a'],
+    repo: 'nomuonji/site-a',
+    taskType: 'technical',
+    title: 'Verify recovery indexing contract',
+    rationale: 'Recovery mode still allows bounded repair work.',
+    evidence: ['Repair is bounded and does not add a new Search surface.'],
+    dedupeKey: 'site-a:recovery:technical-repair'
+  });
+  assert.equal(recoveryRepair.status, 'ready');
+
+  const cleared = await seoRecoverySiteUpdate({
+    siteId: 'site-a',
+    expectedRevision: confirmed.revision,
+    state: 'cleared',
+    strategy: 'protect',
+    reason: 'Smoke test clearance after fresh evidence.',
+    evidence: ['Fresh observations satisfy the synthetic release criteria.'],
+    releaseCriteria: ['Satisfied in smoke test.']
+  });
+  assert.equal(cleared.state, 'cleared');
+
+  const clearedGrowth = await seoTaskCreate({
+    id: 'seo-recovery-cleared-growth',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/cleared-growth'],
+    repo: 'nomuonji/site-a',
+    taskType: 'site_expansion',
+    title: 'Growth allowed after incident-specific clearance',
+    rationale: 'The site is explicitly cleared for the active incident.',
+    evidence: ['Incident-specific site state is cleared.'],
+    dedupeKey: 'site-a:recovery:cleared-growth'
+  });
+  assert.equal(clearedGrowth.status, 'ready');
+
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
     repo: 'nomuonji/site-a', repoPath: 'content/posts/article-a.mdx', currentCommitSha: 'a'.repeat(40), slug: 'article-a', title: 'Article A',
@@ -480,7 +568,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 39);
+  assert.equal(listing.tools.length, 42);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
@@ -490,6 +578,9 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_status'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_portfolio_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_recovery_site_update'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_site_status'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_set_preview_branch_exclusions'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_pages_deployment_logs'));
@@ -509,7 +600,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.23.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.24.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
@@ -519,6 +610,9 @@ try {
   assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRepository, 2);
+  assert.equal(agentPolicy.structuredContent.runContract.recoveryOverride.normalReadyTargetSuspended, true);
+  assert.deepEqual(agentPolicy.structuredContent.runContract.recoveryOverride.blockedGrowthTaskTypes, ['new_article','site_expansion','data_expansion','schema_expansion']);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.recoveryGovernance), /recovery/i);
   assert.equal(agentPolicy.structuredContent.runContract.directionReview.mode, 'persistent_human_gate');
   assert.match(agentPolicy.structuredContent.runContract.directionReview.majorChangeGate, /No Worker task/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /discussion_required/);
@@ -531,12 +625,12 @@ try {
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
-  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.1.0');
+  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.2.0');
   assert.match(agentPolicy.structuredContent.evaluationRegistry.scoring, /No composite SEO score/);
   const evaluatorList = await call('tools/call', { name: 'seo_evaluator_list', arguments: {} });
-  assert.equal(evaluatorList.structuredContent.registryVersion, '1.1.0');
+  assert.equal(evaluatorList.structuredContent.registryVersion, '1.2.0');
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'content_incremental_value' && item.status === 'active'));
-  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'scaled_content_operation_risk' && item.status === 'experimental'));
+  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'scaled_content_operation_risk' && item.status === 'active' && item.version === '1.1.0'));
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'database_indexation_quality' && item.status === 'active'));
   const databaseIndexation = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'database_indexation_quality' } });
   assert.equal(databaseIndexation.structuredContent.evaluator.version, '1.0.0');
@@ -544,10 +638,10 @@ try {
   assert.ok(databaseIndexation.structuredContent.evidence.some((source: any) => source.id === 'google_faceted_navigation_guidance'));
   assert.match(JSON.stringify(databaseIndexation.structuredContent), /indexable URL surface/i);
   const scaledRisk = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'scaled_content_operation_risk' } });
-  assert.equal(scaledRisk.structuredContent.evaluator.version, '1.0.0');
-  assert.equal(scaledRisk.structuredContent.evaluator.inference.confidence, 'low_to_medium');
-  assert.ok(scaledRisk.structuredContent.evidence.some((source: any) => source.id === 'google_research_safe_2026'));
-  assert.match(JSON.stringify(scaledRisk.structuredContent), /does not establish that SAFE is used by Google Search/i);
+  assert.equal(scaledRisk.structuredContent.evaluator.version, '1.1.0');
+  assert.equal(scaledRisk.structuredContent.evaluator.inference.confidence, 'medium_to_high');
+  assert.ok(scaledRisk.structuredContent.evidence.some((source: any) => source.id === 'google_scaled_content_policy'));
+  assert.match(JSON.stringify(scaledRisk.structuredContent), /does not assert which Google system caused/i);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
@@ -574,8 +668,8 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.18.0');
-  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.1.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.19.0');
+  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.2.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
