@@ -145,6 +145,32 @@ try {
   assert.equal(inventory.created, 2);
   assert.equal(inventory.failed, 0);
 
+  const revisionAfterCreate = revision;
+  const repeatedInventory = await siteIndexationInventorySave({
+    siteId: 'site-i',
+    records: [
+      {
+        url: 'https://shikaku.antonbase.com/licenses/a/',
+        pageFamily: 'qualification',
+        indexable: true,
+        sourceFingerprint: 'sha-a',
+        lastPublishedAt: '2026-10-01T00:00:00.000Z',
+        lastChangedAt: '2026-10-01T00:00:00.000Z'
+      },
+      {
+        url: 'https://shikaku.antonbase.com/licenses/b/',
+        pageFamily: 'qualification',
+        indexable: true,
+        sourceFingerprint: 'sha-b',
+        lastPublishedAt: '2026-10-01T00:00:00.000Z',
+        lastChangedAt: '2026-10-01T00:00:00.000Z'
+      }
+    ]
+  });
+  assert.equal(repeatedInventory.updated, 0);
+  assert.equal(repeatedInventory.unchanged, 2);
+  assert.equal(revision, revisionAfterCreate, 'unchanged daily inventory reconciliation must not write Firestore documents');
+
   const listedBefore = await siteIndexationList({ siteId: 'site-i', limit: 100 });
   assert.equal(listedBefore.items.length, 2);
   assert.ok(listedBefore.items.every(item => item.nextInspectionAt));
@@ -192,7 +218,25 @@ try {
   assert.equal(snapshot.summary.indexedObservedCount, 2);
   assert.equal(listCollection('indexationSnapshots').length, 1);
 
-  console.log('site indexation smoke passed: mutable URL cache, shared quota, page-family summary and weekly snapshot');
+  const removed = await siteIndexationInventorySave({
+    siteId: 'site-i',
+    records: [{ url: 'https://shikaku.antonbase.com/licenses/b/', pageFamily: 'qualification', indexable: false, inventoryState: 'removed' }]
+  });
+  assert.equal(removed.updated, 1);
+  const afterRemoval = await siteIndexationList({ siteId: 'site-i', limit: 100 });
+  const removedRow = afterRemoval.items.find(item => item.url.includes('/licenses/b'));
+  assert.equal(removedRow?.nextInspectionAt, null);
+
+  const restored = await siteIndexationInventorySave({
+    siteId: 'site-i',
+    records: [{ url: 'https://shikaku.antonbase.com/licenses/b/', pageFamily: 'qualification', indexable: true, inventoryState: 'current' }]
+  });
+  assert.equal(restored.updated, 1);
+  const afterRestore = await siteIndexationList({ siteId: 'site-i', limit: 100 });
+  const restoredRow = afterRestore.items.find(item => item.url.includes('/licenses/b'));
+  assert.ok(restoredRow?.nextInspectionAt, 'reactivated URLs must return to the due queue');
+
+  console.log('site indexation smoke passed: idempotent inventory, reactivation, mutable URL cache, shared quota, page-family summary and weekly snapshot');
 } finally {
   globalThis.fetch = originalFetch;
 }
