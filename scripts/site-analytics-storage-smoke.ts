@@ -20,6 +20,9 @@ assert.match(maintenance, /refreshSeoPlanningDigest/);
 assert.doesNotMatch(maintenance, /site-operations-bridge/);
 assert.doesNotMatch(maintenance, /metricSnapshotSave/);
 
+const remote = readFileSync(new URL('../packages/commands/src/remote-site-operations.ts', import.meta.url), 'utf8');
+assert.match(remote, /digest\?\.generatedAt && digest\.siteMetrics\?\.current7/, 'pre-migration digests must fall back instead of returning empty canonical metrics');
+
 const api = readFileSync(new URL('../api/sites-mcp.ts', import.meta.url), 'utf8');
 assert.doesNotMatch(api, /registerTool\('site_metric_snapshot_save'/);
 assert.match(api, /legacy historical GSC\/GA4 snapshots retained only for optimization-evidence compatibility/);
