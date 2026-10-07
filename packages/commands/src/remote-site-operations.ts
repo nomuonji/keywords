@@ -671,7 +671,7 @@ export async function seoRecoveryStatus(input: unknown = {}) {
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: true,
       inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
-      scope: 'new_task_create_and_new_claim_only',
+      scope: 'new_task_create_and_unstarted_ready_claim_only',
       incidentCategory: portfolio.incidentCategory,
       queueRule: 'Do not replenish the normal growth ready-buffer while portfolio recovery is active. Create only evidence-backed recovery/repair work; task count is not a target.',
       clearanceRule: 'Site state must be cleared for the current incident before growth task types become creatable or claimable.'
@@ -694,6 +694,10 @@ export async function seoRecoveryPortfolioUpdate(input: unknown) {
   const { record: current, doc: previous } = await readRecoveryPortfolio();
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read seo_recovery_status and retry the portfolio recovery update');
   const t = now();
+  if (args.mode === 'recovery' && current.mode !== 'recovery' &&
+      (!args.incidentId || args.incidentId === current.incidentId)) {
+    throw new Error('A new, distinct incidentId is required when entering recovery mode from normal');
+  }
   if (args.mode === 'recovery' && !args.incidentId && !current.incidentId) throw new Error('incidentId is required when entering recovery mode');
   if (current.mode === 'recovery' && args.mode === 'normal' && !args.resolutionEvidence?.length) {
     throw new Error('Returning to normal mode requires fresh resolutionEvidence; existing site clearance is not a prerequisite for a scoped policy decision.');
@@ -1013,7 +1017,9 @@ export async function seoTaskClaim(input: unknown) {
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
-  await assertSeoRecoveryTaskAllowed(current.siteId, current.taskType);
+  // Recovery gates new work intake, not a continuation/reclaim of work that
+  // was already in_progress before the incident. Normal lease safety follows.
+  if (current.status !== 'in_progress') await assertSeoRecoveryTaskAllowed(current.siteId, current.taskType);
 
   const t = now();
   const requestedRunId = args.runId ?? randomUUID();
