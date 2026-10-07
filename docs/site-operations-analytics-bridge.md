@@ -52,7 +52,9 @@ The sync requires exact agreement among:
 
 Each `snapshot.sources[].expected_url` must resolve to exactly one local page. Mirrored metadata is limited to established identity fields such as `localPageId`, canonical URL, repository, `source_ref` as `repoPath`, title and slug.
 
-A local build is not publication proof. Newly mirrored article records remain `draft` unless publication state has already been established through another trusted path. Existing status is preserved on metadata refresh.
+A local build is not publication proof. Newly mirrored snapshot records remain `draft` unless publication state has already been established through another trusted path. Existing status is preserved on metadata refresh.
+
+The direct Blog publication path also registers a missing article after `verifyPublished` only when the approved handoff ID/version/origin, the verified HTTP 200 + canonical receipt, the unique local page, and exactly one `target_sources` path+SHA match in the bound snapshot all agree. The registry ID is deterministic, replay reuses the existing record, and paused or archived records are never reactivated. Ambiguous, missing, or mismatched evidence is skipped. This is a single verified-publication path; lazy measurement sync still does not mass-create records from a broad snapshot.
 
 Sync is bounded by `KEYWORDS_CLOUD_ARTICLE_SYNC_LIMIT`, default `100`, per projection.
 
@@ -304,3 +306,4 @@ For full search + behavior analytics operation, configure each site explicitly:
 3. Decide later whether specific optimization hypothesis types should incorporate compatible article-level GA4 deltas into formal evaluation; do not broaden verdict semantics implicitly.
 4. Remove the legacy analytics-dashboard fallback only after all active sites have direct GA4 imports.
 5. Consolidate the separate Vercel `/mcp` Ads/provider wrapper later if serverless bundling can preserve the production contract cleanly.
+
