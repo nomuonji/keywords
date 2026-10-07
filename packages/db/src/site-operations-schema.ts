@@ -32,7 +32,7 @@ export type SiteArticleStatus = 'draft' | 'published' | 'paused' | 'archived';
 export type SiteArticleRecord = {
   id: string;
   siteId: string;
-  /** Existing SQLite `pages.id`; optional explicit bridge for article-level metrics. */
+  /** Existing SQLite `pages.id`; optional explicit identity bridge for local measurement and optimization evidence. */
   localPageId: string | null;
   canonicalUrl: string | null;
   repo: string;
@@ -51,6 +51,7 @@ export type SiteArticleRecord = {
 };
 
 export type MetricProvider = 'gsc' | 'ga4';
+/** Legacy read-only Firestore compatibility model. Current durable analytics live in one seoPlanningDigests document per site. */
 export type MetricSnapshot = {
   id: string;
   siteId: string;
