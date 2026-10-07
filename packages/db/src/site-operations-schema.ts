@@ -151,16 +151,21 @@ export type SiteDirectionRecord = {
 
 
 export type SeoRecoveryPortfolioMode = 'normal' | 'recovery';
+/** Search-operations incidents can have different causes; the current response is a bounded freeze on new growth only. */
+export type SeoIncidentCategory = 'search_visibility' | 'content_quality' | 'technical_integrity' | 'measurement_integrity' | 'other';
 export type SeoRecoverySiteState = 'suspected' | 'confirmed' | 'recovering' | 'cleared';
 export type SeoRecoveryStrategy = 'unassessed' | 'protect' | 'consolidate' | 'shrink' | 'special_review';
 
 export type SeoRecoveryPortfolioRecord = {
   id: 'organic-search';
   mode: SeoRecoveryPortfolioMode;
+  incidentCategory: SeoIncidentCategory;
   incidentId: string | null;
   title: string;
   reason: string;
   evidence: string[];
+  /** Evidence for the most recent explicit recovery -> normal transition; never inferred from an automatic watchdog. */
+  resolutionEvidence: string[];
   startedAt: string | null;
   resolvedAt: string | null;
   revision: number;
