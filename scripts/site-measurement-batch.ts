@@ -107,7 +107,10 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
     }
   }
 
-  if (complete) {
+  const currentCachedCount = cached.filter((row: any) => row.inventoryState === 'current').length;
+  const emptyCompleteSitemapGuard = complete && current.size === 0 && currentCachedCount > 0;
+  const allowRemovals = complete && !emptyCompleteSitemapGuard;
+  if (allowRemovals) {
     for (const [url, previous] of cachedByUrl) {
       const row: any = previous;
       if (!current.has(url) && row.inventoryState === 'current') {
@@ -136,7 +139,8 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
     updated,
     unchanged,
     failed,
-    removalsSuppressed: !complete
+    removalsSuppressed: !allowRemovals,
+    removalSuppressionReason: !complete ? 'sitemap_incomplete' : emptyCompleteSitemapGuard ? 'complete_sitemap_returned_zero_urls' : null
   };
 }
 
