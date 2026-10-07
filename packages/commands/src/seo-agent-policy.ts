@@ -42,7 +42,7 @@ const shared = {
     source: 'Live SEO operational incident state is embedded in seo_agent_context.recovery. Use seo_recovery_status to inspect a specific site or update the incident.',
     incidentCategories: ['search_visibility', 'content_quality', 'technical_integrity', 'measurement_integrity', 'other'],
     applicability: 'Reusable within SEO operations. New incident types can share the same workflow, but the current action policy only pauses acquisition of NEW growth work; it is not a global emergency kill switch.',
-    inFlight: 'Existing claimed/in_progress tasks and verified branch_ready/pr_open delivery are deliberately allowed to finish. Never retroactively cancel claims, branches, PRs or merges solely because recovery mode was activated.',
+    inFlight: 'Existing in_progress tasks (including ordinary lease-safe continuation/reclaims) and verified branch_ready/pr_open delivery are deliberately allowed to finish. Never retroactively cancel claims, branches, PRs or merges solely because recovery mode was activated.',
     normalReturn: 'Return to normal through an explicit portfolio update with resolutionEvidence. Do not auto-exit; audit open work and revalidate the next new task on claim.',
     priority: 'An active portfolio recovery incident overrides normal discovery, expansion, ready-buffer, and publishing-volume targets.',
     growthFreeze: 'During recovery, new_article/site_expansion/data_expansion/schema_expansion are blocked by the control plane unless the target site is explicitly cleared for the current incident.',
