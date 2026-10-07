@@ -449,6 +449,59 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         previewUrlSuffix: betaWorkerEnvelope.result.subdomain.preview_url_suffix ?? null
       } : null
     } : null;
+
+    let workersBuilds: any[] = [];
+    let workersBuildsDiagnosticError: string | null = null;
+    let workersBuildTriggers: any[] = [];
+    let workersBuildTriggersDiagnosticError: string | null = null;
+    const workerTag = betaWorker?.id ? String(betaWorker.id) : null;
+    if (workerTag) {
+      try {
+        const buildsEnvelope = await cloudflare<any>(
+          `/builds/workers/${encodeURIComponent(workerTag)}/builds?per_page=10&page=1`
+        );
+        const rawBuilds = Array.isArray(buildsEnvelope.result)
+          ? buildsEnvelope.result
+          : Array.isArray(buildsEnvelope.result?.builds)
+            ? buildsEnvelope.result.builds
+            : buildsEnvelope.result?.builds && typeof buildsEnvelope.result.builds === 'object'
+              ? Object.values(buildsEnvelope.result.builds)
+              : [];
+        workersBuilds = rawBuilds.slice(0, 10).map(safeWorkersBuild);
+      } catch (error: any) {
+        workersBuildsDiagnosticError = error?.message ?? String(error);
+      }
+
+      try {
+        const triggersEnvelope = await cloudflare<any>(
+          `/builds/workers/${encodeURIComponent(workerTag)}/triggers`
+        );
+        const rawTriggers = Array.isArray(triggersEnvelope.result)
+          ? triggersEnvelope.result
+          : Array.isArray(triggersEnvelope.result?.triggers)
+            ? triggersEnvelope.result.triggers
+            : [];
+        workersBuildTriggers = rawTriggers.map((trigger: any) => ({
+          id: trigger?.trigger_uuid ?? null,
+          name: trigger?.trigger_name ?? null,
+          branchIncludes: Array.isArray(trigger?.branch_includes) ? trigger.branch_includes : [],
+          branchExcludes: Array.isArray(trigger?.branch_excludes) ? trigger.branch_excludes : [],
+          buildCommand: trigger?.build_command ?? null,
+          deployCommand: trigger?.deploy_command ?? null,
+          rootDirectory: trigger?.root_directory ?? null,
+          createdOn: trigger?.created_on ?? null,
+          modifiedOn: trigger?.modified_on ?? null,
+          repo: trigger?.repo_connection ? {
+            providerType: trigger.repo_connection?.provider_type ?? null,
+            providerAccountName: trigger.repo_connection?.provider_account_name ?? null,
+            repoName: trigger.repo_connection?.repo_name ?? null
+          } : null
+        }));
+      } catch (error: any) {
+        workersBuildTriggersDiagnosticError = error?.message ?? String(error);
+      }
+    }
+
     const activeVersionId = deploymentsRaw
       .flatMap((deployment: any) => Array.isArray(deployment?.versions) ? deployment.versions : [])
       .find((version: any) => Number(version?.percentage ?? 0) === 100)?.version_id ?? null;
@@ -508,6 +561,10 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         dnsDiagnosticError,
         workerRoutes,
         workerRoutesDiagnosticError,
+        workersBuilds,
+        workersBuildsDiagnosticError,
+        workersBuildTriggers,
+        workersBuildTriggersDiagnosticError,
         activeVersion,
         activeVersionError,
         deployments: deploymentsRaw.map((deployment: any) => ({
