@@ -507,7 +507,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.22.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.23.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
