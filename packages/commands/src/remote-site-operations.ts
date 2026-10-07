@@ -26,6 +26,7 @@ const optimizationResult = z.enum(['pending', 'improved', 'neutral', 'worsened',
 const siteDirectionStatus = z.enum(['open', 'monitor', 'decided', 'rejected', 'superseded']);
 const siteDirectionTopic = z.enum(['positioning', 'audience', 'consolidation', 'content_scope', 'monetization_model', 'page_family', 'other']);
 const seoRecoveryPortfolioMode = z.enum(['normal', 'recovery']);
+const seoIncidentCategory = z.enum(['search_visibility', 'content_quality', 'technical_integrity', 'measurement_integrity', 'other']);
 const seoRecoverySiteState = z.enum(['suspected', 'confirmed', 'recovering', 'cleared']);
 const seoRecoveryStrategy = z.enum(['unassessed', 'protect', 'consolidate', 'shrink', 'special_review']);
 const seoTaskType = z.enum(['revise', 'merge', 'delete', 'internal_links', 'technical', 'new_article', 'site_expansion', 'data_expansion', 'schema_expansion']);
@@ -152,9 +153,11 @@ export const seoRecoveryPortfolioUpdateShape = {
   expectedRevision: z.number().int().min(0),
   mode: seoRecoveryPortfolioMode,
   incidentId: entityId.nullable().optional(),
+  incidentCategory: seoIncidentCategory.optional(),
   title: z.string().trim().max(300).optional(),
   reason: note.optional(),
-  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).optional()
+  evidence: z.array(z.string().trim().min(1).max(1200)).max(30).optional(),
+  resolutionEvidence: z.array(z.string().trim().min(1).max(1200)).min(1).max(30).optional()
 };
 const seoRecoveryPortfolioUpdateSchema = z.object(seoRecoveryPortfolioUpdateShape).strict();
 
@@ -316,8 +319,8 @@ const RECOVERY_REPAIR_TASK_TYPES = ['revise', 'merge', 'delete', 'internal_links
 
 function defaultRecoveryPortfolio(): SeoRecoveryPortfolioRecord {
   return {
-    id: RECOVERY_PORTFOLIO_ID, mode: 'normal', incidentId: null, title: '', reason: '', evidence: [],
-    startedAt: null, resolvedAt: null, revision: 0, createdAt: '', updatedAt: ''
+    id: RECOVERY_PORTFOLIO_ID, mode: 'normal', incidentCategory: 'search_visibility', incidentId: null, title: '', reason: '', evidence: [],
+    resolutionEvidence: [], startedAt: null, resolvedAt: null, revision: 0, createdAt: '', updatedAt: ''
   };
 }
 
@@ -667,6 +670,9 @@ export async function seoRecoveryStatus(input: unknown = {}) {
       blockedTaskTypesUntilSiteClearance: [...RECOVERY_GROWTH_TASK_TYPES],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: true,
+      inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
+      scope: 'new_task_create_and_unstarted_ready_claim_only',
+      incidentCategory: portfolio.incidentCategory,
       queueRule: 'Do not replenish the normal growth ready-buffer while portfolio recovery is active. Create only evidence-backed recovery/repair work; task count is not a target.',
       clearanceRule: 'Site state must be cleared for the current incident before growth task types become creatable or claimable.'
     } : {
@@ -674,6 +680,9 @@ export async function seoRecoveryStatus(input: unknown = {}) {
       blockedTaskTypesUntilSiteClearance: [],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: false,
+      inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
+      scope: 'normal_task_acquisition',
+      incidentCategory: portfolio.incidentCategory,
       queueRule: 'Normal SEO operating policy applies.',
       clearanceRule: 'No recovery clearance is required while portfolio mode is normal.'
     }
@@ -685,17 +694,32 @@ export async function seoRecoveryPortfolioUpdate(input: unknown) {
   const { record: current, doc: previous } = await readRecoveryPortfolio();
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read seo_recovery_status and retry the portfolio recovery update');
   const t = now();
+  if (args.mode === 'recovery' && current.mode !== 'recovery' &&
+      (!args.incidentId || args.incidentId === current.incidentId)) {
+    throw new Error('A new, distinct incidentId is required when entering recovery mode from normal');
+  }
   if (args.mode === 'recovery' && !args.incidentId && !current.incidentId) throw new Error('incidentId is required when entering recovery mode');
+  if (current.mode === 'recovery' && args.mode === 'normal' && !args.resolutionEvidence?.length) {
+    throw new Error('Returning to normal mode requires fresh resolutionEvidence; existing site clearance is not a prerequisite for a scoped policy decision.');
+  }
+  if (args.mode === 'recovery' && args.resolutionEvidence) {
+    throw new Error('resolutionEvidence may be supplied only when returning to normal mode');
+  }
   const incidentId = args.incidentId === undefined ? current.incidentId : args.incidentId;
+  const startsNewIncident = args.mode === 'recovery' && (current.mode !== 'recovery' || incidentId !== current.incidentId);
   const record: SeoRecoveryPortfolioRecord = {
     ...current,
     mode: args.mode,
+    incidentCategory: args.incidentCategory ?? (startsNewIncident ? 'other' : current.incidentCategory),
     incidentId,
     title: args.title === undefined ? current.title : args.title,
     reason: args.reason === undefined ? current.reason : args.reason,
     evidence: args.evidence === undefined ? current.evidence : args.evidence,
-    startedAt: args.mode === 'recovery' ? (current.mode === 'recovery' ? current.startedAt : t) : current.startedAt,
-    resolvedAt: args.mode === 'normal' ? t : null,
+    resolutionEvidence: args.mode === 'normal' && current.mode === 'recovery'
+      ? args.resolutionEvidence!
+      : startsNewIncident ? [] : current.resolutionEvidence,
+    startedAt: args.mode === 'recovery' ? (startsNewIncident ? t : current.startedAt) : current.startedAt,
+    resolvedAt: args.mode === 'normal' ? (current.mode === 'recovery' ? t : current.resolvedAt) : null,
     revision: args.expectedRevision + 1,
     createdAt: current.createdAt || t,
     updatedAt: t
@@ -993,7 +1017,9 @@ export async function seoTaskClaim(input: unknown) {
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
-  await assertSeoRecoveryTaskAllowed(current.siteId, current.taskType);
+  // Recovery gates new work intake, not a continuation/reclaim of work that
+  // was already in_progress before the incident. Normal lease safety follows.
+  if (current.status !== 'in_progress') await assertSeoRecoveryTaskAllowed(current.siteId, current.taskType);
 
   const t = now();
   const requestedRunId = args.runId ?? randomUUID();

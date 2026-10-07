@@ -4,6 +4,14 @@
 
 ## 現行Site Operator回復モード
 
+このモードはSEO運用の緩やかな異常時制御であり、緊急停止システムではない。今回のindexation/visibility異常以外にも、content_quality、technical_integrity、measurement_integrity、otherのカテゴリを記録できる。現行の自動検知器が自動発火できるのは検索可視性／indexation系の異常のみ。
+
+- **新規取得のみ制限**: recovery中、未clearedサイトのgrowth Taskの新規作成と新規claimを停止する。
+- **既存タスクは継続**: すでにin_progressになった実装（通常のlease検査に従う再claimを含む）、push_pending、branch_ready、pr_open、CI、main mergeは現行の検証・配送経路のまま流す。自動キャンセル・自動PRクローズ・自動マージ停止を行わない。
+- **平時への復帰**: portfolio更新時に新しい`resolutionEvidence`を明示してmode=normalへ戻す。新規取得の制限は解除されるが、既存タスクを一斉に生成・復帰させる処理はない。次のPlanner runで現状を再評価する。
+- **伝達経路**: `seo_agent_context.recovery`が現在のmode、category、site state、effective gateを含む。サイト別確認や変更には`seo_recovery_status`等を使う。
+- **カテゴリと対応の分離**: 異常を分類して記録する処理と、growthの新規取得を停止する対応は分離した概念であり、今後異なる対策を実装するときも一律の非常停止を前提にしない。
+
 - Firestore `seoRecoveryControls/organic-search` がportfolio modeの正本。
 - `seoRecoverySites/{siteId}` がincident単位のsite stateと暫定strategy、release criteriaを保持する。
 - portfolioが`recovery`なら、未clearサイトでは `new_article / site_expansion / data_expansion / schema_expansion` を新規作成できず、既存ready taskもclaimできない。

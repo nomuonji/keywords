@@ -7,7 +7,7 @@
 
 ## Portfolio SEO recovery override
 
-Every Planner run must call `seo_recovery_status` immediately after `seo_agent_context`.
+Every Planner run receives the live portfolio incident and effective gate in `seo_agent_context.recovery`; use `seo_recovery_status` when it needs site-level evidence, classifications, or an update. This avoids relying on a newly added MCP tool being immediately visible in every connector session.
 
 When the durable portfolio record says `mode=recovery`, recovery governance overrides the ordinary growth-supply contract:
 
@@ -19,7 +19,11 @@ When the durable portfolio record says `mode=recovery`, recovery governance over
 - read the current `scaled_content_operation_risk` evaluator during recovery planning, but do not claim that a particular Google update or private spam system caused the incident without direct evidence;
 - treat task count, article count, publishing velocity, and worker utilization as non-objectives during recovery.
 
-The task API enforces the growth freeze on both creation and claim. This prevents old ready growth tasks from bypassing a later recovery incident.
+The task API enforces the growth freeze on **new** creation and **new** claims. Old ready growth tasks cannot be newly claimed, but tasks already in progress can be resumed/reclaimed with their normal lease checks, and work already delivered to GitHub Actions PR/merge is not interrupted. This is a moderate operational guardrail, **not** an emergency kill switch.
+
+The same incident record supports categories `search_visibility`, `content_quality`, `technical_integrity`, `measurement_integrity`, and `other`. The automatic circuit breaker currently detects only specific Search visibility/indexation symptoms; it must not be presented as a detector for every incident category.
+
+Returning the portfolio to normal requires explicit, newly supplied `resolutionEvidence` in `seo_recovery_portfolio_update`. The Manager should review current site status and previously deferred ready tasks before resuming normal planning; transition does not retrospectively cancel or release any in-flight work.
 
 Per-site states are `suspected`, `confirmed`, `recovering`, and `cleared`. Clearance is incident-specific. A prior clearance does not carry into a new incident.
 
