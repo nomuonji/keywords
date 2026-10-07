@@ -104,7 +104,7 @@ async function cloudflare<T>(path: string, init: RequestInit = {}): Promise<Clou
     headers: {
       authorization: `Bearer ${config.apiToken}`,
       accept: 'application/json',
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.body && !(init.body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
       ...(init.headers ?? {})
     }
   });
@@ -936,13 +936,15 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
     { type: 'assets', name: 'ASSETS' },
     ...secretNames.map(name => ({ type: 'inherit', name, version_id: sourceVersionId }))
   ];
+  const settingsForm = new FormData();
+  settingsForm.append('settings', JSON.stringify({
+    bindings: requestedBindings
+  }));
   await cloudflare<any>(
     `/workers/scripts/${script}/settings`,
     {
       method: 'PATCH',
-      body: JSON.stringify({
-        bindings: requestedBindings
-      })
+      body: settingsForm
     }
   );
   const [afterSettings, afterVersions, afterDeployments] = await Promise.all([
