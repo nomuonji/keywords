@@ -29,9 +29,17 @@ export const cloudflareWorkerSubdomainShape = {
   previewsEnabled: z.boolean().default(true)
 };
 
+export const cloudflareWorkerSubdomainShape = {
+  siteId: entityId,
+  workerName: z.string().trim().regex(/^[a-zA-Z0-9-]{1,63}$/).optional(),
+  enabled: z.boolean().default(true),
+  previewsEnabled: z.boolean().default(true)
+};
+
 const siteStatusSchema = z.object(cloudflarePagesSiteStatusShape).strict();
 const deploymentLogsSchema = z.object(cloudflarePagesDeploymentLogsShape).strict();
 const previewBranchesSchema = z.object(cloudflarePagesPreviewBranchesShape).strict();
+const workerSubdomainSchema = z.object(cloudflareWorkerSubdomainShape).strict();
 const workerSubdomainSchema = z.object(cloudflareWorkerSubdomainShape).strict();
 
 type SiteTarget = {
@@ -363,6 +371,50 @@ export async function cloudflareWorkerSetSubdomain(input: unknown, site: SiteTar
       workersDev: {
         enabled: Boolean(result?.enabled),
         previewsEnabled: Boolean(result?.previews_enabled)
+      }
+    }
+  };
+}
+
+function resolveWorkerName(site: SiteTarget, explicit?: string) {
+  if (explicit) return explicit;
+  const repository = site.repository?.trim();
+  if (!repository) throw new Error(`Site ${site.id} has no repository from which to infer a Worker name`);
+  const parts = repository.split('/');
+  const repoName = parts[1];
+  if (!repoName || !/^[a-zA-Z0-9-]{1,63}$/.test(repoName)) {
+    throw new Error(`Could not infer a valid Worker name from repository ${repository}`);
+  }
+  return repoName;
+}
+
+export async function cloudflareWorkerSetSubdomain(input: unknown, site: SiteTarget) {
+  const args = workerSubdomainSchema.parse(input);
+  if (args.siteId !== site.id) throw new Error('Resolved site does not match requested siteId');
+  const workerName = resolveWorkerName(site, args.workerName);
+
+  const envelope = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+    `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: args.enabled,
+        previews_enabled: args.previewsEnabled
+      })
+    }
+  );
+
+  return {
+    site: {
+      id: site.id,
+      repository: site.repository ?? null,
+      productionUrl: site.productionUrl ?? null
+    },
+    cloudflare: {
+      workerName,
+      workersDev: {
+        enabled: Boolean(envelope.result?.enabled),
+        previewsEnabled: Boolean(envelope.result?.previews_enabled)
       }
     }
   };
