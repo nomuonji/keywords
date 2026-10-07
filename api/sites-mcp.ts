@@ -26,6 +26,13 @@ import {
   seoPlanningDigestGet, seoPlanningDigestGetShape, seoPlanningDigestList, seoPlanningDigestListShape
 } from '../packages/commands/src/seo-planning-digest.js';
 import {
+  siteIndexationInspect, siteIndexationInspectShape,
+  siteIndexationInventorySave, siteIndexationInventorySaveShape,
+  siteIndexationList, siteIndexationListShape,
+  siteIndexationSnapshotSave, siteIndexationSnapshotSaveShape,
+  siteIndexationSummary, siteIndexationSummaryShape
+} from '../packages/commands/src/site-indexation.js';
+import {
   optimizationEvaluationContext,
   optimizationEvaluationContextShape,
   siteQueryOpportunities,
@@ -152,6 +159,11 @@ function server() {
   mcp.registerTool('site_article_save', { description: 'Create or update an article registry record with optimistic revision control. localPageId/canonicalUrl can explicitly connect local GSC page observations; the Git repository remains the content source of truth.', inputSchema: siteArticleSaveShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteArticleSave(input)));
   mcp.registerTool('site_metric_snapshot_save', { description: 'Persist an idempotent GSC or GA4 period snapshot. Daily collection is allowed; missing/partial data is represented explicitly rather than converted to zero.', inputSchema: metricSnapshotSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async input => structured(await metricSnapshotSave(input)));
   mcp.registerTool('site_metric_snapshot_list', { description: 'List recent GSC/GA4 snapshots for a site or article.', inputSchema: metricSnapshotListShape, annotations: { readOnlyHint: true } }, async input => structured(await metricSnapshotList(input)));
+  mcp.registerTool('site_indexation_inventory_save', { description: 'Upsert the current indexable URL inventory for one site without creating per-day history. One mutable cache document is kept per URL; changed/new URLs are scheduled for later URL Inspection.', inputSchema: siteIndexationInventorySaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async input => structured(await siteIndexationInventorySave(input)));
+  mcp.registerTool('site_indexation_inspect', { description: 'Inspect explicit URLs or the next due URL set through Search Console URL Inspection, cache the latest result, and enforce the shared per-property daily budget before calling Google.', inputSchema: siteIndexationInspectShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await siteIndexationInspect(input)));
+  mcp.registerTool('site_indexation_list', { description: 'List current per-URL indexation cache records for one site. This reads cached observations and never calls Google.', inputSchema: siteIndexationListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteIndexationList(input)));
+  mcp.registerTool('site_indexation_summary', { description: 'Aggregate the current URL cache into site and page-family indexation coverage, indexed/not-indexed observations, due counts and the shared property quota status. This never calls Google.', inputSchema: siteIndexationSummaryShape, annotations: { readOnlyHint: true } }, async input => structured(await siteIndexationSummary(input)));
+  mcp.registerTool('site_indexation_snapshot_save', { description: 'Persist one overwrite-style weekly site/page-family indexation summary. Re-running within the same UTC week replaces the same snapshot slot rather than appending URL-level history.', inputSchema: siteIndexationSnapshotSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async input => structured(await siteIndexationSnapshotSave(input)));
   mcp.registerTool('seo_planning_digest_get', { description: 'Read the latest compact 7d/28d/90d article-planning digest for one managed site. Analytics acquisition is externalized and this read never calls Google.', inputSchema: seoPlanningDigestGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestGet(input)));
   mcp.registerTool('seo_planning_digest_list', { description: 'List freshness and coverage summaries for compact site planning digests without returning all article rows.', inputSchema: seoPlanningDigestListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestList(input)));
   mcp.registerTool('seo_task_get', { description: 'Read one persisted SEO task with implementation evidence, execution claim lease, separate deployment-verification state, and execution history. GitHub Issue links are optional historical references.', inputSchema: seoTaskGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskGet(input)));
