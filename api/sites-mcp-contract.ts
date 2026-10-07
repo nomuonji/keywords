@@ -21,6 +21,7 @@ export const SITES_MCP_TOOL_NAMES = [
   'cloudflare_pages_deployment_logs',
   'cloudflare_worker_set_subdomain',
   'cloudflare_worker_secret_recovery',
+  'cloudflare_worker_inherit_secrets',
   'site_article_list',
   'site_article_get',
   'site_article_save',

@@ -50,7 +50,9 @@ import {
   cloudflareWorkerSetSubdomain,
   cloudflareWorkerSubdomainShape,
   cloudflareWorkerSecretRecovery,
-  cloudflareWorkerSecretRecoveryShape
+  cloudflareWorkerSecretRecoveryShape,
+  cloudflareWorkerInheritSecrets,
+  cloudflareWorkerInheritSecretsShape
 } from '../packages/commands/src/cloudflare-pages.js';
 
 const app = new Hono();
@@ -150,6 +152,15 @@ function server() {
   }, async input => {
     const site = await siteRegistryGet({ id: input.siteId });
     return structured(await cloudflareWorkerSetSubdomain(input, site as any));
+  });
+
+  mcp.registerTool('cloudflare_worker_inherit_secrets', {
+    description: 'Inherit four Learning OS secret bindings from retained Version 16 into the current Worker using Cloudflare official version_id inheritance. Defaults to read-only preflight; dryRun=false requires exact verified versions and current fetch handler. Does not read or expose secret values.',
+    inputSchema: cloudflareWorkerInheritSecretsShape,
+    annotations: { readOnlyHint: false, destructiveHint: false }
+  }, async input => {
+    const site = await siteRegistryGet({ id: input.siteId });
+    return structured(await cloudflareWorkerInheritSecrets(input, site as any));
   });
 
   mcp.registerTool('cloudflare_worker_secret_recovery', {

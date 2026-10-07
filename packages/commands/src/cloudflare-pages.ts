@@ -22,6 +22,11 @@ export const cloudflarePagesPreviewBranchesShape = {
   excludeBranches: z.array(z.string().trim().min(1).max(200)).min(1).max(20).default(['seo/*'])
 };
 
+export const cloudflareWorkerInheritSecretsShape = {
+  siteId: z.literal('learning-os'),
+  dryRun: z.boolean().default(true)
+};
+
 export const cloudflareWorkerSecretRecoveryShape = {
   siteId: z.literal('learning-os'),
   dryRun: z.boolean().default(true)
@@ -860,6 +865,112 @@ function resolveWorkerName(site: SiteTarget, explicit?: string) {
     throw new Error(`Could not infer a valid Worker name from repository ${repository}`);
   }
   return repoName;
+}
+
+export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteTarget) {
+  const args = z.object(cloudflareWorkerInheritSecretsShape).strict().parse(input);
+  if (site.id !== 'learning-os' || args.siteId !== site.id) {
+    throw new Error('Secret inheritance is restricted to learning-os');
+  }
+
+  const script = 'learning-os';
+  const sourceVersionId = 'c434cfe4-60ac-4854-a0f1-f4a232b87aa0';
+  const targetVersionId = 'efa558df-d797-4654-8d83-87ee7f4e60ec';
+  const secretNames = ['APP_PASSWORD', 'SESSION_SECRET', 'TURSO_AUTH_TOKEN', 'TURSO_DATABASE_URL'];
+  const versionPath = `/workers/workers/${script}/versions`;
+  const [source, target, versions, deployments, settings, scriptList] = await Promise.all([
+    cloudflare<any>(`${versionPath}/${sourceVersionId}`),
+    cloudflare<any>(`${versionPath}/${targetVersionId}`),
+    cloudflare<any>(`${versionPath}?per_page=25&page=1`),
+    cloudflare<any>(`/workers/scripts/${script}/deployments?per_page=1&page=1`),
+    cloudflare<any>(`/workers/scripts/${script}/settings`),
+    cloudflare<any[]>(`/workers/scripts`)
+  ]);
+  const sourceBindings = Array.isArray(source.result?.bindings) ? source.result.bindings : [];
+  const targetBindings = Array.isArray(target.result?.bindings) ? target.result.bindings : [];
+  const settingsBindings = Array.isArray(settings.result?.bindings) ? settings.result.bindings : [];
+  const sourceSecretNames = sourceBindings
+    .filter((b: any) => b?.type === 'secret_text').map((b: any) => String(b.name));
+  const targetSecretNames = targetBindings
+    .filter((b: any) => b?.type === 'secret_text').map((b: any) => String(b.name));
+  const versionsRaw = Array.isArray(versions.result) ? versions.result
+    : Array.isArray(versions.result?.versions) ? versions.result.versions : [];
+  const latestVersion = versionsRaw
+    .map((v: any) => ({ id: String(v?.id ?? ''), number: Number(v?.number ?? 0) }))
+    .sort((a: any, b: any) => b.number - a.number)[0] ?? null;
+  const latestDeploy = Array.isArray(deployments.result?.deployments)
+    ? deployments.result.deployments[0] : null;
+  const activeVersions = (Array.isArray(latestDeploy?.versions) ? latestDeploy.versions : [])
+    .filter((v: any) => Number(v?.percentage) === 100)
+    .map((v: any) => String(v.version_id));
+  const targetScript = (Array.isArray(scriptList.result) ? scriptList.result : [])
+    .find((item: any) => String(item?.id ?? '') === script) ?? null;
+  const expectedSource = sourceSecretNames.length === secretNames.length
+    && secretNames.every(name => sourceSecretNames.includes(name));
+  const expectedTarget = targetSecretNames.length === 0
+    && targetBindings.some((b: any) => b?.name === 'ASSETS' && b?.type === 'assets');
+  const expectedSettings = settingsBindings.length === 1
+    && settingsBindings[0]?.name === 'ASSETS'
+    && settingsBindings[0]?.type === 'assets';
+  const safeToApply =
+    source.result?.id === sourceVersionId &&
+    target.result?.id === targetVersionId &&
+    expectedSource && expectedTarget && expectedSettings &&
+    latestVersion?.id === targetVersionId &&
+    activeVersions.length === 1 && activeVersions[0] === targetVersionId &&
+    Array.isArray(targetScript?.handlers) && targetScript.handlers.includes('fetch');
+  const preflight = {
+    sourceVersionId,
+    targetVersionId,
+    sourceSecretNames,
+    targetSecretNames,
+    latestVersion,
+    activeVersionId: activeVersions[0] ?? null,
+    targetScriptHandlers: targetScript?.handlers ?? [],
+    safeToApply
+  };
+  if (args.dryRun) return { preflight, applied: false };
+  if (!safeToApply) throw new Error('Secret inheritance preflight failed: ' + JSON.stringify(preflight));
+
+  const requestedBindings = [
+    { type: 'assets', name: 'ASSETS' },
+    ...secretNames.map(name => ({ type: 'inherit', name, version_id: sourceVersionId }))
+  ];
+  await cloudflare<any>(
+    `/workers/scripts/${script}/settings`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        bindings: requestedBindings
+      })
+    }
+  );
+  const [afterSettings, afterVersions, afterDeployments] = await Promise.all([
+    cloudflare<any>(`/workers/scripts/${script}/settings`),
+    cloudflare<any>(`${versionPath}?per_page=25&page=1`),
+    cloudflare<any>(`/workers/scripts/${script}/deployments?per_page=1&page=1`)
+  ]);
+  const bindings = Array.isArray(afterSettings.result?.bindings)
+    ? afterSettings.result.bindings : [];
+  const confirmedSecrets = bindings
+    .filter((b: any) => b?.type === 'secret_text').map((b: any) => String(b.name));
+  const afterVersionsRaw = Array.isArray(afterVersions.result) ? afterVersions.result
+    : Array.isArray(afterVersions.result?.versions) ? afterVersions.result.versions : [];
+  const newestVersion = afterVersionsRaw
+    .map((v: any) => ({ id: String(v?.id ?? ''), number: Number(v?.number ?? 0) }))
+    .sort((a: any, b: any) => b.number - a.number)[0] ?? null;
+  const top = Array.isArray(afterDeployments.result?.deployments)
+    ? afterDeployments.result.deployments[0] : null;
+  const newActive = (Array.isArray(top?.versions) ? top.versions : [])
+    .find((v: any) => Number(v.percentage) === 100)?.version_id ?? null;
+  return {
+    preflight,
+    applied: true,
+    secretsConfirmed: secretNames.every(name => confirmedSecrets.includes(name)),
+    secretNames: confirmedSecrets,
+    newestVersion,
+    activeVersionId: newActive
+  };
 }
 
 export async function cloudflareWorkerSecretRecovery(input: unknown, site: SiteTarget) {
