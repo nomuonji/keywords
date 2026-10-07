@@ -365,6 +365,24 @@ try {
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'data_expansion' })).items.length, 1);
   assert.equal((await seoTaskList({ siteId: 'site-a', taskType: 'schema_expansion' })).items.length, 1);
 
+  // An already claimed growth task is not retroactively suspended by a
+  // moderate SEO incident; only NEW claims and NEW creation are gated.
+  const preIncidentGrowth = await seoTaskCreate({
+    id: 'seo-inflight-growth',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/inflight'],
+    repo: 'nomuonji/site-a',
+    taskType: 'new_article',
+    title: 'Existing in-flight work',
+    rationale: 'Accepted before incident governance changed.',
+    evidence: ['Pre-incident approved implementation.'],
+    dedupeKey: 'site-a:inflight-growth'
+  });
+  const claimedBeforeIncident = await seoTaskClaim({
+    id: preIncidentGrowth.id, expectedRevision: preIncidentGrowth.revision,
+    runId: 'pre-incident-claim', actor: 'site-operations-smoke', leaseMinutes: 75
+  });
+
   // Portfolio recovery is a control-plane mode, not a prompt convention.
   // It must block both new growth-task creation and claims of already-ready
   // growth tasks until the site is explicitly cleared for the active incident.
@@ -372,6 +390,7 @@ try {
     expectedRevision: 0,
     mode: 'recovery',
     incidentId: 'spam-recovery-2026-10',
+    incidentCategory: 'search_visibility',
     title: 'Cross-site organic visibility and indexation recovery',
     reason: 'Multiple managed sites show broad URL Inspection exclusion and sharp Search visibility deterioration.',
     evidence: [
@@ -380,7 +399,16 @@ try {
     ]
   });
   assert.equal(recovery.mode, 'recovery');
-  assert.equal((await seoRecoveryStatus({})).effectivePolicy.growthFrozenByDefault, true);
+  assert.equal(recovery.incidentCategory, 'search_visibility');
+  const activeRecovery = await seoRecoveryStatus({});
+  assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, true);
+  assert.equal(activeRecovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
+  const continuedInFlight = await seoTaskUpdate({
+    id: claimedBeforeIncident.id, expectedRevision: claimedBeforeIncident.revision,
+    claimRunId: 'pre-incident-claim',
+    executionSummary: 'Implementation continues because it was claimed before the incident.'
+  });
+  assert.equal(continuedInFlight.status, 'in_progress');
 
   const confirmed = await seoRecoverySiteUpdate({
     siteId: 'site-a',
@@ -449,6 +477,34 @@ try {
     dedupeKey: 'site-a:recovery:cleared-growth'
   });
   assert.equal(clearedGrowth.status, 'ready');
+
+  await assert.rejects(
+    seoRecoveryPortfolioUpdate({ expectedRevision: recovery.revision, mode: 'normal' }),
+    /Returning to normal mode requires fresh resolutionEvidence/
+  );
+  const normal = await seoRecoveryPortfolioUpdate({
+    expectedRevision: recovery.revision, mode: 'normal',
+    resolutionEvidence: ['Manually approved normalization after reviewing current portfolio evidence and outstanding tasks.']
+  });
+  assert.equal(normal.mode, 'normal');
+  assert.equal(normal.resolutionEvidence.length, 1);
+  assert.equal((await seoRecoveryStatus({})).effectivePolicy.growthFrozenByDefault, false);
+
+  // A subsequent incident can be about technical integrity rather than spam;
+  // old site clearances do not authorize new growth in another incident.
+  const technicalIncident = await seoRecoveryPortfolioUpdate({
+    expectedRevision: normal.revision, mode: 'recovery',
+    incidentId: 'technical-integrity-incident',
+    incidentCategory: 'technical_integrity',
+    title: 'Technical search integrity incident',
+    reason: 'A representative publishing/indexability technical regression is under review.',
+    evidence: ['Synthetic technical integrity regression.']
+  });
+  assert.equal(technicalIncident.incidentCategory, 'technical_integrity');
+  await assert.rejects(seoTaskClaim({
+    id: clearedGrowth.id, expectedRevision: clearedGrowth.revision,
+    runId: 'stale-clearance-blocked', actor: 'site-operations-smoke', leaseMinutes: 75
+  }), /SEO recovery mode blocks taskType=site_expansion/);
 
   const article = await siteArticleSave({
     id: 'article-a', expectedRevision: 0, siteId: 'site-a', localPageId: 'local-page-a', canonicalUrl: 'https://example.com/article-a',
@@ -602,8 +658,10 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.24.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.25.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
+  assert.equal(agentPolicy.structuredContent.recovery.portfolio.incidentCategory, 'technical_integrity');
+  assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'new_task_create_and_new_claim_only');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
@@ -647,6 +705,8 @@ try {
   assert.match(JSON.stringify(scaledRisk.structuredContent), /does not assert which Google system caused/i);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
+  assert.equal(executorPolicy.structuredContent.recovery.portfolio.mode, 'recovery');
+  assert.equal(executorPolicy.structuredContent.recovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Centralized Keywords GitHub Actions/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
@@ -671,7 +731,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.19.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.20.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.2.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
