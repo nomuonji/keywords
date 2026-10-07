@@ -412,6 +412,30 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       dnsDiagnosticError = error?.message ?? String(error);
     }
 
+    const workerRoutes: Array<{ zoneName: string | null; routes: any[] }> = [];
+    let workerRoutesDiagnosticError: string | null = null;
+    try {
+      const zones = new Map<string, string | null>();
+      for (const domain of domainsRaw) {
+        const zoneId = String(domain?.zone_id ?? '');
+        if (!zoneId) continue;
+        zones.set(zoneId, domain?.zone_name ? String(domain.zone_name) : null);
+      }
+      for (const [zoneId, zoneName] of zones) {
+        const envelope = await cloudflareZone<any[]>(zoneId, '/workers/routes');
+        workerRoutes.push({
+          zoneName,
+          routes: (Array.isArray(envelope.result) ? envelope.result : []).map((route: any) => ({
+            id: route?.id ?? null,
+            pattern: route?.pattern ?? null,
+            script: route?.script ?? null
+          }))
+        });
+      }
+    } catch (error: any) {
+      workerRoutesDiagnosticError = error?.message ?? String(error);
+    }
+
     const betaWorker = betaWorkerEnvelope.result ? {
       id: betaWorkerEnvelope.result?.id ?? null,
       name: betaWorkerEnvelope.result?.name ?? null,
@@ -482,6 +506,8 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         betaWorker,
         dnsRecords,
         dnsDiagnosticError,
+        workerRoutes,
+        workerRoutesDiagnosticError,
         activeVersion,
         activeVersionError,
         deployments: deploymentsRaw.map((deployment: any) => ({
