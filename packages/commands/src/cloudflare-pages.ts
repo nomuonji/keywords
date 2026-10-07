@@ -109,6 +109,32 @@ async function cloudflare<T>(path: string, init: RequestInit = {}): Promise<Clou
   return body;
 }
 
+async function cloudflareZone<T>(zoneId: string, path: string, init: RequestInit = {}): Promise<CloudflareEnvelope<T>> {
+  const config = cloudflareConfiguration();
+  if (!config.configured || !config.apiToken) {
+    throw new Error('Cloudflare integration is not configured');
+  }
+  const response = await fetch(
+    `https://api.cloudflare.com/client/v4/zones/${encodeURIComponent(zoneId)}${path}`,
+    {
+      ...init,
+      headers: {
+        authorization: `Bearer ${config.apiToken}`,
+        accept: 'application/json',
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...(init.headers ?? {})
+      }
+    }
+  );
+  const body = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
+  if (!response.ok || body?.success === false) {
+    const detail = body?.errors?.map(item => item.message || String(item.code ?? '')).filter(Boolean).join('; ');
+    throw new Error(`Cloudflare zone API request failed (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
+  if (!body) return { success: true, result: null as T };
+  return body;
+}
+
 function normalizedHost(value: unknown) {
   if (typeof value !== 'string' || !value.trim()) return null;
   try {
@@ -339,7 +365,7 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       };
     }
 
-    const [scriptSubdomain, accountSubdomain, deploymentsEnvelope, domainsEnvelope] = await Promise.all([
+    const [scriptSubdomain, accountSubdomain, deploymentsEnvelope, domainsEnvelope, betaWorkerEnvelope] = await Promise.all([
       cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
         `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`
       ),
@@ -351,6 +377,9 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       ),
       cloudflare<any[]>(
         `/workers/domains?service=${encodeURIComponent(workerName)}`
+      ),
+      cloudflare<any>(
+        `/workers/workers/${encodeURIComponent(workerName)}`
       )
     ]);
 
@@ -358,6 +387,44 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       ? deploymentsEnvelope.result.deployments
       : [];
     const domainsRaw = Array.isArray(domainsEnvelope.result) ? domainsEnvelope.result : [];
+
+    const dnsRecords: Record<string, any[]> = {};
+    let dnsDiagnosticError: string | null = null;
+    try {
+      for (const domain of domainsRaw) {
+        const hostname = String(domain?.hostname ?? '');
+        const zoneId = String(domain?.zone_id ?? '');
+        if (!hostname || !zoneId) continue;
+        const envelope = await cloudflareZone<any[]>(
+          zoneId,
+          `/dns_records?name=${encodeURIComponent(hostname)}&per_page=100`
+        );
+        dnsRecords[hostname] = (Array.isArray(envelope.result) ? envelope.result : []).map((record: any) => ({
+          id: record?.id ?? null,
+          type: record?.type ?? null,
+          name: record?.name ?? null,
+          content: record?.content ?? null,
+          proxied: record?.proxied ?? null,
+          ttl: record?.ttl ?? null
+        }));
+      }
+    } catch (error: any) {
+      dnsDiagnosticError = error?.message ?? String(error);
+    }
+
+    const betaWorker = betaWorkerEnvelope.result ? {
+      id: betaWorkerEnvelope.result?.id ?? null,
+      name: betaWorkerEnvelope.result?.name ?? null,
+      createdOn: betaWorkerEnvelope.result?.created_on ?? null,
+      updatedOn: betaWorkerEnvelope.result?.updated_on ?? null,
+      deployedOn: betaWorkerEnvelope.result?.deployed_on ?? null,
+      subdomain: betaWorkerEnvelope.result?.subdomain ? {
+        enabled: betaWorkerEnvelope.result.subdomain.enabled ?? null,
+        previewsEnabled: betaWorkerEnvelope.result.subdomain.previews_enabled ?? null,
+        url: betaWorkerEnvelope.result.subdomain.url ?? null,
+        previewUrlSuffix: betaWorkerEnvelope.result.subdomain.preview_url_suffix ?? null
+      } : null
+    } : null;
     const activeVersionId = deploymentsRaw
       .flatMap((deployment: any) => Array.isArray(deployment?.versions) ? deployment.versions : [])
       .find((version: any) => Number(version?.percentage ?? 0) === 100)?.version_id ?? null;
@@ -412,6 +479,9 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
           enabled: Boolean(scriptSubdomain.result?.enabled),
           previewsEnabled: Boolean(scriptSubdomain.result?.previews_enabled)
         },
+        betaWorker,
+        dnsRecords,
+        dnsDiagnosticError,
         activeVersion,
         activeVersionError,
         deployments: deploymentsRaw.map((deployment: any) => ({
