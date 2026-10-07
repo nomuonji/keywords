@@ -1,0 +1,32 @@
+name: site-recovery-watch
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 05:23 JST, after daily measurement (02:23) and the 04:17 indexation sweep.
+    - cron: '23 20 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-recovery-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Evaluate portfolio recovery circuit
+        run: npx tsx scripts/site-recovery-watch.ts
