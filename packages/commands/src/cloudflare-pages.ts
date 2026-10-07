@@ -952,90 +952,58 @@ export async function cloudflareWorkerInheritSecrets(input: unknown, site: SiteT
   if (args.dryRun) return { preflight, applied: false };
   if (!safeToApply) throw new Error('Secret inheritance preflight failed: ' + JSON.stringify(preflight));
 
-  const requestedBindings = [
-    { type: 'inherit', name: 'ASSETS', version_id: 'latest' },
-    ...secretNames.map(name => ({ type: 'inherit', name, version_id: sourceVersionId }))
-  ];
-  const copyVersion: Record<string, unknown> = {
-    bindings: requestedBindings,
-    compatibility_date: target.result.compatibility_date,
-    compatibility_flags: Array.isArray(target.result.compatibility_flags)
-      ? target.result.compatibility_flags : [],
-    annotations: { 'workers/message': 'Restore original secret bindings onto known-good Worker bundle' }
+
+  // Create an UNDEPLOYED staging version. Never route traffic to this code.
+  const metadata = {
+    main_module: 'index.js',
+    bindings: secretNames.map(name => ({
+      name, type: 'inherit', version_id: sourceVersionId
+    })),
+    compatibility_date: '2026-10-07',
+    compatibility_flags: ['nodejs_compat'],
+    annotations: {
+      'workers/message': 'Staging only: recover historical bindings'
+    }
   };
-  if (modulesReady) {
-    copyVersion.main_module = mainModule;
-    copyVersion.modules = targetModules.map((module: any) => ({
-      name: module.name,
-      content_base64: module.content_base64,
-      content_type: module.content_type
-    }));
-  }
-  if (target.result?.assets?.jwt) {
-    copyVersion.assets = target.result.assets;
-  }
+  const form = new FormData();
+  form.append('metadata', JSON.stringify(metadata));
+  form.append('index.js', new Blob([
+    'export default {async fetch(){return new Response("Staging only",{status:503})}};'
+  ], { type: 'application/javascript+module' }), 'index.js');
 
-  const created = await cloudflare<any>(versionPath, {
-    method: 'POST',
-    body: JSON.stringify(copyVersion)
-  });
-  const createdId = String(created.result?.id ?? '');
-  if (!/^[a-f0-9-]{36}$/.test(createdId)) {
-    throw new Error('Version creation returned no valid version ID; refusing deploy');
+  const uploaded = await cloudflare<any>(
+    `/workers/scripts/${script}/versions?bindings_inherit=strict`,
+    { method: 'POST', body: form }
+  );
+  const candidates = await cloudflare<any>(`${versionPath}?per_page=25&page=1`);
+  const arr = Array.isArray(candidates.result) ? candidates.result :
+    Array.isArray(candidates.result?.versions) ? candidates.result.versions : [];
+  const newest = arr.map((v: any) => ({
+    id: String(v?.id ?? ''), number: Number(v?.number ?? 0)
+  })).sort((x: any, y: any) => y.number - x.number)[0] ?? null;
+  const stagedId = uploaded.result?.id ?? newest?.id;
+  if (!stagedId || stagedId === targetVersionId || stagedId === sourceVersionId) {
+    throw new Error('Staging version not found after upload');
   }
-
-  const createdVersion = await cloudflare<any>(`${versionPath}/${createdId}`);
-  const confirmedSecrets = (Array.isArray(createdVersion.result?.bindings)
-    ? createdVersion.result.bindings : [])
-    .filter((b: any) => b?.type === 'secret_text')
-    .map((b: any) => String(b.name));
-  const hasAssets = (Array.isArray(createdVersion.result?.bindings)
-    ? createdVersion.result.bindings : [])
-    .some((b: any) => b?.name === 'ASSETS' && b?.type === 'assets');
-  const confirmed = secretNames.every(name => confirmedSecrets.includes(name))
-    && confirmedSecrets.length === secretNames.length
-    && hasAssets
-    && createdVersion.result?.main_module === mainModule;
-  if (!confirmed) {
-    return {
-      preflight,
-      applied: true,
-      deployed: false,
-      createdVersionId: createdId,
-      secretsConfirmed: false,
-      secretNames: confirmedSecrets,
-      reason: 'Created version did not confirm all bindings; refusing deploy'
-    };
-  }
-
-  await cloudflare<any>(`/workers/scripts/${script}/deployments`, {
-    method: 'POST',
-    body: JSON.stringify({
-      strategy: 'percentage',
-      versions: [{ percentage: 100, version_id: createdId }],
-      annotations: { 'workers/message': 'Deploy Learning OS with retained secret bindings' }
-    })
-  });
-  const afterDeployments = await cloudflare<any>(
+  const staged = await cloudflare<any>(`${versionPath}/${stagedId}`);
+  const actual = (Array.isArray(staged.result?.bindings) ? staged.result.bindings : [])
+    .filter((item: any) => item?.type === 'secret_text')
+    .map((item: any) => String(item.name));
+  const inherited = actual.length === secretNames.length
+    && secretNames.every(name => actual.includes(name));
+  const check = await cloudflare<any>(
     `/workers/scripts/${script}/deployments?per_page=1&page=1`
   );
-  const latestDeployment = Array.isArray(afterDeployments.result?.deployments)
-    ? afterDeployments.result.deployments[0] : null;
-  const confirmedDeployed = Array.isArray(latestDeployment?.versions)
-    && latestDeployment.versions.some((v: any) =>
-      v?.version_id === createdId && Number(v?.percentage) === 100
-    );
-  if (!confirmedDeployed) {
-    throw new Error('Created version with secrets but deployment confirmation failed');
-  }
+  const deployed = Array.isArray(check.result?.deployments)
+    ? check.result.deployments[0] : null;
+  const liveUnaffected = (Array.isArray(deployed?.versions) ? deployed.versions : [])
+    .some((v: any) => v.version_id === targetVersionId && Number(v.percentage) === 100);
   return {
-    preflight,
-    applied: true,
-    deployed: true,
-    createdVersionId: createdId,
-    secretsConfirmed: confirmed,
-    secretNames: confirmedSecrets
+    preflight, applied: true, deployed: false, stagedVersionId: stagedId,
+    inherited, bindings: actual, liveUnaffected,
+    safeToRedeploy: inherited && liveUnaffected
   };
+
 }
 
 export async function cloudflareWorkerSecretRecovery(input: unknown, site: SiteTarget) {
