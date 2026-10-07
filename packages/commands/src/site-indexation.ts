@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { searchConsoleInspect } from '@keywords/research';
+import { searchConsoleInspect } from '../../research/src/index.js';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { SiteRecord } from '../../db/src/site-operations-schema.js';
 
