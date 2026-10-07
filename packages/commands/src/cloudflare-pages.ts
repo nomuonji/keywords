@@ -22,6 +22,11 @@ export const cloudflarePagesPreviewBranchesShape = {
   excludeBranches: z.array(z.string().trim().min(1).max(200)).min(1).max(20).default(['seo/*'])
 };
 
+export const cloudflareWorkerSecretRecoveryShape = {
+  siteId: z.literal('learning-os'),
+  dryRun: z.boolean().default(true)
+};
+
 export const cloudflareWorkerSubdomainShape = {
   siteId: entityId,
   workerName: z.string().trim().regex(/^[a-zA-Z0-9-]{1,63}$/).optional(),
@@ -855,6 +860,105 @@ function resolveWorkerName(site: SiteTarget, explicit?: string) {
     throw new Error(`Could not infer a valid Worker name from repository ${repository}`);
   }
   return repoName;
+}
+
+export async function cloudflareWorkerSecretRecovery(input: unknown, site: SiteTarget) {
+  const args = z.object(cloudflareWorkerSecretRecoveryShape).strict().parse(input);
+  if (site.id !== 'learning-os' || args.siteId !== site.id) {
+    throw new Error('Secret version recovery is restricted to learning-os');
+  }
+
+  const workerName = 'learning-os';
+  const restoreId = 'c434cfe4-60ac-4854-a0f1-f4a232b87aa0';
+  const brokenId = '2a80370c-d39d-4d52-9425-f9ee90c725f0';
+  const base = `/workers/workers/${workerName}/versions`;
+  const [restore, broken, list, deployments] = await Promise.all([
+    cloudflare<any>(`${base}/${restoreId}`),
+    cloudflare<any>(`${base}/${brokenId}`),
+    cloudflare<any>(`${base}?per_page=25&page=1`),
+    cloudflare<any>(`/workers/scripts/${workerName}/deployments?per_page=1&page=1`)
+  ]);
+  const expectedSecrets = ['APP_PASSWORD', 'SESSION_SECRET', 'TURSO_AUTH_TOKEN', 'TURSO_DATABASE_URL'];
+  const existingNames = new Set(
+    (Array.isArray(restore.result?.bindings) ? restore.result.bindings : [])
+      .filter((b: any) => b?.type === 'secret_text')
+      .map((b: any) => String(b.name))
+  );
+  const missingSecrets = expectedSecrets.filter(name => !existingNames.has(name));
+  const brokenSecrets = (Array.isArray(broken.result?.bindings) ? broken.result.bindings : [])
+    .filter((b: any) => b?.type === 'secret_text')
+    .map((b: any) => String(b.name));
+  const rawVersions = Array.isArray(list.result) ? list.result
+    : Array.isArray(list.result?.versions) ? list.result.versions : [];
+  const sortedVersions = rawVersions
+    .map((version: any) => ({
+      id: String(version?.id ?? ''),
+      number: Number(version?.number ?? 0)
+    }))
+    .sort((a: any, b: any) => b.number - a.number);
+  const latestVersion = sortedVersions[0] ?? null;
+  const latestDeployment = Array.isArray(deployments.result?.deployments)
+    ? deployments.result.deployments[0] : null;
+  const activeIds = (latestDeployment?.versions ?? [])
+    .filter((v: any) => Number(v.percentage) === 100)
+    .map((v: any) => String(v.version_id));
+  const safe =
+    missingSecrets.length === 0 &&
+    brokenSecrets.length === 0 &&
+    restore.result?.id === restoreId &&
+    broken.result?.id === brokenId &&
+    latestVersion?.id === brokenId &&
+    activeIds.length === 1 && activeIds[0] === brokenId;
+  const preflight = {
+    workerName, restoreVersion: restoreId, brokenVersion: brokenId,
+    expectedSecretsPresentInRestore: missingSecrets.length === 0,
+    missingSecretNames: missingSecrets,
+    brokenVersionSecretNames: brokenSecrets,
+    latestVersion, activeVersionId: activeIds[0] ?? null,
+    safeToApply: safe
+  };
+  if (args.dryRun) return { preflight, applied: false };
+  if (!safe) throw new Error('Recovery preflight failed: ' + JSON.stringify(preflight));
+
+  const deployed = await cloudflare<any>(
+    `/workers/scripts/${workerName}/deployments`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        strategy: 'percentage',
+        versions: [{ percentage: 100, version_id: restoreId }],
+        annotations: {
+          'workers/message': 'Restore retained secret bindings before migrating to cf build output',
+          'workers/triggered_by': 'learning-os-secret-recovery'
+        }
+      })
+    }
+  );
+
+  const check = await cloudflare<any>(
+    `/workers/scripts/${workerName}/deployments?per_page=1&page=1`
+  );
+  const top = Array.isArray(check.result?.deployments) ? check.result.deployments[0] : null;
+  const restored = Array.isArray(top?.versions)
+    && top.versions.some((v: any) => v.version_id === restoreId && Number(v.percentage) === 100);
+  if (!restored) throw new Error('Rollback was submitted but active deployment was not confirmed');
+
+  const deleted = await cloudflare<any>(
+    `${base}/${brokenId}`,
+    { method: 'DELETE' }
+  );
+  const after = await cloudflare<any>(`${base}?per_page=25&page=1`);
+  const afterVersions = Array.isArray(after.result) ? after.result
+    : Array.isArray(after.result?.versions) ? after.result.versions : [];
+
+  return {
+    preflight,
+    applied: true,
+    rollbackDeploymentId: deployed.result?.id ?? null,
+    deletedBrokenVersion: Boolean(deleted.success),
+    retainedVersions: afterVersions
+      .slice(0, 8).map((v: any) => ({ id: v.id ?? null, number: v.number ?? null }))
+  };
 }
 
 export async function cloudflareWorkerSetSubdomain(input: unknown, site: SiteTarget) {

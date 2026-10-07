@@ -48,7 +48,9 @@ import {
   cloudflarePagesSiteStatus,
   cloudflarePagesSiteStatusShape,
   cloudflareWorkerSetSubdomain,
-  cloudflareWorkerSubdomainShape
+  cloudflareWorkerSubdomainShape,
+  cloudflareWorkerSecretRecovery,
+  cloudflareWorkerSecretRecoveryShape
 } from '../packages/commands/src/cloudflare-pages.js';
 
 const app = new Hono();
@@ -148,6 +150,15 @@ function server() {
   }, async input => {
     const site = await siteRegistryGet({ id: input.siteId });
     return structured(await cloudflareWorkerSetSubdomain(input, site as any));
+  });
+
+  mcp.registerTool('cloudflare_worker_secret_recovery', {
+    description: 'Strictly guarded Learning OS rollback to retained-secret Version 16 and cleanup of empty-secret Version 17. Defaults to read-only dryRun=true; mutations require dryRun=false and an exact verified preflight. Restricted to known version IDs and learning-os site.',
+    inputSchema: cloudflareWorkerSecretRecoveryShape,
+    annotations: { readOnlyHint: false, destructiveHint: true }
+  }, async input => {
+    const site = await siteRegistryGet({ id: input.siteId });
+    return structured(await cloudflareWorkerSecretRecovery(input, site as any));
   });
 
   mcp.registerTool('cloudflare_pages_deployment_logs', {
