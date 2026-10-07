@@ -40,8 +40,6 @@ import {
   cloudflarePagesSiteStatus,
   cloudflarePagesSiteStatusShape,
   cloudflareWorkerSetSubdomain,
-  cloudflareWorkerSubdomainShape,
-  cloudflareWorkerSetSubdomain,
   cloudflareWorkerSubdomainShape
 } from '../packages/commands/src/cloudflare-pages.js';
 
@@ -130,15 +128,6 @@ function server() {
   }, async input => {
     const site = await siteRegistryGet({ id: input.siteId });
     return structured(await cloudflarePagesSetPreviewBranchExclusions(input, site as any));
-  });
-
-  mcp.registerTool('cloudflare_worker_set_subdomain', {
-    description: 'Enable or disable the production workers.dev route and preview URLs for one Cloudflare Worker. Infers the Worker name from the registered repository unless workerName is provided explicitly. Requires Workers Scripts Write permission.',
-    inputSchema: cloudflareWorkerSubdomainShape,
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
-  }, async input => {
-    const site = await siteRegistryGet({ id: input.siteId });
-    return structured(await cloudflareWorkerSetSubdomain(input, site as any));
   });
 
   mcp.registerTool('cloudflare_worker_set_subdomain', {
