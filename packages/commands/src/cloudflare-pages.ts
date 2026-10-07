@@ -256,14 +256,45 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       const subdomain = currentAccountSubdomain.result?.subdomain;
       if (!subdomain) throw new Error('Cloudflare account workers.dev subdomain is missing');
 
-      const workerRepair = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+      const publicDomains = ['shihoshoshi.antonbase.com', 'english.antonbase.com'];
+
+      const disabled = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ enabled: false, previews_enabled: false })
+        }
+      );
+
+      const existingDomainsEnvelope = await cloudflare<any[]>(
+        `/workers/domains?service=${encodeURIComponent(workerName)}`
+      );
+      const existingDomains = Array.isArray(existingDomainsEnvelope.result)
+        ? existingDomainsEnvelope.result
+        : [];
+
+      const detached = [];
+      for (const domain of existingDomains) {
+        if (!publicDomains.includes(String(domain?.hostname ?? ''))) continue;
+        if (!domain?.id) continue;
+        await cloudflare<any>(
+          `/workers/domains/${encodeURIComponent(domain.id)}`,
+          { method: 'DELETE' }
+        );
+        detached.push({
+          id: domain.id,
+          hostname: domain.hostname
+        });
+      }
+
+      const enabled = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
         `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
         {
           method: 'POST',
           body: JSON.stringify({ enabled: true, previews_enabled: true })
         }
       );
-      const publicDomains = ['shihoshoshi.antonbase.com', 'english.antonbase.com'];
+
       const domainRepairs = [];
       for (const hostname of publicDomains) {
         const repaired = await cloudflare<any>(
@@ -280,17 +311,27 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
         domainRepairs.push({
           hostname: repaired.result?.hostname ?? hostname,
           id: repaired.result?.id ?? null,
+          certId: repaired.result?.cert_id ?? null,
           service: repaired.result?.service ?? null,
+          zoneId: repaired.result?.zone_id ?? null,
           zoneName: repaired.result?.zone_name ?? null
         });
       }
+
       repairApplied = true;
       repairResults = {
         accountWorkersSubdomain: subdomain,
-        workersDev: {
-          enabled: Boolean(workerRepair.result?.enabled),
-          previewsEnabled: Boolean(workerRepair.result?.previews_enabled)
+        workersDevCycle: {
+          disabled: {
+            enabled: Boolean(disabled.result?.enabled),
+            previewsEnabled: Boolean(disabled.result?.previews_enabled)
+          },
+          enabled: {
+            enabled: Boolean(enabled.result?.enabled),
+            previewsEnabled: Boolean(enabled.result?.previews_enabled)
+          }
         },
+        detachedDomains: detached,
         domains: domainRepairs
       };
     }
