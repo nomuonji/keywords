@@ -192,6 +192,31 @@ try {
   assert.ok(listedBefore.items.every(item => item.inspectionUrl.endsWith('/')));
   assert.ok(listedBefore.items.some(item => item.url.endsWith('/licenses/a')), 'identity URL omits trailing slash');
 
+  // Credential-less ChatGPT/MCP calls must not consume the shared property quota.
+  const authKeys = [
+    'GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN',
+    'GOOGLE_OAUTH_ACCESS_TOKEN',
+    'GOOGLE_APPLICATION_CREDENTIALS',
+    'GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN',
+    'GOOGLE_OAUTH_REFRESH_TOKEN'
+  ] as const;
+  const savedAuth = authKeys.map(key => process.env[key]);
+  try {
+    for (const key of authKeys) delete process.env[key];
+    await assert.rejects(
+      siteIndexationInspect({ siteId: 'site-i', urls: ['https://shikaku.antonbase.com/licenses/a/'] }),
+      /credentials are not configured; URL Inspection quota was not reserved/
+    );
+    assert.equal(listCollection('indexationQuotaDays').length, 0,
+      'missing OAuth must fail before writing the shared quota ledger');
+    assert.equal(inspectedUrls.length, 0, 'no Google URL Inspection call should run without credentials');
+  } finally {
+    authKeys.forEach((key, i) => {
+      if (savedAuth[i] === undefined) delete process.env[key];
+      else process.env[key] = savedAuth[i];
+    });
+  }
+
   const first = await siteIndexationInspect({
     siteId: 'site-i',
     urls: ['https://shikaku.antonbase.com/licenses/a/']

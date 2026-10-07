@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
-import { searchConsoleInspect } from '../../research/src/index.js';
+import { searchConsoleCredentialsConfigured, searchConsoleInspect } from '../../research/src/index.js';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { SiteRecord } from '../../db/src/site-operations-schema.js';
 
@@ -396,6 +396,11 @@ export async function siteIndexationInspect(input: unknown) {
   const take = args.urls?.length ? Math.min(args.urls.length, 50) : args.limit;
   records = records.filter(row => row.inventoryState === 'current' && row.indexable).slice(0, take);
   if (!records.length) return { siteId: site.id, property: site.searchConsoleProperty, inspected: 0, failed: 0, skipped: 0, reason: 'no_due_urls', quota: await readQuota(site.searchConsoleProperty) };
+  // Calls without credentials cannot reach Google. Do not consume the shared
+  // daily property budget (or report a failed Google inspection) for them.
+  if (!searchConsoleCredentialsConfigured()) {
+    throw new Error('Search Console credentials are not configured; URL Inspection quota was not reserved');
+  }
   const reservation = await reserveQuota(site.searchConsoleProperty, records.length);
   const selected = records.slice(0, reservation.reserved);
   const results = await runWithConcurrency(selected, 5, record => inspectOne(site, record));

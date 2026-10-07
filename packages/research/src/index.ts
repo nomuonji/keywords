@@ -614,6 +614,14 @@ function searchConsoleRefreshCredentials() {
   return refreshToken && clientId && clientSecret ? { refreshToken, clientId, clientSecret } : null;
 }
 
+/** Non-secret preflight: fail before reserving URL Inspection quota when auth is absent.
+ * Validity, permission and network errors are still checked by the actual API call.
+ */
+export function searchConsoleCredentialsConfigured(): boolean {
+  const accessToken = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN ?? process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
+  return Boolean(accessToken?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || searchConsoleRefreshCredentials());
+}
+
 let serviceAccountCache: { path: string; modifiedAt: number; token: string; expiresAt: number } | null = null;
 async function serviceAccountAccessToken() {
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
