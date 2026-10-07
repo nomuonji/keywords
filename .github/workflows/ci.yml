@@ -82,6 +82,8 @@ jobs:
             npm run test:site-optimization-delivery-proof
             npm run test:site-operations-readiness
             npm run test:site-query-feedback
+            npm run test:site-indexation
+            npm run test:site-indexation-scheduler
             npm run test:autopilot-preflight
             npm run test:seo-delivery-controller
             npm run db:init
