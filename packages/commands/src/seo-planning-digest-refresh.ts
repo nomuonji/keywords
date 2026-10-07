@@ -74,6 +74,68 @@ function gscPeriodMap(projectId: string, startDate: string, endDate: string) {
   return map;
 }
 
+
+function aggregateGsc(map: Map<string, any>): Metric | null {
+  if (!map.size) return null;
+  let clicks = 0, impressions = 0, weightedPosition = 0, positionedImpressions = 0;
+  for (const row of map.values()) {
+    const rowClicks = finite(row.clicks) ?? 0;
+    const rowImpressions = finite(row.impressions) ?? 0;
+    const position = finite(row.position);
+    clicks += rowClicks;
+    impressions += rowImpressions;
+    if (position !== null && rowImpressions > 0) {
+      weightedPosition += position * rowImpressions;
+      positionedImpressions += rowImpressions;
+    }
+  }
+  return {
+    clicks,
+    impressions,
+    ctr: impressions > 0 ? clicks / impressions : null,
+    averagePosition: positionedImpressions > 0 ? weightedPosition / positionedImpressions : null
+  };
+}
+
+function siteQueryRows(projectId: string, startDate: string, endDate: string) {
+  const data = rows(`SELECT query,clicks,impressions,ctr,position,observed_at FROM keyword_metric_snapshots
+    WHERE project_id=? AND start_date=? AND end_date=?
+    ORDER BY observed_at DESC, impressions DESC`, projectId, startDate, endDate);
+  const latestObservation = data[0]?.observed_at ? String(data[0].observed_at) : null;
+  return data
+    .filter(row => !latestObservation || String(row.observed_at) === latestObservation)
+    .slice(0, 50)
+    .map(row => ({
+      query: String(row.query).slice(0, 220),
+      clicks: finite(row.clicks),
+      impressions: finite(row.impressions),
+      ctr: finite(row.ctr),
+      averagePosition: finite(row.position)
+    }));
+}
+
+function ga4SiteMetric(projectId: string, startDate: string, endDate: string) {
+  const row = sqlite.prepare(`SELECT payload_json FROM measurement_imports
+    WHERE project_id=? AND provider='ga4' AND start_date=? AND end_date=? AND completeness='complete'
+    ORDER BY captured_at DESC LIMIT 1`).get(projectId, startDate, endDate) as any;
+  if (!row?.payload_json) return null;
+  let payload: any;
+  try { payload = JSON.parse(row.payload_json); } catch { return null; }
+  const all = payload?.metrics ?? {};
+  const organic = payload?.organicStatus === 'complete' ? (payload?.organicMetrics ?? {}) : {};
+  const result = {
+    sessions: finite(all.sessions),
+    activeUsers: finite(all.activeUsers),
+    engagement: finite(all.engagement),
+    views: finite(all.views),
+    organicSessions: finite(organic.sessions),
+    organicActiveUsers: finite(organic.activeUsers),
+    organicEngagement: finite(organic.engagement),
+    organicViews: finite(organic.views)
+  };
+  return Object.values(result).every(value => value === null) ? null : result;
+}
+
 function queryMap(projectId: string, startDate: string, endDate: string) {
   const data = rows(`SELECT url,query,clicks,impressions,ctr,position,observed_at FROM query_page_metric_snapshots
     WHERE project_id=? AND start_date=? AND end_date=?
@@ -163,6 +225,15 @@ export async function refreshSeoPlanningDigest(projectId: string, endDate: strin
   };
 
   const gsc = Object.fromEntries(Object.entries(periods).map(([key, p]) => [key, gscPeriodMap(projectId, p.start, p.end)])) as Record<string, Map<string, any>>;
+  const siteMetrics = Object.fromEntries(Object.entries(periods).map(([key, p]) => [key, {
+    gsc: aggregateGsc(gsc[key]),
+    ga4: ga4SiteMetric(projectId, p.start, p.end)
+  }]));
+  const siteQueries = {
+    current28: siteQueryRows(projectId, periods.current28.start, periods.current28.end),
+    previous28: siteQueryRows(projectId, periods.previous28.start, periods.previous28.end),
+    trailing90: siteQueryRows(projectId, periods.trailing90.start, periods.trailing90.end)
+  };
   const q28 = queryMap(projectId, periods.current28.start, periods.current28.end);
   const q90 = queryMap(projectId, periods.trailing90.start, periods.trailing90.end);
   const ga7 = ga4OrganicLandingMap(projectId, periods.current7.start, periods.current7.end, site.productionUrl);
@@ -209,6 +280,8 @@ export async function refreshSeoPlanningDigest(projectId: string, endDate: strin
     selectedCount: 0,
     notObservedInComplete90dGscCount: signals.filter(item => item.notObservedInComplete90dGsc).length,
     periods,
+    siteMetrics,
+    siteQueries,
     statuses: Object.fromEntries(Object.entries(periods).map(([key, p]) => [key, {
       gsc: measurementStatus(projectId, 'gsc', p.start, p.end),
       ga4: measurementStatus(projectId, 'ga4', p.start, p.end)
@@ -218,6 +291,8 @@ export async function refreshSeoPlanningDigest(projectId: string, endDate: strin
       purpose: 'article_driven_issue_planning',
       plannerMustNotFetchGoogle: true,
       overwriteLatestOnly: true,
+      durableAnalyticsRecord: 'one_site_digest_only',
+      durableUrlAnalytics: false,
       maxPages: 60,
       maxQueriesPerWindowPerPage: 3,
       maxSerializedBytes: 500000,

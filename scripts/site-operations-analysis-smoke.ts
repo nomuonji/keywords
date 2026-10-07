@@ -148,7 +148,7 @@ try {
   const opportunities = await siteQueryOpportunities({ siteId: 'site-a', minImpressions: 50, minGrowthRatio: 1.5, limit: 10 });
   assert.equal(opportunities.comparable, true);
   assert.equal(opportunities.periodDays, 7);
-  assert.equal(opportunities.queryCoverage, 'bounded_saved_top_queries');
+  assert.equal(opportunities.queryCoverage, 'legacy_bounded_saved_top_queries');
   assert.deepEqual(opportunities.candidates.map((item: any) => item.query).sort(), ['brand new query', 'rising query']);
   const newlyObserved = opportunities.candidates.find((item: any) => item.query === 'brand new query') as any;
   assert.equal(newlyObserved.kind, 'newly_observed_query');

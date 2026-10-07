@@ -4,6 +4,7 @@ import { field, value, firestore, firestoreDocumentName, FirestoreError } from '
 import type { MetricSnapshot, OptimizationEvent, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
+import { seoPlanningDigestGet } from './seo-planning-digest.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const note = z.string().max(4000);
@@ -357,66 +358,23 @@ async function assertNoPendingImplementedChange(siteId: string, articleId: strin
   if (pending) throw new Error(`Article has an unevaluated optimization (${pending.id}); evaluate or cancel it before another implemented change`);
 }
 
-export interface SiteDigest {
-  siteId: string;
-  generatedAt: string;
-  latestSiteGsc: MetricSnapshot | null;
-  latestSiteGa4: MetricSnapshot | null;
-  activeOptimizations: OptimizationEvent[];
-  articleCount: number;
-  deferredCount: number;
-  warnings: string[];
-}
-
-const decodeRecord = (doc: any) => ({ id: doc.name.split('/').pop(), ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) }) as unknown as SiteDigest;
-
-/**
- * Refresh the one-document site digest after a projection. The digest is a
- * derived cache (not a separate command), so it is written with a single
- * commit and no extra audit record; the calling projection is already
- * audited. Remote readers use it to answer site status in a bounded number
- * of reads instead of scanning snapshot/event history on every call.
- */
-export async function refreshSiteDigest(input: { site: { id: string }; latestSiteGsc?: unknown; latestSiteGa4?: unknown; articleCount: number; warnings?: string[] }): Promise<SiteDigest> {
-  const events = (await queryBySite('optimizationEvents', input.site.id, 500)) as OptimizationEvent[];
-  const active = events
-    .filter(event => event.phase === 'implemented' && event.result === 'pending')
-    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-  const digest: SiteDigest = {
-    siteId: input.site.id,
-    generatedAt: now(),
-    latestSiteGsc: (input.latestSiteGsc as MetricSnapshot | undefined) ?? null,
-    latestSiteGa4: (input.latestSiteGa4 as MetricSnapshot | undefined) ?? null,
-    activeOptimizations: active,
-    articleCount: input.articleCount,
-    deferredCount: (input.warnings ?? []).filter(message => message.startsWith('Deferred ')).length,
-    warnings: (input.warnings ?? []).slice(0, 10)
-  };
-  await firestore(`/siteDigests/${input.site.id}`, { method: 'PATCH', body: JSON.stringify({ fields: encodeFields(digest) }) });
-  await paceCloudWrite();
-  return digest;
-}
-
-export async function readSiteDigest(siteId: string): Promise<SiteDigest | null> {
-  try {
-    const doc = await firestore(`/siteDigests/${entityId.parse(siteId)}`);
-    if (!doc?.fields) return null;
-    return decodeRecord(doc) as SiteDigest;
-  } catch (error) {
-    if (error instanceof FirestoreError && error.status === 404) return null;
-    throw error;
-  }
-}
-
 export function remoteSitesStatus() {
   return {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'metricSnapshots', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
+    collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
+    legacyCollections: {
+      metricSnapshots: 'read_only_compatibility_for_historical_optimization_evidence',
+      siteDigests: 'deprecated_no_new_reads_or_writes'
+    },
     analyticsStoragePolicy: {
       rawMeasurementRows: 'ephemeral_sqlite_only',
+      durableAnalytics: 'seoPlanningDigests/{siteId}',
+      durableUrlAnalytics: 'none',
       planningDigest: 'one_overwrite_document_per_site',
+      legacyMetricSnapshots: 'read_only_compatibility_only',
+      legacySiteDigests: 'unused',
       maxPlannerPages: 60,
       maxQueriesPerWindowPerPage: 3,
       maxSerializedBytes: 500000,
@@ -424,6 +382,7 @@ export function remoteSitesStatus() {
     },
     indexationStoragePolicy: {
       urlCache: 'one_mutable_document_per_url_under_site',
+      urlCachePurpose: 'current_inventory_and_indexation_state_not_access_analytics_history',
       history: 'weekly_site_and_page_family_snapshot_only',
       inspectionAcquisition: 'search_console_url_inspection_on_due_or_explicit_urls_only',
       defaultDailyInspectionBudgetPerProperty: Math.max(1, Math.min(Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500) || 1500, 1900)),
@@ -1092,28 +1051,63 @@ export async function optimizationEventUpdate(input: unknown) {
 export async function optimizationContext(input: unknown) {
   const args = z.object(optimizationContextShape).strict().parse(input); const site = await ensureSite(args.siteId);
   if (args.articleId) await ensureArticle(args.articleId, args.siteId);
-  // Site-level status is served from the projection digest when available:
-  // two bounded reads instead of scanning snapshot/event history.
+
+  // Site-level analytics are served from the canonical overwrite-only planning
+  // digest. The old siteDigests cache is intentionally no longer read.
   if (!args.articleId) {
     try {
-      const digest = await readSiteDigest(args.siteId);
-      if (digest) {
-        const snapshots = [digest.latestSiteGsc, digest.latestSiteGa4].filter((item): item is MetricSnapshot => Boolean(item));
-        const active = digest.activeOptimizations[0] ?? null;
+      const digest: any = await seoPlanningDigestGet({ siteId: args.siteId });
+      if (digest?.generatedAt) {
+        const eventRows = (await queryBySite('optimizationEvents', args.siteId, 500))
+          .sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+        const active = eventRows.find((event: any) => event.phase === 'implemented' && event.result === 'pending') as OptimizationEvent | undefined;
+        const period = digest.periods?.current7;
+        const statuses = digest.statuses?.current7 ?? {};
+        const snapshotFromDigest = (provider: 'gsc' | 'ga4', metricValue: Record<string, number | null> | null | undefined): MetricSnapshot | null => {
+          if (!metricValue || !period) return null;
+          const providerStatus = statuses?.[provider] ?? null;
+          return {
+            id: `seo-planning-digest-${provider}-${args.siteId}`,
+            siteId: args.siteId,
+            articleId: null,
+            provider,
+            periodStart: period.start,
+            periodEnd: period.end,
+            metrics: metricValue,
+            queries: provider === 'gsc' ? (digest.siteQueries?.current7 ?? []) : [],
+            completeness: providerStatus?.completeness === 'complete' ? 'complete' : providerStatus?.completeness === 'failed' ? 'failed' : 'partial',
+            sourceVersion: `seoPlanningDigest:${digest.generatedAt}:current7:${provider}`,
+            capturedAt: providerStatus?.capturedAt ?? digest.generatedAt,
+            createdAt: digest.generatedAt
+          };
+        };
+        const latestGsc = snapshotFromDigest('gsc', digest.siteMetrics?.current7?.gsc);
+        const latestGa4 = snapshotFromDigest('ga4', digest.siteMetrics?.current7?.ga4);
+        const snapshots = [latestGsc, latestGa4].filter((item): item is MetricSnapshot => Boolean(item));
         return {
-          site, articleId: null, changeAllowed: digest.activeOptimizations.length === 0, activeOptimization: active,
+          site, articleId: null, changeAllowed: !active, activeOptimization: active ?? null,
           cooldownUntil: active?.evaluateAfter ?? null,
-          latestMetrics: { gsc: digest.latestSiteGsc, ga4: digest.latestSiteGa4 },
-          metricSnapshots: snapshots.slice(0, args.metricLimit), optimizationEvents: digest.activeOptimizations.slice(0, args.eventLimit),
-          articleCount: digest.articleCount, deferredCount: digest.deferredCount,
-          servedFrom: 'digest' as const, digestGeneratedAt: digest.generatedAt,
-          policy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14, note: 'Daily collection is allowed; content changes remain blocked until the active hypothesis is evaluated or cancelled.' }
+          latestMetrics: { gsc: latestGsc, ga4: latestGa4 },
+          metricSnapshots: snapshots.slice(0, args.metricLimit),
+          optimizationEvents: eventRows.slice(0, args.eventLimit),
+          articleCount: digest.inventoryCount ?? null,
+          deferredCount: 0,
+          servedFrom: 'seo_planning_digest' as const,
+          digestGeneratedAt: digest.generatedAt,
+          policy: {
+            oneImplementedChangePerArticle: true,
+            defaultEvaluationWaitDays: 14,
+            analyticsStorage: 'seoPlanningDigests_latest_only',
+            note: 'URL-level access analytics remain ephemeral SQLite evidence. Historical metricSnapshots are legacy read-only compatibility evidence only.'
+          }
         };
       }
     } catch {
-      // Fall through to the full scan when the digest cannot be served.
+      // Fall through to legacy compatibility reads only when the canonical
+      // planning digest is unavailable.
     }
   }
+
   const [metricRows, eventRows] = await Promise.all([queryBySite('metricSnapshots', args.siteId, 1000), queryBySite('optimizationEvents', args.siteId, 1000)]);
   const metricsForTarget = metricRows.filter((item: any) => !args.articleId || item.articleId === args.articleId).sort((a: any, b: any) => String(b.capturedAt).localeCompare(String(a.capturedAt))).slice(0, args.metricLimit);
   const eventsForTarget = eventRows.filter((item: any) => !args.articleId || item.articleId === args.articleId).sort((a: any, b: any) => String(b.updatedAt).localeCompare(String(a.updatedAt))).slice(0, args.eventLimit);
@@ -1126,7 +1120,13 @@ export async function optimizationContext(input: unknown) {
       ga4: metricsForTarget.find((snapshot: any) => snapshot.provider === 'ga4') ?? null
     },
     metricSnapshots: metricsForTarget, optimizationEvents: eventsForTarget,
-    servedFrom: 'scan' as const,
-    policy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14, note: 'Daily collection is allowed; content changes remain blocked until the active hypothesis is evaluated or cancelled.' }
+    servedFrom: 'legacy_metric_snapshot_fallback' as const,
+    policy: {
+      oneImplementedChangePerArticle: true,
+      defaultEvaluationWaitDays: 14,
+      analyticsStorage: 'legacy_read_only_fallback',
+      note: 'This fallback exists only for historical optimization evidence and is not a current analytics write path.'
+    }
   };
 }
+

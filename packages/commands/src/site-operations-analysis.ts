@@ -7,6 +7,7 @@ import {
   siteRegistryResolve
 } from './remote-site-operations.js';
 import type { MetricSnapshot, OptimizationEvent, SiteRecord } from '../../db/src/site-operations-schema.js';
+import { seoPlanningDigestGet } from './seo-planning-digest.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const positiveInteger = z.number().int().min(1);
@@ -285,6 +286,13 @@ type QueryMetric = {
   averagePosition: number | null;
 };
 
+type SiteQueryPair = {
+  latest: MetricSnapshot;
+  previous: MetricSnapshot;
+  periodDays: number;
+  source: 'seo_planning_digest' | 'legacy_metric_snapshots';
+};
+
 function queryMap(snapshot: MetricSnapshot) {
   return new Map((snapshot.queries ?? []).map(row => [row.query.trim().toLowerCase(), row as QueryMetric]));
 }
@@ -300,16 +308,54 @@ function compatibleSitePair(snapshots: MetricSnapshot[]) {
   return previous ? { latest, previous, periodDays: days } : null;
 }
 
+
+async function canonicalDigestSitePair(siteId: string) {
+  const digest: any = await seoPlanningDigestGet({ siteId });
+  if (!digest?.generatedAt) return null;
+  const currentPeriod = digest.periods?.current28;
+  const previousPeriod = digest.periods?.previous28;
+  const currentQueries = digest.siteQueries?.current28;
+  const previousQueries = digest.siteQueries?.previous28;
+  if (!currentPeriod || !previousPeriod || !Array.isArray(currentQueries) || !Array.isArray(previousQueries)) return null;
+
+  const snapshot = (key: 'current28' | 'previous28', period: { start: string; end: string }, queries: QueryMetric[]): MetricSnapshot => {
+    const status = digest.statuses?.[key]?.gsc;
+    return {
+      id: `seo-planning-digest-${key}-${siteId}`,
+      siteId,
+      articleId: null,
+      provider: 'gsc',
+      periodStart: period.start,
+      periodEnd: period.end,
+      metrics: digest.siteMetrics?.[key]?.gsc ?? {},
+      queries,
+      completeness: status?.completeness === 'complete' ? 'complete' : status?.completeness === 'failed' ? 'failed' : 'partial',
+      sourceVersion: `seoPlanningDigest:${digest.generatedAt}:${key}:gsc`,
+      capturedAt: status?.capturedAt ?? digest.generatedAt,
+      createdAt: digest.generatedAt
+    };
+  };
+  const latest = snapshot('current28', currentPeriod, currentQueries);
+  const previous = snapshot('previous28', previousPeriod, previousQueries);
+  if (latest.completeness !== 'complete' || previous.completeness !== 'complete') return null;
+  return { latest, previous, periodDays: dateDays(latest.periodStart, latest.periodEnd), source: 'seo_planning_digest' as const };
+}
+
 /**
  * Surface newly-observed/rising GSC query candidates from compatible,
- * non-overlapping site periods. Site snapshots retain a bounded top-query set,
+ * non-overlapping site periods. The canonical site digest retains a bounded top-query set,
  * so absence from the previous snapshot is not proof that a query never existed.
  * This tool deliberately does not call Google Ads/SERP or write Treasury.
  */
 export async function siteQueryOpportunities(input: unknown) {
   const args = z.object(siteQueryOpportunitiesShape).strict().parse(input);
-  const snapshots = (await metricSnapshotList({ siteId: args.siteId, provider: 'gsc', limit: 100 })).items as MetricSnapshot[];
-  const pair = compatibleSitePair(snapshots);
+  let pair: SiteQueryPair | null = null;
+  try { pair = await canonicalDigestSitePair(args.siteId) as SiteQueryPair | null; } catch {}
+  if (!pair) {
+    const snapshots = (await metricSnapshotList({ siteId: args.siteId, provider: 'gsc', limit: 100 })).items as MetricSnapshot[];
+    const legacyPair = compatibleSitePair(snapshots);
+    pair = legacyPair ? { ...legacyPair, source: 'legacy_metric_snapshots' as const } : null;
+  }
   if (!pair) return {
     siteId: args.siteId,
     comparable: false,
@@ -350,8 +396,9 @@ export async function siteQueryOpportunities(input: unknown) {
     latest: { id: pair.latest.id, periodStart: pair.latest.periodStart, periodEnd: pair.latest.periodEnd, sourceVersion: pair.latest.sourceVersion },
     previous: { id: pair.previous.id, periodStart: pair.previous.periodStart, periodEnd: pair.previous.periodEnd, sourceVersion: pair.previous.sourceVersion },
     criteria: { minImpressions: args.minImpressions, minGrowthRatio: args.minGrowthRatio },
-    queryCoverage: 'bounded_saved_top_queries',
+    queryCoverage: pair.source === 'seo_planning_digest' ? 'seo_planning_digest_bounded_site_queries' : 'legacy_bounded_saved_top_queries',
     candidates: candidates.slice(0, args.limit),
+    analyticsSource: pair.source ?? 'legacy_metric_snapshots',
     nextAction: 'Pass selected query strings to Keywords Operator keyword_screen_batch (Google Ads first), then use keyword_research_pipeline only for shortlisted terms. This tool never spends SERP quota or writes Treasury.'
   };
 }
