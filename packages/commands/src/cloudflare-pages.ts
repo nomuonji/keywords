@@ -231,8 +231,7 @@ async function listDeployments(projectName: string, env: 'production' | 'preview
 export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget, seoTasks: SeoTaskSummarySource[]) {
   const args = siteStatusSchema.parse(input);
   if (args.siteId !== site.id) throw new Error('Resolved site does not match requested siteId');
-  const { project, resolution } = await resolveProject(site);
-  const deployments = await listDeployments(project.name, args.environment, args.limit);
+
   const waitingTasks = seoTasks
     .filter(task => ['pending', 'failed'].includes(String(task.deploymentVerification?.status ?? '')))
     .slice(0, 30)
@@ -244,6 +243,36 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       updatedAt: task.updatedAt ?? null,
       deploymentVerification: task.deploymentVerification ?? null
     }));
+
+  if (site.deploymentProvider !== 'cloudflare_pages') {
+    const workerName = resolveWorkerName(site);
+    const envelope = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+      `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`
+    );
+    return {
+      site: {
+        id: site.id,
+        repository: site.repository ?? null,
+        productionUrl: site.productionUrl ?? null,
+        registryDeploymentProvider: site.deploymentProvider ?? null
+      },
+      cloudflare: {
+        platform: 'workers',
+        workerName,
+        workersDev: {
+          enabled: Boolean(envelope.result?.enabled),
+          previewsEnabled: Boolean(envelope.result?.previews_enabled)
+        }
+      },
+      publicationBacklog: {
+        count: waitingTasks.length,
+        tasks: waitingTasks
+      }
+    };
+  }
+
+  const { project, resolution } = await resolveProject(site);
+  const deployments = await listDeployments(project.name, args.environment, args.limit);
   return {
     site: {
       id: site.id,
