@@ -286,6 +286,13 @@ type QueryMetric = {
   averagePosition: number | null;
 };
 
+type SiteQueryPair = {
+  latest: MetricSnapshot;
+  previous: MetricSnapshot;
+  periodDays: number;
+  source: 'seo_planning_digest' | 'legacy_metric_snapshots';
+};
+
 function queryMap(snapshot: MetricSnapshot) {
   return new Map((snapshot.queries ?? []).map(row => [row.query.trim().toLowerCase(), row as QueryMetric]));
 }
@@ -336,14 +343,14 @@ async function canonicalDigestSitePair(siteId: string) {
 
 /**
  * Surface newly-observed/rising GSC query candidates from compatible,
- * non-overlapping site periods. Site snapshots retain a bounded top-query set,
+ * non-overlapping site periods. The canonical site digest retains a bounded top-query set,
  * so absence from the previous snapshot is not proof that a query never existed.
  * This tool deliberately does not call Google Ads/SERP or write Treasury.
  */
 export async function siteQueryOpportunities(input: unknown) {
   const args = z.object(siteQueryOpportunitiesShape).strict().parse(input);
-  let pair: (ReturnType<typeof compatibleSitePair> & { source?: 'legacy_metric_snapshots' }) | Awaited<ReturnType<typeof canonicalDigestSitePair>> = null;
-  try { pair = await canonicalDigestSitePair(args.siteId); } catch {}
+  let pair: SiteQueryPair | null = null;
+  try { pair = await canonicalDigestSitePair(args.siteId) as SiteQueryPair | null; } catch {}
   if (!pair) {
     const snapshots = (await metricSnapshotList({ siteId: args.siteId, provider: 'gsc', limit: 100 })).items as MetricSnapshot[];
     const legacyPair = compatibleSitePair(snapshots);
