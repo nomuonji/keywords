@@ -568,12 +568,14 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 42);
+  assert.equal(listing.tools.length, 43);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_worker_set_subdomain'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'cloudflare_worker_secret_recovery'));
+
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_create'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_direction_list'));
