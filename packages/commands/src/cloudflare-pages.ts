@@ -99,9 +99,12 @@ async function cloudflare<T>(path: string, init: RequestInit = {}): Promise<Clou
     }
   });
   const body = await response.json().catch(() => null) as CloudflareEnvelope<T> | null;
-  if (!response.ok || !body?.success) {
+  if (!response.ok || body?.success === false) {
     const detail = body?.errors?.map(item => item.message || String(item.code ?? '')).filter(Boolean).join('; ');
     throw new Error(`Cloudflare API request failed (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
+  if (!body) {
+    return { success: true, result: null as T };
   }
   return body;
 }
