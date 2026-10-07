@@ -256,13 +256,6 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       const subdomain = currentAccountSubdomain.result?.subdomain;
       if (!subdomain) throw new Error('Cloudflare account workers.dev subdomain is missing');
 
-      const accountRepair = await cloudflare<{ subdomain: string }>(
-        '/workers/subdomain',
-        {
-          method: 'PUT',
-          body: JSON.stringify({ subdomain })
-        }
-      );
       const workerRepair = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
         `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`,
         {
@@ -293,7 +286,7 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       }
       repairApplied = true;
       repairResults = {
-        accountWorkersSubdomain: accountRepair.result?.subdomain ?? subdomain,
+        accountWorkersSubdomain: subdomain,
         workersDev: {
           enabled: Boolean(workerRepair.result?.enabled),
           previewsEnabled: Boolean(workerRepair.result?.previews_enabled)
