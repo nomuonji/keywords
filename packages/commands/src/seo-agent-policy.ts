@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.22.0';
+export const SEO_AGENT_POLICY_VERSION = '1.23.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -27,6 +27,12 @@ const shared = {
     ],
     missingData: 'Missing, partial, failed, or stale measurements are unknown, never zero. Do not make unavailable-data outcome claims. Missing analytics alone must not block a sourced, bounded, reversible pilot; record the unknown baseline and evaluate when adequate evidence arrives.',
     persistence: 'Do not create daily per-page analytics records in Firestore. The measurement workflow may use ephemeral/local detail, but remote planning state is one compact overwrite-style digest per managed site. Durable growth is reserved for actionable SEO task/history records.'
+  },
+  indexation: {
+    acquisition: 'Search Console URL Inspection is a separate bounded observation workflow, not part of the Planner analytics fetch. Use site_indexation_inspect only in the acquisition lane or for an explicit diagnostic; the default per-property daily budget is shared across sites that use the same Search Console property.',
+    planningSource: 'Use site_indexation_summary for current cached site/page-family coverage and site_indexation_snapshot_save for one overwrite-style weekly historical point.',
+    semantics: 'Indexation metrics are observed coverage of the inventoried/inspected URL set, not a claim that Search Console exposes an exact total indexed-page count. Treat uninspected URLs as unknown.',
+    persistence: 'Keep one mutable URL cache document under the site, plus one weekly site/page-family snapshot and a tiny daily per-property quota ledger. Do not append URL-level inspection history.'
   },
   managedScope: {
     source: 'Sites Operator active site registry only.',
@@ -86,7 +92,7 @@ const plannerInstructions = [
   'When a site is discussion_required, do not deepen the disputed direction merely to fill the ready queue: avoid new content/data/page-family expansion that assumes the contested strategy is correct. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected parts of the site or other sites. Direction-review findings never count toward the ready-task inventory.',
   'Read each active site\'s siteShape before choosing the artifact. Expansion is a first-class Planner outcome for every shape, not only databases: article sites may grow with new_article or site_expansion; product/other sites may receive site_expansion; database sites may receive data_expansion, schema_expansion or site_expansion. Do not force every opportunity into an article task.',
   'For site_expansion, require a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and a post-publication observation plan. Examples include calculators, comparison/decision pages, category hubs, navigation experiences, landing-page families and small useful features. Cosmetic redesign or an audit is not expansion.',
-  'For database/programmatic sites, treat verified data coverage as product and SEO work, but separate the underlying dataset from the indexable URL surface. data_expansion may promote candidates only after authoritative-source verification and repository validation gates. schema_expansion is justified only when evidence shows the existing schema cannot represent a useful recurring need. Never index arbitrary filter/sort/facet combinations just because generation is possible; explicitly define which page families are crawlable/indexable and why.',
+  'For database/programmatic sites, treat verified data coverage as product and SEO work, but separate the underlying dataset from the indexable URL surface. Read site_indexation_summary when cached observations exist and compare page families by inspectionCoverage and observedIndexationRate; never treat uninspected URLs as not indexed or the observed rate as an exact Google-wide index count. data_expansion may promote candidates only after authoritative-source verification and repository validation gates. schema_expansion is justified only when evidence shows the existing schema cannot represent a useful recurring need. Never index arbitrary filter/sort/facet combinations just because generation is possible; explicitly define which page families are crawlable/indexable and why.',
   'Use seo_evaluator_list/get for strategy-sensitive decisions. For every new_article candidate, read content_incremental_value at its current version before creating the task. When cross-site templating, high-volume publishing, or semantic overlap is materially relevant, also inspect scaled_content_operation_risk. For database/programmatic sites, or any task that creates/changes generated page families, facets, filters, crawlability, indexability, sitemap membership or large internal-link surfaces, read database_indexation_quality before creating the task. Evaluators are revisable operating hypotheses: preserve source strength, caveats, confidence and falsification conditions; never convert their qualitative signals into a composite SEO score or claim hidden Google ranking logic.',
   'Prioritize bounded, high-leverage real site/page changes: observed query-intent mismatches, bounded reversible answer/structure/navigation experiments, sourced factual corrections, reproducible technical/indexing problems, concrete internal-link gaps, verified content overlap and separately justified unmet intent. Use the Planner Manual exploration ladder rather than waiting passively for a perfect CTR statistic.',
   'Prefer a small reversible experiment over indefinite certainty-seeking. A credible observed user need plus an exact current-page omission can justify a focused answer section, comparison table, navigation/internal-link change, calculator or useful new page. Limit each pilot to one intervention on one article, or 1-3 coherent new pages; preserve factual sourcing, incremental value and rollback. A pilot tests uncertain traffic impact; it never licenses invented demand or unsourced content.',
@@ -156,7 +162,8 @@ export function seoAgentContext(input: unknown) {
             taskTypes: ['site_expansion', 'data_expansion', 'schema_expansion'],
             rule: 'Every managed site may receive evidence-backed expansion. Database-specific tasks supplement rather than replace general expansion.',
             databasePromotion: 'candidate -> authoritative verification -> repository validation -> public dataset -> generated routes/sitemap -> observation',
-            guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth. For database/programmatic expansion, apply database_indexation_quality and keep data coverage separate from the deliberate indexable URL surface.'
+            guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth. For database/programmatic expansion, apply database_indexation_quality, read cached site_indexation_summary when available, and keep data coverage separate from the deliberate indexable URL surface.',
+            indexationTools: ['site_indexation_summary', 'site_indexation_list']
           },
           experimentation: {
             defaultAction: 'Plan a bounded reversible site change when credible observations support it; do not wait for certainty about traffic uplift.',
