@@ -246,9 +246,26 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
 
   if (site.deploymentProvider !== 'cloudflare_pages') {
     const workerName = resolveWorkerName(site);
-    const envelope = await cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
-      `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`
-    );
+    const [scriptSubdomain, accountSubdomain, deploymentsEnvelope, domainsEnvelope] = await Promise.all([
+      cloudflare<{ enabled: boolean; previews_enabled: boolean }>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/subdomain`
+      ),
+      cloudflare<{ subdomain: string }>(
+        `/workers/subdomain`
+      ),
+      cloudflare<any>(
+        `/workers/scripts/${encodeURIComponent(workerName)}/deployments?per_page=${Math.min(args.limit, 20)}&page=1`
+      ),
+      cloudflare<any[]>(
+        `/workers/domains?service=${encodeURIComponent(workerName)}`
+      )
+    ]);
+
+    const deploymentsRaw = Array.isArray(deploymentsEnvelope.result?.deployments)
+      ? deploymentsEnvelope.result.deployments
+      : [];
+    const domainsRaw = Array.isArray(domainsEnvelope.result) ? domainsEnvelope.result : [];
+
     return {
       site: {
         id: site.id,
@@ -259,10 +276,31 @@ export async function cloudflarePagesSiteStatus(input: unknown, site: SiteTarget
       cloudflare: {
         platform: 'workers',
         workerName,
+        accountWorkersSubdomain: accountSubdomain.result?.subdomain ?? null,
         workersDev: {
-          enabled: Boolean(envelope.result?.enabled),
-          previewsEnabled: Boolean(envelope.result?.previews_enabled)
-        }
+          enabled: Boolean(scriptSubdomain.result?.enabled),
+          previewsEnabled: Boolean(scriptSubdomain.result?.previews_enabled)
+        },
+        deployments: deploymentsRaw.map((deployment: any) => ({
+          id: deployment?.id ?? null,
+          createdOn: deployment?.created_on ?? null,
+          source: deployment?.source ?? null,
+          strategy: deployment?.strategy ?? null,
+          versions: Array.isArray(deployment?.versions)
+            ? deployment.versions.map((version: any) => ({
+                versionId: version?.version_id ?? null,
+                percentage: version?.percentage ?? null
+              }))
+            : [],
+          annotations: deployment?.annotations ?? null
+        })),
+        domains: domainsRaw.map((domain: any) => ({
+          id: domain?.id ?? null,
+          hostname: domain?.hostname ?? null,
+          service: domain?.service ?? null,
+          environment: domain?.environment ?? null,
+          zoneName: domain?.zone_name ?? null
+        }))
       },
       publicationBacklog: {
         count: waitingTasks.length,
