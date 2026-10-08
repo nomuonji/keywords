@@ -17,6 +17,7 @@ import {
   seoRecoveryStatus,
   seoRecoveryPortfolioUpdate,
   seoRecoverySiteUpdate,
+  seoPortfolioPolicyGet, seoPortfolioPolicyUpdate, seoPortfolioAllocationStatus,
   seoTaskClaim,
   seoTaskCreate,
   seoTaskGet,
@@ -401,10 +402,7 @@ try {
   const activeRecovery = await seoRecoveryStatus({});
   assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, false);
   assert.equal(activeRecovery.effectivePolicy.scope, 'search_visibility_investment_intake');
-  assert.deepEqual(
-    [activeRecovery.effectivePolicy.investmentAllocation.demandConcentration, activeRecovery.effectivePolicy.investmentAllocation.structuralRebuild, activeRecovery.effectivePolicy.investmentAllocation.differentiatedSpeculation],
-    [40, 40, 20]
-  );
+  assert.deepEqual(activeRecovery.effectivePolicy.investmentAllocation.buckets.map((b: any) => b.targetPercent), [40,40,20]);
   assert.equal(activeRecovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
   // Claim refresh for the same already-running task must not be blocked by the
   // recovery intake gate; lease/collision safety remains in effect.
@@ -597,7 +595,46 @@ try {
   const evaluated = await optimizationEventUpdate({ id: 'opt-mature', expectedRevision: mature.revision, result: 'improved', evaluationMetrics: { positionDelta: -2.4 } });
   assert.equal(evaluated.phase, 'evaluated');
 
-  const { siteArticleCreateMany } = await import('../packages/commands/src/remote-site-operations.js');
+  // A future macro strategy can be changed as DATA, without changing the
+  // scheduled SEO Manager, Worker, or generic incident admission implementation.
+  const currentMacro = await seoPortfolioPolicyGet({});
+  assert.equal(currentMacro.persisted, false);
+  assert.equal(currentMacro.policy.revision, 0);
+  const revisedDefinition = structuredClone({
+    objective: currentMacro.policy.objective,
+    allocation: currentMacro.policy.allocation,
+    risk: currentMacro.policy.risk,
+    constraints: currentMacro.policy.constraints,
+    evaluation: currentMacro.policy.evaluation
+  });
+  revisedDefinition.allocation.buckets[0].targetPercent = 20;
+  revisedDefinition.allocation.buckets[1].targetPercent = 60;
+  revisedDefinition.constraints.incidentGrowthIntake.technical_integrity = 'allow';
+  const changedMacro = await seoPortfolioPolicyUpdate({
+    expectedRevision: 0, policy: revisedDefinition,
+    decisionReason: 'Smoke: rebalance portfolio and permit a different incident category without changing code',
+    updatedBy: 'site-operations-smoke'
+  });
+  assert.equal(changedMacro.revision, 1);
+  assert.equal((await seoPortfolioPolicyGet({})).policy.allocation.buckets[1].targetPercent, 60);
+  assert.equal((await seoRecoveryStatus({})).effectivePolicy.growthFrozenByDefault, false);
+  await assert.rejects(seoPortfolioPolicyUpdate({
+    expectedRevision: 0, policy: revisedDefinition, decisionReason: 'Stale update must fail',
+    updatedBy: 'site-operations-smoke'
+  }), /revision conflict/);
+  const changingScope = await seoTaskCreate({
+    id: 'policy-dynamic-technical-task', siteId: 'site-a',
+    targetUrls: ['https://example.com/rebalanced'], repo: 'nomuonji/site-a',
+    taskType: 'site_expansion', title: 'Strategy changes without a Worker migration',
+    rationale: 'Use a new high-upside policy bucket and preserve provenance.',
+    evidence: ['Synthetic test of policy-driven admission'], dedupeKey: 'site-a:policy-dynamic-technical-task',
+    allocationBucket: 'structural', estimatedEffortUnits: 3
+  });
+  assert.equal(changingScope.policyRevisionAtCreation, 1);
+  assert.equal(changingScope.allocationBucket, 'structural');
+  assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].assignedTasks >= 1, true);
+  assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].estimatedEffortUnits, 3);
+    const { siteArticleCreateMany } = await import('../packages/commands/src/remote-site-operations.js');
   let commitCalls = 0;
   const countingFetch = globalThis.fetch;
   globalThis.fetch = (async (input: any, init?: any) => {
@@ -644,8 +681,11 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 44);
+  assert.equal(listing.tools.length, 47);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_get'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_update'));
+  assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_allocation_status'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_registry_resolve'));
@@ -680,24 +720,24 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.26.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.27.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.equal(agentPolicy.structuredContent.recovery.portfolio.incidentCategory, 'technical_integrity');
   assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'new_task_create_and_unstarted_ready_claim_only');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
-  assert.match(agentPolicy.structuredContent.runContract.successCondition, /search_visibility recovery/);
-  assert.match(agentPolicy.structuredContent.runContract.successCondition, /Normal\/search_visibility recovery/);
+  assert.equal(agentPolicy.structuredContent.actor.canonicalRole, 'seo_manager');
+  assert.equal(agentPolicy.structuredContent.actor.independentPlannerAgent, false);
+  assert.equal(agentPolicy.structuredContent.macroPolicy.policy.revision, 0);
+  assert.match(agentPolicy.structuredContent.runContract.successCondition, /active macro-policy/);
   assert.match(agentPolicy.structuredContent.runContract.manual, /sites-operator-planner-manual.md$/);
   assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
   assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRepository, 2);
-  assert.equal(agentPolicy.structuredContent.runContract.recoveryOverride.otherCategoryContainment.normalReadyTargetSuspended, true);
-  assert.deepEqual(agentPolicy.structuredContent.runContract.recoveryOverride.otherCategoryContainment.blockedGrowthTaskTypes, ['new_article','site_expansion','data_expansion','schema_expansion']);
-  assert.deepEqual(agentPolicy.structuredContent.runContract.recoveryOverride.searchVisibilityInvestment.blockedGrowthTaskTypes, []);
-  assert.deepEqual(agentPolicy.structuredContent.runContract.recoveryOverride.searchVisibilityInvestment.startingCapacityAllocationPercent, { provenDemand: 40, structuralRebuild: 40, asymmetricSpeculation: 20 });
-  assert.match(JSON.stringify(agentPolicy.structuredContent.recoveryGovernance), /recovery/i);
+  assert.equal(agentPolicy.structuredContent.runContract.macroPolicy.source, 'seo_portfolio_policy_get');
+  assert.deepEqual(agentPolicy.structuredContent.macroPolicy.policy.allocation.buckets.map((b: any) => b.targetPercent), [40,40,20]);
+    assert.match(JSON.stringify(agentPolicy.structuredContent.recoveryGovernance), /recovery/i);
   assert.equal(agentPolicy.structuredContent.runContract.directionReview.mode, 'persistent_human_gate');
   assert.match(agentPolicy.structuredContent.runContract.directionReview.majorChangeGate, /No Worker task/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /discussion_required/);
@@ -729,8 +769,11 @@ try {
   assert.match(JSON.stringify(scaledRisk.structuredContent), /does not assert which Google system caused/i);
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
-  assert.equal(executorPolicy.structuredContent.recovery.portfolio.mode, 'recovery');
-  assert.equal(executorPolicy.structuredContent.recovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
+  assert.equal(executorPolicy.structuredContent.actor.canonicalRole, 'seo_worker');
+  assert.equal(executorPolicy.structuredContent.executionGate.mode, 'recovery');
+  assert.equal(executorPolicy.structuredContent.executionGate.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
+  assert.equal('macroPolicy' in executorPolicy.structuredContent, false);
+  assert.equal('recoveryGovernance' in executorPolicy.structuredContent, false);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Centralized Keywords GitHub Actions/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
