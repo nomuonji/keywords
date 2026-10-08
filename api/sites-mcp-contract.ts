@@ -1,8 +1,11 @@
-export const SITES_MCP_SERVER_VERSION = '0.20.0';
+export const SITES_MCP_SERVER_VERSION = '0.21.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
   'seo_agent_context',
+  'seo_portfolio_policy_get',
+  'seo_portfolio_policy_update',
+  'seo_portfolio_allocation_status',
   'seo_evaluator_list',
   'seo_evaluator_get',
   'site_registry_list',
