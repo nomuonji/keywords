@@ -5,6 +5,8 @@ import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, Seo
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
 import { seoPlanningDigestGet } from './seo-planning-digest.js';
+import { seoPortfolioPolicyDefinition, defaultSeoPortfolioPolicyRecord, growthIntakeDecision, allocationSnapshot } from './seo-portfolio-policy.js';
+import type { SeoPortfolioPolicyRecord } from './seo-portfolio-policy.js';
 
 const entityId = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const note = z.string().max(4000);
@@ -148,6 +150,15 @@ export const siteDirectionUpdateShape = {
 };
 const siteDirectionUpdateSchema = z.object(siteDirectionUpdateShape).strict();
 
+export const seoPortfolioPolicyGetShape = {};
+export const seoPortfolioPolicyUpdateShape = {
+  expectedRevision: z.number().int().min(0),
+  policy: seoPortfolioPolicyDefinition,
+  decisionReason: z.string().trim().min(20).max(2000),
+  updatedBy: z.string().trim().min(1).max(120)
+};
+const portfolioPolicyUpdateSchema = z.object(seoPortfolioPolicyUpdateShape).strict();
+export const seoPortfolioAllocationStatusShape = {};
 export const seoRecoveryStatusShape = { siteId: entityId.optional() };
 export const seoRecoveryPortfolioUpdateShape = {
   expectedRevision: z.number().int().min(0),
@@ -188,6 +199,8 @@ export const seoTaskCreateShape = {
   evaluation: seoTaskEvaluationShape.optional(),
   research: z.object({ sessionId: entityId, candidateId: entityId, candidateRevision: z.number().int().positive() }).strict().optional(),
   dedupeKey: z.string().trim().min(1).max(300),
+  allocationBucket: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).nullable().optional(),
+  estimatedEffortUnits: z.number().int().min(1).max(40).nullable().optional(),
   createdBy: z.string().trim().min(1).max(120).default('chatgpt_scheduler')
 };
 const seoTaskCreateSchema = z.object(seoTaskCreateShape).strict();
@@ -219,6 +232,8 @@ export const seoTaskUpdateShape = {
   expectedRevision: z.number().int().min(1),
   status: seoTaskStatus.optional(),
   priority: seoTaskPriority.optional(),
+  allocationBucket: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).nullable().optional(),
+  estimatedEffortUnits: z.number().int().min(1).max(40).nullable().optional(),
   issueNumber: z.number().int().positive().nullable().optional(),
   issueUrl: webUrl.nullable().optional(),
   issueState: issueState.nullable().optional(),
@@ -329,6 +344,55 @@ async function readRecoveryPortfolio(): Promise<{ record: SeoRecoveryPortfolioRe
   return { record: doc ? ({ ...defaultRecoveryPortfolio(), ...decoded(doc) } as SeoRecoveryPortfolioRecord) : defaultRecoveryPortfolio(), doc };
 }
 
+async function readSeoPortfolioPolicy(): Promise<{ record: SeoPortfolioPolicyRecord; doc: any | null }> {
+  const doc = await readDocument('seoPortfolioPolicies', 'organic-search');
+  if (!doc) return { record: defaultSeoPortfolioPolicyRecord(), doc: null };
+  const record = decoded(doc) as SeoPortfolioPolicyRecord;
+  const { objective, allocation, risk, constraints, evaluation } = record;
+  return { record: { ...record, ...seoPortfolioPolicyDefinition.parse({ objective, allocation, risk, constraints, evaluation }) }, doc };
+}
+
+export async function seoPortfolioPolicyGet(input: unknown = {}) {
+  z.object(seoPortfolioPolicyGetShape).strict().parse(input);
+  const { record, doc } = await readSeoPortfolioPolicy();
+  return { policy: record, persisted: Boolean(doc), policyVersion: record.revision,
+    activeManager: { role: 'seo_manager', runtime: 'scheduled_chatgpt', contractAlias: 'seo_agent_context(role=planner)', legacyMyPortalJob: 'archived' },
+    activeWorker: { role: 'seo_executor', runtime: 'separate_execution_agent', macroPolicyNotRequired: true } };
+}
+
+export async function seoPortfolioPolicyUpdate(input: unknown) {
+  const args = portfolioPolicyUpdateSchema.parse(input);
+  const { record: current, doc } = await readSeoPortfolioPolicy();
+  if (current.revision !== args.expectedRevision)
+    throw new Error('Portfolio policy revision conflict: re-read seo_portfolio_policy_get before updating');
+  const time = now();
+  const record: SeoPortfolioPolicyRecord = {
+    ...args.policy, id: 'organic-search', revision: current.revision + 1,
+    decisionReason: args.decisionReason, updatedBy: args.updatedBy,
+    createdAt: current.createdAt || time, updatedAt: time
+  };
+  const runId = await auditWrite('seo_portfolio_policy_update', record.id,
+    { __write: { collection: 'seoPortfolioPolicies', id: record.id, fields: record } }, doc);
+  return { ...record, runId };
+}
+
+export async function seoPortfolioAllocationStatus(input: unknown = {}) {
+  z.object(seoPortfolioAllocationStatusShape).strict().parse(input);
+  const { record: policy } = await readSeoPortfolioPolicy();
+  const collected: SeoTaskRecord[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await listDocuments('seoTasks', { limit: 300, pageToken });
+    collected.push(...(page.documents ?? []).map((doc: any) => decoded(doc) as SeoTaskRecord));
+    pageToken = page.nextPageToken;
+    if (collected.length >= 3000 && pageToken) throw new Error('Allocation snapshot requires pagination beyond 3000 SEO tasks; narrow the dataset first');
+  } while (pageToken);
+  return { policyRevision: policy.revision, objective: policy.objective,
+    allocation: allocationSnapshot(policy, collected),
+    evaluation: policy.evaluation,
+    taskCountObserved: collected.length };
+}
+
 async function readRecoverySite(siteId: string): Promise<{ record: SeoRecoverySiteRecord | null; doc: any | null }> {
   const doc = await readDocument('seoRecoverySites', siteId);
   return { record: doc ? (decoded(doc) as SeoRecoverySiteRecord) : null, doc };
@@ -337,14 +401,11 @@ async function readRecoverySite(siteId: string): Promise<{ record: SeoRecoverySi
 async function assertSeoRecoveryTaskAllowed(siteId: string, taskType: string) {
   const { record: portfolio } = await readRecoveryPortfolio();
   if (portfolio.mode !== 'recovery') return;
-  // Search-visibility loss is an investment signal, not a blanket SEO freeze.
-  // Other incident categories retain containment until incident-specific clearance.
-  if (portfolio.incidentCategory === 'search_visibility') return;
+  const { record: policy } = await readSeoPortfolioPolicy();
   const { record: site } = await readRecoverySite(siteId);
   const clearedForIncident = Boolean(site && site.state === 'cleared' && site.incidentId && site.incidentId === portfolio.incidentId);
-  if (RECOVERY_GROWTH_TASK_TYPES.has(taskType) && !clearedForIncident) {
-    throw new Error(`SEO recovery mode blocks taskType=${taskType} for site ${siteId} until the site is explicitly cleared for incident ${portfolio.incidentId ?? 'active'}`);
-  }
+  const decision = growthIntakeDecision(policy, portfolio.mode, portfolio.incidentCategory, taskType, clearedForIncident);
+  if (!decision.allowed) throw new Error(`SEO recovery mode blocks taskType=${taskType} for site ${siteId} until the site is explicitly cleared for incident ${portfolio.incidentId ?? 'active'} (policyRevision=${policy.revision})`);
 }
 
 async function commitAuditWrites(command: string, targetId: string, items: Array<{ data: object; previous?: any | null }>, auditDetail?: object) {
@@ -665,31 +726,37 @@ export async function seoRecoveryStatus(input: unknown = {}) {
     const listed = await listDocuments('seoRecoverySites', { limit: 100, orderBy: 'updatedAt desc' });
     sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
   }
-  const visibilityInvestment = portfolio.mode === 'recovery' && portfolio.incidentCategory === 'search_visibility';
+  const { record: macroPolicy } = await readSeoPortfolioPolicy();
+  const policyPermitsGrowth = portfolio.mode === 'recovery' &&
+    macroPolicy.constraints.incidentGrowthIntake[portfolio.incidentCategory] === 'allow';
   return {
     portfolio,
     sites,
-    effectivePolicy: visibilityInvestment ? {
+    macroPolicyRevision: macroPolicy.revision,
+    allocation: macroPolicy.allocation,
+    risk: macroPolicy.risk,
+    evaluation: macroPolicy.evaluation,
+    effectivePolicy: policyPermitsGrowth ? {
       growthFrozenByDefault: false,
       blockedTaskTypesUntilSiteClearance: [],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES, ...RECOVERY_GROWTH_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: false,
       inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
-      scope: 'search_visibility_investment_intake',
+      scope: 'policy_permitted_recovery_intake',
       incidentCategory: portfolio.incidentCategory,
-      investmentAllocation: { demandConcentration: 40, structuralRebuild: 40, differentiatedSpeculation: 20, unit: 'capacity_percent', status: 'starting_heuristic_not_hard_quota' },
-      investmentCadence: { weeklyPortfolioTriage: true, pilotWeeks: [2, 4], decisionDays: [30, 60], searchResultsNotGuaranteed: true },
-      queueRule: 'Keep an executable organic-Search opportunity pipeline. Concentrate on demonstrated demand, structural rebuilds and differentiated speculative SEO bets in parallel. Avoid serial cosmetic edits and fake quota-filling tasks.',
-      clearanceRule: 'Search-visibility recovery state does not block new growth intake. Incident exit requires actual recovery evidence. Preserve Site Direction approval for major positioning, mass deletion/noindex and domain moves.'
+      investmentAllocation: { buckets: macroPolicy.allocation.buckets, unit: macroPolicy.allocation.unit, mode: macroPolicy.allocation.mode },
+      investmentCadence: { portfolioReviewDays: macroPolicy.evaluation.portfolioReviewDays, pilotWindowDays: macroPolicy.evaluation.pilotWindowDays, reallocationWindowDays: macroPolicy.evaluation.reallocationWindowDays, searchResultsNotGuaranteed: true },
+      queueRule: 'Read current seo_portfolio_policy_get for objective, allocation, risk and evaluation windows; allocate capacity by policy buckets. Do not manufacture tasks to fill targets.',
+      clearanceRule: 'Current policy permits growth in this incident category without site clearance; incident resolution and major Site Direction decisions still require independent evidence.'
     } : portfolio.mode === 'recovery' ? {
       growthFrozenByDefault: true,
-      blockedTaskTypesUntilSiteClearance: [...RECOVERY_GROWTH_TASK_TYPES],
+      blockedTaskTypesUntilSiteClearance: [...macroPolicy.constraints.protectedTaskTypes],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: true,
       inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
-      scope: 'new_task_create_and_unstarted_ready_claim_only',
+      scope: 'policy_requires_clearance_for_growth_intake',
       incidentCategory: portfolio.incidentCategory,
-      queueRule: 'Do not replenish the normal growth ready-buffer while portfolio recovery is active. Create only evidence-backed recovery/repair work; task count is not a target.',
+      queueRule: 'Active policy blocks new growth intake for this incident category; continue permitted repair tasks and in-flight delivery.',
       clearanceRule: 'Site state must be cleared for the current incident before growth task types become creatable or claimable.'
     } : {
       growthFrozenByDefault: false,
@@ -952,6 +1019,15 @@ async function taskArticleIds(task: { siteId: string; repo: string; targetUrls: 
 export async function seoTaskCreate(input: unknown) {
   const args = seoTaskCreateSchema.parse(input);
   const evaluation = args.evaluation ? assertSeoTaskEvaluation(args.evaluation, args.taskType) : null;
+  const { record: macroPolicy } = await readSeoPortfolioPolicy();
+  if (args.allocationBucket && !macroPolicy.allocation.buckets.some(b => b.id === args.allocationBucket))
+    throw new Error('SEO task allocationBucket is not an active policy bucket');
+  if (!args.allocationBucket && args.estimatedEffortUnits)
+    throw new Error('Estimated effort requires an explicit allocationBucket');
+  if (!args.allocationBucket && !macroPolicy.allocation.unallocatedAllowed)
+    throw new Error('Active portfolio policy requires an allocation bucket');
+  if (args.estimatedEffortUnits && args.estimatedEffortUnits > macroPolicy.risk.maxEstimatedEffortUnitsPerTask)
+    throw new Error('SEO task exceeds active policy per-task effort cap');
   await ensureSite(args.siteId);
   await assertSeoRecoveryTaskAllowed(args.siteId, args.taskType);
   if (args.directionId) await ensureDecidedDirection(args.directionId, args.siteId);
@@ -986,6 +1062,10 @@ export async function seoTaskCreate(input: unknown) {
     evaluation,
     research,
     dedupeKey: args.dedupeKey,
+    allocationBucket: args.allocationBucket ?? null,
+    estimatedEffortUnits: args.estimatedEffortUnits ?? null,
+    policyRevisionAtCreation: macroPolicy.revision,
+    allocationPolicyRevision: macroPolicy.revision,
     issueNumber: null,
     issueUrl: null,
     issueState: null,
@@ -1097,6 +1177,22 @@ export async function seoTaskUpdate(input: unknown) {
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
   const t = now();
+  const changingAllocation = args.allocationBucket !== undefined || args.estimatedEffortUnits !== undefined;
+  let allocationPolicyRevision = current.allocationPolicyRevision ?? current.policyRevisionAtCreation ?? 0;
+  if (changingAllocation) {
+    if (!['ready', 'issued', 'proposed'].includes(current.status))
+      throw new Error('Portfolio allocation can only be revised before Worker execution starts');
+    const { record: macroPolicy } = await readSeoPortfolioPolicy();
+    const bucket = args.allocationBucket === undefined ? current.allocationBucket : args.allocationBucket;
+    const effort = args.estimatedEffortUnits === undefined ? current.estimatedEffortUnits : args.estimatedEffortUnits;
+    if (bucket && !macroPolicy.allocation.buckets.some(b => b.id === bucket))
+      throw new Error('SEO task allocationBucket is not in active policy');
+    if (!bucket && (effort || !macroPolicy.allocation.unallocatedAllowed))
+      throw new Error('Active portfolio policy requires a bucket for estimated effort');
+    if (effort && effort > macroPolicy.risk.maxEstimatedEffortUnitsPerTask)
+      throw new Error('Allocation effort exceeds active policy cap');
+    allocationPolicyRevision = macroPolicy.revision;
+  }
   const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, claimRunId, ...patch } = args;
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
@@ -1174,6 +1270,7 @@ export async function seoTaskUpdate(input: unknown) {
     ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
     articleIds: await taskArticleIds(current),
     status,
+    allocationPolicyRevision,
     deploymentVerification,
     executionClaim: nextExecutionClaim,
     deliveryHandoff,

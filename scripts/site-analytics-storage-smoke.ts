@@ -4,7 +4,7 @@ import { remoteSitesStatus } from '../packages/commands/src/remote-site-operatio
 import { SITES_MCP_SERVER_VERSION, SITES_MCP_TOOL_NAMES } from '../api/sites-mcp-contract.js';
 
 const status: any = remoteSitesStatus();
-assert.equal(SITES_MCP_SERVER_VERSION, '0.20.0');
+assert.equal(SITES_MCP_SERVER_VERSION, '0.21.0');
 assert.equal(SITES_MCP_TOOL_NAMES.includes('site_metric_snapshot_save' as any), false, 'legacy metric snapshot writes must not be public MCP');
 assert.equal(SITES_MCP_TOOL_NAMES.includes('site_metric_snapshot_list' as any), true, 'legacy read compatibility remains available');
 assert.equal(status.analyticsStoragePolicy.durableAnalytics, 'seoPlanningDigests/{siteId}');

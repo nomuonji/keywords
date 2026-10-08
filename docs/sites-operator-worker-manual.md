@@ -54,7 +54,7 @@ A completed task may therefore be `completed + pending` or `completed + failed`.
 
 A Worker execution is an **ephemeral run**, not a durable identity. A later scheduled session is not "the same Worker" and does not need an explicit handoff from a prior session.
 
-1. Call `seo_agent_context(role=executor)` and read the embedded `recovery` state. For search_visibility incidents, newly claim useful SEO growth tasks on uncleared sites as directed by the active investment policy; for all other recovery categories, do not newly claim uncleared growth tasks. A task already in `in_progress` (including a valid same-run claim refresh or lease-safe reclaim) and a task in `push_pending` / `branch_ready` / `pr_open` continue through their existing execution and delivery paths; this is not a hard emergency stop.
+1. Call `seo_agent_context(role=executor)` and read the minimal `executionGate` (the macro investment policy is deliberately excluded). The current Macro Policy is enforced by `seo_task_claim`; do not infer a freeze or new investment permission from an old hard-coded incident category. Claim only a real assigned task. The Worker does not allocate portfolio resources. A task already in `in_progress` (including a valid same-run claim refresh or lease-safe reclaim) and a task in `push_pending` / `branch_ready` / `pr_open` continue through their existing execution and delivery paths; this is not a hard emergency stop.
 2. List `in_progress` work before new `ready` work. Read both `executionClaim` and `deliveryHandoff`.
    - `deliveryHandoff.state = push_pending`: inspect the recorded branch/head SHA first. If the remote `seo/*` branch already exists at that exact SHA, promote to `branch_ready` rather than reimplementing; the central delivery controller can perform the same exact-HEAD reconciliation. If the remote branch is absent or still at an older SHA, the active Worker may still be pushing; after the short lease expires, reclaim only if needed.
    - `deliveryHandoff.state = branch_ready | pr_open`: external delivery is active; do **not** reclaim merely to create/merge a PR.
@@ -97,7 +97,7 @@ Do not reduce quality to fit the execution window. If the selected Task is mater
 
 ### Direction-linked implementation
 
-A Task may carry `directionId` when it materially implements a human-decided site strategy.
+A Task may carry `directionId` when it materially implements a human-decided site strategy. It may also expose `policyRevisionAtCreation` / `allocationBucket` as historical provenance; neither authorizes changing the Manager's investment decision.
 
 Before changing code/content for such a Task:
 

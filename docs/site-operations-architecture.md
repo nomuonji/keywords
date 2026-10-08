@@ -1,5 +1,7 @@
 # Agent-native Site Operations Architecture
 
+> **Historical snapshot (2026-09-17).** Active SEO actors and source-of-truth policy are now defined in [sites-operator-actor-model.md](./sites-operator-actor-model.md) (2026-10-08). Do not treat the old persistent Autopilot worker or archived My Portal SEO Manager described below as the current scheduled SEO architecture. The active scheduled SEO Manager is the ChatGPT Site SEO Task Planner with the legacy MCP role alias `planner`.
+
 Updated: 2026-09-17
 
 This document describes the **current implemented architecture** of `nomuonji/keywords` and the remaining operational work required to prove the full SEO loop on real sites over time.
