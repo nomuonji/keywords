@@ -705,7 +705,7 @@ try {
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /site_direction_create/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /directionId/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /6 distinct active managed sites/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /asymmetric Search bets/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /differentiated speculative bets/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
