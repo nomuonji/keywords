@@ -698,6 +698,21 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_update'));
+  const portfolioTool = listing.tools.find((tool: any) => tool.name === 'seo_portfolio_policy_update');
+  assert.ok(portfolioTool?.inputSchema?.properties?.policy?.properties?.objective,
+    'MCP must advertise the entire nested macro-policy shape');
+  const portfolioSchema = portfolioTool.inputSchema.properties.policy;
+  const incidentSchema = portfolioSchema.properties.constraints.properties.incidentGrowthIntake;
+  assert.equal(incidentSchema.type, 'object');
+  assert.equal(incidentSchema.propertyNames, undefined,
+    'ChatGPT tool introspection should not require propertyNames JSON Schema');
+  assert.deepEqual(Object.keys(incidentSchema.properties).sort(), [
+    'content_quality','measurement_integrity','other','search_visibility','technical_integrity'
+  ]);
+  assert.equal(Array.isArray(portfolioSchema.properties.evaluation.properties.pilotWindowDays.items), false,
+    'Do not emit draft-07 tuple items array in ChatGPT tool schema');
+  assert.equal(Array.isArray(portfolioSchema.properties.evaluation.properties.reallocationWindowDays.items), false);
+
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_allocation_status'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_evaluator_get'));

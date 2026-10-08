@@ -4,7 +4,7 @@ import { z } from 'zod';
 // are reusable mechanics and never encode the active 40/40/20 thesis.
 const key = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/);
 const taskKind = z.enum(['revise','merge','delete','internal_links','technical','new_article','site_expansion','data_expansion','schema_expansion']);
-const incidentKind = z.enum(['search_visibility','content_quality','technical_integrity','measurement_integrity','other']);
+const incidentIntake = z.enum(['allow','clearance_required']);
 export const seoPortfolioPolicyDefinition = z.object({
   objective: z.object({ metric: z.enum(['gsc_clicks','gsc_impressions','organic_sessions']), optimization: z.enum(['maximize','stabilize','restore']), scope: z.literal('active_managed_sites') }).strict(),
   allocation: z.object({ buckets: z.array(z.object({
@@ -14,19 +14,26 @@ export const seoPortfolioPolicyDefinition = z.object({
   risk: z.object({ appetite: z.enum(['conservative','balanced','aggressive']), maxNewTasksPerRun: z.number().int().min(0).max(20),
     maxNewTasksPerRepository: z.number().int().min(0).max(10), maxEstimatedEffortUnitsPerTask: z.number().int().min(1).max(40),
     independentBets: z.boolean() }).strict(),
-  constraints: z.object({ incidentGrowthIntake: z.record(incidentKind,z.enum(['allow','clearance_required'])),
+  constraints: z.object({ incidentGrowthIntake: z.object({
+      search_visibility: incidentIntake,
+      content_quality: incidentIntake,
+      technical_integrity: incidentIntake,
+      measurement_integrity: incidentIntake,
+      other: incidentIntake
+    }).strict(),
     protectedTaskTypes: z.array(taskKind).max(9), majorDirectionRequiresDecision: z.literal(true),
     preserveDeliveryHandoffs: z.literal(true), noScaledLowValuePages: z.literal(true) }).strict(),
   evaluation: z.object({ portfolioReviewDays: z.number().int().min(1).max(90),
-    pilotWindowDays: z.tuple([z.number().int().min(1).max(90),z.number().int().min(1).max(180)]),
-    reallocationWindowDays: z.tuple([z.number().int().min(1).max(180),z.number().int().min(1).max(365)]),
+    pilotWindowDays: z.array(z.number().int().min(1).max(180)).length(2),
+    reallocationWindowDays: z.array(z.number().int().min(1).max(365)).length(2),
     evidenceRule: z.literal('missing_is_unknown') }).strict()
 }).strict().superRefine((p,ctx)=>{
   if(new Set(p.allocation.buckets.map(x=>x.id)).size!==p.allocation.buckets.length)
     ctx.addIssue({code:'custom',path:['allocation','buckets'],message:'Duplicate bucket IDs'});
   if(p.allocation.buckets.reduce((s,x)=>s+x.targetPercent,0)!==100)
     ctx.addIssue({code:'custom',path:['allocation','buckets'],message:'Bucket percentages must total 100'});
-  if(p.evaluation.pilotWindowDays[0]>p.evaluation.pilotWindowDays[1]||
+  if(p.evaluation.pilotWindowDays[0]>90 || p.evaluation.reallocationWindowDays[0]>180 ||
+     p.evaluation.pilotWindowDays[0]>p.evaluation.pilotWindowDays[1] ||
      p.evaluation.reallocationWindowDays[0]>p.evaluation.reallocationWindowDays[1])
     ctx.addIssue({code:'custom',path:['evaluation'],message:'Evaluation windows must be ascending'});
 });
