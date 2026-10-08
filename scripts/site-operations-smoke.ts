@@ -383,9 +383,7 @@ try {
     runId: 'pre-incident-claim', actor: 'site-operations-smoke', leaseMinutes: 75
   });
 
-  // Portfolio recovery is a control-plane mode, not a prompt convention.
-  // It must block both new growth-task creation and claims of already-ready
-  // growth tasks until the site is explicitly cleared for the active incident.
+  // Search-visibility recovery permits high-upside SEO investment; other incidents retain containment.
   const recovery = await seoRecoveryPortfolioUpdate({
     expectedRevision: 0,
     mode: 'recovery',
@@ -401,7 +399,12 @@ try {
   assert.equal(recovery.mode, 'recovery');
   assert.equal(recovery.incidentCategory, 'search_visibility');
   const activeRecovery = await seoRecoveryStatus({});
-  assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, true);
+  assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, false);
+  assert.equal(activeRecovery.effectivePolicy.scope, 'search_visibility_investment_intake');
+  assert.deepEqual(
+    [activeRecovery.effectivePolicy.investmentAllocation.demandConcentration, activeRecovery.effectivePolicy.investmentAllocation.structuralRebuild, activeRecovery.effectivePolicy.investmentAllocation.differentiatedSpeculation],
+    [40, 40, 20]
+  );
   assert.equal(activeRecovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
   // Claim refresh for the same already-running task must not be blocked by the
   // recovery intake gate; lease/collision safety remains in effect.
@@ -427,25 +430,20 @@ try {
   });
   assert.equal(confirmed.incidentId, 'spam-recovery-2026-10');
 
-  await assert.rejects(seoTaskCreate({
-    id: 'seo-recovery-block-new',
-    siteId: 'site-a',
-    targetUrls: ['https://example.com/new-search-surface'],
-    repo: 'nomuonji/site-a',
-    taskType: 'new_article',
-    title: 'Should be blocked during recovery',
-    rationale: 'Recovery must override ordinary growth supply.',
-    evidence: ['This is intentionally a net-new Search-surface task.'],
-    dedupeKey: 'site-a:recovery:block-new'
-  }), /SEO recovery mode blocks taskType=new_article/);
-
-  await assert.rejects(seoTaskClaim({
-    id: siteExpansionTask.id,
-    expectedRevision: siteExpansionTask.revision,
-    runId: 'recovery-blocked-claim',
-    actor: 'site-operations-smoke',
-    leaseMinutes: 75
-  }), /SEO recovery mode blocks taskType=site_expansion/);
+  const visibilityGrowth = await seoTaskCreate({
+    id: 'seo-recovery-investment-new', siteId: 'site-a',
+    targetUrls: ['https://example.com/new-search-surface'], repo: 'nomuonji/site-a',
+    taskType: 'new_article', title: 'Search growth during visibility recovery',
+    rationale: 'An independently sourced, useful Search answer with asymmetric upside.',
+    evidence: ['Bounded real user answer; not a mass SEO doorway page.'],
+    dedupeKey: 'site-a:recovery:invest-new'
+  });
+  assert.equal(visibilityGrowth.status, 'ready');
+  const claimedGrowth = await seoTaskClaim({
+    id: siteExpansionTask.id, expectedRevision: siteExpansionTask.revision,
+    runId: 'recovery-investment-claim', actor: 'site-operations-smoke', leaseMinutes: 75
+  });
+  assert.equal(claimedGrowth.status, 'in_progress');
 
   const recoveryRepair = await seoTaskCreate({
     id: 'seo-recovery-repair',
@@ -513,6 +511,16 @@ try {
     evidence: ['Synthetic technical integrity regression.']
   });
   assert.equal(technicalIncident.incidentCategory, 'technical_integrity');
+  const containment = await seoRecoveryStatus({});
+  assert.equal(containment.effectivePolicy.growthFrozenByDefault, true);
+  assert.equal(containment.effectivePolicy.blockedTaskTypesUntilSiteClearance.length, 4);
+  await assert.rejects(seoTaskCreate({
+    id: 'seo-technical-growth-block', siteId: 'site-a',
+    targetUrls: ['https://example.com/technical-growth'], repo: 'nomuonji/site-a',
+    taskType: 'data_expansion', title: 'Technical incident blocks growth',
+    rationale: 'Active technical incident requires containment.',
+    evidence: ['Synthetic technical incident.'], dedupeKey: 'site-a:technical-growth'
+  }), /SEO recovery mode blocks taskType=data_expansion/);
   await assert.rejects(seoTaskClaim({
     id: clearedGrowth.id, expectedRevision: clearedGrowth.revision,
     runId: 'stale-clearance-blocked', actor: 'site-operations-smoke', leaseMinutes: 75
