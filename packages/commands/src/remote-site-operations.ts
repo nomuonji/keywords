@@ -232,6 +232,8 @@ export const seoTaskUpdateShape = {
   expectedRevision: z.number().int().min(1),
   status: seoTaskStatus.optional(),
   priority: seoTaskPriority.optional(),
+  allocationBucket: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).nullable().optional(),
+  estimatedEffortUnits: z.number().int().min(1).max(40).nullable().optional(),
   issueNumber: z.number().int().positive().nullable().optional(),
   issueUrl: webUrl.nullable().optional(),
   issueState: issueState.nullable().optional(),
@@ -1063,6 +1065,7 @@ export async function seoTaskCreate(input: unknown) {
     allocationBucket: args.allocationBucket ?? null,
     estimatedEffortUnits: args.estimatedEffortUnits ?? null,
     policyRevisionAtCreation: macroPolicy.revision,
+    allocationPolicyRevision: macroPolicy.revision,
     issueNumber: null,
     issueUrl: null,
     issueState: null,
@@ -1174,6 +1177,22 @@ export async function seoTaskUpdate(input: unknown) {
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
   const t = now();
+  const changingAllocation = args.allocationBucket !== undefined || args.estimatedEffortUnits !== undefined;
+  let allocationPolicyRevision = current.allocationPolicyRevision ?? current.policyRevisionAtCreation ?? 0;
+  if (changingAllocation) {
+    if (!['ready', 'issued', 'proposed'].includes(current.status))
+      throw new Error('Portfolio allocation can only be revised before Worker execution starts');
+    const { record: macroPolicy } = await readSeoPortfolioPolicy();
+    const bucket = args.allocationBucket === undefined ? current.allocationBucket : args.allocationBucket;
+    const effort = args.estimatedEffortUnits === undefined ? current.estimatedEffortUnits : args.estimatedEffortUnits;
+    if (bucket && !macroPolicy.allocation.buckets.some(b => b.id === bucket))
+      throw new Error('SEO task allocationBucket is not in active policy');
+    if (!bucket && (effort || !macroPolicy.allocation.unallocatedAllowed))
+      throw new Error('Active portfolio policy requires a bucket for estimated effort');
+    if (effort && effort > macroPolicy.risk.maxEstimatedEffortUnitsPerTask)
+      throw new Error('Allocation effort exceeds active policy cap');
+    allocationPolicyRevision = macroPolicy.revision;
+  }
   const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, claimRunId, ...patch } = args;
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
@@ -1251,6 +1270,7 @@ export async function seoTaskUpdate(input: unknown) {
     ...Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)),
     articleIds: await taskArticleIds(current),
     status,
+    allocationPolicyRevision,
     deploymentVerification,
     executionClaim: nextExecutionClaim,
     deliveryHandoff,
