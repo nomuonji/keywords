@@ -730,11 +730,11 @@ try {
   assert.equal(agentPolicy.structuredContent.actor.canonicalRole, 'seo_manager');
   assert.equal(agentPolicy.structuredContent.actor.independentPlannerAgent, false);
   assert.equal(agentPolicy.structuredContent.macroPolicy.policy.revision, 0);
-  assert.match(agentPolicy.structuredContent.runContract.successCondition, /active macro-policy/);
+  assert.match(agentPolicy.structuredContent.runContract.successCondition, /active policy objective/);
   assert.match(agentPolicy.structuredContent.runContract.manual, /sites-operator-planner-manual.md$/);
-  assert.equal(agentPolicy.structuredContent.runContract.readyInventoryTarget, 8);
-  assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRun, 5);
-  assert.equal(agentPolicy.structuredContent.runContract.maxNewTasksPerRepository, 2);
+  assert.equal(agentPolicy.structuredContent.runContract.defaultLegacyReadyInventoryTarget, 8);
+  assert.equal(agentPolicy.structuredContent.macroPolicy.policy.risk.maxNewTasksPerRun, 5);
+  assert.equal(agentPolicy.structuredContent.macroPolicy.policy.risk.maxNewTasksPerRepository, 3);
   assert.equal(agentPolicy.structuredContent.runContract.macroPolicy.source, 'seo_portfolio_policy_get');
   assert.deepEqual(agentPolicy.structuredContent.macroPolicy.policy.allocation.buckets.map((b: any) => b.targetPercent), [40,40,20]);
     assert.match(JSON.stringify(agentPolicy.structuredContent.recoveryGovernance), /recovery/i);
@@ -745,7 +745,7 @@ try {
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /site_direction_create/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /directionId/);
   assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /6 distinct active managed sites/);
-  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /differentiated speculative bets/);
+  assert.match(JSON.stringify(agentPolicy.structuredContent.instructions), /allocation.buckets/);
   assert.doesNotMatch(agentPolicy.structuredContent.runContract.successCondition, /GitHub create_issue/);
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
