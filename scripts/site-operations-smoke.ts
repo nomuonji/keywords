@@ -695,6 +695,20 @@ try {
   };
   const listing = await call('tools/list', {});
   assert.equal(listing.tools.length, 47);
+  // Diagnostic: ChatGPT app refresh consumes tools/list JSON Schema, not just tool names.
+  for (const name of ['seo_portfolio_policy_get', 'seo_portfolio_policy_update',
+    'seo_portfolio_allocation_status', 'cloudflare_worker_inherit_secrets']) {
+    const tool = listing.tools.find((entry: any) => entry.name === name);
+    assert.ok(tool, 'missing advertised MCP tool: ' + name);
+    console.log('MCP_REFRESH_SCHEMA_DIAG', JSON.stringify({ name,
+      inputSchema: tool.inputSchema, description: tool.description,
+      outputSchema: tool.outputSchema ?? null }));
+    assert.equal(tool.inputSchema?.type, 'object', name + ': root inputSchema must be an object');
+  }
+  const updateTool = listing.tools.find((entry: any) => entry.name === 'seo_portfolio_policy_update');
+  assert.ok(updateTool?.inputSchema?.properties?.policy?.properties?.objective,
+    'policy update must advertise nested policy.objective in tools/list');
+
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_update'));
