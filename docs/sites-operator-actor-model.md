@@ -37,9 +37,9 @@
 
 ## 政策変更時
 
-- 新revisionをaudited CAS（expectedRevision）で保存。40/40/20→保守路線、探索優先、品質回復等への切り替えで新Worker/新Plannerを作らない。
+- 政策自体の変更は人間の明示的な意思決定に従う。定期Managerは勝手に目的・リスク許容度・incident ruleを書き換えない。新revisionをaudited CAS（expectedRevision）で保存。40/40/20→保守路線、探索優先、品質回復等への切り替えで新Worker/新Plannerを作らない。
 - 新規create/claimは**その時点の現行policy**を読む。旧タスクのpolicyRevisionAtCreationは履歴に固定され、過去の判断根拠を捏造しない。
-- ready / issuedはManagerが新revisionで再検証し、必要なら優先順位やキャンセルを調整する。in_progress、branch_ready、pr_openのdeliveryを新政策のみを理由に自動削除しない。強い禁止事項なら専用レビュー。
+- ready / issuedはManagerが新revisionで再検証し、必要なら優先順位や`allocationBucket`・`estimatedEffortUnits`を再配分する（`seo_task_update`）。作成時のpolicyRevisionAtCreationは書き換えない。in_progress、branch_ready、pr_openのdeliveryを新政策のみを理由に自動削除しない。強い禁止事項なら専用レビュー。
 - 大規模な方向転換、ドメイン統廃合、広範囲noindex、サイト停止は既存Site Directionの人間によるdecided gateを必ず保持する。
 - 成果は実際のSearchデータとデプロイreceiptで判断し、unknownを0とみなさない。
 
