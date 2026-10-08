@@ -260,6 +260,11 @@ export type SeoTaskRecord = {
   /** Exact research revision and evidence snapshot; later candidate edits cannot rewrite the task basis. */
   research?: { sessionId: string; candidateId: string; candidateRevision: number; discovery: ThemeDiscovery } | null;
   dedupeKey: string;
+  /** Policy identity at task creation. Historical task policy is not silently rewritten. */
+  policyRevisionAtCreation?: number;
+  /** Manager's policy bucket and estimated capacity, not Worker instructions. */
+  allocationBucket?: string | null;
+  estimatedEffortUnits?: number | null;
   /** Optional historical GitHub Issue reference; no longer required for newly planned tasks. */
   issueNumber: number | null;
   issueUrl: string | null;
