@@ -634,6 +634,19 @@ try {
   assert.equal(changingScope.allocationBucket, 'structural');
   assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].assignedTasks >= 1, true);
   assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].estimatedEffortUnits, 3);
+  const rebucketed = await seoTaskUpdate({
+    id: changingScope.id, expectedRevision: changingScope.revision,
+    allocationBucket: 'speculative', estimatedEffortUnits: 2,
+    appendHistory: { actor: 'site-operations-smoke', event: 'reallocation',
+      detail: 'Generic policy bucket transfer before worker claim' }
+  });
+  assert.equal(rebucketed.policyRevisionAtCreation, 1, 'origin policy must not change');
+  assert.equal(rebucketed.allocationPolicyRevision, 1);
+  assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[2].estimatedEffortUnits, 2);
+  await assert.rejects(seoTaskUpdate({
+    id: rebucketed.id, expectedRevision: rebucketed.revision,
+    allocationBucket: 'not_an_active_bucket'
+  }), /allocationBucket is not in active policy/);
     const { siteArticleCreateMany } = await import('../packages/commands/src/remote-site-operations.js');
   let commitCalls = 0;
   const countingFetch = globalThis.fetch;
