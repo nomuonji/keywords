@@ -262,6 +262,8 @@ export type SeoTaskRecord = {
   dedupeKey: string;
   /** Policy identity at task creation. Historical task policy is not silently rewritten. */
   policyRevisionAtCreation?: number;
+  /** The revision that last assigned this task's investment bucket (creation revision remains immutable). */
+  allocationPolicyRevision?: number;
   /** Manager's policy bucket and estimated capacity, not Worker instructions. */
   allocationBucket?: string | null;
   estimatedEffortUnits?: number | null;
