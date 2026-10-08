@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.26.0';
+export const SEO_AGENT_POLICY_VERSION = '1.27.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -50,14 +50,10 @@ const shared = {
     queueRule: 'Search visibility: ready target 8, up to 5 justified new tasks per run and up to 3 per repo. Other incident categories pause growth intake. Task count is never a performance result.',
     evidenceRule: 'Do not claim a specific Google update caused the incident without direct evidence. Use direct indexation/Search observations plus primary Search policy to justify risk controls.',
     clearance: 'Search-visibility growth needs no site clearance; resolving an incident still needs fresh evidence. Other categories retain site-specific clearance.',
-    investmentStrategy: {
-      mission: 'Maximize aggregate organic Google Search traffic for managed sites. Monetization, social and other acquisition are outside Sites Operator scope.',
-      startingCapacityAllocationPercent: { provenDemand: 40, structuralRebuild: 40, asymmetricSpeculation: 20 },
-      selection: 'Choose material upside per unit of development, search need, unique user value, technical discoverability and downside. A few asymmetric site bets can dominate many cosmetic adjustments.',
-      implementation: 'Run distinct site/page-family interventions concurrently; measure results when available, and do not wait for confirmed Google ranking causation before a credible reversible bet.',
-      pacing: 'Weekly portfolio triage; 2-4 week pilots and 30-60 day capital reallocation decisions are operating cadences, not Google indexing guarantees.',
-      safeguards: 'Rollback, coherent site identity, authoritative sources, current Site Direction human approvals, evidence-bound URL surfaces and scaled-content/doorway spam prohibitions remain in force.'
-    }
+    strategySource: 'seo_portfolio_policy_get is the canonical versioned Macro Policy; allocations, risk tolerance and evaluation windows are not constants in this code.',
+    operatingRole: 'The scheduled Site SEO Task Planner is the active SEO Manager (planner API alias); the 2026-09-30 My Portal site-seo-operations Manager is archived, not concurrent.',
+    responsibility: 'Manager performs both portfolio allocation and concrete SEO task planning; Worker implements assigned tasks without interpreting investment strategy.'
+
   },
   directionReview: {
     principle: 'Planner must detect material strategic mismatch, persist unresolved/decided strategy in Site Direction records, and never implement a major direction change before human discussion.',
@@ -94,8 +90,8 @@ const shared = {
 } as const;
 
 const plannerInstructions = [
-  'Read this context first, then read the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The live policy and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
-  'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. If incidentCategory=search_visibility, resume useful growth-task create/claim on uncleared sites and allocate organic Search work to concentrated demand, structural rebuilds and differentiated speculative bets. Other incident categories retain growth containment; in-flight deliveries always continue. Observe Site Direction and quality gates.',
+  'You are the currently scheduled SEO Manager (planner API role), NOT a subordinate of the archived My Portal SEO Manager. Read this context and seo_portfolio_policy_get first, then the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The active policy record and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
+  'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. Govern task mix and new intake by the active Macro Policy; do not bake in any strategy percentages. If incidentCategory=search_visibility, resume useful growth-task create/claim on uncleared sites and allocate organic Search work to concentrated demand, structural rebuilds and differentiated speculative bets. Other incident categories retain growth containment; in-flight deliveries always continue. Observe Site Direction and quality gates.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
   'In normal mode, reserve a bounded discovery pass alongside active experiment supply. In search_visibility recovery, retain bounded creative market discovery alongside rapid implementation. Only other incident categories suspend growth discovery and prioritize containment.',
@@ -132,7 +128,7 @@ const plannerInstructions = [
 ];
 
 const executorInstructions = [
-  'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
+  'You are a task-execution Worker, not a Manager or separate policy-planning actor. Read the minimal executor contract and exact SEO Task, then the Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Do not independently allocate investment buckets or override task scope.',
   'The live incident is embedded in this context. Search-visibility recovery allows new claims of SEO growth tasks for uncleared sites; other recovery incident categories may block new growth until site clearance. Existing in_progress and the central PR delivery lane remain allowed. Continue those validated handoffs normally.',
   'Treat every scheduled/manual execution as a new ephemeral run: there is no persistent worker identity or "previous self" across sessions. Inspect in_progress work first. An active executionClaim is temporarily protected. push_pending is a Worker write-ahead state immediately before remote push; if the recorded seo/* branch already exists remotely at the exact recorded headSha, promote it to branch_ready instead of reimplementing. branch_ready or pr_open belongs to the external delivery lane and must not be reclaimed merely to create/merge a PR. ci_failed is reclaimable for a corrective Worker pass. Other unleased/expired in_progress work is reclaimable when still valid.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
@@ -157,14 +153,21 @@ export function seoAgentContext(input: unknown) {
   return {
     policyVersion: SEO_AGENT_POLICY_VERSION,
     role,
-    ...shared,
+    ...(role === 'planner' ? shared : {
+      architecture: { sitesOperator: shared.architecture.sitesOperator, github: shared.architecture.github },
+      managedScope: shared.managedScope,
+      expansion: shared.expansion
+    }),
+    actor: role === 'planner'
+      ? { canonicalRole: 'seo_manager', implementationRole: 'planner', runtime: 'scheduled_chatgpt', scheduledTask: 'Site SEO Task Planner', independentPlannerAgent: false, legacyMyPortalSeoManager: 'archived' }
+      : { canonicalRole: 'seo_worker', implementationRole: 'executor', runtime: 'separate_execution_agent', requiresFullMacroPolicy: false },
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner)', 'seo_recovery_status (mandatory mode gate)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
+          start: ['seo_agent_context(role=planner) — active scheduled SEO Manager', 'seo_portfolio_policy_get and seo_portfolio_allocation_status', 'seo_recovery_status (mandatory mode gate)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           discovery: {
-            required: 'normal_or_search_visibility_investment_mode',
+            required: 'as_directed_by_active_macro_policy_and_intake_rules',
             sessionPattern: 'seo-discovery-{siteId}',
             tools: ['theme_research_context', 'research_session_create', 'keyword_research_pipeline', 'search_gap_research', 'theme_candidate_upsert', 'theme_candidate_challenge'],
             lateralPass: 'Diverge before filtering: infer the searcher state from a real observation and test multiple language/mental-model shifts (colloquial, name-recall, analogy, alternatives, negative constraints, situation/proxy-goal). Abstract the reusable mechanism before mapping it to a site. No requirement to promote any idea.',
@@ -183,7 +186,7 @@ export function seoAgentContext(input: unknown) {
           expansion: {
             siteShapeField: 'site_registry.siteShape',
             taskTypes: ['site_expansion', 'data_expansion', 'schema_expansion'],
-            rule: 'Normal and search_visibility recovery allow useful sourced expansion on uncleared sites. Other incident categories block growth intake until site clearance. Site Direction and spam-quality gates always apply.',
+            rule: 'Dynamic policy constraints.incidentGrowthIntake controls intake; no individual incident category or investment strategy is hard-coded here. Site Direction and spam-quality gates always apply.',
             databasePromotion: 'candidate -> authoritative verification -> repository validation -> public dataset -> generated routes/sitemap -> observation',
             guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth. For database/programmatic expansion, apply database_indexation_quality, read cached site_indexation_summary when available, and keep data coverage separate from the deliberate indexable URL surface.',
             indexationTools: ['site_indexation_summary', 'site_indexation_list']
@@ -202,29 +205,12 @@ export function seoAgentContext(input: unknown) {
           targetNewTasksPerRun: [3, 5],
           maxNewTasksPerRun: 5,
           maxNewTasksPerRepository: 2,
-          recoveryOverride: {
-            statusTool: 'seo_recovery_status',
-            searchVisibilityInvestment: {
-              when: 'mode=recovery and incidentCategory=search_visibility',
-              readyInventoryTarget: 8,
-              targetNewTasksPerRun: [3, 5],
-              maxNewTasksPerRun: 5,
-              maxNewTasksPerRepository: 3,
-              blockedGrowthTaskTypes: [],
-              clearanceRequiredForGrowth: false,
-              startingCapacityAllocationPercent: { provenDemand: 40, structuralRebuild: 40, asymmetricSpeculation: 20 },
-              cadence: 'Weekly multi-site triage, 2-4 week bets, 30-60 day reallocation decisions. Re-crawl and ranking are not guaranteed.',
-              rule: 'Prioritize material parallel SEO growth experiments over serial cosmetic edits. Preserve source integrity and Site Direction approval.'
-            },
-            otherCategoryContainment: {
-              when: 'mode=recovery and incidentCategory!=search_visibility',
-              normalReadyTargetSuspended: true,
-              targetNewTasksPerRun: [0, 3],
-              maxNewTasksPerRun: 3,
-              maxNewTasksPerRepository: 1,
-              blockedGrowthTaskTypes: ['new_article', 'site_expansion', 'data_expansion', 'schema_expansion'],
-              clearanceRequiredForGrowth: true
-            }
+          macroPolicy: {
+            source: 'seo_portfolio_policy_get',
+            allocation: 'seo_portfolio_allocation_status',
+            priority: 'Read the active policy revision on every Manager run; use its objective, bucket targets, risk limits and evaluation windows instead of any defaults in the static run contract.',
+            taskProvenance: 'Store allocationBucket, estimatedEffortUnits and policyRevisionAtCreation for each material SEO investment.',
+            enforcement: 'seo_task_create and seo_task_claim apply the active incident intake rules; no policy freeze is inferred from recovery mode alone.'
           },
           recoveryReview: {
             sequence: [
@@ -243,12 +229,12 @@ export function seoAgentContext(input: unknown) {
             ],
             zeroTaskRule: 'Search-visibility recovery proactively seeks executable growth bets; zero tasks needs a real opportunity blocker. Other incidents permit zero-task containment. Never manufacture work.'
           },
-          successCondition: 'Normal/search_visibility recovery: increase expected aggregate organic Search growth with differentiated meaningful implementation and portfolio reallocation. Other incidents: containment. Task volume alone is not success.',
-          report: 'Report incident category and effective gate, organic Search baselines, cross-site evidence, 40/40/20 investment mix, selected site/page-family interventions, production receipts, risk and reallocation dates; distinguish unknown from zero.',
-          output: 'Normal: ready 8 and max 5 tasks, max 2/repo. Search-visibility recovery: active SEO investment ready 8, up to 5 tasks, max 3/repo, discovery on and no growth clearance gate. Other incidents: containment max 3, max 1/repo and no growth task until clearance.'
+          successCondition: 'Deliver against the current macro-policy objective, allocation and evaluation method; implement material SEO value without manipulating task counts. No unobserved Google result is presumed.',
+          report: 'Report active policy revision, objective, allocationSnapshot by arbitrary bucket IDs, invested effort estimates vs observed outcome, execution/production receipts, risks and next reallocation decision. Missing data is unknown.',
+          output: 'Use active macro-policy risk constraints and incident growth admission to determine allowable new work; never infer current percentages or intervention caps from this static fallback contract.'
         }
       : {
-          start: ['seo_agent_context(role=executor)', 'seo_recovery_status (mandatory claim gate context)', 'read canonical worker manual', 'inspect in_progress executionClaim and deliveryHandoff state before ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state', 'seo_task_claim(id, expectedRevision) to claim or reclaim'],
+          start: ['seo_agent_context(role=executor) — separate Worker', 'minimal executionGate; policy enforced by seo_task_claim', 'read canonical worker manual', 'inspect in_progress executionClaim and deliveryHandoff state before ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state', 'seo_task_claim(id, expectedRevision) to claim or reclaim'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md',
           claimModel: 'Execution ownership is a temporary run lease, not a persistent worker/session identity. push_pending is a short write-ahead push critical section and keeps the Worker lease with a shortened 15-minute expiry; exact remote HEAD evidence may reconcile it to branch_ready. branch_ready/pr_open belongs to the centralized delivery lane and is not Worker-reclaimable; ci_failed or other valid unleased/expired work may be reclaimed. Writing branch_ready releases the Worker lease.',
           deliveryDefault: 'Worker creates a [CF-Pages-Skip] seo/* commit, writes deliveryHandoff.state=push_pending with the exact local commit SHA before remote push, pushes and verifies the remote HEAD, then writes branch_ready and releases its claim. Centralized Keywords GitHub Actions can reconcile a successfully pushed push_pending checkpoint by exact remote HEAD, then creates/monitors the PR, gates on repository CI, merges, records resultCommitSha, marks task status completed, and deletes the merged seo/* branch. Hosting preview checks are not merge gates.',
