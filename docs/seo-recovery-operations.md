@@ -4,7 +4,7 @@
 
 ## 現行Site Operator回復モード（2026-10-08改定）
 
-Search visibilityを失ったサイトのSEO成長施策は、Portfolio recovery中も止めない。Recoveryは「異常の観測状態」であり、「新規SEO投資の禁止」ではない。
+SEO portfolioの成長許可・制限は、`seo_portfolio_policy_get`の`constraints.incidentGrowthIntake`が正本である。Search visibilityを失ったサイトの成長施策を続けるのは今回の政策レコードの設定であって、incident名に埋め込んだ普遍ルールではない。Recoveryは「異常の観測状態」であり、「新規SEO投資の禁止」ではない。
 
 - **検索流入・インデックス異常(`search_visibility`)**: 未clearedでもすべてのSEO task typeを作成・claim可能。サイト個別、検索意図群、データベース、比較・発見機能の大きな施策を並列実装する。
 - 投資枠の初期配分目標：検索需要が確認された領域への集中40%、大きな構造変更40%、独立した高アップサイド投機20%。可変ヒューリスティックであり検索結果の成功確率ではない。
