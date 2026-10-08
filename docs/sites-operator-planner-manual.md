@@ -5,27 +5,25 @@
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
 
-## SEO portfolio recovery: search-visibility investment
+## 現行Managerが使う汎用Macro Policy
 
-Read `seo_agent_context.recovery` and `seo_recovery_status.effectivePolicy` before planning. Site recovery state and whether to invest in organic Search are distinct concerns.
+Actorの正本は [sites-operator-actor-model.md](./sites-operator-actor-model.md)。このマニュアルの"Planner"は、3時間ごとに起動する**単一のSEO Manager**の旧API role名(`role=planner`)であり、別エージェントではない。旧My PortalのSEO Managerはarchive済。
 
-### Search-visibility recovery (`incidentCategory=search_visibility`)
+各Manager Runは最初に `seo_agent_context(role=planner)`、`seo_portfolio_policy_get`、`seo_portfolio_allocation_status`、`seo_recovery_status` を読み、**最新の政策レコードを正本**とする。これらを読まずに旧run contractの数値や前回会話のポリシーに従わない。
 
-**A weak organic-Search portfolio is a reason to change investments, not to freeze the growth queue.** All SEO task types — including `new_article`, `site_expansion`, `data_expansion` and `schema_expansion` — may be created and newly claimed on active sites even if those sites remain suspected/confirmed/recovering. The site does not need false incident clearance.
+現在の政策は `Objective / Allocation / Risk / Constraints / Evaluation` から構成される。配分比率・bucket ID・task数の目標・レビュー周期・回復時のgrowth許可は**マネージャー実装の固定定数ではない**。以降、投資方針が変更されてもManager/Workerのアーキテクチャを書き換えず、`seo_portfolio_policy_update(expectedRevision, policy, decisionReason, updatedBy)` で差し替える。
 
-- **Objective:** increase aggregate organic Google Search traffic. Non-Search acquisition and monetization are outside Sites Operator's remit.
-- **Allocation starting targets:** 40% proven-search-demand concentration; 40% structural/site-or-page-family rebuilds; 20% differentiated high-upside speculative Search pilots. These are capacity heuristics, not guaranteed returns or task quotas. Reallocate to higher-upside ideas as evidence arrives.
-- **Compare portfolio cohorts:** pages formerly visible vs never visible, recently crawled vs dormant, high-impression vs invisible, similar templates/hosting across performing vs nonperforming sites. Do not assume that one Google algorithm update caused every exclusion.
-- **Intervene in parallel:** coherent page families, source-backed data coverage, useful comparison/decision tools, internal-information architecture, and meaningful search-intent redesigns. Stop serial low-impact snippet/body polishing as the default recovery tactic. Run distinct bets across properties to control correlation risk.
-- **Pace:** weekly portfolio triage, 2–4 week implementation/pilot horizons, 30–60 day capital reallocation decisions. These are operator decision cadences, **not** Google's indexing/traffic deadlines. Missing or delayed crawl is unknown, not a reason to invent uplift.
-- **Queue:** ready target around 8 executable records, aim 3–5 justified new SEO investment tasks per run when short, max 5/run and 3 per repository. Task count by itself is not a KPI and a run must not fabricate work.
-- **Guardrails:** record source evidence and downside/rollback; preserve original URL identities when useful; test CI/production; keep task dedupe and Worker leasing; validate database records before promoting to indexable pages. Never use scaled low-value content, doorway pages or keyword-page permutations. References: https://developers.google.com/search/docs/essentials/spam-policies and https://developers.google.com/search/docs/fundamentals/creating-helpful-content .
-- **Approval:** major repositioning, audience/site promise changes, mass deletion/noindex, site closure, cross-site moves/merges and rebranding still need a `decided` Site Direction. Open those discussions quickly, but continue independent high-upside SEO interventions in the meantime.
-- **Keep incident open:** enabling investments neither proves recovery nor relaxes actual incident resolution criteria.
+Managerが行う仕事:
+- managed siteのSearch実績・source readiness・技術状態・既存ready/in_progress・実装receiptを横断観測し、policy.objectiveに照らして候補を比較する。
+- allocation.bucketsの方針と`seo_portfolio_allocation_status`の見積り投入量を参照し、弱い配分を機械的に放置せず、政策に応じて集中・探索・保守・品質改善を選ぶ。指定比率を満たすための架空タスクは作らない。
+- `risk`にある新規task数・同一repoへの集中上限・1タスクの最大見積り単位を守る。大規模でも独立して検証できる有用な施策なら実施する。検索需要や収益を捏造しない。
+- `seo_task_create`には実装根拠に加え、政策bucket（`allocationBucket`）と実行キャパシティ見積り（`estimatedEffortUnits`）をつける。適用政策revisionはサーバー側で記録される。旧タスクはunallocatedと表示し、虚偽のbucket配分を割り当てない。
+- evaluationを再評価の目安として使う。Googleのクロールや順位改善に期限の保証はない。真のSearch成果はGSC/GA4/公開実績で別途判断。
+- `constraints.incidentGrowthIntake`でincident別の新規growth可否を判断し、API gateを回避しない。重大な方向転換と一括noindex・site停止は従来の人間承認を維持する。
 
-### Other recovery categories
+**現在の政策例:** 2026-10-08の初期バージョンはGSC organic clicksのmaximize、積極リスク、proven_demand 40%、structural 40%、speculative 20%、週次レビュー。ただしこれらはpolicy recordの現行値であり、マニュアル内の固定ルールではない。
 
-`content_quality`, `technical_integrity`, `measurement_integrity` and `other` keep the previous *new growth task* intake freeze for uncleared sites. Existing claimed work and branch/PR delivery continue. A verified technical outage is not a signal to scale an unsafe site.
+Google policy: https://developers.google.com/search/docs/essentials/spam-policies および https://developers.google.com/search/docs/fundamentals/creating-helpful-content 。scaled low-value pagesやdoorway pagesを新たな投資施策にしない。
 
 ## Discovery pass before repair inventory
 
