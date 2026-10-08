@@ -1,24 +1,21 @@
 # SEO回復を優先する自動運転
 
-> 2026-10-08: 現行の全ポートフォリオ統御は Sites Operator の `seo_recovery_status / seo_recovery_portfolio_update / seo_recovery_site_update` が正本。以下のSQLiteベース `recovery.capture` は観測・解除判定の補助ロジックとして残す。回復モード中のgrowth task create/claimはFirestore control plane側でhard gateされる。
+> 2026-10-08: 現行の全ポートフォリオ統御は Sites Operator の `seo_recovery_status / seo_recovery_portfolio_update / seo_recovery_site_update` が正本。以下のSQLiteベース `recovery.capture` は観測・解除判定の補助ロジックとして残す。search_visibilityではgrowthを許容し、他のincident categoryはFirestore control plane側の成長gateを維持する。
 
-## 現行Site Operator回復モード
+## 現行Site Operator回復モード（2026-10-08改定）
 
-このモードはSEO運用の緩やかな異常時制御であり、緊急停止システムではない。今回のindexation/visibility異常以外にも、content_quality、technical_integrity、measurement_integrity、otherのカテゴリを記録できる。現行の自動検知器が自動発火できるのは検索可視性／indexation系の異常のみ。
+Search visibilityを失ったサイトのSEO成長施策は、Portfolio recovery中も止めない。Recoveryは「異常の観測状態」であり、「新規SEO投資の禁止」ではない。
 
-- **新規取得のみ制限**: recovery中、未clearedサイトのgrowth Taskの新規作成と新規claimを停止する。
-- **既存タスクは継続**: すでにin_progressになった実装（通常のlease検査に従う再claimを含む）、push_pending、branch_ready、pr_open、CI、main mergeは現行の検証・配送経路のまま流す。自動キャンセル・自動PRクローズ・自動マージ停止を行わない。
-- **平時への復帰**: portfolio更新時に新しい`resolutionEvidence`を明示してmode=normalへ戻す。新規取得の制限は解除されるが、既存タスクを一斉に生成・復帰させる処理はない。次のPlanner runで現状を再評価する。
-- **伝達経路**: `seo_agent_context.recovery`が現在のmode、category、site state、effective gateを含む。サイト別確認や変更には`seo_recovery_status`等を使う。
-- **カテゴリと対応の分離**: 異常を分類して記録する処理と、growthの新規取得を停止する対応は分離した概念であり、今後異なる対策を実装するときも一律の非常停止を前提にしない。
+- **検索流入・インデックス異常(`search_visibility`)**: 未clearedでもすべてのSEO task typeを作成・claim可能。サイト個別、検索意図群、データベース、比較・発見機能の大きな施策を並列実装する。
+- 投資枠の初期配分目標：検索需要が確認された領域への集中40%、大きな構造変更40%、独立した高アップサイド投機20%。可変ヒューリスティックであり検索結果の成功確率ではない。
+- 週次のportfolio比較、2–4週間の施策実施と経過観測、30–60日での資源再配分を原則とする。Googleがその期間内にクロール・index・順位付けする保証はない。
+- **その他のカテゴリ** `content_quality`、`technical_integrity`、`measurement_integrity`、`other`: 未cleared siteの新規growth create/claimは従前どおり制限。
+- すでにin_progressのWorkerとpush_pending/branch_ready/pr_open/CI/main mergeはcategoryを問わず継続。
+- Site Directionのhuman gate（大規模な対象変更・ドメイン統廃合・全体noindexや削除）は残す。Searchポリシーに抵触する低価値量産やdoorway戦略は投資対象にしない。
+- Firestore `seoRecoveryControls/organic-search` と `seoRecoverySites/{siteId}` は継続保持し、`seo_agent_context.recovery` と `seo_recovery_status.effectivePolicy` で現在の制御を伝える。
+- Incidentの解除は実際のSearch再観測が条件。投資解禁と回復実証を同一視しない。
 
-- Firestore `seoRecoveryControls/organic-search` がportfolio modeの正本。
-- `seoRecoverySites/{siteId}` がincident単位のsite stateと暫定strategy、release criteriaを保持する。
-- portfolioが`recovery`なら、未clearサイトでは `new_article / site_expansion / data_expansion / schema_expansion` を新規作成できず、既存ready taskもclaimできない。
-- 許可されるのは原則 `revise / merge / delete / internal_links / technical` の回復作業。ただし broad delete/noindex/positioning変更等は従来どおりSite Directionのhuman gateが必要。
-- 通常時のready 8件、3–5件/run、discovery必須はrecovery mode中は停止する。task数・公開速度は回復KPIにしない。
-- 原因は断定しない。直接のURL Inspection/GSC観測とGoogleの公開policyを制御根拠にし、特定spam updateや非公開検出器を原因と決めつけない。
-- 解除はincident-specific。別incidentのclearanceは再利用しない。
+以下の2026-09-11 SQLite `recovery.capture` についての指示は旧系統の参照資料であり、現在のFirestore growth intake gateを定義しない。
 
 2026-09-11更新。Keywordsの共有SQL・commands・work sessionを使う。別のエージェント用進捗ファイルは作らない。
 
