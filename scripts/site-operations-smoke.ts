@@ -401,7 +401,7 @@ try {
   assert.equal(recovery.incidentCategory, 'search_visibility');
   const activeRecovery = await seoRecoveryStatus({});
   assert.equal(activeRecovery.effectivePolicy.growthFrozenByDefault, false);
-  assert.equal(activeRecovery.effectivePolicy.scope, 'search_visibility_investment_intake');
+  assert.equal(activeRecovery.effectivePolicy.scope, 'policy_permitted_recovery_intake');
   assert.deepEqual(activeRecovery.effectivePolicy.investmentAllocation.buckets.map((b: any) => b.targetPercent), [40,40,20]);
   assert.equal(activeRecovery.effectivePolicy.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
   // Claim refresh for the same already-running task must not be blocked by the
@@ -723,7 +723,7 @@ try {
   assert.equal(agentPolicy.structuredContent.policyVersion, '1.27.0');
   assert.equal(agentPolicy.structuredContent.role, 'planner');
   assert.equal(agentPolicy.structuredContent.recovery.portfolio.incidentCategory, 'technical_integrity');
-  assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'new_task_create_and_unstarted_ready_claim_only');
+  assert.equal(agentPolicy.structuredContent.recovery.effectivePolicy.scope, 'policy_requires_clearance_for_growth_intake');
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('Never fetch GSC/GA4 directly'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /site-monitor/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /CURRENT GitHub default-branch HEAD/);
