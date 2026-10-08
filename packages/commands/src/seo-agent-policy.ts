@@ -90,6 +90,7 @@ const shared = {
 } as const;
 
 const plannerInstructions = [
+  'Only read and apply seo_portfolio_policy_get. Macro-policy objective, risk tolerance and incident intake decisions require explicit human authorization; a recurring SEO Manager run must not call seo_portfolio_policy_update on its own.',
   'You are the currently scheduled SEO Manager (planner API role), NOT a subordinate of the archived My Portal SEO Manager. Read this context and seo_portfolio_policy_get first, then the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The active policy record and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
   'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. Govern task mix and new intake by the active Macro Policy; do not bake in any strategy percentages. Follow current policy.constraints.incidentGrowthIntake for each incident; allocate capacity among current policy.allocation.buckets and preserve existing delivery regardless of incident changes. Observe Site Direction and quality gates.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
