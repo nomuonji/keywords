@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.25.0';
+export const SEO_AGENT_POLICY_VERSION = '1.26.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -41,15 +41,23 @@ const shared = {
   recoveryGovernance: {
     source: 'Live SEO operational incident state is embedded in seo_agent_context.recovery. Use seo_recovery_status to inspect a specific site or update the incident.',
     incidentCategories: ['search_visibility', 'content_quality', 'technical_integrity', 'measurement_integrity', 'other'],
-    applicability: 'Reusable within SEO operations. New incident types can share the same workflow, but the current action policy only pauses acquisition of NEW growth work; it is not a global emergency kill switch.',
+    applicability: 'Category-aware SEO incidents: search_visibility activates aggressive organic Search investment; other incident categories preserve containment for new growth until clearance. Already in-flight work continues.',
     inFlight: 'Existing in_progress tasks (including ordinary lease-safe continuation/reclaims) and verified branch_ready/pr_open delivery are deliberately allowed to finish. Never retroactively cancel claims, branches, PRs or merges solely because recovery mode was activated.',
     normalReturn: 'Return to normal through an explicit portfolio update with resolutionEvidence. Do not auto-exit; audit open work and revalidate the next new task on claim.',
-    priority: 'An active portfolio recovery incident overrides normal discovery, expansion, ready-buffer, and publishing-volume targets.',
-    growthFreeze: 'During recovery, new_article/site_expansion/data_expansion/schema_expansion are blocked by the control plane unless the target site is explicitly cleared for the current incident.',
-    repairLane: 'Allowed work is bounded revise/merge/delete/internal_links/technical recovery work, subject to existing direction gates for broad deletion/noindex/positioning changes.',
-    queueRule: 'The normal target of 8 ready tasks and 3-5 new tasks per run is suspended while portfolio recovery is active. Task count is not a recovery objective.',
+    priority: 'For search_visibility recovery, prioritize high-upside SEO investment, strategic reallocation and parallel differentiated pilots; for other incidents prioritize containment.',
+    growthFreeze: 'Only non-search_visibility recovery categories block new_article/site_expansion/data_expansion/schema_expansion until incident-specific site clearance. Search-visibility recovery permits them on uncleared sites.',
+    repairLane: 'Search-visibility recovery also permits all growth task types: useful articles, page families, DB-backed tools and verified data. Keep decided Site Direction gates for broad deletion/noindex, positioning and migration.',
+    queueRule: 'Search visibility: ready target 8, up to 5 justified new tasks per run and up to 3 per repo. Other incident categories pause growth intake. Task count is never a performance result.',
     evidenceRule: 'Do not claim a specific Google update caused the incident without direct evidence. Use direct indexation/Search observations plus primary Search policy to justify risk controls.',
-    clearance: 'Resume growth only after a site is explicitly marked cleared for the active incident with fresh evidence and written release criteria; one rewrite or one improved metric is insufficient.'
+    clearance: 'Search-visibility growth needs no site clearance; resolving an incident still needs fresh evidence. Other categories retain site-specific clearance.',
+    investmentStrategy: {
+      mission: 'Maximize aggregate organic Google Search traffic for managed sites. Monetization, social and other acquisition are outside Sites Operator scope.',
+      startingCapacityAllocationPercent: { provenDemand: 40, structuralRebuild: 40, asymmetricSpeculation: 20 },
+      selection: 'Choose material upside per unit of development, search need, unique user value, technical discoverability and downside. A few asymmetric site bets can dominate many cosmetic adjustments.',
+      implementation: 'Run distinct site/page-family interventions concurrently; measure results when available, and do not wait for confirmed Google ranking causation before a credible reversible bet.',
+      pacing: 'Weekly portfolio triage; 2-4 week pilots and 30-60 day capital reallocation decisions are operating cadences, not Google indexing guarantees.',
+      safeguards: 'Rollback, coherent site identity, authoritative sources, current Site Direction human approvals, evidence-bound URL surfaces and scaled-content/doorway spam prohibitions remain in force.'
+    }
   },
   directionReview: {
     principle: 'Planner must detect material strategic mismatch, persist unresolved/decided strategy in Site Direction records, and never implement a major direction change before human discussion.',
@@ -87,16 +95,16 @@ const shared = {
 
 const plannerInstructions = [
   'Read this context first, then read the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The live policy and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
-  'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. If portfolio.mode=recovery, do not replenish the normal growth queue or pursue new Search-surface expansion on uncleared sites. Existing in-progress implementation and delivery handoffs continue. The API gates new growth task creation/claims; do not route around it.',
+  'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. If incidentCategory=search_visibility, resume useful growth-task create/claim on uncleared sites and allocate organic Search work to concentrated demand, structural rebuilds and differentiated speculative bets. Other incident categories retain growth containment; in-flight deliveries always continue. Observe Site Direction and quality gates.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
-  'In normal mode, reserve a bounded discovery pass alongside active experiment supply. In portfolio recovery mode, suspend growth-oriented discovery as a required run obligation; use research only when it directly supports recovery diagnosis, consolidation, quality repair, or a site-clearance decision.',
+  'In normal mode, reserve a bounded discovery pass alongside active experiment supply. In search_visibility recovery, retain bounded creative market discovery alongside rapid implementation. Only other incident categories suspend growth discovery and prioritize containment.',
   'Start discovery from dated real questions/reviews, persisted query observations or competitor answers. Follow the previous discovery.nextQueries/nextChallenge, inspect public source text and actual top-page bodies with search_gap_research, and let unexpected evidence change the next query. Do not infer a content gap from weakDomainCount, dates, title matches, Ads competition or a composite score. Brave is not Google ranking evidence; use configured Google SERP confirmation for Google-specific claims.',
   'Before converging on obvious keyword variants, perform a bounded lateral-discovery pass from the concrete observation. First describe the searcher\'s latent state or job-to-be-done, then try several non-taxonomic transformations such as colloquial wording, incomplete memory/name-recall language, analogy/similarity, substitutes/alternatives, negative constraints, situation-first phrasing, proxy goals or category-boundary mistakes. Do not immediately force an interesting phrase into the current site taxonomy or monetization model. Abstract the reusable mechanism first, then test portfolio fit. This is hypothesis generation only: preserve the source and later validate demand, SERP, usefulness and monetization separately. Zero volume may reject a specific phrase after investigation but must not suppress the lateral pass itself.',
   'Use keyword_research_pipeline observedCandidates with a source URL, observedAt, excerpt and researchReason so observation-led candidates receive bounded SERP checks even with low/missing volume. This is investigation permission, never a claim of verified demand. All calls share the existing SERP quota; do not forceRefresh to bypass an exhausted normal budget.',
   'Save discoveries and rejections with theme_candidate_upsert/challenge: audience/question, dated observations, body excerpts and answer gaps, feasible deliverable, falsification and evidence-driven nextQueries. Preserve failed/partial retrieval as uncertainty. pilot_ready requires this packet; criticism without new observation is not validation. If tools, sources or time are unavailable, report the exact discovery blocker and next query, then continue justified implementation planning without inventing evidence.',
   'For implementation derived from discovery, pass research={sessionId,candidateId,candidateRevision} to seo_task_create. The candidate must be pilot_ready and explicitly match siteId; the task snapshots its evidence so future edits cannot change the original rationale. Define a bounded artifact, acceptance criteria and post-publication observation. Discovery and analysis remain Planner work, never an audit/research-only Worker assignment.',
-  'In normal mode maintain the operating target of 8 unclaimed actionable ready/legacy issued tasks and aim for 3–5 justified new records when below target. In portfolio recovery mode this target is disabled: create only the few recovery tasks that are materially justified, with no minimum count and no pressure to keep Workers busy.',
+  'In normal mode maintain the operating target of 8 unclaimed actionable ready/legacy issued tasks and aim for 3–5 justified new records when below target. In search_visibility recovery keep a ready target near 8 and up to 5 justified new Search investment tasks/run with max 3/repo; do not create filler. Other incident categories have no growth queue target.',
   'When a repair/inventory planning pass is warranted, inspect at least 6 distinct active managed sites and 12 distinct current content/technical candidates if available before concluding no viable repair. Rejecting one discovery candidate or failing one source is not a portfolio stop condition. Pivot to other sites, existing-page answer improvements or bounded experiments; continue until the buffer is supplied, the available run time is genuinely exhausted or a portfolio-wide capability blocker prevents progress. Save valid implementation tasks promptly.',
   'Read active site registry, then site_direction_list for unresolved and decided strategy records, then Sites Operator compact digests. Direction records are durable strategy state: do not rediscover an open question as if new, do not contradict a decided record without opening a new superseding discussion, and do not treat a rejected option as available without materially new evidence. Never fetch GSC/GA4 directly; missing/partial/stale measurements are unknown, not zero.',
   'When portfolio triage finds a material concern with no equivalent open/monitor direction record, create site_direction_create(status=open or monitor) with concrete evidence, uncertainty, plausible options and an exact decisionQuestion. This is the durable handoff to human discussion and is not a ready SEO task. Read the created record back before reporting it.',
@@ -104,7 +112,7 @@ const plannerInstructions = [
   'Perform a bounded portfolio-direction triage while reading the registry/digests/current repository contracts. Look for structural warning signs such as large inventories with almost no observed search visibility, topic/audience contamination, multiple managed sites competing for nearly the same intent, monetization-first page structures with weak user decision value, or a repository concept that conflicts with its current content. These are diagnosis signals, not automatic verdicts.',
   'Classify structural concerns as clear, monitor or discussion_required. For monitor/discussion_required, persist or reuse a Site Direction record. A major direction change is discussion_required when the proposed fix would change the primary audience/positioning, merge or split sites/domains, move substantial content across brands/repos, pause/archive a site, broadly delete/noindex a page family, or replace the monetization/editorial model. Do NOT create Worker tasks that perform those changes until the corresponding direction record is decided by the human.',
   'When a site is discussion_required, do not deepen the disputed direction merely to fill the ready queue: avoid new content/data/page-family expansion that assumes the contested strategy is correct. Continue independently valid factual/technical repairs, already-supported narrow experiments, and work in unaffected parts of the site or other sites. Direction-review findings never count toward the ready-task inventory.',
-  'In normal mode, read each active site\'s siteShape before choosing the artifact; expansion is a first-class outcome when evidence supports it. In portfolio recovery mode, this expansion rule is suspended for uncleared sites: use the site shape only to understand what should be protected, consolidated, repaired, or reviewed, and do not route around the growth freeze.',
+  'In normal mode, read each active site\'s siteShape before choosing the artifact; expansion is a first-class outcome when evidence supports it. In search_visibility recovery, useful site/page-family/data expansion is a primary investment option regardless of site clearance; other incident categories preserve the hard growth gate.',
   'For site_expansion, require a concrete user/search need, current repository gap, bounded artifact, acceptance criteria, rollback/containment and a post-publication observation plan. Examples include calculators, comparison/decision pages, category hubs, navigation experiences, landing-page families and small useful features. Cosmetic redesign or an audit is not expansion.',
   'For database/programmatic sites, treat verified data coverage as product and SEO work, but separate the underlying dataset from the indexable URL surface. Read site_indexation_summary when cached observations exist and compare page families by inspectionCoverage and observedIndexationRate; never treat uninspected URLs as not indexed or the observed rate as an exact Google-wide index count. data_expansion may promote candidates only after authoritative-source verification and repository validation gates. schema_expansion is justified only when evidence shows the existing schema cannot represent a useful recurring need. Never index arbitrary filter/sort/facet combinations just because generation is possible; explicitly define which page families are crawlable/indexable and why.',
   'Use seo_evaluator_list/get for strategy-sensitive decisions. For every new_article candidate in normal mode, read content_incremental_value. Whenever portfolio recovery is active, read scaled_content_operation_risk at its current active version before planning recovery changes or clearance. For database/programmatic sites or generated URL-surface changes, also read database_indexation_quality. Evaluators are revisable operating hypotheses: preserve source strength, caveats, confidence and falsification conditions; never claim hidden Google ranking/spam logic.',
@@ -125,7 +133,7 @@ const plannerInstructions = [
 
 const executorInstructions = [
   'Read this context first, then the canonical Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Current policy and selected Sites Operator task take precedence on conflict.',
-  'The live incident is embedded in this context. Recovery pauses creation/NEW claims of uncleared growth tasks, but never interrupts an already claimed in_progress task or the central PR delivery lane. Continue those validated handoffs normally.',
+  'The live incident is embedded in this context. Search-visibility recovery allows new claims of SEO growth tasks for uncleared sites; other recovery incident categories may block new growth until site clearance. Existing in_progress and the central PR delivery lane remain allowed. Continue those validated handoffs normally.',
   'Treat every scheduled/manual execution as a new ephemeral run: there is no persistent worker identity or "previous self" across sessions. Inspect in_progress work first. An active executionClaim is temporarily protected. push_pending is a Worker write-ahead state immediately before remote push; if the recorded seo/* branch already exists remotely at the exact recorded headSha, promote it to branch_ready instead of reimplementing. branch_ready or pr_open belongs to the external delivery lane and must not be reclaimed merely to create/merge a PR. ci_failed is reclaimable for a corrective Worker pass. Other unleased/expired in_progress work is reclaimable when still valid.',
   'GitHub repository code is the implementation source of truth. No GitHub Issue is required. Use no My Portal or site-monitor and do not collect GSC/GA4 directly.',
   'If the selected SEO task has directionId, read that Site Direction record before implementation. It must be decided and belong to the same site; treat its decision/constraints as implementation boundaries and preserve the directionId in task history. If the record is not decided or has been superseded, stop that strategic implementation and report the mismatch.',
@@ -156,7 +164,7 @@ export function seoAgentContext(input: unknown) {
           start: ['seo_agent_context(role=planner)', 'seo_recovery_status (mandatory mode gate)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           discovery: {
-            required: 'normal_mode_only',
+            required: 'normal_or_search_visibility_investment_mode',
             sessionPattern: 'seo-discovery-{siteId}',
             tools: ['theme_research_context', 'research_session_create', 'keyword_research_pipeline', 'search_gap_research', 'theme_candidate_upsert', 'theme_candidate_challenge'],
             lateralPass: 'Diverge before filtering: infer the searcher state from a real observation and test multiple language/mental-model shifts (colloquial, name-recall, analogy, alternatives, negative constraints, situation/proxy-goal). Abstract the reusable mechanism before mapping it to a site. No requirement to promote any idea.',
@@ -175,20 +183,20 @@ export function seoAgentContext(input: unknown) {
           expansion: {
             siteShapeField: 'site_registry.siteShape',
             taskTypes: ['site_expansion', 'data_expansion', 'schema_expansion'],
-            rule: 'Normal mode: managed sites may receive evidence-backed expansion. Recovery mode: expansion task types are hard-blocked for uncleared sites and must not be used to satisfy queue targets.',
+            rule: 'Normal and search_visibility recovery allow useful sourced expansion on uncleared sites. Other incident categories block growth intake until site clearance. Site Direction and spam-quality gates always apply.',
             databasePromotion: 'candidate -> authoritative verification -> repository validation -> public dataset -> generated routes/sitemap -> observation',
             guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth. For database/programmatic expansion, apply database_indexation_quality, read cached site_indexation_summary when available, and keep data coverage separate from the deliberate indexable URL surface.',
             indexationTools: ['site_indexation_summary', 'site_indexation_list']
           },
           experimentation: {
             defaultAction: 'Plan a bounded reversible site change when credible observations support it; do not wait for certainty about traffic uplift.',
-            pilotScope: 'One intervention on one existing article, or 1-3 coherent new pages; rotate eligible pages/sites during cooldown.',
+            pilotScope: 'Normal: bounded page interventions. Search-visibility recovery: larger coherent page-family, data and site-structure bets on separate sites in parallel, with rollback and user value; no mass low-value generation.',
             taskEvidence: ['hypothesis', 'artifact', 'primary outcome metric', 'baseline or explicitly unknown', 'evaluation due date', 'success/failure criteria', 'rollback'],
             tracking: 'Existing SEO task rationale/evidence/history and optimization events; no separate experiment ledger.',
             feedbackTools: ['optimization_event_list', 'optimization_evaluation_context', 'optimization_event_update', 'seo_task_get', 'seo_task_update'],
             publicationGate: 'Actual production observation before phase=implemented and the traffic evaluation window begins; default-branch merge remains implementation completion, while the Worker delivery handoff occurs earlier at verified seo/* branch push.',
             defaultEvaluationWaitDays: 14,
-            stoppingRule: 'Normal mode follows the ordinary inventory rule. Recovery mode has no minimum task batch: zero new tasks is valid when no concrete recovery intervention is justified.'
+            stoppingRule: 'Normal/search_visibility modes maintain justified SEO investment flow without manufacturing tasks; other incidents permit zero-task containment runs.'
           },
           readyInventoryTarget: 8,
           targetNewTasksPerRun: [3, 5],
@@ -196,23 +204,36 @@ export function seoAgentContext(input: unknown) {
           maxNewTasksPerRepository: 2,
           recoveryOverride: {
             statusTool: 'seo_recovery_status',
-            normalReadyTargetSuspended: true,
-            targetNewTasksPerRun: [0, 3],
-            maxNewTasksPerRun: 3,
-            maxNewTasksPerRepository: 1,
-            blockedGrowthTaskTypes: ['new_article', 'site_expansion', 'data_expansion', 'schema_expansion'],
-            allowedRepairTaskTypes: ['revise', 'merge', 'delete', 'internal_links', 'technical'],
-            clearanceRequiredForGrowth: true,
-            rule: 'When portfolio.mode=recovery, this object overrides the normal ready/discovery/expansion supply contract.'
+            searchVisibilityInvestment: {
+              when: 'mode=recovery and incidentCategory=search_visibility',
+              readyInventoryTarget: 8,
+              targetNewTasksPerRun: [3, 5],
+              maxNewTasksPerRun: 5,
+              maxNewTasksPerRepository: 3,
+              blockedGrowthTaskTypes: [],
+              clearanceRequiredForGrowth: false,
+              startingCapacityAllocationPercent: { provenDemand: 40, structuralRebuild: 40, asymmetricSpeculation: 20 },
+              cadence: 'Weekly multi-site triage, 2-4 week bets, 30-60 day reallocation decisions. Re-crawl and ranking are not guaranteed.',
+              rule: 'Prioritize material parallel SEO growth experiments over serial cosmetic edits. Preserve source integrity and Site Direction approval.'
+            },
+            otherCategoryContainment: {
+              when: 'mode=recovery and incidentCategory!=search_visibility',
+              normalReadyTargetSuspended: true,
+              targetNewTasksPerRun: [0, 3],
+              maxNewTasksPerRun: 3,
+              maxNewTasksPerRepository: 1,
+              blockedGrowthTaskTypes: ['new_article', 'site_expansion', 'data_expansion', 'schema_expansion'],
+              clearanceRequiredForGrowth: true
+            }
           },
           recoveryReview: {
             sequence: [
               'Read seo_recovery_status and the current incident/site states.',
               'For confirmed/recovering sites, read cached site_indexation_summary, current compact planning digest, relevant current repository HEAD, and existing Site Direction/task records.',
               'Choose protect/consolidate/shrink/special_review evidence by site; do not infer a specific Google enforcement mechanism.',
-              'Create only bounded repair tasks that are executable now. Broad delete/noindex/pause/positioning/consolidation goes through Site Direction human approval.',
+              'During search_visibility recovery select material Search growth and site-structure opportunities as well as repair; other incidents focus on containment. Broad delete/noindex/pause/positioning/consolidation goes through Site Direction human approval.',
               'Review release criteria from the site recovery record. Do not clear a site on stale/partial observations, one rewritten page, or one improved day/week.',
-              'Report sites that remain frozen separately from any repair tasks.'
+              'Report investment allocation and material Search bets for search_visibility recovery; report frozen sites only for other incident categories.'
             ],
             defaultClearanceEvidence: [
               'fresh representative URL Inspection evidence with materially recovered indexation',
@@ -220,11 +241,11 @@ export function seoAgentContext(input: unknown) {
               'sustained complete Search observations across two weekly comparisons',
               'explicit incident-specific seo_recovery_site_update(state=cleared)'
             ],
-            zeroTaskRule: 'Zero new tasks is valid during recovery when no concrete bounded repair is justified; preserve the incident state and next observation instead of manufacturing work.'
+            zeroTaskRule: 'Search-visibility recovery proactively seeks executable growth bets; zero tasks needs a real opportunity blocker. Other incidents permit zero-task containment. Never manufacture work.'
           },
-          successCondition: 'Normal mode: preserve the ordinary experiment/discovery/ready-task supply loop. Recovery mode: preserve the growth freeze, review affected-site evidence, persist only justified repair or strategy-handoff records, and keep uncleared sites frozen. A zero-task recovery run can be successful.',
-          report: 'Always report the current portfolio recovery mode first. In normal mode report ordinary ready inventory, discovery and experiment outcomes. In recovery mode report each reviewed site state/strategy, current indexation/Search evidence, repairs created or withheld, Site Direction decisions required, release-criteria status, and the next observation; do not frame ready-task count or publishing volume as success.',
-          output: 'Normal mode follows the ordinary ready-buffer contract (target 8; when below target aim 3-5 justified new tasks, hard max 5 and max 2/repo). Recovery mode follows recoveryOverride instead: no minimum batch, max 3 recovery tasks and max 1/repo, no growth-oriented discovery obligation, and no growth task for an uncleared site.'
+          successCondition: 'Normal/search_visibility recovery: increase expected aggregate organic Search growth with differentiated meaningful implementation and portfolio reallocation. Other incidents: containment. Task volume alone is not success.',
+          report: 'Report incident category and effective gate, organic Search baselines, cross-site evidence, 40/40/20 investment mix, selected site/page-family interventions, production receipts, risk and reallocation dates; distinguish unknown from zero.',
+          output: 'Normal: ready 8 and max 5 tasks, max 2/repo. Search-visibility recovery: active SEO investment ready 8, up to 5 tasks, max 3/repo, discovery on and no growth clearance gate. Other incidents: containment max 3, max 1/repo and no growth task until clearance.'
         }
       : {
           start: ['seo_agent_context(role=executor)', 'seo_recovery_status (mandatory claim gate context)', 'read canonical worker manual', 'inspect in_progress executionClaim and deliveryHandoff state before ready/legacy issued records', 'seo_task_get(id=selected_task_id)', 'current GitHub main and existing PR/check/deploy state', 'seo_task_claim(id, expectedRevision) to claim or reclaim'],

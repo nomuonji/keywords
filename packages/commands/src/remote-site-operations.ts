@@ -337,6 +337,9 @@ async function readRecoverySite(siteId: string): Promise<{ record: SeoRecoverySi
 async function assertSeoRecoveryTaskAllowed(siteId: string, taskType: string) {
   const { record: portfolio } = await readRecoveryPortfolio();
   if (portfolio.mode !== 'recovery') return;
+  // Search-visibility loss is an investment signal, not a blanket SEO freeze.
+  // Other incident categories retain containment until incident-specific clearance.
+  if (portfolio.incidentCategory === 'search_visibility') return;
   const { record: site } = await readRecoverySite(siteId);
   const clearedForIncident = Boolean(site && site.state === 'cleared' && site.incidentId && site.incidentId === portfolio.incidentId);
   if (RECOVERY_GROWTH_TASK_TYPES.has(taskType) && !clearedForIncident) {
@@ -662,10 +665,23 @@ export async function seoRecoveryStatus(input: unknown = {}) {
     const listed = await listDocuments('seoRecoverySites', { limit: 100, orderBy: 'updatedAt desc' });
     sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
   }
+  const visibilityInvestment = portfolio.mode === 'recovery' && portfolio.incidentCategory === 'search_visibility';
   return {
     portfolio,
     sites,
-    effectivePolicy: portfolio.mode === 'recovery' ? {
+    effectivePolicy: visibilityInvestment ? {
+      growthFrozenByDefault: false,
+      blockedTaskTypesUntilSiteClearance: [],
+      allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES, ...RECOVERY_GROWTH_TASK_TYPES],
+      existingBlockedGrowthTasksAreNotClaimable: false,
+      inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
+      scope: 'search_visibility_investment_intake',
+      incidentCategory: portfolio.incidentCategory,
+      investmentAllocation: { demandConcentration: 40, structuralRebuild: 40, differentiatedSpeculation: 20, unit: 'capacity_percent', status: 'starting_heuristic_not_hard_quota' },
+      investmentCadence: { weeklyPortfolioTriage: true, pilotWeeks: [2, 4], decisionDays: [30, 60], searchResultsNotGuaranteed: true },
+      queueRule: 'Keep an executable organic-Search opportunity pipeline. Concentrate on demonstrated demand, structural rebuilds and differentiated speculative SEO bets in parallel. Avoid serial cosmetic edits and fake quota-filling tasks.',
+      clearanceRule: 'Search-visibility recovery state does not block new growth intake. Incident exit requires actual recovery evidence. Preserve Site Direction approval for major positioning, mass deletion/noindex and domain moves.'
+    } : portfolio.mode === 'recovery' ? {
       growthFrozenByDefault: true,
       blockedTaskTypesUntilSiteClearance: [...RECOVERY_GROWTH_TASK_TYPES],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
