@@ -346,7 +346,8 @@ async function readSeoPortfolioPolicy(): Promise<{ record: SeoPortfolioPolicyRec
   const doc = await readDocument('seoPortfolioPolicies', 'organic-search');
   if (!doc) return { record: defaultSeoPortfolioPolicyRecord(), doc: null };
   const record = decoded(doc) as SeoPortfolioPolicyRecord;
-  return { record: { ...record, ...seoPortfolioPolicyDefinition.parse(record) }, doc };
+  const { objective, allocation, risk, constraints, evaluation } = record;
+  return { record: { ...record, ...seoPortfolioPolicyDefinition.parse({ objective, allocation, risk, constraints, evaluation }) }, doc };
 }
 
 export async function seoPortfolioPolicyGet(input: unknown = {}) {
@@ -724,7 +725,7 @@ export async function seoRecoveryStatus(input: unknown = {}) {
     sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
   }
   const { record: macroPolicy } = await readSeoPortfolioPolicy();
-  const visibilityInvestment = portfolio.mode === 'recovery' &&
+  const policyPermitsGrowth = portfolio.mode === 'recovery' &&
     macroPolicy.constraints.incidentGrowthIntake[portfolio.incidentCategory] === 'allow';
   return {
     portfolio,
@@ -733,27 +734,27 @@ export async function seoRecoveryStatus(input: unknown = {}) {
     allocation: macroPolicy.allocation,
     risk: macroPolicy.risk,
     evaluation: macroPolicy.evaluation,
-    effectivePolicy: visibilityInvestment ? {
+    effectivePolicy: policyPermitsGrowth ? {
       growthFrozenByDefault: false,
       blockedTaskTypesUntilSiteClearance: [],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES, ...RECOVERY_GROWTH_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: false,
       inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
-      scope: 'search_visibility_investment_intake',
+      scope: 'policy_permitted_recovery_intake',
       incidentCategory: portfolio.incidentCategory,
       investmentAllocation: { buckets: macroPolicy.allocation.buckets, unit: macroPolicy.allocation.unit, mode: macroPolicy.allocation.mode },
       investmentCadence: { portfolioReviewDays: macroPolicy.evaluation.portfolioReviewDays, pilotWindowDays: macroPolicy.evaluation.pilotWindowDays, reallocationWindowDays: macroPolicy.evaluation.reallocationWindowDays, searchResultsNotGuaranteed: true },
-      queueRule: 'Keep an executable organic-Search opportunity pipeline. Concentrate on demonstrated demand, structural rebuilds and differentiated speculative SEO bets in parallel. Avoid serial cosmetic edits and fake quota-filling tasks.',
-      clearanceRule: 'Search-visibility recovery state does not block new growth intake. Incident exit requires actual recovery evidence. Preserve Site Direction approval for major positioning, mass deletion/noindex and domain moves.'
+      queueRule: 'Read current seo_portfolio_policy_get for objective, allocation, risk and evaluation windows; allocate capacity by policy buckets. Do not manufacture tasks to fill targets.',
+      clearanceRule: 'Current policy permits growth in this incident category without site clearance; incident resolution and major Site Direction decisions still require independent evidence.'
     } : portfolio.mode === 'recovery' ? {
       growthFrozenByDefault: true,
       blockedTaskTypesUntilSiteClearance: [...macroPolicy.constraints.protectedTaskTypes],
       allowedRecoveryTaskTypes: [...RECOVERY_REPAIR_TASK_TYPES],
       existingBlockedGrowthTasksAreNotClaimable: true,
       inFlightPolicy: 'continue_existing_claims_and_delivery_handoffs',
-      scope: 'new_task_create_and_unstarted_ready_claim_only',
+      scope: 'policy_requires_clearance_for_growth_intake',
       incidentCategory: portfolio.incidentCategory,
-      queueRule: 'Do not replenish the normal growth ready-buffer while portfolio recovery is active. Create only evidence-backed recovery/repair work; task count is not a target.',
+      queueRule: 'Active policy blocks new growth intake for this incident category; continue permitted repair tasks and in-flight delivery.',
       clearanceRule: 'Site state must be cleared for the current incident before growth task types become creatable or claimable.'
     } : {
       growthFrozenByDefault: false,
