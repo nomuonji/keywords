@@ -424,12 +424,15 @@ export async function siteIndexationInspect(input: unknown) {
       records.push({ ...stored, inspectionUrl: inspectionIdentity(inputUrl) });
     }
   } else {
-    records = await listDue(site.id, args.limit);
-    if (args.accelerateUninspected && records.length < args.limit) {
-      const extra = await listUninspectedBacklog(
-        site.id, args.limit - records.length, new Set(records.map(record => record.id))
-      );
-      records.push(...extra);
+    // Catch up never-inspected pages before spending property quota on routine
+    // 7/30/90-day rechecks. The normal due lane fills any unused per-site slice.
+    records = args.accelerateUninspected
+      ? await listUninspectedBacklog(site.id, args.limit, new Set())
+      : [];
+    if (records.length < args.limit) {
+      const due = await listDue(site.id, args.limit);
+      const seen = new Set(records.map(record => record.id));
+      records.push(...due.filter(record => !seen.has(record.id)).slice(0, args.limit - records.length));
     }
   }
   const take = args.urls?.length ? Math.min(args.urls.length, 50) : args.limit;
