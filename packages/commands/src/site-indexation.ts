@@ -28,7 +28,8 @@ export const siteIndexationInventorySaveShape = {
 export const siteIndexationInspectShape = {
   siteId: entityId,
   urls: z.array(webUrl).min(1).max(50).optional(),
-  limit: z.number().int().min(1).max(50).default(25)
+  limit: z.number().int().min(1).max(50).default(25),
+  accelerateUninspected: z.boolean().default(false)
 };
 
 export const siteIndexationListShape = {
@@ -76,6 +77,17 @@ export type IndexationUrlRecord = {
 
 const now = () => new Date().toISOString();
 const daysFrom = (base: string, days: number) => new Date(Date.parse(base) + days * 86_400_000).toISOString();
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+
+/** Known older pages can be inspected as soon as capacity is available.
+ * Newly published pages get a short crawl grace period, not a blanket 48h delay. */
+function initialInspectionAt(queuedAt: string, publishedAt?: string | null) {
+  if (!publishedAt) return queuedAt;
+  const published = Date.parse(publishedAt), queued = Date.parse(queuedAt);
+  if (!Number.isFinite(published) || published <= queued - SIX_HOURS_MS) return queuedAt;
+  return new Date(Math.min(queued + SIX_HOURS_MS, Math.max(queued, published + SIX_HOURS_MS))).toISOString();
+}
+
 const hash = (value: unknown) => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const encodeFields = (data: object) => Object.fromEntries(Object.entries(data).map(([key, item]) => [key, field(item)]));
 const decoded = (doc: any) => ({ id: doc.name.split('/').pop(), ...Object.fromEntries(Object.entries(doc.fields ?? {}).map(([key, item]) => [key, value(item)])) });
@@ -127,7 +139,7 @@ function baseRecord(siteId: string, url: string, createdAt: string): IndexationU
     sourceFingerprint: null, lastPublishedAt: null, lastChangedAt: null, siteUrl: null,
     observedIndexState: 'unknown', verdict: null, coverageState: null, robotsTxtState: null,
     indexingState: null, pageFetchState: null, googleCanonical: null, userCanonical: null,
-    lastCrawlTime: null, lastInspectedAt: null, nextInspectionAt: daysFrom(createdAt, 2),
+    lastCrawlTime: null, lastInspectedAt: null, nextInspectionAt: createdAt,
     consecutiveSameResults: 0, inspectionCount: 0, revision: 0, createdAt, updatedAt: createdAt
   };
 }
@@ -244,6 +256,27 @@ async function listDue(siteId: string, limit: number): Promise<IndexationUrlReco
     .slice(0, limit);
 }
 
+/** One-time catch-up for old inventories created under the legacy 48h blanket hold.
+ * A single-field IS_NULL query avoids a composite index and walks the backlog
+ * as inspections overwrite lastInspectedAt. This does not bypass quota. */
+async function listUninspectedBacklog(siteId: string, limit: number, exclude: Set<string>): Promise<IndexationUrlRecord[]> {
+  const result = await firestore(`/sites/${siteId}:runQuery`, {
+    method: 'POST',
+    body: JSON.stringify({ structuredQuery: {
+      from: [{ collectionId: 'indexationUrls' }],
+      where: { unaryFilter: { op: 'IS_NULL', field: { fieldPath: 'lastInspectedAt' } } },
+      limit: Math.min(200, Math.max(limit * 4, 100))
+    } })
+  });
+  const at = now();
+  return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [decodeRecord(row.document)] : [])
+    .filter(record => record.inventoryState === 'current' &&
+      record.indexable && !record.lastInspectedAt &&
+      !exclude.has(record.id) &&
+      initialInspectionAt(at, record.lastPublishedAt) <= at)
+    .slice(0, limit);
+}
+
 async function inspectOne(site: SiteRecord, record: IndexationUrlRecord) {
   if (!site.searchConsoleProperty) throw new Error(`Site ${site.id} has no Search Console property`);
   const observation = await searchConsoleInspect({ url: record.inspectionUrl, siteUrl: site.searchConsoleProperty });
@@ -312,9 +345,9 @@ export async function siteIndexationInventorySave(input: unknown) {
     const reactivated = Boolean(current && isCurrentIndexable && (current.inventoryState !== 'current' || !current.indexable || !current.nextInspectionAt));
     let nextInspectionAt = base.nextInspectionAt;
     if (!isCurrentIndexable) nextInspectionAt = null;
-    else if (!current || reactivated) nextInspectionAt = daysFrom(t, 2);
+    else if (!current || reactivated) nextInspectionAt = initialInspectionAt(t, row.lastPublishedAt ?? base.lastPublishedAt);
     else if (inspectionTargetChanged) nextInspectionAt = t; // repair prior non-canonical observations immediately
-    else if (fingerprintChanged || changedAtChanged) nextInspectionAt = daysFrom(t, 3);
+    else if (fingerprintChanged || changedAtChanged) nextInspectionAt = new Date(Date.parse(t) + SIX_HOURS_MS).toISOString();
     return {
       ...base,
       url: normalized,
@@ -392,6 +425,12 @@ export async function siteIndexationInspect(input: unknown) {
     }
   } else {
     records = await listDue(site.id, args.limit);
+    if (args.accelerateUninspected && records.length < args.limit) {
+      const extra = await listUninspectedBacklog(
+        site.id, args.limit - records.length, new Set(records.map(record => record.id))
+      );
+      records.push(...extra);
+    }
   }
   const take = args.urls?.length ? Math.min(args.urls.length, 50) : args.limit;
   records = records.filter(row => row.inventoryState === 'current' && row.indexable).slice(0, take);
