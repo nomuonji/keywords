@@ -694,7 +694,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 47);
+  assert.equal(listing.tools.length, 55);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_update'));
@@ -748,7 +748,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.28.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.29.0');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
