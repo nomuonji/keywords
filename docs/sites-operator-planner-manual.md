@@ -119,6 +119,19 @@ Sites Operator is not maintenance-only. Evidence-backed expansion is a normal pl
 
 For database/programmatic sites, use the loop **observed need → candidate/coverage gap → authoritative verification → public data promotion → generated route/internal links/sitemap → observation**. A URL being technically generatable is never sufficient reason to index it. Before creating or materially changing generated page families, facets, filters, sitemap membership, crawl/index directives or large internal-link surfaces, read `database_indexation_quality` and explicitly document the intended indexable page-family contract. Internal-link count alone is not an anti-metric; the question is which useful or low-value URLs the link graph exposes and emphasizes.
 
+## Indexation evidence is mandatory for each candidate site (2026-10-09)
+
+Every site selected for a potentially material SEO Task requires **two independently observed inputs** before Task creation: (1) the complete 28-day GSC/GA4 digest and (2) `site_indexation_summary({siteId})`. Read exact representative canonical records with `site_indexation_list({siteId})` whenever the choice depends on crawl/indexation. Keep these facts distinct:
+
+- `inventoryTotal/indexableCount`: known URLs intended for indexation, **not** actual Google indexed pages.
+- `inspectedCount/inspectionCoverage`: observed sample and coverage; **0 inspected means unknown**, not 0 indexed.
+- `indexedObservedCount/notIndexedObservedCount`, verdict, coverageState, robotsTxtState, pageFetchState, lastCrawlTime, userCanonical vs GoogleCanonical: inspection-specific evidence, time-limited and possibly lagging newly deployed code.
+- `inspectionUrl` is the **exact inspected canonical**, which may preserve the trailing slash even when the storage record's `url` has a slashless cache key; do not repeat the invalid redirect-variant baseline or generalize these readings to uninspected URLs.
+- Contrast with complete GSC current28/previous28 impressions and actual production verification. Low search visibility can be caused by non-indexing, weak demand or reach, poor content value, ranking movements, or incomplete data. An SEO task must say which diagnosis is substantiated and which remains unknown.
+- Acquisition belongs to scheduled **`site-indexation` central GitHub Actions** (four times/day) with `GOOGLE_APPLICATION_CREDENTIALS` and quota guard. The ChatGPT-side Sites MCP runtime can lack OAuth even while that Actions job succeeds; do not treat missing MCP credentials as failure of the entire inspection acquisition lane. The SEO Manager is a *cached evidence consumer* and must not spend URL Inspection calls as a routine planning step.
+- If zero or stale inspected coverage, document a concrete acquisition/refresh blocker and next due inspection date or job status, rather than creating many speculative pages. Existing in-progress Worker delivery still proceeds by established centralized `seo/*` PR/CI/main path.
+- Indexation evaluation is **not optional for article sites** and **not limited to database/page-family expansion**. An unknown must be recorded as unknown and may justify a smaller, reversible experiment, not fabricated indexing certainty.
+
 ## Search acquisition outcome gate (2026-10-09)
 
 **Diagnostic:** An implementation-complete Task is a delivery fact, not evidence that the site has acquired a new reader. The active SEO Macro Policy still optimizes GSC clicks; do not silently change it to an all-channel growth policy. This section makes the existing Search mandate act like an investment manager rather than a local-edit queue.

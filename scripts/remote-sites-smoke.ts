@@ -60,8 +60,12 @@ try {
   // SEO Manager context regression: acquisition choices must not be reduced to edit throughput.
   const { seoAgentContext } = await import('../packages/commands/src/seo-agent-policy.js');
   const manager = seoAgentContext({ role: 'planner' }) as any;
-  assert.equal(manager.policyVersion, '1.29.0');
+  assert.equal(manager.policyVersion, '1.30.0');
   assert.match(manager.acquisitionReview.requiredDiagnosis, /previous 28d/);
+  assert.match(manager.indexation.requiredDecisionCheck, /each site/i);
+  assert.match(manager.indexation.credentialBoundary, /GitHub Actions/);
+  assert.ok(manager.runContract.start.some((x: string) => x.includes('site_indexation_summary(siteId)')));
+  assert.ok(manager.instructions.some((x: string) => x.includes('EVERY site being considered')));
   assert.match(manager.acquisitionReview.publicationOutcomeGate, /production/);
   assert.match(manager.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.equal(manager.runContract.acquisitionReview.activeObjectiveBoundary.includes('Only GSC Search acquisition'), true);
