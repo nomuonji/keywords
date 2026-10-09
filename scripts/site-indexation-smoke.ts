@@ -102,6 +102,23 @@ globalThis.fetch = async (input, init) => {
 
   const path = relativePath(url);
 
+  if (method === 'POST' && path.endsWith(':runQuery')) {
+    const query = body.structuredQuery;
+    const collectionPath = path.replace(/:runQuery$/, '') + '/' + query.from[0].collectionId;
+    let candidates = listCollection(collectionPath);
+    const filter = query.where;
+    if (filter?.unaryFilter) {
+      assert.equal(filter.unaryFilter.op, 'IS_NULL');
+      const key = filter.unaryFilter.field.fieldPath;
+      candidates = candidates.filter(doc => !doc.fields[key] || doc.fields[key].nullValue === null);
+    } else if (filter?.fieldFilter) {
+      const key = filter.fieldFilter.field.fieldPath;
+      const max = filter.fieldFilter.value.stringValue;
+      candidates = candidates.filter(doc => doc.fields[key]?.stringValue && doc.fields[key].stringValue <= max);
+    }
+    return Response.json(candidates.slice(0, query.limit).map(document => ({ document })));
+  }
+
   if (method === 'PATCH') {
     revision++;
     const name = `${root}${path}`;
@@ -281,7 +298,51 @@ try {
   const restoredRow = afterRestore.items.find(item => item.url.includes('/licenses/b'));
   assert.ok(restoredRow?.nextInspectionAt, 'reactivated URLs must return to the due queue');
 
-  console.log('site indexation smoke passed: idempotent inventory, reactivation, mutable URL cache, shared quota, page-family summary and weekly snapshot');
+  // An inventory with a legacy +48h hold must not stay idle while property
+  // quota is available. A truly fresh published page still gets a 6h buffer.
+  const sourceSite = docs.get(`${root}sites/site-i`);
+  docs.set(`${root}sites/site-j`, {
+    ...sourceSite, name: `${root}sites/site-j`,
+    fields: { ...sourceSite.fields,
+      id: field('site-j'),
+      productionUrl: field('https://new.antonbase.com/'),
+      searchConsoleProperty: field('sc-domain:new.antonbase.com')
+    }
+  });
+  const freshAt = new Date().toISOString();
+  await siteIndexationInventorySave({
+    siteId: 'site-j', records: [
+      { url: 'https://new.antonbase.com/old/', pageFamily: 'guide', indexable: true,
+        lastPublishedAt: '2026-09-01T00:00:00.000Z' },
+      { url: 'https://new.antonbase.com/fresh/', pageFamily: 'guide', indexable: true,
+        lastPublishedAt: freshAt }
+    ]
+  });
+  const newRows = (await siteIndexationList({ siteId: 'site-j' })).items;
+  const oldRow = newRows.find(row => row.inspectionUrl.endsWith('/old/'))!;
+  const freshRow = newRows.find(row => row.inspectionUrl.endsWith('/fresh/'))!;
+  assert.ok(Date.parse(oldRow.nextInspectionAt!) <= Date.now(),
+    'old pages must be inspectable on the next quota-available sweep');
+  assert.ok(Date.parse(freshRow.nextInspectionAt!) > Date.now(),
+    'truly new pages get a short crawl grace period');
+  const legacy = docs.get(`${root}sites/site-j/indexationUrls/${oldRow.id}`);
+  legacy.fields.nextInspectionAt = field('2026-12-31T00:00:00.000Z');
+  const ordinary = await siteIndexationInspect({ siteId: 'site-j', limit: 2 });
+  assert.equal(ordinary.inspected, 0, 'legacy hold produces no normal due URLs');
+  const accelerated = await siteIndexationInspect({ siteId: 'site-j', limit: 2, accelerateUninspected: true });
+  assert.equal(accelerated.inspected, 1, 'spare property quota should cover old held URL');
+  assert.equal(accelerated.results[0].inspectionUrl, 'https://new.antonbase.com/old/');
+  assert.equal(accelerated.quota.used, 1);
+  assert.ok(!inspectedUrls.includes('https://new.antonbase.com/fresh/'),
+    'fresh pages must not consume quota during initial crawl buffer');
+  assert.equal((await siteIndexationInspect({ siteId: 'site-j', limit: 2, accelerateUninspected: true })).inspected, 0,
+    'already inspected and fresh pages are not repeatedly polled');
+  const finalRows = (await siteIndexationList({ siteId: 'site-j' })).items;
+  assert.equal(finalRows.filter(row => row.lastInspectedAt).length, 1);
+  assert.equal(finalRows.filter(row => !row.lastInspectedAt).length, 1);
+  assert.equal((await siteIndexationSummary({ siteId: 'site-j' })).inspectedCount, 1);
+
+  console.log('site indexation smoke passed: initial coverage priority, legacy backlog, 6h fresh grace, idempotent inventory, quota, and snapshot');
 } finally {
   globalThis.fetch = originalFetch;
 }

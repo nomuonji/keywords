@@ -7,6 +7,14 @@
 name: site-indexation
 
 on:
+  # A code change to the inspection policy starts a single quota-guarded
+  # catch-up sweep immediately after main, without increasing daily limits.
+  push:
+    branches: [main]
+    paths:
+      - 'packages/commands/src/site-indexation.ts'
+      - 'scripts/site-indexation-sweep.ts'
+      - '.github/workflows/site-indexation.yml'
   workflow_dispatch:
   schedule:
     # 04:17, 10:17, 16:17, 22:17 JST; offset from :00 to reduce schedule contention.
