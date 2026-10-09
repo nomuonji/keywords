@@ -486,7 +486,7 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
-    collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'seoRecoveryControls', 'seoRecoverySites', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
+    collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'growthInitiatives', 'distributionExperiments', 'seoRecoveryControls', 'seoRecoverySites', 'sites/{siteId}/indexationUrls', 'indexationSnapshots', 'indexationQuotaDays'],
     legacyCollections: {
       metricSnapshots: 'read_only_compatibility_for_historical_optimization_evidence',
       siteDigests: 'deprecated_no_new_reads_or_writes'
@@ -501,7 +501,7 @@ export function remoteSitesStatus() {
       maxPlannerPages: 60,
       maxQueriesPerWindowPerPage: 3,
       maxSerializedBytes: 500000,
-      durableGrowth: 'seoTasks_only_when_evidence_backed_material_action_is_ready'
+      durableGrowth: 'SEO implementation uses seoTasks; growthInitiatives record marketing hypotheses and proof; distributionExperiments record independent channel plans and actual publication receipts'
     },
     indexationStoragePolicy: {
       urlCache: 'one_mutable_document_per_url_under_site',
