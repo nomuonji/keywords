@@ -87,7 +87,7 @@ export const distributionExperimentUpdateShape={
 };
 const distributionUpdateSchema=z.object(distributionExperimentUpdateShape).strict();
 
-type Initiative = z.infer<typeof createSchema>&{
+type Initiative = Omit<z.infer<typeof createSchema>,'status'>&{
   id:string; revision:number; status:z.infer<typeof initiativeStatus>;
   assetUrl?:string;taskIds:string[];approval:null|z.infer<typeof approval>;
   launchProof:null|z.infer<typeof launchProof>;
