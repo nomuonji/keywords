@@ -39,7 +39,7 @@
     "test:portfolio": "tsx scripts/portfolio-smoke.ts",
     "test:web-ui": "python scripts/web-ui-smoke.py",
     "test:site-structure": "tsx scripts/site-structure-smoke.ts",
-    "test:seo-delivery-controller": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --esModuleInterop --skipLibCheck scripts/seo-delivery-controller.ts",
+    "test:seo-delivery-controller": "tsc --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --esModuleInterop --skipLibCheck scripts/seo-delivery-controller.ts && tsx scripts/seo-delivery-merge-smoke.ts",
     "test:site-analytics-storage": "tsx scripts/site-analytics-storage-smoke.ts"
   },
   "devDependencies": {
