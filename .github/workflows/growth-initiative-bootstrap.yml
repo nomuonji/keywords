@@ -1,0 +1,47 @@
+name: growth-initiative-bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/growth-portfolio-bootstrap.ts'
+      - '.github/workflows/growth-initiative-bootstrap.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: growth-initiative-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  create-candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      KEYWORDS_FIRESTORE_WRITE_DELAY_MS: '0'
+    steps:
+      - name: Check configured Firestore access
+        id: config
+        shell: bash
+        run: |
+          if [ -n "$FIREBASE_PROJECT_ID" ] && [ -n "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Missing Firestore credentials. No candidates were created."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.enabled == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.config.outputs.enabled == 'true'
+        with:
+          node-version: 22
+      - run: npm install --ignore-scripts
+        if: steps.config.outputs.enabled == 'true'
+      - name: Create candidate records only
+        if: steps.config.outputs.enabled == 'true'
+        run: npx tsx scripts/growth-portfolio-bootstrap.ts

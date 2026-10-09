@@ -694,7 +694,7 @@ try {
     return (await response.json() as any).result;
   };
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 47);
+  assert.equal(listing.tools.length, 55);
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_agent_context'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_get'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'seo_portfolio_policy_update'));
@@ -748,7 +748,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.28.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.29.0');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
@@ -829,7 +829,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.21.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.22.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.2.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');

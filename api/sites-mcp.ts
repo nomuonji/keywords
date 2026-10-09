@@ -6,6 +6,16 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { SITES_MCP_SERVER_VERSION, SITES_MCP_TOOL_NAMES } from './sites-mcp-contract.js';
 import { seoAgentContext, seoAgentContextShape } from '../packages/commands/src/seo-agent-policy.js';
 import {
+  growthInitiativeCreate, growthInitiativeCreateShape,
+  growthInitiativeGet, growthInitiativeGetShape,
+  growthInitiativeList, growthInitiativeListShape,
+  growthInitiativeUpdate, growthInitiativeUpdateShape,
+  distributionExperimentCreate, distributionExperimentCreateShape,
+  distributionExperimentGet, distributionExperimentGetShape,
+  distributionExperimentList, distributionExperimentListShape,
+  distributionExperimentUpdate, distributionExperimentUpdateShape
+} from '../packages/commands/src/growth-operations.js';
+import {
   SEO_EVALUATION_REGISTRY_VERSION,
   seoEvaluatorGet,
   seoEvaluatorGetShape,
@@ -216,6 +226,14 @@ function server() {
   mcp.registerTool('optimization_event_update', { description: 'Mark a hypothesis implemented/evaluated/cancelled with optimistic revision control. An implemented change defaults to a 14-day evaluation wait and cannot be scored early.', inputSchema: optimizationEventUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await optimizationEventUpdate(input)));
   mcp.registerTool('optimization_context', { description: 'Read latest GSC/GA4 observations plus the active hypothesis/cooldown before changing an article.', inputSchema: optimizationContextShape, annotations: { readOnlyHint: true } }, async input => structured(await optimizationContext(input)));
   mcp.registerTool('optimization_evaluation_context', { description: 'Build a read-only evaluation evidence packet for one optimization. Requires complete equal-length article GSC before/after periods and never invents an automatic improved/neutral/worsened verdict.', inputSchema: optimizationEvaluationContextShape, annotations: { readOnlyHint: true } }, async input => structured(await optimizationEvaluationContext(input)));
+  mcp.registerTool('growth_initiative_create', { description: 'Persist a source-backed site-level growth hypothesis. Creates researching/candidate only; does not approve, deploy or publish anything.', inputSchema: growthInitiativeCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await growthInitiativeCreate(input)));
+  mcp.registerTool('growth_initiative_get', { description: 'Read one versioned growth initiative, publication proof and observed measurements.', inputSchema: growthInitiativeGetShape, annotations: { readOnlyHint: true } }, async input => structured(await growthInitiativeGet(input)));
+  mcp.registerTool('growth_initiative_list', { description: 'List portfolio growth initiatives by site/status, including candidates, live assets and evaluations.', inputSchema: growthInitiativeListShape, annotations: { readOnlyHint: true } }, async input => structured(await growthInitiativeList(input)));
+  mcp.registerTool('growth_initiative_update', { description: 'Update a growth initiative with revision and approval, production proof, or sourced postlaunch outcome. Never runs a Worker or changes SEO Macro Policy.', inputSchema: growthInitiativeUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await growthInitiativeUpdate(input)));
+  mcp.registerTool('distribution_experiment_create', { description: 'Plan a channel-specific distribution experiment linked to one registered site initiative. Creates an idea only, with no external posting.', inputSchema: distributionExperimentCreateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await distributionExperimentCreate(input)));
+  mcp.registerTool('distribution_experiment_get', { description: 'Read one experiment and its actual native-platform publication evidence.', inputSchema: distributionExperimentGetShape, annotations: { readOnlyHint: true } }, async input => structured(await distributionExperimentGet(input)));
+  mcp.registerTool('distribution_experiment_list', { description: 'List distribution experiment records by site, initiative or state.', inputSchema: distributionExperimentListShape, annotations: { readOnlyHint: true } }, async input => structured(await distributionExperimentList(input)));
+  mcp.registerTool('distribution_experiment_update', { description: 'Record a real publication receipt and later metrics, requiring live first-party asset, exact state transitions and revision. Does not call a social publisher.', inputSchema: distributionExperimentUpdateShape, annotations: { readOnlyHint: false, destructiveHint: false } }, async input => structured(await distributionExperimentUpdate(input)));
   mcp.registerTool('site_query_opportunities', { description: 'Compare complete equal-length non-overlapping site GSC periods and surface new/rising queries. This never calls Google Ads/SERP or writes Treasury; selected queries must go back through Keywords Operator screening.', inputSchema: siteQueryOpportunitiesShape, annotations: { readOnlyHint: true } }, async input => structured(await siteQueryOpportunities(input)));
   return mcp;
 }

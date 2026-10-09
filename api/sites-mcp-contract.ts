@@ -1,4 +1,4 @@
-export const SITES_MCP_SERVER_VERSION = '0.21.0';
+export const SITES_MCP_SERVER_VERSION = '0.22.0';
 
 export const SITES_MCP_TOOL_NAMES = [
   'remote_sites_status',
@@ -47,5 +47,13 @@ export const SITES_MCP_TOOL_NAMES = [
   'optimization_event_update',
   'optimization_context',
   'optimization_evaluation_context',
+  'growth_initiative_create',
+  'growth_initiative_get',
+  'growth_initiative_list',
+  'growth_initiative_update',
+  'distribution_experiment_create',
+  'distribution_experiment_get',
+  'distribution_experiment_list',
+  'distribution_experiment_update',
   'site_query_opportunities'
 ] as const;

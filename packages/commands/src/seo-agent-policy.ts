@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.28.0';
+export const SEO_AGENT_POLICY_VERSION = '1.29.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -22,6 +22,14 @@ const shared = {
     publicationOutcomeGate: 'Read completed tasks with deploymentVerification pending/failed and due optimizationEvents before new unrelated work. Main merge is implementation, not production launch; failed/skip deployment cannot start a traffic experiment. Evaluate only with complete matched windows after verified publication.',
     scopeBoundary: 'The current SEO Task schema and gsc_clicks Macro Policy cannot own social posts, distribution campaigns, referral sessions or retention. Report a distribution_gap with target, asset, likely channel and missing authorization/attribution; do not invent an SEO Task or claim a campaign ran.',
     proposedUpgrade: 'See docs/sites-operator-acquisition-expansion.md for a not-yet-implemented first-class Growth Initiative/Distribution Experiment model, requiring owner approval and real publisher + metrics receipts.'
+  },
+  growthInitiatives: {
+    purpose: 'Record source-backed site-level reader-acquisition hypotheses, production assets and honest outcome evidence without treating SEO task volume as traffic.',
+    tools: ['growth_initiative_list','growth_initiative_create','growth_initiative_get','growth_initiative_update','distribution_experiment_list','distribution_experiment_create'],
+    managerPermission: 'May create researching/candidate initiatives and idea-stage distribution experiments from real observed opportunity. May not self-approve a marketing initiative, fabricate production proof/post receipts or change the owner-approved SEO Macro Policy.',
+    ownership: 'Growth initiative candidate research can accompany the scheduled SEO Manager run; site engineering remains with existing SEO Worker and its centralized GitHub Actions delivery. External distribution is not executed by this SEO Manager.',
+    noDuplicate: 'Before writing, check growth_initiative_list(siteId) and distribution_experiment_list(siteId), use stable site-specific dedupeKey, and do not create near-duplicates of already approved/in-progress efforts.',
+    report: 'Distinguish candidate, approved/building, verified_live, published_distribution, observed_result and unknown measurement. Give source, last observed date, next challenge and the actual cross-channel capability gap.'
   },
   measurement: {
     acquisition: 'Externalized. Agents must not spend a planning run fetching Google Analytics or Search Console directly.',
@@ -104,6 +112,7 @@ const plannerInstructions = [
   'Before choosing another local edit, run the portfolio Search acquisition gate: compare complete site-level current and preceding 28d GSC and organic GA4, classify the bottleneck (collapsed Search visibility, weak coverage, clickthrough gap, engagement gap or unknown), identify a credible new-reader mechanism and compare recovery versus a substantive product/decision feature versus a bounded structural pilot. Never attribute a metric window ending before a release to that release.',
   'Prioritize post-merge truth: inspect recent completed tasks with deploymentVerification pending/failed, including skipped Cloudflare production, and due optimization events before creating unrelated tasks. Merged commits are not live outcomes. If URL Inspection is blocked by credentials or legacy slashless checks, preserve unknown rather than claiming no indexed pages.',
   'The active gsc_clicks policy and SEO Task schema cannot publish social content or measure distribution/referrals. When first-party useful assets lack a reach path, report a named distribution_gap and its exact handoff needs rather than fabricating an SEO Worker task; do not change the owner-approved policy autonomously.',
+  'If the live Sites Operator exposes growth_initiative_list/create, persist one exceptionally well-evidenced *candidate* for a high-priority distribution or first-party discovery gap instead of leaving every such gap in free-text reports. Read existing initiatives first; create with source URLs/dates, actual registered site, metric baseline complete/partial/missing, intended asset and falsification. Do not self-approve, move to live, generate post receipts, create duplicate campaigns or pretend that this is an authorized external social publisher.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
   'Allocate a bounded source-led discovery pass or a containment analysis according to the active objective, risk appetite and incident intake policy. No particular incident category is automatically an investment regime.',
