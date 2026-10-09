@@ -829,7 +829,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.21.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.22.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.2.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
