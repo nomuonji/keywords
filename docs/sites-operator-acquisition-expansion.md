@@ -1,6 +1,6 @@
 # Sites Operator: organic Search managerから獲得・流通まで伸ばすための拡張仕様（未実装）
 
-Status: **design / not enabled** · 2026-10-09
+Status: **partially implemented** · 2026-10-09. First-party control-plane API (candidate/approval/verified site launch + experiment receipts) is implemented in Sites Operator 0.22.0; autonomous multi-channel publishing and attributable analytics are not enabled.
 Owner decision required before changing the Macro Policy objective or enabling any external publishing.
 
 ## Background: what the live system actually does
@@ -86,6 +86,6 @@ Site Monitor is a human-facing dashboard, never a planning source. Expose an **I
 ## Implementation order / objective acceptance
 
 - **Phase A — active now:** strengthen Search acquisition review and rollout/outcome gates in the Planner Manual and its scheduled Manager prompt, within the existing owner-approved SEO policy. No API/scope change.
-- **Phase B — blocked on owner policy decision:** add initiative schemas/validators, API read/write with dedupe and optimistic revisions, plugin capability tests, and UI. State tests: no status `live` without actual asset publication, no `published` without receipt, missing measurement not zero, no cross-site attribution.
-- **Phase C — blocked on real publisher auth & safe contracts:** experiment publisher bridge, idempotency, account approval/anti-spam, analytics attribution, feedback-driven reallocation. Test one bounded channel-specific real asset end to end.
+- **Phase B — API implemented (behind existing MCP authentication):** growth_initiative_create/get/list/update and distribution_experiment_create/get/list/update use versioned Firestore records, site isolation, audit trail, dedupe, approval/launch/receipt gates and an offline smoke suite. **Still open:** a first-party dashboard and policy-driven automatic portfolio investment. Do not confuse API availability with permission to publish. State tests: no status `live` without actual asset publication, no `published` without receipt, missing measurement not zero, no cross-site attribution.
+- **Phase C — not implemented: requires approved publisher auth and safe contracts:** experiment publisher bridge, idempotency, account approval/anti-spam, analytics attribution, feedback-driven reallocation. Test one bounded channel-specific real asset end to end.
 - **Exit criterion:** at least one initiative can be observed as source-grounded hypothesis -> built live asset -> real publication -> measured site visit/funnel -> keep/adjust/stop decision, without manual chat memory, fake SEO tasks or phantom outcomes. The operator must demonstrate this before claiming it is a complete marketing system.
