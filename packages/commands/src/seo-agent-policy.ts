@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.27.0';
+export const SEO_AGENT_POLICY_VERSION = '1.28.0';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -14,6 +14,14 @@ const shared = {
     siteMonitor: 'Human-only portfolio dashboard. Never use it as an agent planning or execution source.',
     myPortal: 'Not part of this SEO operating flow.',
     keywordsOperator: 'Shared evidence-led discovery specialist and durable theme/opportunity ledger. Use it for a bounded discovery pass in every Planner run, alongside implementation planning; search volume is evidence, not the sole admission gate.'
+  },
+  acquisitionReview: {
+    mission: 'Make every SEO investment accountable to a credible new-reader Search acquisition mechanism, not simply site-edit throughput.',
+    requiredDiagnosis: 'Before replenishing Tasks compare complete site-level current and previous 28d GSC impressions/clicks and organic GA4 landing sessions when available. State the bottleneck: visibility collapse, low exposure, clickthrough gap, weak entry/engagement, or unknown. A later code change cannot explain an earlier metric window.',
+    decisionGate: 'Compare recovery, differentiated on-site decision/product value, and bounded structural/search experiments before choosing the smallest coherent material outcome. Write observed user job -> Search-visible surface -> unique answer or tool -> landing URL -> measurable next action.',
+    publicationOutcomeGate: 'Read completed tasks with deploymentVerification pending/failed and due optimizationEvents before new unrelated work. Main merge is implementation, not production launch; failed/skip deployment cannot start a traffic experiment. Evaluate only with complete matched windows after verified publication.',
+    scopeBoundary: 'The current SEO Task schema and gsc_clicks Macro Policy cannot own social posts, distribution campaigns, referral sessions or retention. Report a distribution_gap with target, asset, likely channel and missing authorization/attribution; do not invent an SEO Task or claim a campaign ran.',
+    proposedUpgrade: 'See docs/sites-operator-acquisition-expansion.md for a not-yet-implemented first-class Growth Initiative/Distribution Experiment model, requiring owner approval and real publisher + metrics receipts.'
   },
   measurement: {
     acquisition: 'Externalized. Agents must not spend a planning run fetching Google Analytics or Search Console directly.',
@@ -93,6 +101,9 @@ const plannerInstructions = [
   'Only read and apply seo_portfolio_policy_get. Macro-policy objective, risk tolerance and incident intake decisions require explicit human authorization; a recurring SEO Manager run must not call seo_portfolio_policy_update on its own.',
   'You are the currently scheduled SEO Manager (planner API role), NOT a subordinate of the archived My Portal SEO Manager. Read this context and seo_portfolio_policy_get first, then the canonical Planner Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md. The active policy record and task records take precedence if they conflict. Mission: increase organic traffic by continuously supplying real implementable SEO improvements, not producing audits or counting speculative hypotheses.',
   'Read the live recovery state embedded in seo_agent_context first; use seo_recovery_status for site-specific detail or incident updates. Govern task mix and new intake by the active Macro Policy; do not bake in any strategy percentages. Follow current policy.constraints.incidentGrowthIntake for each incident; allocate capacity among current policy.allocation.buckets and preserve existing delivery regardless of incident changes. Observe Site Direction and quality gates.',
+  'Before choosing another local edit, run the portfolio Search acquisition gate: compare complete site-level current and preceding 28d GSC and organic GA4, classify the bottleneck (collapsed Search visibility, weak coverage, clickthrough gap, engagement gap or unknown), identify a credible new-reader mechanism and compare recovery versus a substantive product/decision feature versus a bounded structural pilot. Never attribute a metric window ending before a release to that release.',
+  'Prioritize post-merge truth: inspect recent completed tasks with deploymentVerification pending/failed, including skipped Cloudflare production, and due optimization events before creating unrelated tasks. Merged commits are not live outcomes. If URL Inspection is blocked by credentials or legacy slashless checks, preserve unknown rather than claiming no indexed pages.',
+  'The active gsc_clicks policy and SEO Task schema cannot publish social content or measure distribution/referrals. When first-party useful assets lack a reach path, report a named distribution_gap and its exact handoff needs rather than fabricating an SEO Worker task; do not change the owner-approved policy autonomously.',
   'Start by revalidating legacy proposed records against current default-branch HEAD, relevant PRs and live evidence; transition valid records to ready, and invalid/delivered records to superseded with proof. Never create GitHub Issues.',
   'Read ready, legacy issued, in_progress and recently completed/superseded tasks before searching for new work; preserve history, intervention-based dedupe and one-change/cooldown protections. Count existing ready plus genuinely executable legacy issued records toward the queue.',
   'Allocate a bounded source-led discovery pass or a containment analysis according to the active objective, risk appetite and incident intake policy. No particular incident category is automatically an investment regime.',
@@ -165,7 +176,7 @@ export function seoAgentContext(input: unknown) {
     instructions: role === 'planner' ? plannerInstructions : executorInstructions,
     runContract: role === 'planner'
       ? {
-          start: ['seo_agent_context(role=planner) — active scheduled SEO Manager', 'seo_portfolio_policy_get and seo_portfolio_allocation_status', 'seo_recovery_status (mandatory mode gate)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
+          start: ['seo_agent_context(role=planner) — active scheduled SEO Manager', 'seo_portfolio_policy_get and seo_portfolio_allocation_status', 'seo_recovery_status (mandatory mode gate)', 'read canonical Planner Manual', 'seo_evaluator_list for current evaluator inventory', 'review due optimization events and recent completed-task publication evidence', 'revalidate legacy proposed task backlog', 'count unclaimed ready and eligible legacy issued records', 'site_registry_list(status=active)', 'site_direction_list for open/monitor/decided records', 'seo_planning_digest_list', 'site-level 28d acquisition bottleneck and launch/outcome review', 'bounded evidence-led discovery pass and persisted handoff', 'cross-site repair/expansion implementation planning until buffer target or justified stop'],
           manual: 'https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-planner-manual.md',
           discovery: {
             required: 'as_directed_by_active_macro_policy_and_intake_rules',
@@ -191,6 +202,13 @@ export function seoAgentContext(input: unknown) {
             databasePromotion: 'candidate -> authoritative verification -> repository validation -> public dataset -> generated routes/sitemap -> observation',
             guardrail: 'Do not create thin permutations, unsourced records, speculative schema, cosmetic-only expansion or maintenance disguised as growth. For database/programmatic expansion, apply database_indexation_quality, read cached site_indexation_summary when available, and keep data coverage separate from the deliberate indexable URL surface.',
             indexationTools: ['site_indexation_summary', 'site_indexation_list']
+          },
+          acquisitionReview: {
+            diagnosis: 'Compare complete site-level GSC current28 vs previous28 and organic GA4 when available, classify missing evidence unknown, distinguish prior observation windows from later releases.',
+            compareInterventions: ['Search visibility recovery and publication', 'differentiated first-party decision/product experience', 'bounded Search structural/creative experiment'],
+            selectionEvidence: ['actual user job and dated source', 'Search-visible useful landing', 'incremental user benefit', 'distribution_gap when no allowed outside-Search delivery', 'measurement & falsification'],
+            launchGate: 'Deployment verification and actual visible production before event implemented and evaluation timer. Completed GitHub task is not visitor acquisition.',
+            activeObjectiveBoundary: 'Only GSC Search acquisition is approved. Nonsearch campaigns are first-class design proposals, not SEO tasks.'
           },
           experimentation: {
             defaultAction: 'Plan a bounded reversible site change when credible observations support it; do not wait for certainty about traffic uplift.',

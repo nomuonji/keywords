@@ -58,3 +58,11 @@ When a repository exposes no checks at all, the controller waits through a short
 - a mismatched or missing branch is marked `ci_failed` instead of being merged;
 - feature-branch SHA is never written as `resultCommitSha`;
 - PR/merge failures do not fabricate completion.
+
+## Production commit message gate
+
+The Worker deliberately writes `[CF-Pages-Skip]` into its `seo/*` source commit to suppress Cloudflare Pages preview deployments. **Do not carry that marker into the production branch merge commit**. The central delivery controller must supply an explicit skip-free `commit_title` and `commit_message` for GitHub squash/merge, referencing the source Sites Operator task ID. Squash is the preferred merge method because it does not preserve the marked Worker commit on the default branch. Rebase-only delivery fails closed rather than silently letting a preview-skip marker suppress the production build.
+
+Regression: `npm run test:seo-delivery-controller` includes `scripts/seo-delivery-merge-smoke.ts`, which asserts skip-free main payload, task provenance and rebase rejection.
+
+This is a **forward fix**. Already merged/previously skipped deployments must be rechecked and redeployed under normal provider operations; a merged task is not evidence of a live asset. The original `seoTasks.status=completed` remains a GitHub delivery fact; `deploymentVerification` and optimization-event publication time remain separate. Do not start Search uplift evaluation from a skipped production deployment.

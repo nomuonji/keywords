@@ -57,6 +57,16 @@ try {
   assert.equal((site.planningDigest as { inventoryCount: number }).inventoryCount, 7);
   assert.equal((site.planningDigest as { selectedCount: number }).selectedCount, 5);
   assert.ok(!JSON.stringify(body).includes('test-access-token'), 'no credentials in response');
+  // SEO Manager context regression: acquisition choices must not be reduced to edit throughput.
+  const { seoAgentContext } = await import('../packages/commands/src/seo-agent-policy.js');
+  const manager = seoAgentContext({ role: 'planner' }) as any;
+  assert.equal(manager.policyVersion, '1.28.0');
+  assert.match(manager.acquisitionReview.requiredDiagnosis, /previous 28d/);
+  assert.match(manager.acquisitionReview.publicationOutcomeGate, /production/);
+  assert.match(manager.acquisitionReview.scopeBoundary, /cannot own social/);
+  assert.equal(manager.runContract.acquisitionReview.activeObjectiveBoundary.includes('Only GSC Search acquisition'), true);
+  const worker = seoAgentContext({ role: 'executor' }) as any;
+  assert.equal(worker.acquisitionReview, undefined, 'Worker remains execution-only and does not choose portfolio policy');
   console.log('remote sites smoke passed: registry plus compact planning digest in bounded reads, read-only, no secrets');
 } finally {
   globalThis.fetch = originalFetch;
