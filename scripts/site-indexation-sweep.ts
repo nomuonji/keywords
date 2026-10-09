@@ -53,7 +53,7 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
       if (remaining <= 0 || !active.has(site.id)) continue;
       const take = Math.min(siteChunk, remaining);
       try {
-        const result = await siteIndexationInspect({ siteId: site.id, limit: take }) as any;
+        const result = await siteIndexationInspect({ siteId: site.id, limit: take, accelerateUninspected: true }) as any;
         calls++;
         const thisReserved = Number(result.quota?.reserved ?? 0);
         reserved += thisReserved;
