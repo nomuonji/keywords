@@ -5,6 +5,7 @@ import {
   siteRegistryList
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
+import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
@@ -183,11 +184,13 @@ function mergeMethod(info: GitHubRepo): 'squash' | 'merge' | 'rebase' {
   return 'rebase';
 }
 
-async function mergePull(repo: string, number: number, headSha: string, method: 'squash' | 'merge' | 'rebase') {
-  return gh<{ sha?: string; merged: boolean; message?: string }>(api(repo, `/pulls/${number}/merge`), {
+async function mergePull(task: SeoTaskRecord, number: number, headSha: string, method: 'squash' | 'merge' | 'rebase') {
+  return gh<{ sha?: string; merged: boolean; message?: string }>(api(task.repo, `/pulls/${number}/merge`), {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ sha: headSha, merge_method: method })
+    // The Worker's source commit intentionally contains [CF-Pages-Skip] to
+    // suppress preview builds. Never inherit that marker into main.
+    body: JSON.stringify(seoDeliveryMergePayload(task, headSha, method))
   });
 }
 
@@ -431,7 +434,7 @@ async function processTask(task: SeoTaskRecord) {
 
   let mergeResult: { sha?: string; merged: boolean; message?: string };
   try {
-    mergeResult = await mergePull(task.repo, pr.number, handoff.headSha, mergeMethod(info));
+    mergeResult = await mergePull(task, pr.number, handoff.headSha, mergeMethod(info));
   } catch (error) {
     console.log(`Merge deferred for ${task.id}: ${String(error)}`);
     return;
