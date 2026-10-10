@@ -42,10 +42,6 @@ SEO界隈の人物・Xアカウント・ブログ・ニュースレター等を�
 
 Sourceは権威リストではなく観測対象である。発信者の評判だけで主張を採用せず、公開URLと簡潔な要約をFindingに保存する。Google Searchの仕様・ポリシー主張は一次情報を優先して別途確認する。新規性がなければ `nothing_new` を正当なScan結果として残し、無理に示唆を作らない。評価関数への反映は Source → Scan → Finding → independent verification → Evaluation Registry の順とし、インフルエンサー投稿を直接ルール化しない。
 
-### Site SEO Manager: AI-generated-content / indexation incident evidence route
-
-When a managed site's exact canonical URL Inspection or complete Search Console comparison shows substantial indexation/visibility trouble, do **not** infer an AI-content penalty, Google update, or indexing outage from correlation. Read `seo_agent_context(role=planner)`, the current Sites Operator digest + `site_indexation_summary/list`, and the Keywords Operator `seo_source_pool_context`. Ground any policy claim in its current original primary source; keep practitioner claims and unverified SEO hypotheses separate. Use the event-triggered playbook in `docs/seo-external-playbook-policy.md` as questions, not instructions. Report the consulted source IDs, provenance, claim boundary, contradiction, and next falsification check (or explicitly report retrieval unavailable) in the Manager run, rather than silently claiming that the SEO knowledge repository was consulted. My Portal's SEO knowledge Space is a reference archive; the active Manager must not route through the archived My Portal SEO Manager. This complements, rather than overrides, `docs/sites-operator-planner-manual.md` and the live site policy. No new audit-only tasks, duplicate control plane, unsupported index-rate claims, or automatic bulk deletions.
-
 ## Product principle
 
 This repository is an agent-native SEO workspace. Do not add a second, agent-only state model. Human UI actions, CLI operations, MCP tool calls, and scheduled operator ticks must execute the same commands against the same SQL database.
