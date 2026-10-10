@@ -60,7 +60,7 @@ try {
   // SEO Manager context regression: acquisition choices must not be reduced to edit throughput.
   const { seoAgentContext } = await import('../packages/commands/src/seo-agent-policy.js');
   const manager = seoAgentContext({ role: 'planner' }) as any;
-  assert.equal(manager.policyVersion, '1.30.0');
+  assert.equal(manager.policyVersion, '1.31.0');
   assert.match(manager.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(manager.indexation.requiredDecisionCheck, /each site/i);
   assert.match(manager.indexation.credentialBoundary, /GitHub Actions/);
