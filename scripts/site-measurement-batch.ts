@@ -101,11 +101,14 @@ async function cachedIndexationInventory(siteId: string) {
   return items;
 }
 
-// The metrics job still measures all sites every day, but spreads expensive
-// full Firestore URL-cache reconciliations over several days. New/removed
-// sitemap URLs are detected by a cheap manifest hash before any full scan.
-const inventoryShards = Math.max(1, Math.min(32, Number(process.env.SITE_INDEXATION_INVENTORY_SHARDS ?? 8) || 8));
+// Measure every site daily, but only read its one-document sitemap manifest
+// unless the inventory has changed or a periodic full recheck is due.
+// Bootstrap and periodic full scans are sharded; changes in a previously
+// synchronized sitemap can be reconciled on the next daily measurement.
+const inventoryShards = Math.max(1, Math.min(32, Number(process.env.SITE_INDEXATION_INVENTORY_SHARDS ?? 4) || 4));
 const inventoryFullCheckDays = Math.max(7, Math.min(90, Number(process.env.SITE_INDEXATION_FULL_CHECK_DAYS ?? 30) || 30));
+const maxFullReconcilesPerRun = Math.max(1, Math.min(16, Number(process.env.SITE_INDEXATION_MAX_FULL_RECONCILES_PER_RUN ?? 6) || 6));
+let fullReconcilesAttempted = 0;
 const dayNumber = () => Math.floor(Date.now() / 86_400_000);
 function siteShard(siteId: string) {
   return Number.parseInt(createHash('sha256').update(siteId).digest('hex').slice(0, 8), 16) % inventoryShards;
@@ -121,10 +124,6 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
 
   // This defer only affects the inventory cache. Analytics/GSC measurement and
   // the independent due-URL Inspection sweep continue on their own schedules.
-  if (dayNumber() % inventoryShards !== siteShard(site.id)) {
-    return { status: 'deferred', reason: 'inventory_shard', siteId: site.id, currentUrls: sitemapUrls.length, inventoryShards };
-  }
-
   const fingerprint = sitemapFingerprint(sitemapUrls);
   const sync = await siteIndexationInventorySyncGet(site.id);
   const ageMs = sync?.lastReconciledAt ? Date.now() - Date.parse(sync.lastReconciledAt) : Infinity;
@@ -133,6 +132,18 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
     return { status: 'unchanged', reason: 'sitemap_fingerprint_match', siteId: site.id, currentUrls: sitemapUrls.length };
   }
 
+  const changedAfterSync = complete && Boolean(sync?.fingerprint) && sync!.fingerprint !== fingerprint;
+  const onScheduledShard = dayNumber() % inventoryShards === siteShard(site.id);
+  const force = process.env.SITE_INDEXATION_FORCE_INVENTORY === '1';
+  if (!force && !changedAfterSync && !onScheduledShard) {
+    return { status: 'deferred', reason: 'inventory_shard', siteId: site.id, currentUrls: sitemapUrls.length, inventoryShards };
+  }
+  // Never let a burst of changed sitemaps/initial imports monopolize shared
+  // Firestore reads and starve interactive SEO tasks.
+  if (!force && fullReconcilesAttempted >= maxFullReconcilesPerRun) {
+    return { status: 'deferred', reason: 'daily_full_scan_budget', siteId: site.id, currentUrls: sitemapUrls.length, maxFullReconcilesPerRun };
+  }
+  fullReconcilesAttempted++;
   const cached = await cachedIndexationInventory(site.id);
   const cachedByUrl = new Map(cached.map((row: any) => [normalizeInventoryUrl(row.url), row]));
   const current = new Map(sitemapUrls.map(url => [normalizeInventoryUrl(url), preserveSitemapUrl(url)]));
