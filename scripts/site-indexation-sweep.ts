@@ -4,8 +4,9 @@ import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/c
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const RUN_INTERVAL_HOURS = 6;
-const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 330) || 330, 500));
-const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 25) || 25, 50));
+const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 100) || 100, 500));
+const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 80) || 80, 500));
+const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 10) || 10, 50));
 
 function stableNumber(value: string) {
   return Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16);
@@ -36,10 +37,10 @@ async function activeSites() {
   return items.filter(site => Boolean(site.searchConsoleProperty));
 }
 
-async function sweepProperty(property: string, sites: SiteRecord[], slot: number) {
+async function sweepProperty(property: string, sites: SiteRecord[], slot: number, budget: number) {
   const ordered = rotate([...sites].sort((a, b) => a.id.localeCompare(b.id)), slot + stableNumber(property));
   const active = new Set(ordered.map(site => site.id));
-  let remaining = propertyRunBudget;
+  let remaining = budget;
   let reserved = 0;
   let inspected = 0;
   let failed = 0;
@@ -85,7 +86,7 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
   return {
     property,
     siteCount: sites.length,
-    runBudget: propertyRunBudget,
+    runBudget: budget,
     chunk: siteChunk,
     calls,
     reserved,
@@ -111,10 +112,16 @@ async function main() {
   const slot = runSlot(at);
   const properties = [];
   let totalFailures = 0;
-  for (const [property, group] of [...byProperty.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    const result = await sweepProperty(property, group, slot);
+  let globalRemaining = globalRunBudget;
+  // Rotate property priority each run: a global budget must not consistently
+  // starve later properties when multiple sites share one Firebase project.
+  const orderedProperties = rotate([...byProperty.entries()].sort(([a], [b]) => a.localeCompare(b)), slot);
+  for (const [property, group] of orderedProperties) {
+    if (globalRemaining <= 0) break;
+    const result = await sweepProperty(property, group, slot, Math.min(propertyRunBudget, globalRemaining));
     properties.push(result);
     totalFailures += result.failed;
+    globalRemaining -= result.reserved;
   }
 
   const snapshots: Array<{ siteId: string; ok: boolean; error?: string }> = [];
@@ -135,7 +142,10 @@ async function main() {
     generatedAt: at.toISOString(),
     policy: {
       scheduledRunsPerDay: 24 / RUN_INTERVAL_HOURS,
+      globalRunBudget,
+      globalUnusedRunBudget: globalRemaining,
       propertyRunBudget,
+      scheduledDailyMaximumAllProperties: globalRunBudget * (24 / RUN_INTERVAL_HOURS),
       scheduledDailyMaximumPerProperty: propertyRunBudget * (24 / RUN_INTERVAL_HOURS),
       siteChunk,
       apiDailyGuardPerProperty: Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500),
