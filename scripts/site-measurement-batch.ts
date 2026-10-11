@@ -127,14 +127,14 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
   const fingerprint = sitemapFingerprint(sitemapUrls);
   const sync = await siteIndexationInventorySyncGet(site.id);
   const ageMs = sync?.lastReconciledAt ? Date.now() - Date.parse(sync.lastReconciledAt) : Infinity;
-  if (complete && sync?.fingerprint === fingerprint &&
+  const force = process.env.SITE_INDEXATION_FORCE_INVENTORY === '1';
+  if (!force && complete && sync?.fingerprint === fingerprint &&
       Number.isFinite(ageMs) && ageMs >= 0 && ageMs < inventoryFullCheckDays * 86_400_000) {
     return { status: 'unchanged', reason: 'sitemap_fingerprint_match', siteId: site.id, currentUrls: sitemapUrls.length };
   }
 
   const changedAfterSync = complete && Boolean(sync?.fingerprint) && sync!.fingerprint !== fingerprint;
   const onScheduledShard = dayNumber() % inventoryShards === siteShard(site.id);
-  const force = process.env.SITE_INDEXATION_FORCE_INVENTORY === '1';
   if (!force && !changedAfterSync && !onScheduledShard) {
     return { status: 'deferred', reason: 'inventory_shard', siteId: site.id, currentUrls: sitemapUrls.length, inventoryShards };
   }
