@@ -3,10 +3,10 @@ import { siteRegistryList } from '../packages/commands/src/remote-site-operation
 import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
-const RUN_INTERVAL_HOURS = 24;
-const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 100) || 100, 500));
-const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 80) || 80, 500));
-const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 10) || 10, 50));
+const RUN_INTERVAL_HOURS = 12;
+const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 200) || 200, 500));
+const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 120) || 120, 500));
+const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 25) || 25, 50));
 
 function stableNumber(value: string) {
   return Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16);
@@ -25,7 +25,9 @@ function runSlot(at = new Date()) {
 function shouldSaveWeeklySnapshot(siteId: string, at = new Date()) {
   // Distribute weekly full-cache summary reads across the week instead of
   // scanning every site's indexation records in a single Sunday run.
-  return at.getUTCDay() === stableNumber(siteId) % 7;
+  // The sweep runs twice a day. Save each weekly full-URL snapshot only
+  // on the evening-UTC run, never twice in the same date.
+  return at.getUTCDay() === stableNumber(siteId) % 7 && at.getUTCHours() >= 12;
 }
 
 async function activeSites() {
@@ -48,6 +50,7 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
   let failed = 0;
   let skipped = 0;
   let calls = 0;
+  let firestoreQuotaExhausted = false;
   const failures: Array<{ siteId: string; error: string }> = [];
 
   while (remaining > 0 && active.size > 0) {
@@ -79,10 +82,17 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
       } catch (error) {
         active.delete(site.id);
         failed++;
-        failures.push({ siteId: site.id, error: error instanceof Error ? error.message : String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ siteId: site.id, error: message });
+        // Stop the whole sweep when Firestore is exhausted. Continuing to
+        // probe other sites only burns retry attempts and harms SEO operations.
+        if (/firestore/i.test(message) && /429|RESOURCE_EXHAUSTED/i.test(message)) {
+          firestoreQuotaExhausted = true;
+          break;
+        }
       }
     }
-    if (!madeProgress) break;
+    if (firestoreQuotaExhausted || !madeProgress) break;
   }
 
   return {
@@ -91,6 +101,7 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
     runBudget: budget,
     chunk: siteChunk,
     calls,
+    firestoreQuotaExhausted,
     reserved,
     inspected,
     failed,
@@ -115,6 +126,7 @@ async function main() {
   const properties = [];
   let totalFailures = 0;
   let globalRemaining = globalRunBudget;
+  let firestoreQuotaExhausted = false;
   // Rotate property priority each run: a global budget must not consistently
   // starve later properties when multiple sites share one Firebase project.
   const orderedProperties = rotate([...byProperty.entries()].sort(([a], [b]) => a.localeCompare(b)), slot);
@@ -124,10 +136,14 @@ async function main() {
     properties.push(result);
     totalFailures += result.failed;
     globalRemaining -= result.reserved;
+    if (result.firestoreQuotaExhausted) {
+      firestoreQuotaExhausted = true;
+      break;
+    }
   }
 
   const snapshots: Array<{ siteId: string; ok: boolean; error?: string }> = [];
-  {
+  if (!firestoreQuotaExhausted) {
     for (const site of sites) {
       if (!shouldSaveWeeklySnapshot(site.id, at) && process.env.SITE_INDEXATION_FORCE_SNAPSHOT !== '1') continue;
       try {
@@ -142,6 +158,7 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: totalFailures === 0,
+    firestoreQuotaExhausted,
     generatedAt: at.toISOString(),
     policy: {
       scheduledRunsPerDay: 24 / RUN_INTERVAL_HOURS,
