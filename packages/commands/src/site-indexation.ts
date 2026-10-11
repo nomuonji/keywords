@@ -332,6 +332,33 @@ async function runWithConcurrency<T, R>(items: T[], concurrency: number, fn: (it
   return out;
 }
 
+/** One small manifest per site replaces daily full-cache sitemap comparisons.
+ * Updated only after a complete, successful reconciliation, so an interrupted
+ * batch cannot incorrectly mark an inventory as synchronized. */
+export async function siteIndexationInventorySyncGet(siteId: string) {
+  const id = entityId.parse(siteId);
+  const doc = await readPath(`sites/${id}/indexationSync/manifest`);
+  if (!doc) return null;
+  const row = decoded(doc) as any;
+  return {
+    fingerprint: String(row.fingerprint ?? ''),
+    sitemapUrlCount: Number(row.sitemapUrlCount ?? 0),
+    lastReconciledAt: String(row.lastReconciledAt ?? '')
+  };
+}
+
+export async function siteIndexationInventorySyncSave(siteId: string, fingerprintValue: string, sitemapUrlCount: number) {
+  const id = entityId.parse(siteId);
+  const parsedFingerprint = z.string().regex(/^[a-f0-9]{64}$/).parse(fingerprintValue);
+  const count = z.number().int().nonnegative().parse(sitemapUrlCount);
+  const record = { siteId: id, fingerprint: parsedFingerprint, sitemapUrlCount: count, lastReconciledAt: now() };
+  await firestore(`/sites/${id}/indexationSync/manifest`, {
+    method: 'PATCH',
+    body: JSON.stringify({ fields: encodeFields(record) })
+  });
+  return record;
+}
+
 export async function siteIndexationInventorySave(input: unknown) {
   const args = z.object(siteIndexationInventorySaveShape).strict().parse(input);
   const site = await readSite(args.siteId);

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { getDatabase } from '../packages/db/src/index.js';
 import { commands } from '../packages/commands/src/index.js';
 import { operationCommands } from '../packages/commands/src/operation.js';
@@ -9,7 +10,7 @@ import { captureProjectGa4Metrics } from '../packages/commands/src/ga4-metrics.j
 import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest-refresh.js';
 import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/src/recovery-context.js';
 import { siteRegistryResolve } from '../packages/commands/src/remote-site-operations.js';
-import { siteIndexationInventorySave, siteIndexationList } from '../packages/commands/src/site-indexation.js';
+import { siteIndexationInventorySave, siteIndexationInventorySyncGet, siteIndexationInventorySyncSave, siteIndexationList } from '../packages/commands/src/site-indexation.js';
 
 /**
  * On-demand site measurement batch. Runs anywhere the workspace code and
@@ -100,10 +101,37 @@ async function cachedIndexationInventory(siteId: string) {
   return items;
 }
 
+// The metrics job still measures all sites every day, but spreads expensive
+// full Firestore URL-cache reconciliations over several days. New/removed
+// sitemap URLs are detected by a cheap manifest hash before any full scan.
+const inventoryShards = Math.max(1, Math.min(32, Number(process.env.SITE_INDEXATION_INVENTORY_SHARDS ?? 8) || 8));
+const inventoryFullCheckDays = Math.max(7, Math.min(90, Number(process.env.SITE_INDEXATION_FULL_CHECK_DAYS ?? 30) || 30));
+const dayNumber = () => Math.floor(Date.now() / 86_400_000);
+function siteShard(siteId: string) {
+  return Number.parseInt(createHash('sha256').update(siteId).digest('hex').slice(0, 8), 16) % inventoryShards;
+}
+function sitemapFingerprint(urls: string[]) {
+  return createHash('sha256').update(urls.map(preserveSitemapUrl).sort().join('\n')).digest('hex');
+}
+
 async function reconcileIndexationInventory(projectId: string, sitemapUrls: string[], complete: boolean) {
   const resolved = await siteRegistryResolve({ localProjectId: projectId }) as any;
   const site = resolved.site;
   if (!site) return { status: 'skipped', reason: 'site_not_registered', currentUrls: sitemapUrls.length };
+
+  // This defer only affects the inventory cache. Analytics/GSC measurement and
+  // the independent due-URL Inspection sweep continue on their own schedules.
+  if (dayNumber() % inventoryShards !== siteShard(site.id)) {
+    return { status: 'deferred', reason: 'inventory_shard', siteId: site.id, currentUrls: sitemapUrls.length, inventoryShards };
+  }
+
+  const fingerprint = sitemapFingerprint(sitemapUrls);
+  const sync = await siteIndexationInventorySyncGet(site.id);
+  const ageMs = sync?.lastReconciledAt ? Date.now() - Date.parse(sync.lastReconciledAt) : Infinity;
+  if (complete && sync?.fingerprint === fingerprint &&
+      Number.isFinite(ageMs) && ageMs >= 0 && ageMs < inventoryFullCheckDays * 86_400_000) {
+    return { status: 'unchanged', reason: 'sitemap_fingerprint_match', siteId: site.id, currentUrls: sitemapUrls.length };
+  }
 
   const cached = await cachedIndexationInventory(site.id);
   const cachedByUrl = new Map(cached.map((row: any) => [normalizeInventoryUrl(row.url), row]));
@@ -140,8 +168,15 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
     failed += Number(result.failed ?? 0);
   }
 
+  // Never advance the manifest after an incomplete sitemap, a suppressed
+  // removal pass or a partial Firestore write; the next assigned shard retries.
+  const fullyReconciled = complete && !emptyCompleteSitemapGuard && failed === 0;
+  if (fullyReconciled) {
+    await siteIndexationInventorySyncSave(site.id, fingerprint, current.size);
+  }
   return {
     status: failed ? 'partial' : 'synced',
+    manifestSaved: fullyReconciled,
     siteId: site.id,
     sitemapComplete: complete,
     currentUrls: current.size,

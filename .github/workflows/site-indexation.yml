@@ -1,24 +1,15 @@
 # Quota-aware Search Console URL Inspection acquisition.
 #
-# Google currently documents 2,000 QPD / 600 QPM per Search Console site.
-# Sites Operator deliberately uses a lower 1,500 QPD hard guard and this
-# schedule targets at most 1,320 inspections/day/property (330 x 4), leaving
-# capacity for explicit diagnostics and retry noise.
+# Protect the shared Firestore project's read/write budget for interactive SEO.
+# A single scheduled sweep processes at most 100 URLs total across properties,
+# while manual URL inspections remain subject to their own property guard.
 name: site-indexation
 
 on:
-  # A code change to the inspection policy starts a single quota-guarded
-  # catch-up sweep immediately after main, without increasing daily limits.
-  push:
-    branches: [main]
-    paths:
-      - 'packages/commands/src/site-indexation.ts'
-      - 'scripts/site-indexation-sweep.ts'
-      - '.github/workflows/site-indexation.yml'
   workflow_dispatch:
   schedule:
-    # 04:17, 10:17, 16:17, 22:17 JST; offset from :00 to reduce schedule contention.
-    - cron: '17 1,7,13,19 * * *'
+    # Once per day at 05:17 JST; avoid overlapping the 02:23 measurement start.
+    - cron: '17 20 * * *'
 
 permissions:
   contents: read
@@ -34,9 +25,10 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-      SITES_INDEXATION_DAILY_BUDGET: '1500'
-      SITE_INDEXATION_PROPERTY_RUN_BUDGET: '330'
-      SITE_INDEXATION_SITE_CHUNK: '25'
+      SITES_INDEXATION_DAILY_BUDGET: '300'
+      SITE_INDEXATION_GLOBAL_RUN_BUDGET: '100'
+      SITE_INDEXATION_PROPERTY_RUN_BUDGET: '80'
+      SITE_INDEXATION_SITE_CHUNK: '10'
 
     steps:
       - uses: actions/checkout@v4
