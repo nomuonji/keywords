@@ -3,7 +3,7 @@ import { siteRegistryList } from '../packages/commands/src/remote-site-operation
 import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
-const RUN_INTERVAL_HOURS = 6;
+const RUN_INTERVAL_HOURS = 24;
 const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 100) || 100, 500));
 const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 80) || 80, 500));
 const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 10) || 10, 50));
@@ -22,8 +22,10 @@ function runSlot(at = new Date()) {
   return Math.floor(at.getTime() / (RUN_INTERVAL_HOURS * 60 * 60 * 1000));
 }
 
-function shouldSaveWeeklySnapshot(at = new Date()) {
-  return at.getUTCDay() === 0 && at.getUTCHours() === 19;
+function shouldSaveWeeklySnapshot(siteId: string, at = new Date()) {
+  // Distribute weekly full-cache summary reads across the week instead of
+  // scanning every site's indexation records in a single Sunday run.
+  return at.getUTCDay() === stableNumber(siteId) % 7;
 }
 
 async function activeSites() {
@@ -125,8 +127,9 @@ async function main() {
   }
 
   const snapshots: Array<{ siteId: string; ok: boolean; error?: string }> = [];
-  if (shouldSaveWeeklySnapshot(at) || process.env.SITE_INDEXATION_FORCE_SNAPSHOT === '1') {
+  {
     for (const site of sites) {
+      if (!shouldSaveWeeklySnapshot(site.id, at) && process.env.SITE_INDEXATION_FORCE_SNAPSHOT !== '1') continue;
       try {
         await siteIndexationSnapshotSave({ siteId: site.id });
         snapshots.push({ siteId: site.id, ok: true });
