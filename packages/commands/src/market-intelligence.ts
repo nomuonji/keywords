@@ -236,6 +236,14 @@ export interface MarketIntelligencePacket {
   geo: string;
   signals: MarketSignalScanResult;
   queryFocus: QueryFocusResearch;
+  // Browser-only research shortcut. Never fetch or count Yahoo results as evidence.
+  manualXSearch: {
+    provider: 'yahoo_realtime';
+    sort: 'newest';
+    mode: 'user_opened_browser';
+    url: string;
+    automatedFetch: false;
+  } | null;
   socialContent: SocialContentResearchResult;
   coverage: MarketEvidenceCoverage;
   marketDiscovery: BroadMarketDiscovery;
@@ -1785,6 +1793,13 @@ export async function marketIntelligenceResearch(input: unknown = {}): Promise<M
     geo,
     signals,
     queryFocus: resolvedQueryFocus,
+    manualXSearch: query && geo === 'JP' ? {
+      provider: 'yahoo_realtime',
+      sort: 'newest',
+      mode: 'user_opened_browser',
+      url: `https://search.yahoo.co.jp/realtime/search?p=${encodeURIComponent(query)}&md=t`,
+      automatedFetch: false
+    } : null,
     socialContent: socialContentResult,
     coverage,
     marketDiscovery,
