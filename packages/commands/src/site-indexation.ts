@@ -349,6 +349,9 @@ export async function siteIndexationInventorySave(input: unknown) {
         pageFetchState: null, googleCanonical: null, userCanonical: null,
         lastCrawlTime: null, consecutiveSameResults: 0
       } : {}),
+      // Previously stable observations must not get a 60-day backoff after
+      // the URL's source content changed or it was reactivated.
+      ...(fingerprintChanged || changedAtChanged || reactivated ? { consecutiveSameResults: 0 } : {}),
       pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
       inventoryState: row.inventoryState,
       indexable: row.indexable,
