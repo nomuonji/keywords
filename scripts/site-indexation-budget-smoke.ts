@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { inspectionSlice } from './site-indexation-policy.js';
 
 const workflow = readFileSync('.github/workflows/site-indexation.yml', 'utf8');
 const scheduler = readFileSync('scripts/site-indexation-sweep.ts', 'utf8');
@@ -28,7 +29,23 @@ assert.ok(scheduledDaily <= guard && guard <= 1900, 'guard must reserve room for
 assert.ok(2000 - scheduledDaily >= 200, 'at least 200 daily Google requests reserved as headroom');
 assert.ok(global >= perRun && global <= 10000, 'global guard must not strangle one property');
 assert.ok(chunk > 0 && chunk <= 50, 'per-site chunk must respect inspect command schema');
-assert.match(scheduler, /at.getUTCHours\(\) >= 18/, 'weekly snapshot must occur only on the 19 UTC run');
+assert.match(scheduler, /at.getUTCHours\\(\\) >= 18/, 'weekly snapshot must occur only on the 19 UTC run');
+
+// Shared-domain fairness: 14 antonbase.com sites must all get a first slice,
+// rather than the first 9 consuming all 450 URLs in 50-URL chunks.
+let remaining = perRun;
+const portions: number[] = [];
+for (let unvisited = 14; unvisited > 0; unvisited--) {
+  const share = inspectionSlice(remaining, unvisited, chunk);
+  portions.push(share);
+  remaining -= share;
+}
+assert.equal(remaining, 0, 'all quota should be distributed when all sites have due URLs');
+assert.equal(portions.length, 14);
+assert.ok(Math.max(...portions) - Math.min(...portions) <= 1,
+  'each site must receive a nearly equal first-pass share');
+assert.ok(portions.every(n => n > 0), 'no site may starve behind large domains');
+assert.equal(inspectionSlice(450, 2, 50), 50, 'large per-site backlogs still respect 50-URL API batch cap');
 
 console.log(JSON.stringify({
   scheduledRunsPerDay: hours.length,
