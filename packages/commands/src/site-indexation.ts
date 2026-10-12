@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { changeIndexationRows, readIndexationRows } from './site-indexation-storage.js';
 import { searchConsoleCredentialsConfigured, searchConsoleInspect } from '../../research/src/index.js';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -102,14 +103,13 @@ function normalizeWebIdentity(input: string) {
 
 function inspectionIdentity(input: string) {
   // Keep slash fidelity when talking to Search Console. The normalized,
-  // slash-insensitive URL remains the Firestore document key only.
+  // slash-insensitive URL remains the stable row identity.
   const url = new URL(input);
   url.hash = '';
   if ((url.protocol === 'https:' && url.port === '443') || (url.protocol === 'http:' && url.port === '80')) url.port = '';
   return url.toString();
 }
 function urlId(url: string) { return hash(normalizeWebIdentity(url)).slice(0, 40); }
-function cachePath(siteId: string, id: string) { return `sites/${siteId}/indexationUrls/${id}`; }
 
 async function readPath(path: string) {
   try { return await firestore(`/${path}`); }
@@ -158,29 +158,7 @@ function decodeRecord(doc: any): IndexationUrlRecord {
   } as IndexationUrlRecord;
 }
 
-async function writeRecord(record: IndexationUrlRecord, previous: any | null) {
-  const write = {
-    update: { name: firestoreDocumentName(cachePath(record.siteId, record.id)), fields: encodeFields(record) },
-    currentDocument: previous ? { updateTime: previous.updateTime } : { exists: false }
-  };
-  await firestore(':commit', { method: 'POST', body: JSON.stringify({ writes: [write] }) });
-}
 
-async function saveWithRetry(siteId: string, url: string, build: (current: IndexationUrlRecord | null) => IndexationUrlRecord) {
-  const id = urlId(url);
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const previous = await readPath(cachePath(siteId, id));
-    const current = previous ? decodeRecord(previous) : null;
-    const next = build(current);
-    try {
-      await writeRecord(next, previous);
-      return next;
-    } catch (error) {
-      if (!(error instanceof FirestoreError) || ![400, 409, 412].includes(error.status) || attempt === 3) throw error;
-    }
-  }
-  throw new Error('Indexation cache save failed after retry');
-}
 
 function inspectionSignature(record: Pick<IndexationUrlRecord, 'verdict' | 'coverageState' | 'robotsTxtState' | 'indexingState' | 'pageFetchState' | 'googleCanonical' | 'userCanonical'>) {
   return hash(record);
@@ -241,80 +219,63 @@ async function reserveQuota(siteUrl: string, requested: number) {
   throw new Error('Unable to reserve URL Inspection quota');
 }
 
-async function listDue(siteId: string, limit: number): Promise<IndexationUrlRecord[]> {
-  const result = await firestore(`/sites/${siteId}:runQuery`, {
-    method: 'POST',
-    body: JSON.stringify({ structuredQuery: {
-      from: [{ collectionId: 'indexationUrls' }],
-      where: { fieldFilter: { field: { fieldPath: 'nextInspectionAt' }, op: 'LESS_THAN_OR_EQUAL', value: field(now()) } },
-      orderBy: [{ field: { fieldPath: 'nextInspectionAt' }, direction: 'ASCENDING' }],
-      limit: Math.min(Math.max(limit * 2, limit), 100)
-    } })
-  });
-  return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [decodeRecord(row.document)] : [])
-    .filter(row => row.inventoryState === 'current' && row.indexable)
+
+function listDue(records: IndexationUrlRecord[], limit: number): IndexationUrlRecord[] {
+  const at = now();
+  return records
+    .filter(row => row.inventoryState === 'current' && row.indexable && row.nextInspectionAt && row.nextInspectionAt <= at)
+    .sort((a, b) => String(a.nextInspectionAt).localeCompare(String(b.nextInspectionAt)))
     .slice(0, limit);
 }
 
-/** One-time catch-up for old inventories created under the legacy 48h blanket hold.
- * A single-field IS_NULL query avoids a composite index and walks the backlog
- * as inspections overwrite lastInspectedAt. This does not bypass quota. */
-async function listUninspectedBacklog(siteId: string, limit: number, exclude: Set<string>): Promise<IndexationUrlRecord[]> {
-  const result = await firestore(`/sites/${siteId}:runQuery`, {
-    method: 'POST',
-    body: JSON.stringify({ structuredQuery: {
-      from: [{ collectionId: 'indexationUrls' }],
-      where: { unaryFilter: { op: 'IS_NULL', field: { fieldPath: 'lastInspectedAt' } } },
-      limit: Math.min(200, Math.max(limit * 4, 100))
-    } })
-  });
+/** Legacy backlog is considered before routine rechecks without querying Firestore per URL. */
+function listUninspectedBacklog(records: IndexationUrlRecord[], limit: number, exclude: Set<string>): IndexationUrlRecord[] {
   const at = now();
-  return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [decodeRecord(row.document)] : [])
-    .filter(record => record.inventoryState === 'current' &&
-      record.indexable && !record.lastInspectedAt &&
-      !exclude.has(record.id) &&
+  return records
+    .filter(record => record.inventoryState === 'current' && record.indexable &&
+      !record.lastInspectedAt && !exclude.has(record.id) &&
       initialInspectionAt(at, record.lastPublishedAt) <= at)
+    .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
     .slice(0, limit);
 }
+
 
 async function inspectOne(site: SiteRecord, record: IndexationUrlRecord) {
-  if (!site.searchConsoleProperty) throw new Error(`Site ${site.id} has no Search Console property`);
+  if (!site.searchConsoleProperty) throw new Error('Site has no Search Console property');
   const observation = await searchConsoleInspect({ url: record.inspectionUrl, siteUrl: site.searchConsoleProperty });
-  const previousSignature = inspectionSignature(record);
+  return { record, observation };
+}
+
+function applyInspection(site: SiteRecord, base: IndexationUrlRecord, record: IndexationUrlRecord, observation: Awaited<ReturnType<typeof searchConsoleInspect>>): IndexationUrlRecord {
+  const previousSignature = inspectionSignature(base);
   const nextSignature = inspectionSignature({
+    verdict: observation.verdict, coverageState: observation.coverageState,
+    robotsTxtState: observation.robotsTxtState, indexingState: observation.indexingState,
+    pageFetchState: observation.pageFetchState, googleCanonical: observation.googleCanonical,
+    userCanonical: observation.userCanonical
+  });
+  const same = Boolean(base.lastInspectedAt) && previousSignature === nextSignature;
+  const consecutiveSameResults = same ? base.consecutiveSameResults + 1 : 1;
+  return {
+    ...base,
+    inspectionUrl: record.inspectionUrl,
+    siteUrl: site.searchConsoleProperty,
+    observedIndexState: normalizedIndexState(observation.verdict),
     verdict: observation.verdict,
     coverageState: observation.coverageState,
     robotsTxtState: observation.robotsTxtState,
     indexingState: observation.indexingState,
     pageFetchState: observation.pageFetchState,
     googleCanonical: observation.googleCanonical,
-    userCanonical: observation.userCanonical
-  });
-  const same = Boolean(record.lastInspectedAt) && previousSignature === nextSignature;
-  const consecutiveSameResults = same ? record.consecutiveSameResults + 1 : 1;
-  return saveWithRetry(site.id, record.url, current => {
-    const base = current ?? record;
-    return {
-      ...base,
-      inspectionUrl: record.inspectionUrl,
-      siteUrl: site.searchConsoleProperty,
-      observedIndexState: normalizedIndexState(observation.verdict),
-      verdict: observation.verdict,
-      coverageState: observation.coverageState,
-      robotsTxtState: observation.robotsTxtState,
-      indexingState: observation.indexingState,
-      pageFetchState: observation.pageFetchState,
-      googleCanonical: observation.googleCanonical,
-      userCanonical: observation.userCanonical,
-      lastCrawlTime: observation.lastCrawlTime,
-      lastInspectedAt: observation.observedAt,
-      nextInspectionAt: nextAfterInspection(observation.observedAt, observation.verdict, consecutiveSameResults),
-      consecutiveSameResults,
-      inspectionCount: (base.inspectionCount ?? 0) + 1,
-      revision: (base.revision ?? 0) + 1,
-      updatedAt: observation.observedAt
-    };
-  });
+    userCanonical: observation.userCanonical,
+    lastCrawlTime: observation.lastCrawlTime,
+    lastInspectedAt: observation.observedAt,
+    nextInspectionAt: nextAfterInspection(observation.observedAt, observation.verdict, consecutiveSameResults),
+    consecutiveSameResults,
+    inspectionCount: (base.inspectionCount ?? 0) + 1,
+    revision: (base.revision ?? 0) + 1,
+    updatedAt: observation.observedAt
+  };
 }
 
 async function runWithConcurrency<T, R>(items: T[], concurrency: number, fn: (item: T) => Promise<R>) {
@@ -359,6 +320,7 @@ export async function siteIndexationInventorySyncSave(siteId: string, fingerprin
   return record;
 }
 
+
 export async function siteIndexationInventorySave(input: unknown) {
   const args = z.object(siteIndexationInventorySaveShape).strict().parse(input);
   const site = await readSite(args.siteId);
@@ -373,17 +335,15 @@ export async function siteIndexationInventorySave(input: unknown) {
     let nextInspectionAt = base.nextInspectionAt;
     if (!isCurrentIndexable) nextInspectionAt = null;
     else if (!current || reactivated) nextInspectionAt = initialInspectionAt(t, row.lastPublishedAt ?? base.lastPublishedAt);
-    else if (inspectionTargetChanged) nextInspectionAt = t; // repair prior non-canonical observations immediately
+    else if (inspectionTargetChanged) nextInspectionAt = t;
     else if (fingerprintChanged || changedAtChanged) nextInspectionAt = new Date(Date.parse(t) + SIX_HOURS_MS).toISOString();
     return {
-      ...base,
-      url: normalized,
-      inspectionUrl: exactInspectionUrl,
+      ...base, url: normalized, inspectionUrl: exactInspectionUrl,
       ...(inspectionTargetChanged ? {
         lastInspectedAt: null, observedIndexState: 'unknown' as ObservedIndexState,
-        verdict: null, coverageState: null, robotsTxtState: null,
-        indexingState: null, pageFetchState: null, googleCanonical: null,
-        userCanonical: null, lastCrawlTime: null, consecutiveSameResults: 0
+        verdict: null, coverageState: null, robotsTxtState: null, indexingState: null,
+        pageFetchState: null, googleCanonical: null, userCanonical: null,
+        lastCrawlTime: null, consecutiveSameResults: 0
       } : {}),
       pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
       inventoryState: row.inventoryState,
@@ -395,95 +355,109 @@ export async function siteIndexationInventorySave(input: unknown) {
     } as IndexationUrlRecord;
   };
   const equivalent = (a: IndexationUrlRecord, b: IndexationUrlRecord) =>
-    a.url === b.url &&
-    a.inspectionUrl === b.inspectionUrl &&
-    a.pageFamily === b.pageFamily &&
-    a.inventoryState === b.inventoryState &&
-    a.indexable === b.indexable &&
-    a.sourceFingerprint === b.sourceFingerprint &&
-    a.lastPublishedAt === b.lastPublishedAt &&
-    a.lastChangedAt === b.lastChangedAt &&
+    a.url === b.url && a.inspectionUrl === b.inspectionUrl &&
+    a.pageFamily === b.pageFamily && a.inventoryState === b.inventoryState &&
+    a.indexable === b.indexable && a.sourceFingerprint === b.sourceFingerprint &&
+    a.lastPublishedAt === b.lastPublishedAt && a.lastChangedAt === b.lastChangedAt &&
     a.nextInspectionAt === b.nextInspectionAt;
 
-  const results = await runWithConcurrency(args.records, 10, async row => {
-    const normalized = assertUrlWithinSite(site, row.url);
-    const t = now();
-    const existingDoc = await readPath(cachePath(site.id, urlId(normalized)));
-    const existing = existingDoc ? decodeRecord(existingDoc) : null;
-    const preview = buildInventoryRecord(normalized, row, existing, t);
-    if (existing && equivalent(existing, preview)) {
-      return { kind: 'unchanged' as const, record: existing };
+  // A whole inventory batch now results in at most one Firestore document write
+  // (or only changed shards for an exceptionally large site).
+  return changeIndexationRows(site.id, decodeRecord, existing => {
+    const byId = new Map(existing.map(record => [record.id, record]));
+    let created = 0, updated = 0, unchanged = 0, removed = 0, scheduled = 0;
+    const failures: Array<{ url: string; error: string }> = [];
+    for (const row of args.records) {
+      try {
+        const normalized = assertUrlWithinSite(site, row.url);
+        const id = urlId(normalized);
+        const current = byId.get(id) ?? null;
+        const t = now();
+        const preview = buildInventoryRecord(normalized, row, current, t);
+        if (current && equivalent(current, preview)) {
+          unchanged++;
+          if (current.inventoryState === 'removed') removed++;
+          if (current.nextInspectionAt) scheduled++;
+          continue;
+        }
+        const next = { ...preview, revision: (current?.revision ?? 0) + 1, updatedAt: t };
+        byId.set(id, next);
+        if (current) updated++; else created++;
+        if (next.inventoryState === 'removed') removed++;
+        if (next.nextInspectionAt) scheduled++;
+      } catch (error) {
+        failures.push({ url: row.url, error: error instanceof Error ? error.message : String(error) });
+      }
     }
-    const saved = await saveWithRetry(site.id, normalized, current => {
-      const next = buildInventoryRecord(normalized, row, current, t);
-      return { ...next, revision: (current?.revision ?? 0) + 1, updatedAt: t };
-    });
-    return { kind: existing ? 'updated' as const : 'created' as const, record: saved };
+    return { rows: [...byId.values()], result: {
+      siteId: site.id, received: args.records.length, created, updated, unchanged,
+      removed, scheduled, failed: failures.length, failures: failures.slice(0, 20)
+    } };
   });
-  const successes = results.flatMap(result => result.ok ? [result.value] : []);
-  const failures = results.flatMap((result, index) => 'error' in result ? [{ url: args.records[index].url, error: result.error }] : []);
-  return {
-    siteId: site.id,
-    received: args.records.length,
-    created: successes.filter(item => item.kind === 'created').length,
-    updated: successes.filter(item => item.kind === 'updated').length,
-    unchanged: successes.filter(item => item.kind === 'unchanged').length,
-    removed: successes.filter(item => item.record.inventoryState === 'removed').length,
-    scheduled: successes.filter(item => Boolean(item.record.nextInspectionAt)).length,
-    failed: failures.length,
-    failures: failures.slice(0, 20)
-  };
 }
 
 export async function siteIndexationInspect(input: unknown) {
   const args = z.object(siteIndexationInspectShape).strict().parse(input);
   const site = await readSite(args.siteId);
-  if (!site.searchConsoleProperty) throw new Error(`Site ${site.id} has no Search Console property`);
+  if (!site.searchConsoleProperty) throw new Error('Site ' + site.id + ' has no Search Console property');
+  const all = await readIndexationRows(site.id, decodeRecord);
+  const byId = new Map(all.map(record => [record.id, record]));
   let records: IndexationUrlRecord[];
   if (args.urls?.length) {
-    records = [];
-    for (const inputUrl of args.urls) {
+    records = args.urls.map(inputUrl => {
       const url = assertUrlWithinSite(site, inputUrl);
-      const doc = await readPath(cachePath(site.id, urlId(url)));
-      const stored = doc ? decodeRecord(doc) : baseRecord(site.id, url, now());
-      // Explicit reinspection must honor the caller's exact URL, not the
-      // old slash-stripped cache value; it also corrects the cache target.
-      records.push({ ...stored, inspectionUrl: inspectionIdentity(inputUrl) });
-    }
+      const stored = byId.get(urlId(url)) ?? baseRecord(site.id, url, now());
+      return { ...stored, inspectionUrl: inspectionIdentity(inputUrl) };
+    });
   } else {
-    // Catch up never-inspected pages before spending property quota on routine
-    // 7/30/90-day rechecks. The normal due lane fills any unused per-site slice.
-    records = args.accelerateUninspected
-      ? await listUninspectedBacklog(site.id, args.limit, new Set())
-      : [];
+    records = args.accelerateUninspected ? listUninspectedBacklog(all, args.limit, new Set()) : [];
     if (records.length < args.limit) {
-      const due = await listDue(site.id, args.limit);
+      const due = listDue(all, args.limit);
       const seen = new Set(records.map(record => record.id));
       records.push(...due.filter(record => !seen.has(record.id)).slice(0, args.limit - records.length));
     }
   }
   const take = args.urls?.length ? Math.min(args.urls.length, 50) : args.limit;
   records = records.filter(row => row.inventoryState === 'current' && row.indexable).slice(0, take);
-  if (!records.length) return { siteId: site.id, property: site.searchConsoleProperty, inspected: 0, failed: 0, skipped: 0, reason: 'no_due_urls', quota: await readQuota(site.searchConsoleProperty) };
-  // Calls without credentials cannot reach Google. Do not consume the shared
-  // daily property budget (or report a failed Google inspection) for them.
+  if (!records.length) return {
+    siteId: site.id, property: site.searchConsoleProperty,
+    inspected: 0, failed: 0, skipped: 0, reason: 'no_due_urls',
+    quota: await readQuota(site.searchConsoleProperty)
+  };
   if (!searchConsoleCredentialsConfigured()) {
     throw new Error('Search Console credentials are not configured; URL Inspection quota was not reserved');
   }
   const reservation = await reserveQuota(site.searchConsoleProperty, records.length);
   const selected = records.slice(0, reservation.reserved);
-  const results = await runWithConcurrency(selected, 5, record => inspectOne(site, record));
-  const succeeded = results.flatMap(result => result.ok ? [result.value] : []);
-  const failures = results.flatMap((result, index) => 'error' in result ? [{ url: selected[index].url, error: result.error }] : []);
+  const checked = await runWithConcurrency(selected, 5, record => inspectOne(site, record));
+  const successes = checked.flatMap(result => result.ok ? [result.value] : []);
+  const failures = checked.flatMap((result, index) =>
+    'error' in result ? [{ url: selected[index].url, error: result.error }] : []);
+  let saved: IndexationUrlRecord[] = [];
+  if (successes.length) {
+    // Store all successful Google responses atomically as one site-level update.
+    saved = await changeIndexationRows(site.id, decodeRecord, existing => {
+      const map = new Map(existing.map(record => [record.id, record]));
+      const results: IndexationUrlRecord[] = [];
+      for (const { record, observation } of successes) {
+        const current = map.get(record.id) ?? record;
+        const next = applyInspection(site, current, record, observation);
+        map.set(record.id, next);
+        results.push(next);
+      }
+      return { rows: [...map.values()], result: results };
+    });
+  }
   return {
-    siteId: site.id,
-    property: site.searchConsoleProperty,
-    requested: records.length,
-    inspected: succeeded.length,
-    failed: failures.length,
-    skipped: records.length - selected.length,
+    siteId: site.id, property: site.searchConsoleProperty,
+    requested: records.length, inspected: saved.length,
+    failed: failures.length, skipped: records.length - selected.length,
     quota: reservation,
-    results: succeeded.map(row => ({ url: row.url, inspectionUrl: row.inspectionUrl, observedIndexState: row.observedIndexState, verdict: row.verdict, coverageState: row.coverageState, lastInspectedAt: row.lastInspectedAt, nextInspectionAt: row.nextInspectionAt })),
+    results: saved.map(row => ({
+      url: row.url, inspectionUrl: row.inspectionUrl, observedIndexState: row.observedIndexState,
+      verdict: row.verdict, coverageState: row.coverageState,
+      lastInspectedAt: row.lastInspectedAt, nextInspectionAt: row.nextInspectionAt
+    })),
     failures: failures.slice(0, 20)
   };
 }
@@ -491,10 +465,12 @@ export async function siteIndexationInspect(input: unknown) {
 export async function siteIndexationList(input: unknown) {
   const args = z.object(siteIndexationListShape).strict().parse(input);
   await readSite(args.siteId);
-  const params = new URLSearchParams({ pageSize: String(args.limit), orderBy: 'updatedAt desc' });
-  if (args.pageToken) params.set('pageToken', args.pageToken);
-  const result = await firestore(`/sites/${args.siteId}/indexationUrls?${params.toString()}`);
-  return { items: (result.documents ?? []).map(decodeRecord), nextPageToken: result.nextPageToken ?? null };
+  const rows = await readIndexationRows(args.siteId, decodeRecord);
+  const sorted = rows.slice().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const offset = args.pageToken ? Number(args.pageToken) : 0;
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error('Invalid indexation pageToken');
+  const items = sorted.slice(offset, offset + args.limit);
+  return { items, nextPageToken: offset + args.limit < sorted.length ? String(offset + args.limit) : null };
 }
 
 type Aggregate = {
@@ -535,28 +511,22 @@ function rates(row: Aggregate) {
   };
 }
 
+
 async function aggregateSite(siteId: string) {
   const at = now();
   const total = emptyAggregate();
   const byPageFamily: Record<string, Aggregate> = {};
-  let pageToken: string | undefined;
-  let scanned = 0;
-  do {
-    const params = new URLSearchParams({ pageSize: '1000' });
-    if (pageToken) params.set('pageToken', pageToken);
-    const result = await firestore(`/sites/${siteId}/indexationUrls?${params.toString()}`);
-    for (const doc of result.documents ?? []) {
-      const record = decodeRecord(doc);
-      scanned++;
-      addToAggregate(total, record, at);
-      const key = record.pageFamily || '(unclassified)';
-      byPageFamily[key] ??= emptyAggregate();
-      addToAggregate(byPageFamily[key], record, at);
-      if (scanned > 100_000) throw new Error('Indexation inventory exceeds 100,000 URLs; add a materialized family aggregate before expanding further');
-    }
-    pageToken = result.nextPageToken;
-  } while (pageToken);
-  return { generatedAt: at, ...rates(total), byPageFamily: Object.fromEntries(Object.entries(byPageFamily).map(([key, value]) => [key, rates(value)])) };
+  const rows = await readIndexationRows(siteId, decodeRecord);
+  for (const record of rows) {
+    addToAggregate(total, record, at);
+    const key = record.pageFamily || '(unclassified)';
+    byPageFamily[key] ??= emptyAggregate();
+    addToAggregate(byPageFamily[key], record, at);
+  }
+  return {
+    generatedAt: at, ...rates(total),
+    byPageFamily: Object.fromEntries(Object.entries(byPageFamily).map(([key, value]) => [key, rates(value)]))
+  };
 }
 
 export async function siteIndexationSummary(input: unknown) {
