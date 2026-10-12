@@ -513,12 +513,20 @@ export function remoteSitesStatus() {
       urlCachePurpose: 'current_inventory_and_indexation_state_not_access_analytics_history',
       history: 'weekly_site_and_page_family_snapshot_only',
       inspectionAcquisition: 'search_console_url_inspection_on_due_or_explicit_urls_only',
-      defaultDailyInspectionBudgetPerProperty: Math.max(1, Math.min(Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500) || 1500, 1900)),
-      stablePassCadenceDays: 90,
-      ordinaryPassCadenceDays: 30,
-      nonPassCadenceDays: 7,
-      newUrlDelayDays: 2,
-      changedUrlDelayDays: 3
+      defaultDailyInspectionBudgetPerProperty: Math.max(1, Math.min(Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1900) || 1900, 1900)),
+      googleOfficialDailyLimitPerProperty: 2000,
+      scheduledDailyMaxPerProperty: 1800,
+      scheduledRunsPerDay: 4,
+      scheduledMaxPerRunPerProperty: 450,
+      scheduledMaxAllPropertiesPerRun: 3600,
+      stablePassCadenceDays: 60,
+      ordinaryPassCadenceDays: 21,
+      nonPassCadenceDays: 3,
+      repeatedNonPassCadenceDays: [7, 14],
+      newUrlDelayDays: 0.25,
+      changedUrlDelayDays: 0.25,
+      newUrlGraceHours: 6,
+      changedUrlGraceHours: 6
     },
     optimizationPolicy: { oneImplementedChangePerArticle: true, defaultEvaluationWaitDays: 14 }
   };

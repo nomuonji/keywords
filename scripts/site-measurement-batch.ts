@@ -101,13 +101,13 @@ async function cachedIndexationInventory(siteId: string) {
   return items;
 }
 
-// Measure every site daily, but only read its one-document sitemap manifest
-// unless the inventory has changed or a periodic full recheck is due.
-// Bootstrap and periodic full scans are sharded; changes in a previously
-// synchronized sitemap can be reconciled on the next daily measurement.
-const inventoryShards = Math.max(1, Math.min(32, Number(process.env.SITE_INDEXATION_INVENTORY_SHARDS ?? 4) || 4));
-const inventoryFullCheckDays = Math.max(7, Math.min(90, Number(process.env.SITE_INDEXATION_FULL_CHECK_DAYS ?? 30) || 30));
-const maxFullReconcilesPerRun = Math.max(1, Math.min(16, Number(process.env.SITE_INDEXATION_MAX_FULL_RECONCILES_PER_RUN ?? 6) || 6));
+// Read one small manifest per site daily; reconcile immediately on changes.
+// Since the URL cache now lives in one compressed Firestore bundle per site,
+// first-time imports and periodic reconciliation no longer need a 4-day
+// distribution to protect per-URL Firestore reads. Keep emergency env guards.
+const inventoryShards = Math.max(1, Math.min(32, Number(process.env.SITE_INDEXATION_INVENTORY_SHARDS ?? 1) || 4));
+const inventoryFullCheckDays = Math.max(7, Math.min(90, Number(process.env.SITE_INDEXATION_FULL_CHECK_DAYS ?? 14) || 30));
+const maxFullReconcilesPerRun = Math.max(1, Math.min(100, Number(process.env.SITE_INDEXATION_MAX_FULL_RECONCILES_PER_RUN ?? 24) || 24));
 let fullReconcilesAttempted = 0;
 const dayNumber = () => Math.floor(Date.now() / 86_400_000);
 function siteShard(siteId: string) {
@@ -138,8 +138,8 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
   if (!force && !changedAfterSync && !onScheduledShard) {
     return { status: 'deferred', reason: 'inventory_shard', siteId: site.id, currentUrls: sitemapUrls.length, inventoryShards };
   }
-  // Never let a burst of changed sitemaps/initial imports monopolize shared
-  // Firestore reads and starve interactive SEO tasks.
+  // Emergency circuit breaker; default capacity covers the whole managed
+  // portfolio because each site is now read as one compressed bundle.
   if (!force && fullReconcilesAttempted >= maxFullReconcilesPerRun) {
     return { status: 'deferred', reason: 'daily_full_scan_budget', siteId: site.id, currentUrls: sitemapUrls.length, maxFullReconcilesPerRun };
   }
@@ -180,7 +180,7 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
   }
 
   // Never advance the manifest after an incomplete sitemap, a suppressed
-  // removal pass or a partial Firestore write; the next assigned shard retries.
+  // removal pass or a partial Firestore write; the next daily run retries.
   const fullyReconciled = complete && !emptyCompleteSitemapGuard && failed === 0;
   if (fullyReconciled) {
     await siteIndexationInventorySyncSave(site.id, fingerprint, current.size);

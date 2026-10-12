@@ -1,16 +1,16 @@
 # Quota-aware Search Console URL Inspection acquisition.
 #
-# Protect the shared Firestore project's read/write budget for interactive SEO.
-# Two scheduled sweeps can process at most 400 URLs/day across properties.
-# Per-property quota leaves room for explicit diagnostics, and full Firestore
-# inventory scans are controlled independently by site measurement.
+# The URL Inspection API is limited to 2,000 requests/day per Search Console
+# property (not per registered site). Four sweeps at up to 450/property each
+# reserve 200/day for explicit checks and headroom. Indexation URL state is
+# now stored in compressed per-site Firestore bundles instead of URL docs.
 name: site-indexation
 
 on:
   workflow_dispatch:
   schedule:
-    # 05:17 and 17:17 JST, away from 02:23 daily measurement.
-    - cron: '17 8,20 * * *'
+    # 04:17, 10:17, 16:17, 22:17 JST, away from 02:23 measurement.
+    - cron: '17 1,7,13,19 * * *'
 
 permissions:
   contents: read
@@ -26,10 +26,10 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-      SITES_INDEXATION_DAILY_BUDGET: '400'
-      SITE_INDEXATION_GLOBAL_RUN_BUDGET: '200'
-      SITE_INDEXATION_PROPERTY_RUN_BUDGET: '120'
-      SITE_INDEXATION_SITE_CHUNK: '25'
+      SITES_INDEXATION_DAILY_BUDGET: '1900'
+      SITE_INDEXATION_GLOBAL_RUN_BUDGET: '3600'
+      SITE_INDEXATION_PROPERTY_RUN_BUDGET: '450'
+      SITE_INDEXATION_SITE_CHUNK: '50'
 
     steps:
       - uses: actions/checkout@v4

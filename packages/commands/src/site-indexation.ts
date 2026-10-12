@@ -161,7 +161,18 @@ function decodeRecord(doc: any): IndexationUrlRecord {
 
 
 function inspectionSignature(record: Pick<IndexationUrlRecord, 'verdict' | 'coverageState' | 'robotsTxtState' | 'indexingState' | 'pageFetchState' | 'googleCanonical' | 'userCanonical'>) {
-  return hash(record);
+  // Hash precisely the observed Google fields, never the mutable URL record.
+  // Hashing the whole record included timestamps/revisions and prevented the
+  // unchanged-result streak from growing, effectively disabling backoff.
+  return hash({
+    verdict: record.verdict ?? null,
+    coverageState: record.coverageState ?? null,
+    robotsTxtState: record.robotsTxtState ?? null,
+    indexingState: record.indexingState ?? null,
+    pageFetchState: record.pageFetchState ?? null,
+    googleCanonical: record.googleCanonical ?? null,
+    userCanonical: record.userCanonical ?? null
+  });
 }
 
 function normalizedIndexState(verdict: string): ObservedIndexState {
@@ -171,13 +182,15 @@ function normalizedIndexState(verdict: string): ObservedIndexState {
 }
 
 function nextAfterInspection(observedAt: string, verdict: string, consecutiveSameResults: number) {
-  if (verdict === 'PASS') return daysFrom(observedAt, consecutiveSameResults >= 3 ? 90 : 30);
-  return daysFrom(observedAt, 7);
+  // Spend newly available inspection budget where a changing result is actionable.
+  // A repeated unchanged negative result is progressively backoff-limited.
+  if (verdict === 'PASS') return daysFrom(observedAt, consecutiveSameResults >= 3 ? 60 : 21);
+  return daysFrom(observedAt, consecutiveSameResults >= 4 ? 14 : consecutiveSameResults >= 2 ? 7 : 3);
 }
 
 function dailyBudget() {
-  const configured = Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500);
-  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 1900)) : 1500;
+  const configured = Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1900);
+  return Number.isFinite(configured) ? Math.max(1, Math.min(Math.floor(configured), 1900)) : 1900;
 }
 
 function utcDate(input = new Date()) { return input.toISOString().slice(0, 10); }
@@ -190,7 +203,9 @@ async function readQuota(siteUrl: string, date = utcDate()) {
   if (!doc) return { id, siteUrl, date, used: 0, limit, remaining: limit, updatedAt: null as string | null };
   const row = decoded(doc) as any;
   const used = Math.max(0, Number(row.used ?? 0));
-  return { id, siteUrl, date, used, limit: Number(row.limit ?? limit), remaining: Math.max(0, Number(row.limit ?? limit) - used), updatedAt: row.updatedAt ?? null };
+  // The configured guard can change within a quota day (e.g. after deploy).
+  // Do not continue exposing the old persisted limit from a previous version.
+  return { id, siteUrl, date, used, limit, remaining: Math.max(0, limit - used), updatedAt: row.updatedAt ?? null };
 }
 
 async function reserveQuota(siteUrl: string, requested: number) {
@@ -345,6 +360,9 @@ export async function siteIndexationInventorySave(input: unknown) {
         pageFetchState: null, googleCanonical: null, userCanonical: null,
         lastCrawlTime: null, consecutiveSameResults: 0
       } : {}),
+      // Previously stable observations must not get a 60-day backoff after
+      // the URL's source content changed or it was reactivated.
+      ...(fingerprintChanged || changedAtChanged || reactivated ? { consecutiveSameResults: 0 } : {}),
       pageFamily: row.pageFamily === undefined ? base.pageFamily : row.pageFamily,
       inventoryState: row.inventoryState,
       indexable: row.indexable,
