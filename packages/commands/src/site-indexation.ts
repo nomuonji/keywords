@@ -161,7 +161,18 @@ function decodeRecord(doc: any): IndexationUrlRecord {
 
 
 function inspectionSignature(record: Pick<IndexationUrlRecord, 'verdict' | 'coverageState' | 'robotsTxtState' | 'indexingState' | 'pageFetchState' | 'googleCanonical' | 'userCanonical'>) {
-  return hash(record);
+  // Hash precisely the observed Google fields, never the mutable URL record.
+  // Hashing the whole record included timestamps/revisions and prevented the
+  // unchanged-result streak from growing, effectively disabling backoff.
+  return hash({
+    verdict: record.verdict ?? null,
+    coverageState: record.coverageState ?? null,
+    robotsTxtState: record.robotsTxtState ?? null,
+    indexingState: record.indexingState ?? null,
+    pageFetchState: record.pageFetchState ?? null,
+    googleCanonical: record.googleCanonical ?? null,
+    userCanonical: record.userCanonical ?? null
+  });
 }
 
 function normalizedIndexState(verdict: string): ObservedIndexState {
