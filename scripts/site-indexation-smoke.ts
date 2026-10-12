@@ -383,6 +383,19 @@ try {
   // The API budget is per Search Console property, not per URL/site.
   // With a second property, failures retry quickly then progressively back off.
   process.env.SITES_INDEXATION_DAILY_BUDGET = '5';
+  // Three identical PASS observations should extend the interval to 60 days.
+  const secondStablePass = await siteIndexationInspect({
+    siteId: 'site-j', urls: ['https://new.antonbase.com/old/']
+  });
+  const thirdStablePass = await siteIndexationInspect({
+    siteId: 'site-j', urls: ['https://new.antonbase.com/old/']
+  });
+  assert.equal(secondStablePass.inspected, 1);
+  assert.equal(thirdStablePass.inspected, 1);
+  const stablePassDays = (Date.parse(thirdStablePass.results[0].nextInspectionAt!) - Date.now()) / 86_400_000;
+  assert.ok(Math.abs(stablePassDays - 60) < 0.1,
+    'three identical PASS observations must schedule 60-day reinspection');
+
   docs.set(`${root}sites/site-negative`, {
     ...sourceSite, name: `${root}sites/site-negative`,
     fields: {
