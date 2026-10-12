@@ -407,6 +407,24 @@ try {
       `negative check ${round + 1} must schedule ${expectedDays}-day retry; got ${days}`);
   }
 
+  const afterNegativeRechecks = (await siteIndexationList({ siteId: 'site-negative' })).items[0];
+  assert.equal(afterNegativeRechecks.consecutiveSameResults, 4);
+  await siteIndexationInventorySave({
+    siteId: 'site-negative',
+    records: [{
+      url: 'https://negative.antonbase.com/not-indexed/',
+      pageFamily: 'guide',
+      indexable: true,
+      sourceFingerprint: 'updated-content-sha'
+    }]
+  });
+  const changedContent = (await siteIndexationList({ siteId: 'site-negative' })).items[0];
+  assert.equal(changedContent.consecutiveSameResults, 0,
+    'source changes must discard stale stability streaks');
+  const changedHours = (Date.parse(changedContent.nextInspectionAt!) - Date.now()) / 3_600_000;
+  assert.ok(changedHours > 5.9 && changedHours < 6.1,
+    'changed source content must be eligible for reinspection after 6h');
+
   console.log('site indexation smoke passed: initial coverage priority, legacy backlog, 6h fresh grace, idempotent inventory, quota, and snapshot');
 } finally {
   globalThis.fetch = originalFetch;
