@@ -16,6 +16,14 @@ Sources:
 
 Use this when you only need the current surface.
 
+### Yahoo!リアルタイム検索（新着順・ブラウザ閲覧のみ）
+
+JPのキーワード指定調査では、結果の`manualXSearch.url`にYahoo!リアルタイム検索の新着順（`md=t`）への通常のリンクを返す。Webの「お宝キーワード」画面でも入力したキーワードに対して同じリンクを開ける。
+
+- ユーザー自身がブラウザで検索結果を閲覧するためのリンク。Yahoo!へのサーバーリクエスト、非公開APIの呼び出し、HTML/JSONの取得・解析・保存は行わない。
+- このリンクは市場根拠ではない。`coverage`、`socialContent`、スナップショットの観測件数に加算しない。
+- 投稿を調査根拠に利用するときは、別途許可された方法で一次投稿を検証してURLと観測日時を記録する。リンクから自動収集したことにしない。
+
 ### `market_intelligence_research`
 
 Default tool for product/marketing opportunity research.
