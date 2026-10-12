@@ -53,9 +53,14 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
 
   while (remaining > 0 && active.size > 0) {
     let madeProgress = false;
+    let sitesRemainingInRound = active.size;
     for (const site of ordered) {
       if (remaining <= 0 || !active.has(site.id)) continue;
-      const take = Math.min(siteChunk, remaining);
+      // Split the property quota among *all* registered sites before giving
+      // a second slice to one site. Without this, 50-URL chunks starve the
+      // later sites of a shared domain property such as antonbase.com.
+      const take = Math.min(siteChunk, Math.max(1, Math.ceil(remaining / sitesRemainingInRound)));
+      sitesRemainingInRound--;
       try {
         const result = await siteIndexationInspect({ siteId: site.id, limit: take, accelerateUninspected: true }) as any;
         calls++;
