@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { inspectionSlice } from './site-indexation-policy.js';
 import { siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
 import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
@@ -59,7 +60,7 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
       // Split the property quota among *all* registered sites before giving
       // a second slice to one site. Without this, 50-URL chunks starve the
       // later sites of a shared domain property such as antonbase.com.
-      const take = Math.min(siteChunk, Math.max(1, Math.ceil(remaining / sitesRemainingInRound)));
+      const take = inspectionSlice(remaining, sitesRemainingInRound, siteChunk);
       sitesRemainingInRound--;
       try {
         const result = await siteIndexationInspect({ siteId: site.id, limit: take, accelerateUninspected: true }) as any;
