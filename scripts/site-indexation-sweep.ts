@@ -172,7 +172,7 @@ async function main() {
       scheduledDailyMaximumAllProperties: globalRunBudget * (24 / RUN_INTERVAL_HOURS),
       scheduledDailyMaximumPerProperty: propertyRunBudget * (24 / RUN_INTERVAL_HOURS),
       siteChunk,
-      apiDailyGuardPerProperty: Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500),
+      apiDailyGuardPerProperty: Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1900),
       officialUrlInspectionQuotaNote: 'Google documents 2,000 QPD and 600 QPM per Search Console property (shared across all sites in that property); schedule 1,800 QPD/property and keep 200 for other calls/headroom.'
     },
     activeSites: sites.length,
