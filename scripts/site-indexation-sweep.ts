@@ -3,10 +3,10 @@ import { siteRegistryList } from '../packages/commands/src/remote-site-operation
 import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
-const RUN_INTERVAL_HOURS = 12;
-const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 200) || 200, 500));
-const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 120) || 120, 500));
-const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 25) || 25, 50));
+const RUN_INTERVAL_HOURS = 6;
+const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 3600) || 3600, 10000));
+const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 450) || 450, 1000));
+const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 50) || 50, 50));
 
 function stableNumber(value: string) {
   return Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16);
@@ -23,10 +23,8 @@ function runSlot(at = new Date()) {
 }
 
 function shouldSaveWeeklySnapshot(siteId: string, at = new Date()) {
-  // Distribute weekly full-cache summary reads across the week instead of
-  // scanning every site's indexation records in a single Sunday run.
-  // The sweep runs twice a day. Save each weekly full-URL snapshot only
-  // on the evening-UTC run, never twice in the same date.
+  // Distribute weekly snapshots across sites and weekdays.
+  // Four sweeps per day: save once on the evening UTC run of the selected day.
   return at.getUTCDay() === stableNumber(siteId) % 7 && at.getUTCHours() >= 12;
 }
 
@@ -169,7 +167,7 @@ async function main() {
       scheduledDailyMaximumPerProperty: propertyRunBudget * (24 / RUN_INTERVAL_HOURS),
       siteChunk,
       apiDailyGuardPerProperty: Number(process.env.SITES_INDEXATION_DAILY_BUDGET ?? 1500),
-      officialUrlInspectionQuotaNote: 'Google documents 2,000 QPD and 600 QPM per Search Console site; this scheduler intentionally stays below both.'
+      officialUrlInspectionQuotaNote: 'Google documents 2,000 QPD and 600 QPM per Search Console property (shared across all sites in that property); schedule 1,800 QPD/property and keep 200 for other calls/headroom.'
     },
     activeSites: sites.length,
     properties,
