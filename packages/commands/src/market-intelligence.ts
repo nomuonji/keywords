@@ -237,7 +237,7 @@ export interface MarketIntelligencePacket {
   signals: MarketSignalScanResult;
   queryFocus: QueryFocusResearch;
   // Browser-only research shortcut. Never fetch or count Yahoo results as evidence.
-  manualXSearch: {
+  manualXSearch?: {
     provider: 'yahoo_realtime';
     sort: 'newest';
     mode: 'user_opened_browser';
