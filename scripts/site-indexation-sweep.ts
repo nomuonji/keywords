@@ -24,8 +24,8 @@ function runSlot(at = new Date()) {
 
 function shouldSaveWeeklySnapshot(siteId: string, at = new Date()) {
   // Distribute weekly snapshots across sites and weekdays.
-  // Four sweeps per day: save once on the evening UTC run of the selected day.
-  return at.getUTCDay() === stableNumber(siteId) % 7 && at.getUTCHours() >= 12;
+  // Four sweeps per day (UTC 01/07/13/19): save only at 19 UTC on the selected day.
+  return at.getUTCDay() === stableNumber(siteId) % 7 && at.getUTCHours() >= 18;
 }
 
 async function activeSites() {
