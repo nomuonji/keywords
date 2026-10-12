@@ -77,8 +77,8 @@ globalThis.fetch = async (input, init) => {
     return Response.json({
       inspectionResult: {
         indexStatusResult: {
-          verdict: 'PASS',
-          coverageState: 'Submitted and indexed',
+          verdict: body.inspectionUrl.endsWith('/not-indexed/') ? 'FAIL' : 'PASS',
+          coverageState: body.inspectionUrl.endsWith('/not-indexed/') ? 'Crawled - currently not indexed' : 'Submitted and indexed',
           robotsTxtState: 'ALLOWED',
           indexingState: 'INDEXING_ALLOWED',
           pageFetchState: 'SUCCESSFUL',
@@ -259,6 +259,8 @@ try {
     'URL Inspection MUST receive exact sitemap/canonical path, not slashless identity');
   assert.equal(first.quota.used, 1);
   assert.equal(first.quota.remaining, 1);
+  const firstNextDays = (Date.parse(first.results[0].nextInspectionAt!) - Date.now()) / 86_400_000;
+  assert.ok(firstNextDays > 20.9 && firstNextDays < 21.1, 'newly indexed URLs are rechecked after 21 days');
 
   const summary = await siteIndexationSummary({ siteId: 'site-i' });
   assert.equal(summary.indexableCount, 2);
@@ -377,6 +379,33 @@ try {
   assert.equal(imported.items[0].lastInspectedAt, migratedRow.lastInspectedAt);
   assert.equal(listCollection('sites/site-k/indexationBundle').length, 1);
   assert.ok(docs.has(oldPath), 'legacy source must be retained until migration is verified');
+
+  // The API budget is per Search Console property, not per URL/site.
+  // With a second property, failures retry quickly then progressively back off.
+  process.env.SITES_INDEXATION_DAILY_BUDGET = '5';
+  docs.set(`${root}sites/site-negative`, {
+    ...sourceSite, name: `${root}sites/site-negative`,
+    fields: {
+      ...sourceSite.fields,
+      id: field('site-negative'),
+      productionUrl: field('https://negative.antonbase.com/'),
+      searchConsoleProperty: field('sc-domain:negative.antonbase.com')
+    }
+  });
+  await siteIndexationInventorySave({
+    siteId: 'site-negative',
+    records: [{ url: 'https://negative.antonbase.com/not-indexed/', pageFamily: 'guide', indexable: true }]
+  });
+  for (const [round, expectedDays] of [3, 7, 7, 14].entries()) {
+    const inspected = await siteIndexationInspect({
+      siteId: 'site-negative', urls: ['https://negative.antonbase.com/not-indexed/']
+    });
+    assert.equal(inspected.inspected, 1);
+    assert.equal(inspected.results[0].observedIndexState, 'not_indexed');
+    const days = (Date.parse(inspected.results[0].nextInspectionAt!) - Date.now()) / 86_400_000;
+    assert.ok(Math.abs(days - expectedDays) < 0.1,
+      `negative check ${round + 1} must schedule ${expectedDays}-day retry; got ${days}`);
+  }
 
   console.log('site indexation smoke passed: initial coverage priority, legacy backlog, 6h fresh grace, idempotent inventory, quota, and snapshot');
 } finally {
