@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { gzipSync, gunzipSync } from 'node:zlib';
 import { generateKeyPairSync } from 'node:crypto';
-import { field } from '../packages/db/src/firestore.js';
+import { field, value } from '../packages/db/src/firestore.js';
 import {
   siteIndexationInspect,
   siteIndexationInventorySave,
@@ -93,6 +94,14 @@ globalThis.fetch = async (input, init) => {
   const body = init?.body ? JSON.parse(String(init.body)) : null;
 
   if (url.endsWith(':commit') && method === 'POST') {
+    // Simulate Firestore's atomic compare-and-set preconditions for bundle writes.
+    for (const write of body.writes ?? []) {
+      const previous = docs.get(write.update.name);
+      if ((write.currentDocument?.exists === false && previous) ||
+          (write.currentDocument?.updateTime && previous?.updateTime !== write.currentDocument.updateTime)) {
+        return Response.json({ error: { message: 'precondition mismatch' } }, { status: 412 });
+      }
+    }
     for (const write of body.writes ?? []) {
       revision++;
       docs.set(write.update.name, { ...write.update, updateTime: `revision-${revision}` });
@@ -164,6 +173,10 @@ try {
   assert.equal(inventory.created, 2);
   assert.equal(inventory.failed, 0);
 
+  assert.equal(listCollection('sites/site-i/indexationBundle').length, 1,
+    'a two-URL site must occupy exactly one Firestore bundle document');
+  assert.equal(listCollection('sites/site-i/indexationUrls').length, 0,
+    'new inspections must never create legacy per-URL documents');
   const revisionAfterCreate = revision;
   const repeatedInventory = await siteIndexationInventorySave({
     siteId: 'site-i',
@@ -325,8 +338,10 @@ try {
     'old pages must be inspectable on the next quota-available sweep');
   assert.ok(Date.parse(freshRow.nextInspectionAt!) > Date.now(),
     'truly new pages get a short crawl grace period');
-  const legacy = docs.get(`${root}sites/site-j/indexationUrls/${oldRow.id}`);
-  legacy.fields.nextInspectionAt = field('2026-12-31T00:00:00.000Z');
+  const bundle = docs.get(`${root}sites/site-j/indexationBundle/current`);
+  const bundleRows = JSON.parse(gunzipSync(Buffer.from(value(bundle.fields.data) as string, 'base64')).toString('utf8'));
+  bundleRows.find((row: any) => row.id === oldRow.id).nextInspectionAt = '2026-12-31T00:00:00.000Z';
+  bundle.fields.data = field(gzipSync(Buffer.from(JSON.stringify(bundleRows))).toString('base64'));
   const ordinary = await siteIndexationInspect({ siteId: 'site-j', limit: 2 });
   assert.equal(ordinary.inspected, 0, 'legacy hold produces no normal due URLs');
   const accelerated = await siteIndexationInspect({ siteId: 'site-j', limit: 2, accelerateUninspected: true });
@@ -341,6 +356,27 @@ try {
   assert.equal(finalRows.filter(row => row.lastInspectedAt).length, 1);
   assert.equal(finalRows.filter(row => !row.lastInspectedAt).length, 1);
   assert.equal((await siteIndexationSummary({ siteId: 'site-j' })).inspectedCount, 1);
+
+  // Existing per-URL records must migrate losslessly, without deleting rollback data.
+  docs.set(`${root}sites/site-k`, {
+    ...sourceSite, name: `${root}sites/site-k`,
+    fields: { ...sourceSite.fields,
+      id: field('site-k'),
+      productionUrl: field('https://new.antonbase.com/'),
+      searchConsoleProperty: field('sc-domain:new.antonbase.com')
+    }
+  });
+  const migratedRow = { ...finalRows[0], siteId: 'site-k' };
+  const oldPath = `${root}sites/site-k/indexationUrls/${migratedRow.id}`;
+  docs.set(oldPath, {
+    name: oldPath, fields: Object.fromEntries(Object.entries(migratedRow).map(([key, item]) => [key, field(item)])),
+    updateTime: 'legacy-seed'
+  });
+  const imported = await siteIndexationList({ siteId: 'site-k' });
+  assert.equal(imported.items.length, 1);
+  assert.equal(imported.items[0].lastInspectedAt, migratedRow.lastInspectedAt);
+  assert.equal(listCollection('sites/site-k/indexationBundle').length, 1);
+  assert.ok(docs.has(oldPath), 'legacy source must be retained until migration is verified');
 
   console.log('site indexation smoke passed: initial coverage priority, legacy backlog, 6h fresh grace, idempotent inventory, quota, and snapshot');
 } finally {
