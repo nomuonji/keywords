@@ -177,6 +177,8 @@ button:active:not(:disabled), summary:active { transform: translateY(1px); }
 .coreToolbar > input:focus, .coreToolbar select:focus { border-color: #8dbb65; box-shadow: 0 0 0 3px rgba(185, 243, 107, .1); }
 .coreToolbar > span { font-size: 12px; color: #788a83; }
 .coreToolbar select { padding: 11px 12px; border: 1px solid #30413d; border-radius: 10px; background: #111a19; color: #dbe8e3; min-width: 180px; }
+.yahooRealtimeLink { display: inline-flex; align-items: center; padding: 10px 13px; border: 1px solid #63854d; border-radius: 10px; background: #1b2b20; color: #dcf3cd; font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.yahooRealtimeLink:hover, .yahooRealtimeLink:focus-visible { background: #283e2a; border-color: #a1cc75; }
 .segmented { display: flex; background: #101817; border: 1px solid #2b3b37; padding: 3px; border-radius: 10px; white-space: nowrap; }
 .segmented button { border: 0; background: transparent; padding: 8px 12px; border-radius: 7px; color: #83938d; cursor: pointer; transition: background .18s ease, color .18s ease; }
 .segmented button:hover { color: #e2ece8; }
