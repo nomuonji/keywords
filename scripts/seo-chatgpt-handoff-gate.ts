@@ -68,3 +68,25 @@ export function chatgptRefHandoffScopeError(files: readonly string[]): string | 
   }
   return null;
 }
+
+/**
+ * A neutral/skipped preview or an unrelated push workflow must not authorize
+ * a ChatGPT delivery merge. Require a successful PR-triggered Actions run that
+ * actually references the specific PR under delivery.
+ */
+export function chatgptHandoffHasPassedPrCi(
+  runs: readonly {
+    event?: string;
+    status?: string;
+    conclusion?: string | null;
+    pull_requests?: readonly { number?: number }[];
+  }[],
+  prNumber: number
+): boolean {
+  return runs.some(run =>
+    run.event === 'pull_request'
+    && run.status === 'completed'
+    && run.conclusion === 'success'
+    && run.pull_requests?.some(pr => pr.number === prNumber) === true
+  );
+}
