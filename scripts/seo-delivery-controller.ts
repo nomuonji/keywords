@@ -451,9 +451,23 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
   return promoted;
 }
 
-async function processTask(task: SeoTaskRecord) {
+async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']) {
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
+  // A prepared-ref checkpoint does not become exempt from its rollout gate
+  // merely by progressing to branch_ready or pr_open. Direct-push checkpoints
+  // without the marker continue under the unchanged Groq delivery contract.
+  if (handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
+    const gateError = preparedRefHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
+    );
+    if (gateError) {
+      console.log(`Waiting: ${task.id} prepared-ref PR/merge gate: ${gateError}`);
+      return;
+    }
+  }
   if (!handoff.branch?.startsWith('seo/') || !handoff.headSha || !handoff.baseSha) {
     await markFailed(task, 'Invalid delivery handoff: branch_ready/pr_open requires seo/* branch, headSha and baseSha.');
     return;
@@ -604,7 +618,7 @@ async function main() {
   console.log(`SEO delivery controller found ${tasks.length} eligible task(s) after push reconciliation.`);
   for (const task of tasks) {
     try {
-      await processTask(task);
+      await processTask(task, activeSites.items);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Task ${task.id} controller error: ${message}`);
