@@ -132,6 +132,50 @@ Every site selected for a potentially material SEO Task requires **two independe
 - If zero or stale inspected coverage, document a concrete acquisition/refresh blocker and next due inspection date or job status, rather than creating many speculative pages. Existing in-progress Worker delivery still proceeds by established centralized `seo/*` PR/CI/main path.
 - Indexation evaluation is **not optional for article sites** and **not limited to database/page-family expansion**. An unknown must be recorded as unknown and may justify a smaller, reversible experiment, not fabricated indexing certainty.
 
+## Indexation-first editorial recovery and article-quality gate (2026-10-13)
+
+**Same SEO Manager, same SEO Worker and same GitHub delivery lane.** This is an additional mandatory editorial decision step, not an independent scheduler, autonomous audit-only Worker, policy-objective change, or new indexed-page quota. The active Macro Policy continues to govern task allocation and risk.
+
+### 1. Triage before rewriting
+
+For each site considered for substantial work, read the compact GSC/GA4 digest and cached `site_indexation_summary`. Review a **small representative subset** of exact `inspectionUrl` records through `site_indexation_list` where indexing is relevant. Prioritize old, successfully crawled, indexable-but-unindexed pages for investigation alongside real visible demand and urgent deployment/technical failures; do **not** assume missing samples are excluded.
+
+- **Technical:** verified robots/noindex, fetch failure, 404/5xx, redirect or canonical discrepancy → bounded technical repair, not article padding.
+- **Discovery / pending:** not yet discovered/crawled or `lastCrawlTime` predates confirmed latest publication → check sitemap, internal links and production; the new article has **not** yet been evaluated by Google.
+- **Editorial audit candidate:** Google successfully fetched the exact canonical after a prior publication, indexing was allowed, but observed indexation is absent and no technical cause is verified → hypothesis-driven full-body audit; the cause is **not known** merely from the URL Inspection verdict.
+- **Indexed but low exposure:** check actual query demand and user intent; do not treat this as an indexing defect.
+- **Stale, uninspected, variant-only:** **unknown**. Preserve existing quota and obtain current canonical observations through the scheduled indexation acquisition lane, not direct routine Manager inspection.
+
+When the site has severe observed exclusion, preference for existing-page recovery may override easier new-URL ideas, but remain within active portfolio allocation, incident gates, Site Direction approvals, current ready inventory and cooldown rules. Never freeze all new-article work solely because an inspected sample is poor.
+
+### 2. Audit the *actual* article, not its title
+
+Before issuing a substantial `revise` task, inspect the exact latest default-branch article/code, current rendered production HTML where accessible, and nearby existing site pages. Name the **reader's actual question** using observed GSC queries or an independently supported concrete intent.
+
+Use Keywords Operator `search_gap_research` when it can answer a real comparison question. Start with cached configured Google SERP; read 2–3 actual top-page bodies, date/source URLs, retrieval coverage, and factual primary sources. If budget/provider/HTML retrieval fails, record the limitation. Do not invent competitor gaps, call Brave results Google rankings, or block a well-evidenced isolated technical/factual repair merely because SERP research is unavailable.
+
+Apply the active `indexation_content_quality` evaluator together with relevant `content_incremental_value`/technical evaluators. **Reject generic briefs** such as “add more information” or “expand to 2,000 words.” Instead, the Worker-ready `seo_task_create` packet must identify:
+
+- exact canonical/indexation evidence and inspection freshness vs confirmed production date;
+- source/current HEAD excerpt and concrete missing reader answers or unverifiable claims;
+- actual competitor body/source excerpts or explicit source/budget uncertainty;
+- requested sections, examples, comparisons or decision paths and the primary/official sources required for facts;
+- observable **rendered-body** acceptance criteria plus canonical/internal-link verification, rollback and later outcome test.
+
+Keep this in the existing Task `rationale`/`evidence` and optional versioned `evaluation`. No separate Firestore per-URL audit history is created. If no justified implementable change exists, keep the diagnosis at Manager level rather than giving an audit-only task to the Worker.
+
+### 3. Worker rewriting and publication
+
+Worker follows the existing SEO Task claim / `seo/*` push / central PR-CI-merge sequence. For material editorial changes, it **must read back the changed body**, verify factual claims against sources and compare it against the Task's testable user-value acceptance criteria. If the page remains weak, rewrite inside the **same Task** rather than fail and abandon it, or create new thin URLs. Limit redundant passes; log factual/data blockers explicitly. The ordinary code/CI tests continue independently.
+
+After actual production verification, use the same `optimization_event` and indexed URL cache to wait for a subsequent **Google crawl of the changed page**. Do not count a merge, passing CI, sitemap entry, URL Inspection before publication, or missing Google re-crawl as a recovered index. Then examine fresh indexing observations and complete 14/28-day matched GSC windows if available; record inconclusive where evidence is immature. Raw indexed-page count is an intermediary observation; the final objective remains organic clicks.
+
+### 4. Operating efficiency
+
+No additional scheduled crawler, Google API quota, bulk SERP scan, dashboard database or independent permanent agent. Sample by site/page-family/inspection reason; reuse existing digest/indexation cache, cached Keywords Operator SERP, existing Task, GitHub diffs and Optimization Events. Never claim knowledge of hidden Google ranking formulas or guarantee indexation.
+
+--- 
+
 ## Search acquisition outcome gate (2026-10-09)
 
 **Diagnostic:** An implementation-complete Task is a delivery fact, not evidence that the site has acquired a new reader. The active SEO Macro Policy still optimizes GSC clicks; do not silently change it to an all-channel growth policy. This section makes the existing Search mandate act like an investment manager rather than a local-edit queue.

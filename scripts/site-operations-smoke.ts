@@ -748,7 +748,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.30.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.31.0');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
@@ -781,13 +781,20 @@ try {
   assert.ok(JSON.stringify(agentPolicy.structuredContent).includes('relevant PRs/commits'));
   assert.match(JSON.stringify(agentPolicy.structuredContent), /cooldown/);
   assert.match(JSON.stringify(agentPolicy.structuredContent), /superseded/);
-  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.2.0');
+  assert.equal(agentPolicy.structuredContent.evaluationRegistry.registryVersion, '1.3.0');
   assert.match(agentPolicy.structuredContent.evaluationRegistry.scoring, /No composite SEO score/);
   const evaluatorList = await call('tools/call', { name: 'seo_evaluator_list', arguments: {} });
-  assert.equal(evaluatorList.structuredContent.registryVersion, '1.2.0');
+  assert.equal(evaluatorList.structuredContent.registryVersion, '1.3.0');
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'content_incremental_value' && item.status === 'active'));
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'scaled_content_operation_risk' && item.status === 'active' && item.version === '1.1.0'));
   assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'database_indexation_quality' && item.status === 'active'));
+  assert.ok(evaluatorList.structuredContent.items.some((item: any) => item.id === 'indexation_content_quality' && item.version === '1.0.0'));
+  const contentAudit = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'indexation_content_quality' } });
+  assert.match(contentAudit.structuredContent.evaluator.decisionRule, /crawled-but-not-indexed/);
+  assert.match(JSON.stringify(contentAudit.structuredContent.evaluator.hardGates), /generic_rewrite_without_user_value/);
+  assert.ok(contentAudit.structuredContent.evidence.some((source: any) => source.id === 'google_helpful_reliable_people_first'));
+  assert.match(agentPolicy.structuredContent.contentQualityAudit.priority, /Macro Policy/);
+  assert.ok(agentPolicy.structuredContent.instructions.some((instruction: string) => instruction.includes('CONTENT QUALITY AUDIT TASK')));
   const databaseIndexation = await call('tools/call', { name: 'seo_evaluator_get', arguments: { id: 'database_indexation_quality' } });
   assert.equal(databaseIndexation.structuredContent.evaluator.version, '1.0.0');
   assert.equal(databaseIndexation.structuredContent.evaluator.inference.confidence, 'high');
@@ -805,6 +812,9 @@ try {
   assert.equal(executorPolicy.structuredContent.executionGate.inFlightPolicy, 'continue_existing_claims_and_delivery_handoffs');
   assert.equal('macroPolicy' in executorPolicy.structuredContent, false);
   assert.equal('recoveryGovernance' in executorPolicy.structuredContent, false);
+  assert.equal('contentQualityAudit' in executorPolicy.structuredContent, false);
+  assert.match(executorPolicy.structuredContent.contentQualityExecution.gate, /rewrite and recheck/);
+
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Centralized Keywords GitHub Actions/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
@@ -830,7 +840,7 @@ try {
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
   assert.equal(oauthStatus.structuredContent.serverVersion, '0.22.0');
-  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.2.0');
+  assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.3.0');
 
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {

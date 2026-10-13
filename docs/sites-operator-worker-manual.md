@@ -2,6 +2,18 @@
 
 > Canonical execution runbook. Always call `seo_agent_context(role=executor)` first. The live versioned policy and selected Sites Operator task take precedence over this document.
 
+## Editorial recovery acceptance contract (2026-10-13)
+
+When a selected existing-page recovery or new editorial Task includes an `indexation_content_quality` audit:
+
+- Read the Manager's **specific** existing-body deficit, user question, observed competitor/source evidence, known technical/indexation state and full acceptance criteria; check current HEAD to avoid redoing a completed change.
+- Rewrite the **same canonical page** into content that actually answers the missing question. Verify material claims using the given primary/official sources, make comparisons and decision aids usable, and preserve site-specific editorial tone. Adding words, headings or keywords alone does not constitute an improvement.
+- Re-read the **changed output** after implementation, not just the patch. Verify each article-specific acceptance item and the ordinary canonical, metadata, links and build checks. If an acceptance item is unmet, revise within this Task (usually at most two bounded editorial passes), or state the exact evidence/implementation blocker rather than pretending it passed.
+- A Google Search result is not required before handoff: there is no way to guarantee that Google will index the update. Do not call Google URL Inspection or create another scheduler. Persist branch/validation handoff as before; publication outcome and next recrawl observation belong to the Manager's post-release loop.
+- For technical-only tasks (e.g. robots/noindex/404), repair the verified technical defect rather than inventing an editorial rewrite. If competitor body retrieval is unavailable, do not fabricate it.
+
+This adds **a quality acceptance obligation**, not a new Worker policy-planning role, another Task database or a change to the centralized `seo/*` delivery contract.
+
 ## 1. Worker responsibility
 
 The Worker owns **implementation through a crash-recoverable `seo/*` push sequence: `push_pending` before remote push, then verified `branch_ready` after remote HEAD readback**.
