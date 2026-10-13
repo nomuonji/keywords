@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError } from './seo-chatgpt-handoff-gate.js';
+import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError, chatgptHandoffHasPassedPrCi } from './seo-chatgpt-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -52,3 +52,15 @@ for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-man
 assert.match(chatgptRefHandoffScopeError([])!, /no files/);
 assert.match(chatgptRefHandoffScopeError(['a.md','a.md'])!, /duplicate/);
 console.log('ChatGPT handoff gate smoke passed: disabled-by-default, task/site/branch binding, cutoff, rejection history, path scope');
+
+const prSuccess = {
+  event:'pull_request', status:'completed', conclusion:'success',
+  pull_requests:[{number:42}]
+};
+assert.equal(chatgptHandoffHasPassedPrCi([prSuccess],42),true);
+assert.equal(chatgptHandoffHasPassedPrCi([prSuccess],41),false);
+assert.equal(chatgptHandoffHasPassedPrCi([{...prSuccess,event:'push'}],42),false);
+assert.equal(chatgptHandoffHasPassedPrCi([{...prSuccess,conclusion:'skipped'}],42),false);
+assert.equal(chatgptHandoffHasPassedPrCi([{...prSuccess,status:'in_progress'}],42),false);
+assert.equal(chatgptHandoffHasPassedPrCi([],42),false);
+console.log('ChatGPT PR CI gate passed: exact PR, successful completed PR Actions run only');
