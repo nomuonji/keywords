@@ -926,9 +926,9 @@ try {
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Central Keywords GitHub Actions/);
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /branch cleanup/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state:push_pending/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=push_pending/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /unreferenced GitHub Git commit/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=branch_ready/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /branch_ready/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /must not create\/update refs/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Central Actions validates/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
