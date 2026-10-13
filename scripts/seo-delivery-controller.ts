@@ -6,7 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError } from './seo-chatgpt-handoff-gate.js';
+import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError, chatgptHandoffHasPassedPrCi } from './seo-chatgpt-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const CHATGPT_ACTOR = 'chatgpt_seo_worker';
@@ -38,6 +38,7 @@ type CheckSummary = {
   failed: string[];
   passed: string[];
   observed: number;
+  passedPullRequestActions: boolean;
 };
 
 const ghHeaders = {
@@ -139,7 +140,7 @@ async function optionalGitHubSignal<T>(url: string): Promise<T | null> {
   }
 }
 
-async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
+async function checkSummary(repo: string, sha: string, prNumber: number): Promise<CheckSummary> {
   const actionParams = new URLSearchParams({ head_sha: sha, per_page: '100' });
   const [actions, checks, combined] = await Promise.all([
     gh<{ workflow_runs: any[] }>(api(repo, `/actions/runs?${actionParams}`)),
@@ -178,7 +179,10 @@ async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
     else failed.push(`${name}=${status.state ?? 'unknown'}`);
   }
 
-  return { pending, failed, passed, observed: pending.length + failed.length + passed.length };
+  return {
+    pending, failed, passed, observed: pending.length + failed.length + passed.length,
+    passedPullRequestActions: chatgptHandoffHasPassedPrCi(actions.workflow_runs ?? [], prNumber)
+  };
 }
 
 function mergeMethod(info: GitHubRepo): 'squash' | 'merge' | 'rebase' {
@@ -512,13 +516,18 @@ async function processTask(task: SeoTaskRecord) {
     task = await seoTaskGet({ id: task.id });
   }
 
-  const checks = await checkSummary(task.repo, handoff.headSha);
+  const checks = await checkSummary(task.repo, handoff.headSha, pr.number);
   if (checks.failed.length) {
     await markFailed(task, `CI failed for ${handoff.headSha}: ${checks.failed.join(', ')}`);
     return;
   }
   if (checks.pending.length) {
     console.log(`Waiting: ${task.id} PR #${pr.number} has pending checks: ${checks.pending.join(', ')}`);
+    return;
+  }
+
+  if (handoff.validationSummary.startsWith(ACTIONS_MARKER) && !checks.passedPullRequestActions) {
+    console.log(`Waiting: ${task.id} ChatGPT delivery requires a completed successful Actions run for PR #${pr.number}.`);
     return;
   }
 
