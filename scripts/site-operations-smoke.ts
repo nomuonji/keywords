@@ -212,6 +212,62 @@ try {
     'push_pending must shorten the execution lease to at most 15 minutes'
   );
 
+  // ChatGPT's opt-in central-delivery checkpoint cannot be stolen by Groq
+  // after the shortened 15-minute lease. Ordinary Groq pushes still use the
+  // existing path, validated by the smoke-run-0001 handoff above.
+  const chatgptReady = await seoTaskCreate({
+    id: 'seo-chatgpt-handoff-test',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/chatgpt-claim-probe'],
+    repo: 'nomuonji/site-a',
+    taskType: 'revise',
+    title: 'Verify isolated ChatGPT Actions ownership',
+    rationale: 'Test central-delivery claim isolation only.',
+    evidence: ['Isolated workflow test fixture.'],
+    dedupeKey: 'site-a:chatgpt-handoff-probe'
+  });
+  const chatgptClaimed = await seoTaskClaim({
+    id: chatgptReady.id, expectedRevision: chatgptReady.revision,
+    actor: 'chatgpt_seo_worker', runId: 'chatgpt-e2e-run-01'
+  });
+  const chatgptPending = await seoTaskUpdate({
+    id: chatgptReady.id, expectedRevision: chatgptClaimed.revision,
+    claimRunId: 'chatgpt-e2e-run-01',
+    deliveryHandoff: {
+      state: 'push_pending',
+      branch: 'seo/chatgpt-handoff-probe',
+      headSha: 'c'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      validationSummary: 'Action-Ref-Handoff: v1\nVerified test-only implementation.',
+      handedOffAt: null, prNumber: null, prUrl: null,
+      lastError: '', updatedAt: '2026-10-13T00:00:00.000Z'
+    }
+  });
+  const probeDocPath = `${root}seoTasks/${chatgptReady.id}`;
+  const probeDoc = docs.get(probeDocPath);
+  assert.ok(probeDoc, 'ChatGPT opt-in test task must have a Firestore fixture');
+  docs.set(probeDocPath, {
+    ...probeDoc,
+    fields: {
+      ...probeDoc.fields,
+      executionClaim: field({
+        ...chatgptPending.executionClaim,
+        expiresAt: '2000-01-01T00:00:00.000Z'
+      })
+    }
+  });
+  const expiredChatgpt = await seoTaskGet({ id: chatgptReady.id });
+  await assert.rejects(seoTaskClaim({
+    id: chatgptReady.id, expectedRevision: expiredChatgpt.revision,
+    runId: 'groq-attempt-001', actor: 'seo_worker'
+  }), /Pending centralized Actions handoff cannot be reclaimed/);
+  const chatgptReclaimed = await seoTaskClaim({
+    id: chatgptReady.id, expectedRevision: expiredChatgpt.revision,
+    runId: 'chatgpt-e2e-run-02', actor: 'chatgpt_seo_worker'
+  });
+  assert.equal(chatgptReclaimed.executionClaim?.runId, 'chatgpt-e2e-run-02');
+  assert.equal(chatgptReclaimed.deliveryHandoff.state, 'push_pending');
+
   const handedOffTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: pushPendingTask.revision,
