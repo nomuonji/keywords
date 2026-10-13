@@ -6,6 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError } from './seo-chatgpt-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const CHATGPT_ACTOR = 'chatgpt_seo_worker';
@@ -300,21 +301,14 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
   if (!isChatgptHandoff(task)) return existingSha;
   const h = task.deliveryHandoff;
   if (!h.branch || !h.headSha || !h.baseSha) return existingSha;
-  if (h.lastError || (task.history ?? []).slice(-6).some(
-    event => /safety[_ -]?(rejected|blocked|refused)|authorization[_ -]?denied/i.test(event.event + ' ' + event.detail)
-  )) {
-    console.log(`Waiting: ${task.id} has a rejection/error, do not attempt a delegated write`);
-    return existingSha;
-  }
   if (!/^seo\/[A-Za-z0-9._/-]+$/.test(h.branch) || !/^[a-f0-9]{40}$/.test(h.baseSha)
       || !/^[a-f0-9]{40}$/.test(h.headSha)) throw Error(`Malformed ChatGPT checkpoint ${task.id}`);
-  if (existingSha === h.headSha) return existingSha;
-  if (existingSha !== null && existingSha !== h.baseSha) {
+  if (existingSha !== null && existingSha !== h.baseSha && existingSha !== h.headSha) {
     console.log(`Waiting: ${task.id} has a concurrent branch change`);
     return existingSha;
   }
   const repository = await repoInfo(task.repo);
-  const mainHead = await branchSha(task.repo, repository.default_branch);
+  const mainHead = existingSha === h.headSha ? h.baseSha : await branchSha(task.repo, repository.default_branch);
   if (mainHead !== h.baseSha) {
     console.log(`Waiting: ${task.id} base branch has advanced; Worker rebase required`);
     return existingSha;
@@ -333,6 +327,8 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
       || !compare.files?.length || compare.files.length > 50) {
     throw Error(`Unbounded/non-fast-forward prepared change ${task.id}`);
   }
+  const scopeError = chatgptRefHandoffScopeError(compare.files.map(file => file.filename));
+  if (scopeError) throw Error(`Unsafe prepared commit ${task.id}: ${scopeError}`);
   // Prevent stale observations from being delivered after a rival Worker
   // or the Task controller has changed its revision/claim/checkpoint.
   const current = await seoTaskGet({ id: task.id });
@@ -346,6 +342,8 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
     console.log(`[dry-run] would fast-forward ${task.repo} ${h.branch} -> ${h.headSha}`);
     return existingSha;
   }
+  // Even an already-existing exact branch must pass the same provenance and scope checks.
+  if (existingSha === h.headSha) return existingSha;
   const refPath = `/git/refs/heads/${encodeURIComponent(h.branch)}`;
   if (existingSha === null) {
     await gh(api(task.repo, '/git/refs'), {
@@ -365,9 +363,25 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
   return actual;
 }
 
-async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord> {
+async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
+  // An old or unmarked ChatGPT claim is NOT a grant to retry a refused write.
+  if (task.executionClaim?.actor === CHATGPT_ACTOR) {
+    if (!isChatgptHandoff(task)) {
+      console.log(`Waiting: ${task.id} ChatGPT checkpoint lacks an authorized v1 marker`);
+      return task;
+    }
+    const gateError = chatgptRefHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_CHATGPT_REF_HANDOFF_ENABLED,
+      process.env.SEO_CHATGPT_REF_HANDOFF_NOT_BEFORE
+    );
+    if (gateError) {
+      console.log(`Waiting: ${task.id} ChatGPT handoff gate: ${gateError}`);
+      return task;
+    }
+  }
   if (!handoff.branch?.startsWith('seo/') || !handoff.headSha || !handoff.baseSha) {
     console.log(`Waiting: ${task.id} has incomplete push_pending metadata; Worker must repair the checkpoint.`);
     return task;
@@ -380,7 +394,8 @@ async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord>
     if (!/GitHub 404 Not Found/.test(String(error))) throw error;
     actualBranchSha = null;
   }
-  if (actualBranchSha !== handoff.headSha) {
+  // Validate opted-in ChatGPT provenance even if somebody has already pushed the SHA.
+  if (isChatgptHandoff(task) || actualBranchSha !== handoff.headSha) {
     actualBranchSha = await pushChatgptPreparedRef(task, actualBranchSha);
   }
   if (actualBranchSha === null) {
@@ -562,7 +577,7 @@ async function main() {
 
   for (const pending of initialInProgress.filter(task => task.deliveryHandoff?.state === 'push_pending')) {
     try {
-      await reconcilePushPending(pending);
+      await reconcilePushPending(pending, activeSites.items);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Push reconciliation error for ${pending.id}: ${message}`);
