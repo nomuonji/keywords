@@ -29,10 +29,10 @@ jobs:
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
       SEO_DELIVERY_MAX_TASKS: '20'
       SEO_DELIVERY_NO_CHECK_GRACE_MS: '120000'
-      # Disabled unless rollout variables are explicitly configured.
-      # Existing Groq direct-push delivery never depends on this transport.
-      SEO_PREPARED_REF_HANDOFF_ENABLED: ${{ vars.SEO_PREPARED_REF_HANDOFF_ENABLED }}
-      SEO_PREPARED_REF_HANDOFF_NOT_BEFORE: ${{ vars.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE }}
+      # Explicit owner-approved rollout for NEW SEO tasks only (2026-10-13 UTC).
+      # Set repo variable ENABLED=0 to disable; existing Groq direct-push is unaffected.
+      SEO_PREPARED_REF_HANDOFF_ENABLED: ${{ vars.SEO_PREPARED_REF_HANDOFF_ENABLED || '1' }}
+      SEO_PREPARED_REF_HANDOFF_NOT_BEFORE: ${{ vars.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE || '2026-10-13T05:50:00.000Z' }}
 
     steps:
       - name: Check central delivery credentials
