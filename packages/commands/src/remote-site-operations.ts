@@ -1126,12 +1126,11 @@ export async function seoTaskClaim(input: unknown) {
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
-  // Once a ChatGPT checkpoint enters central delivery, no Worker actor may
-  // reclaim it merely because the short lease expired. Actor labels are not
-  // authentication; recover with explicit controller/reviewed remediation.
+  // Prepared commits belong to central delivery regardless of Worker runtime.
+  // A runId/actor is not an authorization to reclaim a pending prepared ref.
+  // Ordinary direct-push Groq checkpoints remain reclaimable under lease rules.
   if (current.status === 'in_progress'
       && current.deliveryHandoff.state === 'push_pending'
-      && current.executionClaim?.actor === 'chatgpt_seo_worker'
       && current.deliveryHandoff.validationSummary?.startsWith('Action-Ref-Handoff: v1\n')) {
     throw new Error('Pending centralized Actions handoff cannot be reclaimed by any Worker lane');
   }
