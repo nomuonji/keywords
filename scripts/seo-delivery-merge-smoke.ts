@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError } from './seo-chatgpt-handoff-gate.js';
+import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
 for(const method of ['squash','merge'] as const){
@@ -12,3 +14,41 @@ for(const method of ['squash','merge'] as const){
 }
 assert.throws(()=>seoDeliveryMergePayload(sample,'abc123','rebase'),/requires a merge\/squash method/);
 console.log('seo-delivery merge smoke passed: explicit skip-free main commit, traceable task, rebase fails closed');
+
+ 
+// These tests cover authorization boundaries, not merely an implementation copy.
+// The initial rollout is disabled without an explicit post-review cutoff.
+const rollout = '2026-10-13T06:00:00.000Z';
+const task = {
+  id: 'fresh-task-01', siteId: 'site-a', repo: 'nomuonji/site-a',
+  createdAt: '2026-10-13T06:01:00.000Z', status: 'in_progress',
+  executionClaim: { actor: 'chatgpt_seo_worker', runId: 'new-claim-01' },
+  deliveryHandoff: {
+    state: 'push_pending', branch: 'seo/fresh-task-01',
+    baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40),
+    validationSummary: 'Action-Ref-Handoff: v1\nChecked content change',
+    lastError: ''
+  },
+  history: []
+} as unknown as SeoTaskRecord;
+const sites = [{id:'site-a',status:'active',repository:'nomuonji/site-a'}] as SiteRecord[];
+const preflight = (t: SeoTaskRecord = task, enabled = '1', since = rollout, registry = sites) =>
+  chatgptRefHandoffPreflight(t, registry, enabled, since);
+assert.equal(preflight(), null);
+assert.match(preflight(task,'0')!, /not been enabled/);
+assert.match(preflight(task,'1','')!, /cutoff/);
+assert.match(preflight({ ...task, createdAt: '2026-10-13T05:59:59.999Z' })!, /predates/);
+assert.match(preflight({ ...task, repo: 'nomuonji/another-site' })!, /repository/);
+assert.match(preflight(task,'1',rollout,[])!, /registry/);
+assert.match(preflight({ ...task, deliveryHandoff: { ...task.deliveryHandoff, branch: 'seo/another-task' } })!, /task-bound/);
+assert.match(preflight({ ...task, deliveryHandoff: { ...task.deliveryHandoff, branch: 'seo/..\\/main' } })!, /task-bound/);
+assert.match(preflight({ ...task, deliveryHandoff: { ...task.deliveryHandoff, baseSha: 'c'.repeat(40) } })!, /SHA/);
+assert.match(preflight({ ...task, deliveryHandoff: { ...task.deliveryHandoff, lastError: 'permission denied' } })!, /unresolved error/);
+assert.match(preflight({ ...task, history: [{event:'safety_rejected',detail:'GitHub ref update blocked'}] as SeoTaskRecord['history'] })!, /refusal/);
+assert.equal(chatgptRefHandoffScopeError(['src/content/article.md','src/pages/index.astro']), null);
+for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-manual.md','src/../main.ts','src/.env','src/secret/key','package.json','/root.md','src//other.md','src\\\\other.md']) {
+  assert.ok(chatgptRefHandoffScopeError([unsafe]), `Unsafe change must be refused: ${unsafe}`);
+}
+assert.match(chatgptRefHandoffScopeError([])!, /no files/);
+assert.match(chatgptRefHandoffScopeError(['a.md','a.md'])!, /duplicate/);
+console.log('ChatGPT handoff gate smoke passed: disabled-by-default, task/site/branch binding, cutoff, rejection history, path scope');
