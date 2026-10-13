@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -35,6 +35,18 @@ const sites = [{id:'site-a',status:'active',repository:'nomuonji/site-a'}] as Si
 const preflight = (t: SeoTaskRecord = task, enabled = '1', since = rollout, registry = sites) =>
   preparedRefHandoffPreflight(t, registry, enabled, since);
 assert.equal(preflight(), null);
+assert.equal(preparedHandoffRequired(task), true);
+assert.equal(preparedHandoffRequired({createdAt:'2026-10-13T05:49:59.999Z'}), false);
+assert.equal(preparedHandoffRequired({createdAt:'2026-10-13T05:50:00.000Z'}), true);
+assert.equal(preparedHandoffRequired({createdAt:'not-a-date'}), true);
+assert.match(preflight({ ...task, createdAt: '2026-10-13T05:49:59.999Z' }, '1', '2026-01-01T00:00:00.000Z')!, /predates/);
+// Only an existing task branch with a recorded CI failure may accept an
+// exact-parent corrective commit. Initial refs must be rooted at current main.
+const base='b'.repeat(40), advancedMain='d'.repeat(40);
+assert.equal(preparedRefBaseError(task,null,base,base),null);
+assert.match(preparedRefBaseError(task,null,advancedMain,base)!,/advanced/);
+assert.match(preparedRefBaseError(task,base,advancedMain,base)!,/CI-failed/);
+assert.equal(preparedRefBaseError({...task,history:[{event:'delivery_failed',actor:'seo_delivery_controller',detail:'PR CI failed',at:'2026-10-13T07:00:00Z'}]},base,advancedMain,base),null);
 assert.equal(preflight({ ...task, executionClaim: { ...task.executionClaim!, actor: 'seo_worker' } }), null);
 assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'branch_ready' } }), null);
 assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'pr_open' } }), null);
@@ -57,7 +69,7 @@ for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-man
 }
 assert.match(preparedRefHandoffScopeError([])!, /no files/);
 assert.match(preparedRefHandoffScopeError(['a.md','a.md'])!, /duplicate/);
-console.log('Common prepared-ref handoff gate smoke passed: disabled-by-default, task/site/branch binding, cutoff, rejection history, path scope');
+console.log('Shared prepared-ref gate passed: cutover, historic refusal, site/task/branch binding, safe corrective fast-forward, restricted paths');
 
 const prSuccess = {
   event:'pull_request', status:'completed', conclusion:'success',
