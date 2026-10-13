@@ -139,7 +139,7 @@ A well-scoped pilot does not need proof of traffic uplift before implementation.
 
 For every article-level intervention, resolve the target by normalized canonical URL in `site_article_list/get`. If missing, verify the exact current default-branch source path, title and site/repository mapping, then register only that target with `site_article_save`; never fabricate a repoPath or publication time, and do not import the entire portfolio. Refresh the Task with `seo_task_update` and read it back: URL-based Tasks automatically attach matching registered articles. An empty article registry is not permission to skip experiment tracking. If registration is genuinely impossible, keep the implementation moving and persist the exact missing mapping plus a concrete tracking follow-up in Task history.
 
-For registered articles, inspect `optimization_context`, reuse the linked event, or create a `proposed` event containing the Task ID, hypothesis, planned baseline dates, metric limitations and rollback. Put the event ID and before/after commit evidence in Task history/summary. Leave it proposed until actual production publication is observed. Tracking problems must be reported, but do not silently turn a valid implementation into an audit-only result. The Planner handles due outcome reviews; the Worker finishes its run after verified `seo/*` branch push and durable delivery handoff, while the Task remains `in_progress` until external default-branch delivery is later observed.
+For registered articles, inspect `optimization_context`, reuse the linked event, or create a `proposed` event containing the Task ID, hypothesis, planned baseline dates, metric limitations and rollback. Put the event ID and before/after commit evidence in Task history/summary. Leave it proposed until actual production publication is observed. Tracking problems must be reported, but do not silently turn a valid implementation into an audit-only result. The Planner handles due outcome reviews; the Worker finishes its run after verified unreferenced Git commit creation and durable `push_pending` handoff, while the Task remains `in_progress` until external default-branch delivery is later observed.
 
 ### Pre-existing unrelated failures
 
@@ -223,7 +223,7 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 
 Therefore, a Worker must **not spend a later run solely to mark a successfully merged handoff completed**. The controller changes Task status from `in_progress` to `completed` only after merge.
 
-If `deliveryHandoff.state=ci_failed`, the Worker may reclaim the Task because corrective implementation work is again required. After fixing and pushing the same dedicated branch, publish a fresh `branch_ready` handoff.
+If `deliveryHandoff.state=ci_failed`, the Worker may reclaim the Task because corrective implementation work is again required. For a post-cutover task, create a valid child commit of the exact current task branch HEAD and publish a new `push_pending` checkpoint; the central Action handles the non-force ref update and `branch_ready`.
 
 ## 7. Optional production observation
 
