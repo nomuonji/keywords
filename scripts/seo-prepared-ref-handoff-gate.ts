@@ -16,6 +16,25 @@ export function preparedHandoffRequired(task: Pick<SeoTaskRecord, 'createdAt'>):
   return !Number.isFinite(created) || created >= Date.parse(PREPARED_REF_CUTOVER_UTC);
 }
 
+/**
+ * Verify the base for either a first prepared branch or a CI-corrective fast-forward.
+ * A corrective commit may start from the existing task branch ONLY after a
+ * recorded CI delivery failure; arbitrary stale-base branches fail closed.
+ */
+export function preparedRefBaseError(
+  task: Pick<SeoTaskRecord, 'history'>,
+  existingSha: string | null,
+  defaultHead: string,
+  baseSha: string
+): string | null {
+  if (existingSha === null && defaultHead !== baseSha) return 'default branch has advanced; Worker rebase required';
+  if (existingSha === baseSha && defaultHead !== baseSha
+      && !task.history?.some(event => event.event === 'delivery_failed')) {
+    return 'non-default base is allowed only for an existing CI-failed branch';
+  }
+  return null;
+}
+
 export function preparedRefHandoffPreflight(
   task: SeoTaskRecord,
   activeSites: readonly Pick<SiteRecord, 'id' | 'repository' | 'status'>[],
