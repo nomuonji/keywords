@@ -1126,14 +1126,14 @@ export async function seoTaskClaim(input: unknown) {
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
-  // An opted-in Actions handoff belongs to central delivery even after its
-  // short execution lease expires. Do not allow another Worker to overwrite it.
+  // Once a ChatGPT checkpoint enters central delivery, no Worker actor may
+  // reclaim it merely because the short lease expired. Actor labels are not
+  // authentication; recover with explicit controller/reviewed remediation.
   if (current.status === 'in_progress'
       && current.deliveryHandoff.state === 'push_pending'
       && current.executionClaim?.actor === 'chatgpt_seo_worker'
-      && current.deliveryHandoff.validationSummary?.startsWith('Action-Ref-Handoff: v1\n')
-      && args.actor !== 'chatgpt_seo_worker') {
-    throw new Error('Pending centralized Actions handoff cannot be reclaimed by another Worker lane');
+      && current.deliveryHandoff.validationSummary?.startsWith('Action-Ref-Handoff: v1\n')) {
+    throw new Error('Pending centralized Actions handoff cannot be reclaimed by any Worker lane');
   }
 
   // Recovery gates new work intake, not a continuation/reclaim of work that
