@@ -590,100 +590,6 @@ async function cleanupMergedSeoBranches(allowedRepos: Set<string>) {
   }
 }
 
-// One-time 2026-10-13 migration debris sweep. Drop this function after
-// the four exact refs are independently confirmed deleted. Never delete a
-// generic `seo/*` branch from this lane; every ref is SHA-pinned to its
-// historical closed/merged PR and its now-completed Sites Operator Task.
-async function pruneReconciledLegacyRefs(allowedRepos: Set<string>) {
-  const legacy = [
-    {
-      repo: 'nomuonji/book-discovery', taskId: 'f4b1344d-4985-4aba-8673-1183d7213ab2',
-      oldPr: 21, newPr: 28, mergedSha: '88c5d2000299dd5f1a71a3df86672276aae4c04b',
-      refs: [
-        { branch: 'seo/f4b1344d-when-breath-ja-edition', sha: 'b6b47914a4265b3d605585e7d3a119d27b25bbb1', pr: 'old' },
-        { branch: 'cleanup/book-discovery-legacy-pr21-20261013', sha: '2e5d03ccd2f9fb08afe749916c67001c83f03f8d', pr: 'new' }
-      ]
-    },
-    {
-      repo: 'nomuonji/tool-economics', taskId: '9e5cfbf7-30e0-496d-b69e-4a8f40090f75',
-      oldPr: 3, newPr: 9, mergedSha: '26221b7cc4bccd44a464432adf3a77b2b18622f5',
-      refs: [
-        { branch: 'seo/9e5cfbf7-firebase-spark', sha: '0bc5c600025d66edab64be3a7a7e7f21b7333534', pr: 'old' },
-        { branch: 'cleanup/tool-economics-legacy-pr3-20261013', sha: '2bc058603a07c8072da6d754f7a3791ee9da9765', pr: 'new' }
-      ]
-    }
-  ] as const;
-
-  for (const entry of legacy) {
-    if (!allowedRepos.has(entry.repo)) {
-      console.log(`Legacy cleanup skipped: inactive repository ${entry.repo}`);
-      continue;
-    }
-    const task = await seoTaskGet({ id: entry.taskId });
-    if (task.status !== 'completed' || task.resultCommitSha !== entry.mergedSha ||
-        !task.history?.some(h => h.actor === 'chatgpt_legacy_delivery_cleanup' &&
-          h.event === 'legacy_conflict_rebased_and_merged')) {
-      console.log(`Legacy cleanup skipped: unverified task ${entry.taskId}`);
-      continue;
-    }
-    const [oldPr, newPr] = await Promise.all([
-      pullByNumber(entry.repo, entry.oldPr), pullByNumber(entry.repo, entry.newPr)
-    ]);
-    if (oldPr.state !== 'closed' || oldPr.merged || oldPr.merged_at ||
-        newPr.state !== 'closed' || !newPr.merged || newPr.merge_commit_sha !== entry.mergedSha ||
-        oldPr.head.ref !== entry.refs[0].branch || oldPr.head.sha !== entry.refs[0].sha ||
-        newPr.head.ref !== entry.refs[1].branch || newPr.head.sha !== entry.refs[1].sha) {
-      console.log(`Legacy cleanup skipped: PR provenance mismatch ${entry.repo}`);
-      continue;
-    }
-    for (const ref of entry.refs) {
-      let actual: string;
-      try {
-        actual = await branchSha(entry.repo, ref.branch);
-      } catch (error) {
-        if (/GitHub 404 Not Found/.test(String(error))) {
-          console.log(`Legacy cleanup already absent: ${entry.repo}#${ref.branch}`);
-          continue;
-        }
-        throw error;
-      }
-      if (actual !== ref.sha) {
-        console.log(`Legacy cleanup skipped changed ref: ${entry.repo}#${ref.branch} expected=${ref.sha} actual=${actual}`);
-        continue;
-      }
-      if (dryRun) {
-        console.log(`[dry-run] legacy cleanup delete ${entry.repo}#${ref.branch}@${ref.sha}`);
-        continue;
-      }
-      await gh(api(entry.repo, `/git/refs/heads/${encodeURIComponent(ref.branch)}`), { method: 'DELETE' });
-      console.log(`Legacy cleanup deleted ${entry.repo}#${ref.branch}@${ref.sha}`);
-    }
-  }
-
-  // Remove the one-off migration PR branch itself once its exact reviewed
-  // commit is merged and the branch still points to that commit.
-  const opsRepo = 'nomuonji/keywords';
-  const opsBranch = 'ops/prune-reconciled-seo-legacy-refs-20261013';
-  const opsHead = 'af4f30da83ad1f10cb3f21af717ce0a3faa3e124';
-  const opsPr = await pullByNumber(opsRepo, 164);
-  if (opsPr.merged && opsPr.state === 'closed' &&
-      opsPr.merge_commit_sha === '646f687dba6ff99519f0d3546143664685c49b4e' &&
-      opsPr.head.ref === opsBranch && opsPr.head.sha === opsHead) {
-    try {
-      const current = await branchSha(opsRepo, opsBranch);
-      if (current === opsHead) {
-        if (dryRun) console.log(`[dry-run] legacy cleanup temp PR ref ${opsBranch}@${opsHead}`);
-        else {
-          await gh(api(opsRepo, `/git/refs/heads/${encodeURIComponent(opsBranch)}`), { method: 'DELETE' });
-          console.log(`Legacy cleanup deleted temporary controller PR branch ${opsBranch}@${opsHead}`);
-        }
-      } else console.log(`Temporary controller branch changed; leaving untouched: ${opsBranch}`);
-    } catch (error) {
-      if (!/GitHub 404 Not Found/.test(String(error))) throw error;
-    }
-  }
-}
-
 async function main() {
   if (!token) {
     console.log('SEO_DELIVERY_GITHUB_TOKEN is not configured; central delivery controller is idle.');
@@ -730,7 +636,6 @@ async function main() {
   }
 
   await cleanupMergedSeoBranches(allowedRepos);
-  await pruneReconciledLegacyRefs(allowedRepos);
 }
 
 await main();
