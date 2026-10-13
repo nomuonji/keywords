@@ -26,8 +26,10 @@ export function preparedRefHandoffPreflight(
     return 'Task repository does not match its active Sites Operator site registry entry';
   }
   const handoff = task.deliveryHandoff;
-  if (task.status !== 'in_progress' || handoff?.state !== 'push_pending'
-      || !['seo_worker', 'chatgpt_seo_worker'].includes(task.executionClaim?.actor ?? '')
+  if (task.status !== 'in_progress' || !handoff
+      || !['push_pending', 'branch_ready', 'pr_open'].includes(handoff.state)
+      || (handoff.state === 'push_pending'
+          && !['seo_worker', 'chatgpt_seo_worker'].includes(task.executionClaim?.actor ?? ''))
       || !handoff.validationSummary.startsWith('Action-Ref-Handoff: v1\n')) {
     return 'Checkpoint is not an explicitly opted-in SEO Worker prepared-commit handoff';
   }
