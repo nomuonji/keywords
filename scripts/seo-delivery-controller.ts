@@ -659,6 +659,29 @@ async function pruneReconciledLegacyRefs(allowedRepos: Set<string>) {
       console.log(`Legacy cleanup deleted ${entry.repo}#${ref.branch}@${ref.sha}`);
     }
   }
+
+  // Remove the one-off migration PR branch itself once its exact reviewed
+  // commit is merged and the branch still points to that commit.
+  const opsRepo = 'nomuonji/keywords';
+  const opsBranch = 'ops/prune-reconciled-seo-legacy-refs-20261013';
+  const opsHead = 'af4f30da83ad1f10cb3f21af717ce0a3faa3e124';
+  const opsPr = await pullByNumber(opsRepo, 164);
+  if (opsPr.merged && opsPr.state === 'closed' &&
+      opsPr.merge_commit_sha === '646f687dba6ff99519f0d3546143664685c49b4e' &&
+      opsPr.head.ref === opsBranch && opsPr.head.sha === opsHead) {
+    try {
+      const current = await branchSha(opsRepo, opsBranch);
+      if (current === opsHead) {
+        if (dryRun) console.log(`[dry-run] legacy cleanup temp PR ref ${opsBranch}@${opsHead}`);
+        else {
+          await gh(api(opsRepo, `/git/refs/heads/${encodeURIComponent(opsBranch)}`), { method: 'DELETE' });
+          console.log(`Legacy cleanup deleted temporary controller PR branch ${opsBranch}@${opsHead}`);
+        }
+      } else console.log(`Temporary controller branch changed; leaving untouched: ${opsBranch}`);
+    } catch (error) {
+      if (!/GitHub 404 Not Found/.test(String(error))) throw error;
+    }
+  }
 }
 
 async function main() {
