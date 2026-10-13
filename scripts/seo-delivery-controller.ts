@@ -6,10 +6,9 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { chatgptRefHandoffPreflight, chatgptRefHandoffScopeError, chatgptHandoffHasPassedPrCi } from './seo-chatgpt-handoff-gate.js';
+import { preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
-const CHATGPT_ACTOR = 'chatgpt_seo_worker';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
@@ -181,7 +180,7 @@ async function checkSummary(repo: string, sha: string, prNumber: number): Promis
 
   return {
     pending, failed, passed, observed: pending.length + failed.length + passed.length,
-    passedPullRequestActions: chatgptHandoffHasPassedPrCi(actions.workflow_runs ?? [], prNumber)
+    passedPullRequestActions: preparedHandoffHasPassedPrCi(actions.workflow_runs ?? [], prNumber)
   };
 }
 
@@ -292,21 +291,20 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
 }
 
 
-function isChatgptHandoff(task: SeoTaskRecord): boolean {
+function isPreparedRefHandoff(task: SeoTaskRecord): boolean {
   return task.status === 'in_progress'
     && task.deliveryHandoff?.state === 'push_pending'
-    && task.executionClaim?.actor === CHATGPT_ACTOR
     && task.deliveryHandoff.validationSummary?.startsWith(ACTIONS_MARKER) === true;
 }
 
-// This is a separate, explicit, forward-looking execution lane. It must never
+// Prepared commits are an opt-in transport usable by either Worker runtime. Never
 // be used to replay content for which another tool/safety gate rejected a write.
-async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string | null): Promise<string | null> {
-  if (!isChatgptHandoff(task)) return existingSha;
+async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null): Promise<string | null> {
+  if (!isPreparedRefHandoff(task)) return existingSha;
   const h = task.deliveryHandoff;
   if (!h.branch || !h.headSha || !h.baseSha) return existingSha;
   if (!/^seo\/[A-Za-z0-9._/-]+$/.test(h.branch) || !/^[a-f0-9]{40}$/.test(h.baseSha)
-      || !/^[a-f0-9]{40}$/.test(h.headSha)) throw Error(`Malformed ChatGPT checkpoint ${task.id}`);
+      || !/^[a-f0-9]{40}$/.test(h.headSha)) throw Error(`Malformed prepared-commit checkpoint ${task.id}`);
   if (existingSha !== null && existingSha !== h.baseSha && existingSha !== h.headSha) {
     console.log(`Waiting: ${task.id} has a concurrent branch change`);
     return existingSha;
@@ -331,12 +329,12 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
       || !compare.files?.length || compare.files.length > 50) {
     throw Error(`Unbounded/non-fast-forward prepared change ${task.id}`);
   }
-  const scopeError = chatgptRefHandoffScopeError(compare.files.map(file => file.filename));
+  const scopeError = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
   if (scopeError) throw Error(`Unsafe prepared commit ${task.id}: ${scopeError}`);
   // Prevent stale observations from being delivered after a rival Worker
   // or the Task controller has changed its revision/claim/checkpoint.
   const current = await seoTaskGet({ id: task.id });
-  if (!isChatgptHandoff(current) || current.revision !== task.revision
+  if (!isPreparedRefHandoff(current) || current.revision !== task.revision
       || current.deliveryHandoff.headSha !== h.headSha
       || current.deliveryHandoff.baseSha !== h.baseSha) {
     console.log(`Waiting: ${task.id} checkpoint changed`);
@@ -346,7 +344,7 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
     console.log(`[dry-run] would fast-forward ${task.repo} ${h.branch} -> ${h.headSha}`);
     return existingSha;
   }
-  // Even an already-existing exact branch must pass the same provenance and scope checks.
+  // An existing exact branch must pass the same provenance and scope checks.
   if (existingSha === h.headSha) return existingSha;
   const refPath = `/git/refs/heads/${encodeURIComponent(h.branch)}`;
   if (existingSha === null) {
@@ -362,27 +360,29 @@ async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string |
     body: JSON.stringify({ sha: h.headSha, force: false })
   });
   const actual = await branchSha(task.repo, h.branch);
-  if (actual !== h.headSha) throw Error(`ChatGPT ref readback mismatch ${task.id}`);
-  console.log(`ChatGPT prepared ref delivered: ${task.id} ${h.branch}@${actual}`);
+  if (actual !== h.headSha) throw Error(`Prepared ref readback mismatch ${task.id}`);
+  console.log(`SEO prepared ref delivered: ${task.id} ${h.branch}@${actual}`);
   return actual;
 }
 
 async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
-  // An old or unmarked ChatGPT claim is NOT a grant to retry a refused write.
-  if (task.executionClaim?.actor === CHATGPT_ACTOR) {
-    if (!isChatgptHandoff(task)) {
-      console.log(`Waiting: ${task.id} ChatGPT checkpoint lacks an authorized v1 marker`);
-      return task;
-    }
-    const gateError = chatgptRefHandoffPreflight(
+  // Legacy direct-push checkpoints stay intact. A declared prepared-ref checkpoint
+  // uses the same gate regardless of Worker runtime; an unmarked ChatGPT
+  // checkpoint is not an authorization to recover a failed direct push.
+  if (task.executionClaim?.actor === 'chatgpt_seo_worker' && !isPreparedRefHandoff(task)) {
+    console.log(`Waiting: ${task.id} ChatGPT checkpoint lacks an authorized prepared-ref marker`);
+    return task;
+  }
+  if (isPreparedRefHandoff(task)) {
+    const gateError = preparedRefHandoffPreflight(
       task, activeSites,
-      process.env.SEO_CHATGPT_REF_HANDOFF_ENABLED,
-      process.env.SEO_CHATGPT_REF_HANDOFF_NOT_BEFORE
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
     );
     if (gateError) {
-      console.log(`Waiting: ${task.id} ChatGPT handoff gate: ${gateError}`);
+      console.log(`Waiting: ${task.id} prepared-ref gate: ${gateError}`);
       return task;
     }
   }
@@ -399,8 +399,8 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
     actualBranchSha = null;
   }
   // Validate opted-in ChatGPT provenance even if somebody has already pushed the SHA.
-  if (isChatgptHandoff(task) || actualBranchSha !== handoff.headSha) {
-    actualBranchSha = await pushChatgptPreparedRef(task, actualBranchSha);
+  if (isPreparedRefHandoff(task) || actualBranchSha !== handoff.headSha) {
+    actualBranchSha = await pushPreparedRef(task, actualBranchSha);
   }
   if (actualBranchSha === null) {
     console.log(`Waiting: ${task.id} push_pending branch is not visible remotely yet: ${handoff.branch}`);
@@ -527,7 +527,7 @@ async function processTask(task: SeoTaskRecord) {
   }
 
   if (handoff.validationSummary.startsWith(ACTIONS_MARKER) && !checks.passedPullRequestActions) {
-    console.log(`Waiting: ${task.id} ChatGPT delivery requires a completed successful Actions run for PR #${pr.number}.`);
+    console.log(`Waiting: ${task.id} Prepared-commit delivery requires a completed successful Actions run for PR #${pr.number}.`);
     return;
   }
 
