@@ -212,9 +212,9 @@ try {
     'push_pending must shorten the execution lease to at most 15 minutes'
   );
 
-  // ChatGPT's opt-in central-delivery checkpoint cannot be stolen by Groq
-  // after the shortened 15-minute lease. Ordinary Groq pushes still use the
-  // existing path, validated by the smoke-run-0001 handoff above.
+  // A prepared-commit central-delivery checkpoint is reserved for Actions
+  // regardless of Worker runtime. Ordinary direct-push Groq handoffs still
+  // follow their original reclaim path, tested above.
   const chatgptReady = await seoTaskCreate({
     id: 'seo-chatgpt-handoff-test',
     siteId: 'site-a',
@@ -273,6 +273,52 @@ try {
   const stillPending = await seoTaskGet({ id: chatgptReady.id });
   assert.equal(stillPending.revision, expiredChatgpt.revision);
   assert.equal(stillPending.deliveryHandoff.state, 'push_pending');
+
+  // The exact same lock applies if the prepared-commit transport is used
+  // by an ordinary seo_worker actor (not just a chatgpt_seo_worker).
+  const preparedGroqReady = await seoTaskCreate({
+    id: 'seo-groq-prepared-handoff-test',
+    siteId: 'site-a',
+    targetUrls: ['https://example.com/groq-prepared-claim-probe'],
+    repo: 'nomuonji/site-a',
+    taskType: 'revise',
+    title: 'Verify shared Actions prepared-ref ownership',
+    rationale: 'Test shared transport rather than runtime identity.',
+    evidence: ['Isolated workflow test fixture.'],
+    dedupeKey: 'site-a:groq-prepared-handoff-probe'
+  });
+  const preparedGroqClaimed = await seoTaskClaim({
+    id: preparedGroqReady.id, expectedRevision: preparedGroqReady.revision,
+    actor: 'seo_worker', runId: 'groq-prepared-run-01'
+  });
+  const preparedGroqPending = await seoTaskUpdate({
+    id: preparedGroqReady.id, expectedRevision: preparedGroqClaimed.revision,
+    claimRunId: 'groq-prepared-run-01',
+    deliveryHandoff: {
+      state: 'push_pending',
+      branch: 'seo/groq-prepared-handoff-probe',
+      headSha: 'c'.repeat(40),
+      baseSha: 'b'.repeat(40),
+      validationSummary: 'Action-Ref-Handoff: v1\\nVerified transport-only fixture.',
+      handedOffAt: null, prNumber: null, prUrl: null, lastError: '',
+      updatedAt: '2026-10-13T00:00:00.000Z'
+    }
+  });
+  const preparedGroqDocPath = `${root}seoTasks/${preparedGroqReady.id}`;
+  const preparedGroqDoc = docs.get(preparedGroqDocPath);
+  assert.ok(preparedGroqDoc);
+  docs.set(preparedGroqDocPath, {
+    ...preparedGroqDoc,
+    fields: {
+      ...preparedGroqDoc.fields,
+      executionClaim: field({ ...preparedGroqPending.executionClaim, expiresAt: '2000-01-01T00:00:00.000Z' })
+    }
+  });
+  const expiredPreparedGroq = await seoTaskGet({ id: preparedGroqReady.id });
+  await assert.rejects(seoTaskClaim({
+    id: preparedGroqReady.id, expectedRevision: expiredPreparedGroq.revision,
+    actor: 'seo_worker', runId: 'groq-prepared-run-02'
+  }), /Pending centralized Actions handoff cannot be reclaimed/);
 
   const handedOffTask = await seoTaskUpdate({
     id: readyTask.id,
