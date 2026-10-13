@@ -16,7 +16,7 @@ This adds **a quality acceptance obligation**, not a new Worker policy-planning 
 
 ## 1. Worker responsibility
 
-The Worker owns **implementation through a crash-recoverable `seo/*` push sequence: `push_pending` before remote push, then verified `branch_ready` after remote HEAD readback**.
+The Worker implements and validates one real Task, then creates a **verified unreferenced GitHub commit** and records `deliveryHandoff=push_pending`. For all new Tasks (both ChatGPT and Groq), the central GitHub Action alone attaches the commit to a `seo/*` branch and promotes `branch_ready`. Previously in-flight direct-push deliveries may drain; do not replay earlier rejected changes.
 
 The Worker does **not** create/update pull requests or merge to the repository default branch. Those mutations belong to an external GitHub delivery lane. The Worker also does not own the hosting platform, production deployment, cache propagation, or unrelated pre-existing build/deployment failures. A later delivery/reconciliation step records completion only after the exact change is observed on the default branch.
 
@@ -26,9 +26,9 @@ The Worker does **not** create/update pull requests or merge to the repository d
 | Verify current repository state and task scope | yes |
 | Implement the requested bounded change | yes |
 | Validate the change with available targeted/build/CI evidence | yes |
-| Create local `seo/*` commit and persist `deliveryHandoff=push_pending` before remote push | **yes** |
-| Push/update dedicated `seo/*` implementation branch | **yes** |
-| Verify remote HEAD, persist `deliveryHandoff=branch_ready`, release execution claim | **yes** |
+| Create verified unreferenced GitHub commit (blob/tree/commit) and persist task-bound `push_pending` | **yes** |
+| Create/update remote `seo/*` branch reference or push | **no** — central Action |
+| Verify remote HEAD and persist `branch_ready`, release execution claim | **no** — central Action |
 | Create/update PR | **no** — centralized delivery controller |
 | Gate on PR CI and merge to main | **no** — centralized delivery controller |
 | Record actual main result SHA / set `completed` | **no** — centralized delivery controller after merge |
@@ -68,9 +68,9 @@ A Worker execution is an **ephemeral run**, not a durable identity. A later sche
 
 1. Call `seo_agent_context(role=executor)` and read the minimal `executionGate` (the macro investment policy is deliberately excluded). The current Macro Policy is enforced by `seo_task_claim`; do not infer a freeze or new investment permission from an old hard-coded incident category. Claim only a real assigned task. The Worker does not allocate portfolio resources. A task already in `in_progress` (including a valid same-run claim refresh or lease-safe reclaim) and a task in `push_pending` / `branch_ready` / `pr_open` continue through their existing execution and delivery paths; this is not a hard emergency stop.
 2. List `in_progress` work before new `ready` work. Read both `executionClaim` and `deliveryHandoff`.
-   - `deliveryHandoff.state = push_pending`: inspect the recorded branch/head SHA first. If the remote `seo/*` branch already exists at that exact SHA, promote to `branch_ready` rather than reimplementing; the central delivery controller can perform the same exact-HEAD reconciliation. If the remote branch is absent or still at an older SHA, the active Worker may still be pushing; after the short lease expires, reclaim only if needed.
+   - `deliveryHandoff.state = push_pending`: for post-cutover prepared handoffs, the central Action owns the commit/ref reconciliation, even if the branch is already visible. Do not reclaim or promote it merely because the remote ref is absent or awaiting the next Actions run. For a legacy pre-cutover direct-push checkpoint, use the prior exact-HEAD recovery contract without replaying rejected changes.
    - `deliveryHandoff.state = branch_ready | pr_open`: external delivery is active; do **not** reclaim merely to create/merge a PR.
-   - `deliveryHandoff.state = ci_failed`: reclaim for a corrective Worker pass, inspect the failed CI evidence, fix the same implementation branch, and repeat the `push_pending -> branch_ready` sequence.
+   - `deliveryHandoff.state = ci_failed`: reclaim only for real implementation/CI correction. For a prepared-ref Task, create one corrective Git commit whose sole parent is the **current exact task branch HEAD**, then save a fresh `push_pending` checkpoint for the Action; do not force-update the branch.
    - otherwise, `executionClaim = null` or expired: legacy/stale implementation work is reclaimable when still valid.
    - unexpired claim: another execution may still be active; do not seize it.
 3. For reclaimable work, inspect the current GitHub default branch, implementation branch, Task history/handoff and acceptance scope. Continue from the furthest verified artifact instead of starting over.
@@ -139,7 +139,7 @@ A well-scoped pilot does not need proof of traffic uplift before implementation.
 
 For every article-level intervention, resolve the target by normalized canonical URL in `site_article_list/get`. If missing, verify the exact current default-branch source path, title and site/repository mapping, then register only that target with `site_article_save`; never fabricate a repoPath or publication time, and do not import the entire portfolio. Refresh the Task with `seo_task_update` and read it back: URL-based Tasks automatically attach matching registered articles. An empty article registry is not permission to skip experiment tracking. If registration is genuinely impossible, keep the implementation moving and persist the exact missing mapping plus a concrete tracking follow-up in Task history.
 
-For registered articles, inspect `optimization_context`, reuse the linked event, or create a `proposed` event containing the Task ID, hypothesis, planned baseline dates, metric limitations and rollback. Put the event ID and before/after commit evidence in Task history/summary. Leave it proposed until actual production publication is observed. Tracking problems must be reported, but do not silently turn a valid implementation into an audit-only result. The Planner handles due outcome reviews; the Worker finishes its run after verified `seo/*` branch push and durable delivery handoff, while the Task remains `in_progress` until external default-branch delivery is later observed.
+For registered articles, inspect `optimization_context`, reuse the linked event, or create a `proposed` event containing the Task ID, hypothesis, planned baseline dates, metric limitations and rollback. Put the event ID and before/after commit evidence in Task history/summary. Leave it proposed until actual production publication is observed. Tracking problems must be reported, but do not silently turn a valid implementation into an audit-only result. The Planner handles due outcome reviews; the Worker finishes its run after verified unreferenced Git commit creation and durable `push_pending` handoff, while the Task remains `in_progress` until external default-branch delivery is later observed.
 
 ### Pre-existing unrelated failures
 
@@ -154,68 +154,54 @@ When a targeted/local/repository check fails:
 
 The Worker does not create or mutate PRs to obtain preview checks. PR/merge CI, preview deployment checks, and merge-gate handling belong to the external delivery lane. A later reconciler may inspect their evidence when deciding whether the exact implementation reached the default branch.
 
-## 5. Crash-recoverable branch push and centralized delivery handoff
+## 5. Unified prepared-commit Actions handoff (new Tasks)
 
-A verified implementation branch plus a structured handoff is the successful Worker result. The push itself is protected by a write-ahead checkpoint.
+Both ChatGPT and Groq use the **same** transport for Tasks created at or after the authorized rollout cutoff (2026-10-13T05:50:00.000Z). This is a task creation cutoff, **not** authorization to replay older, refused or unauthorized content. Older already-running `branch_ready`/`pr_open` deliveries may finish under the legacy contract. A Worker that cannot create and verify GitHub Git objects must **not claim a new Task**.
 
-1. Use a dedicated `seo/*` branch for the Task. Reuse the existing Task branch when resuming.
-2. Self-review the complete diff against the Task acceptance criteria.
-3. Run available targeted/local repository validation.
-4. Create the local commit **before** pushing. Every Worker-created commit on an `seo/*` branch must start its subject with `[CF-Pages-Skip]`.
-5. Read the exact local commit SHA that will become the remote branch HEAD.
-6. **Before remote push**, call `seo_task_update` with the active `claimRunId` and persist:
-   - `state: "push_pending"`;
-   - `branch`;
-   - `headSha` = exact local commit SHA about to be pushed;
-   - `baseSha`;
-   - `validationSummary`;
-   - `handedOffAt: null`;
-   - null PR fields and empty `lastError`;
-   - append `delivery_push_pending`.
-7. Read the Task back and verify `status=in_progress`, `deliveryHandoff.state=push_pending`, the exact expected SHA, and that the execution claim still exists. The push-pending lease is shortened to 15 minutes.
-8. Push/update the remote `seo/*` branch.
-9. Read the remote branch HEAD from GitHub.
-   - If it does not exactly equal the recorded `headSha`, do **not** publish `branch_ready`.
-   - If it exactly matches, update the same handoff to `state: "branch_ready"`, set `handedOffAt`, append `delivery_handoff_ready`, and keep Task `status=in_progress`.
-10. Read the Task back and verify `branch_ready` plus `executionClaim=null`. Writing `branch_ready` intentionally releases the Worker lease.
-11. **Do not call GitHub PR creation/update, auto-merge, or merge mutations from the Worker.**
+1. Before claiming, check the exact active site/repo, Task state/lease and GitHub default branch. Check the exact desired branch `seo/<task-id>` is absent for a new Task. Do not claim if an existing branch or PR is owned by another Task/run or any applicable write was previously denied.
+2. Verify implementation scope and sources, then implement the full bounded change and perform the meaningful repository validation and diff review. The changed paths must be within the actual Task scope and the central Action's allowlist; the Action rejects sensitive configuration, workflows, secrets, lockfiles, deploy files and more than 50 changed paths.
+3. Use GitHub's authorized Git object creation operations (blob/tree/commit) to create **one unreferenced commit**. Its sole parent must be the exact observed default branch HEAD. For a genuine `ci_failed` correction of an existing Task branch, use that branch's exact current HEAD as the sole parent, so its update is a non-force fast-forward; preserve existing PR/CI ownership.
+4. Every prepared source commit subject starts with `[CF-Pages-Skip]`. Check the exact 40-hex commit SHA, its one parent, and the changed tree/files by reading back the GitHub objects. Do not push or create/update refs, including via `git push`, `update_ref`, or equivalent.
+5. After verifying source and commit, write **one** `seo_task_update` using the active `claimRunId`, keeping `status=in_progress` and recording:
+   - `deliveryHandoff.state="push_pending"`;
+   - `branch="seo/<task-id>"`;
+   - `headSha` = verified unreferenced commit SHA, `baseSha` = verified sole parent SHA;
+   - `validationSummary` **begins exactly** with `Action-Ref-Handoff: v1\n` followed by actual checks/diff evidence;
+   - `handedOffAt:null`, `prNumber:null`, `prUrl:null`, `lastError:""`, and `updatedAt` = real current ISO timestamp;
+   - append `delivery_push_pending` history.
+6. Read back the Sites Operator Task. Confirm exact checkpoint SHA, marker, branch, active claim and revision. **Stop the Worker run**. Neither remote branch creation nor PR creation/merge is a Worker action.
+7. The central scheduled GitHub Action independently checks the active Site Registry, task creation cutoff, claim, task-bound branch, prior refusal history, Git object parent and allowable diff. It non-force fast-forwards `seo/<task-id>`, reads back the exact remote HEAD, sets `branch_ready` and releases the Worker claim, then creates/reuses PR, observes successful repository PR Actions CI, merges, writes resultCommitSha/completed, and cleans the branch. If base/main advances before an initial ref is created or a concurrent ref wins, **stop and re-evaluate**; no force push or automatic replay.
+8. If Actions reports `ci_failed`, the Worker may perform a genuinely new corrective pass with fresh evidence and a new valid child commit of the existing branch HEAD. Old PRs with merge conflicts are not automatically rewritten by the Worker.
 
-If the Worker dies after step 8 but before step 9/10, the central delivery controller checks the remote branch. It may promote `push_pending -> branch_ready` **only when the remote HEAD exactly equals the pre-push `headSha`**. Therefore a successful push is not lost merely because the Worker session ends before the post-push write.
-
-Example pre-push checkpoint:
+### Example of the Worker-side final checkpoint
 
 ```json
 {
   "id": "<task-id>",
   "expectedRevision": 7,
-  "claimRunId": "<executionClaim.runId>",
+  "claimRunId": "<active-executionClaim.runId>",
   "deliveryHandoff": {
     "state": "push_pending",
-    "branch": "seo/example-change",
-    "headSha": "<exact-local-commit-sha>",
-    "baseSha": "<base-sha>",
-    "validationSummary": "<actual validation result>",
+    "branch": "seo/<task-id>",
+    "headSha": "<verified-new-unreferenced-commit-sha>",
+    "baseSha": "<verified-single-parent-sha>",
+    "validationSummary": "Action-Ref-Handoff: v1\\nActual validation and diff receipt",
     "handedOffAt": null,
     "prNumber": null,
     "prUrl": null,
     "lastError": "",
-    "updatedAt": "2026-10-04T00:00:00.000Z"
+    "updatedAt": "<current-iso-timestamp>"
   },
   "appendHistory": {
-    "actor": "seo_worker",
+    "actor": "chatgpt_seo_worker or seo_worker",
     "event": "delivery_push_pending",
-    "detail": "Write-ahead checkpoint persisted before remote push."
+    "detail": "Verified GitHub commit objects and wrote the prepared-ref handoff."
   }
 }
 ```
 
-After exact remote HEAD verification, publish `branch_ready`. Do not set `resultCommitSha` to a feature-branch SHA.
-
-The centralized `keywords` GitHub Action owns:
-
-`push_pending reconciliation -> branch_ready -> PR creation -> pr_open -> repository CI gate -> main merge -> resultCommitSha -> completed -> seo/* branch deletion`
-
-Hosting preview checks are not merge gates. Genuine implementation/repository-CI failures use `ci_failed`, while Task status remains `in_progress`.
+The central Action owns:
+`push_pending -> create/update seo/* ref -> verify remote HEAD -> branch_ready -> PR -> CI -> merge -> resultCommitSha -> completed -> merged branch cleanup`.
 
 ## 6. Completion is controller-owned
 
@@ -237,7 +223,7 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 
 Therefore, a Worker must **not spend a later run solely to mark a successfully merged handoff completed**. The controller changes Task status from `in_progress` to `completed` only after merge.
 
-If `deliveryHandoff.state=ci_failed`, the Worker may reclaim the Task because corrective implementation work is again required. After fixing and pushing the same dedicated branch, publish a fresh `branch_ready` handoff.
+If `deliveryHandoff.state=ci_failed`, the Worker may reclaim the Task because corrective implementation work is again required. For a post-cutover task, create a valid child commit of the exact current task branch HEAD and publish a new `push_pending` checkpoint; the central Action handles the non-force ref update and `branch_ready`.
 
 ## 7. Optional production observation
 
@@ -294,18 +280,18 @@ Report:
 - actual validation performed;
 - branch HEAD/base SHA and structured `deliveryHandoff` state;
 - validation summary and any CI failure returned by the centralized delivery lane;
-- final Worker-side Sites Operator status/revision (normally `in_progress + branch_ready`);
+- final Worker-side Sites Operator status/revision (normally `in_progress + push_pending`);
 - deploymentVerification status separately;
 - any unrelated build/deploy problem as a separate note.
 
 A good final line is:
 
-> Implementation pushed to `seo/*`; `deliveryHandoff=branch_ready` recorded and Worker claim released. Central delivery owns PR/CI/merge/completion.
+> Verified unreferenced GitHub commit created; `deliveryHandoff=push_pending` recorded and read back. Central Actions owns the ref/PR/CI/merge/completion.
 
-Do not say “completed” merely because the implementation branch was pushed. Only say “completed” after the exact change is observed on the repository default branch. Do not say “production verified” without an actual production check.
+Do not say “completed” merely because the prepared commit was created or a branch was updated. Only say “completed” after the exact change is observed on the repository default branch. Do not say “production verified” without an actual production check.
 
 ### Minimal bootstrap
 
 ```text
-Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor) and follow its latest policy/run contract and canonical Worker Manual. Treat this session as a new ephemeral run. Inspect in_progress executionClaim + deliveryHandoff first. For push_pending, compare the recorded expected headSha with the remote seo/* branch before doing new implementation; exact remote match can be promoted to branch_ready. Never reclaim branch_ready/pr_open just to create or merge a PR; reclaim ci_failed only for genuine implementation/repository-CI correction. Implement and validate one real task, create a local seo/* commit whose subject begins [CF-Pages-Skip], then BEFORE remote push persist deliveryHandoff.state=push_pending with branch, exact local headSha, baseSha and validationSummary. Read it back, push, read the remote branch HEAD, and only on exact SHA match persist branch_ready with handedOffAt; branch_ready releases executionClaim. Do not create/update PRs or merge to main. Task status stays in_progress through push_pending/branch_ready/pr_open; centralized Keywords GitHub Actions owns PR, repository CI, merge, resultCommitSha, completed, and merged branch deletion.
+Run the Sites Operator SEO Worker once. First call seo_agent_context(role=executor), then follow the exact current Task and canonical Worker Manual. Reconcile existing claims and central-delivery handoffs without competing with another Worker. Select one genuine executable Task only. Verify Git object creation capability before claiming; implement and validate; create a task-scoped unreferenced Git commit whose subject begins [CF-Pages-Skip]. Read back commit, parent, tree and changed paths. Persist Action-Ref-Handoff: v1 prepared push_pending with exact seo/<task-id> branch, commit SHA, parent SHA, checks and claimRunId. Verify the Task checkpoint and stop. Do not push/create/update refs or make PR/merge changes. Central GitHub Actions owns remote branch, PR/CI/merge and completed. No Task is a valid zero-work result.
 ```

@@ -6,6 +6,35 @@ import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operatio
  * The controller must opt in with a post-review cutoff; historic rejected work
  * must not become eligible just because someone rewrites a checkpoint.
  */
+// New assignments use one shared commit-object -> Actions ref handoff. Legacy
+// already-running deliveries are allowed to drain; this is not retrospective
+// authorization for old or previously rejected task content.
+export const PREPARED_REF_CUTOVER_UTC = '2026-10-13T05:50:00.000Z';
+
+export function preparedHandoffRequired(task: Pick<SeoTaskRecord, 'createdAt'>): boolean {
+  const created = Date.parse(task.createdAt);
+  return !Number.isFinite(created) || created >= Date.parse(PREPARED_REF_CUTOVER_UTC);
+}
+
+/**
+ * Verify the base for either a first prepared branch or a CI-corrective fast-forward.
+ * A corrective commit may start from the existing task branch ONLY after a
+ * recorded CI delivery failure; arbitrary stale-base branches fail closed.
+ */
+export function preparedRefBaseError(
+  task: Pick<SeoTaskRecord, 'history'>,
+  existingSha: string | null,
+  defaultHead: string,
+  baseSha: string
+): string | null {
+  if (existingSha === null && defaultHead !== baseSha) return 'default branch has advanced; Worker rebase required';
+  if (existingSha === baseSha && defaultHead !== baseSha
+      && !task.history?.some(event => event.event === 'delivery_failed')) {
+    return 'non-default base is allowed only for an existing CI-failed branch';
+  }
+  return null;
+}
+
 export function preparedRefHandoffPreflight(
   task: SeoTaskRecord,
   activeSites: readonly Pick<SiteRecord, 'id' | 'repository' | 'status'>[],
@@ -18,7 +47,7 @@ export function preparedRefHandoffPreflight(
     return 'Prepared-commit Actions handoff requires an explicit ISO UTC rollout cutoff';
   }
   const created = Date.parse(task.createdAt);
-  if (!Number.isFinite(created) || created < cutoff) {
+  if (!Number.isFinite(created) || created < Math.max(cutoff, Date.parse(PREPARED_REF_CUTOVER_UTC))) {
     return 'Task predates the explicitly authorized rollout; historical work is not eligible';
   }
   const site = activeSites.find(row => row.id === task.siteId && row.status === 'active');

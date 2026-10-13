@@ -856,7 +856,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.31.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.32.0');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
@@ -924,19 +924,19 @@ try {
   assert.match(executorPolicy.structuredContent.contentQualityExecution.gate, /rewrite and recheck/);
 
   assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /\[CF-Pages-Skip\]/);
-  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Centralized Keywords GitHub Actions/);
-  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /deletes the merged seo\/\* branch/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state:push_pending/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /BEFORE the remote push/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=branch_ready/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Do NOT create\/update PRs/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /centralized controller may promote push_pending/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /Central Keywords GitHub Actions/);
+  assert.match(executorPolicy.structuredContent.runContract.deliveryDefault, /branch cleanup/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=push_pending/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /unreferenced GitHub Git commit/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /branch_ready/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /must not create\/update refs/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Central Actions validates/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Task status remains in_progress throughout push_pending, branch_ready and pr_open/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Task stays in_progress across push_pending, branch_ready and pr_open/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ephemeral run/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
-  assert.match(executorPolicy.structuredContent.runContract.claimModel, /not a persistent worker\/session identity/);
+  assert.match(executorPolicy.structuredContent.runContract.claimModel, /temporary run lease/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /expectedRevision/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');

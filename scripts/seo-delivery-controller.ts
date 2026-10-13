@@ -6,7 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -310,9 +310,12 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
     return existingSha;
   }
   const repository = await repoInfo(task.repo);
-  const mainHead = existingSha === h.headSha ? h.baseSha : await branchSha(task.repo, repository.default_branch);
-  if (mainHead !== h.baseSha) {
-    console.log(`Waiting: ${task.id} base branch has advanced; Worker rebase required`);
+  const defaultHead = await branchSha(task.repo, repository.default_branch);
+  // Initial branch bases must match main; CI-failed task branches may safely
+  // accept a one-parent corrective child of their exact existing ref.
+  const baseError = preparedRefBaseError(task, existingSha, defaultHead, h.baseSha);
+  if (baseError) {
+    console.log(`Waiting: ${task.id} ${baseError}`);
     return existingSha;
   }
   const commit = await gh<{ message: string; parents: { sha: string }[] }>(
@@ -368,11 +371,12 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
 async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
-  // Legacy direct-push checkpoints stay intact. A declared prepared-ref checkpoint
-  // uses the same gate regardless of Worker runtime; an unmarked ChatGPT
-  // checkpoint is not an authorization to recover a failed direct push.
-  if (task.executionClaim?.actor === 'chatgpt_seo_worker' && !isPreparedRefHandoff(task)) {
-    console.log(`Waiting: ${task.id} ChatGPT checkpoint lacks an authorized prepared-ref marker`);
+  // All post-cutover Workers use the same prepared-ref transport. Historic
+  // in-flight direct-push checkpoints may drain; no new direct-push handoff
+  // is accepted, regardless of which Worker runtime wrote it.
+  if ((preparedHandoffRequired(task) || task.executionClaim?.actor === 'chatgpt_seo_worker')
+      && !isPreparedRefHandoff(task)) {
+    console.log(`Waiting: ${task.id} requires an authorized prepared-ref marker`);
     return task;
   }
   if (isPreparedRefHandoff(task)) {
@@ -398,7 +402,7 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
     if (!/GitHub 404 Not Found/.test(String(error))) throw error;
     actualBranchSha = null;
   }
-  // Validate opted-in ChatGPT provenance even if somebody has already pushed the SHA.
+  // Validate prepared-commit provenance for both Worker runtimes, including an existing exact ref.
   if (isPreparedRefHandoff(task) || actualBranchSha !== handoff.headSha) {
     actualBranchSha = await pushPreparedRef(task, actualBranchSha);
   }
@@ -454,9 +458,12 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
 async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']) {
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
-  // A prepared-ref checkpoint does not become exempt from its rollout gate
-  // merely by progressing to branch_ready or pr_open. Direct-push checkpoints
-  // without the marker continue under the unchanged Groq delivery contract.
+  // Post-cutover tasks must use prepared commits even when a branch happens
+  // to exist already; pre-cutover in-flight direct-push PRs can still drain.
+  if (preparedHandoffRequired(task) && !handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
+    console.log(`Waiting: ${task.id} new task lacks mandatory prepared-ref marker`);
+    return;
+  }
   if (handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
     const gateError = preparedRefHandoffPreflight(
       task, activeSites,

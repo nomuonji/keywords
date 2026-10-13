@@ -4,9 +4,15 @@ Centralized delivery lane for Sites Operator SEO Worker branches.
 
 ## Ownership
 
-Workers stop after:
+For new Tasks (created on or after 2026-10-13T05:50:00Z), **both ChatGPT and Groq Workers** stop after:
 
-`implementation -> validation -> seo/* branch push -> deliveryHandoff.state=branch_ready`
+`implementation -> validation -> unreferenced Git commit object -> deliveryHandoff.state=push_pending`
+
+They must not create/update refs. Central Actions independently validates the checkpoint and Git object and owns:
+
+`push_pending -> non-force seo/* ref update + SHA readback -> branch_ready -> PR -> CI -> merge -> completed`
+
+Older, already in-flight direct-push handoffs are allowed to drain through their existing PRs; this does not authorize retrying rejected historic work.
 
 The controller in `.github/workflows/seo-delivery-controller.yml` owns:
 
@@ -38,8 +44,9 @@ If `SEO_DELIVERY_GITHUB_TOKEN` is absent, the scheduled workflow exits successfu
 
 ## Schedule and state machine
 
-The controller runs hourly and can also be dispatched manually.
+The controller runs at minutes 07 and 37 of each hour via GitHub Actions and can also be dispatched manually.
 
+- `push_pending`: for a new task, validate the active repo/Task/claim and marker `Action-Ref-Handoff: v1`, exact task-bound ref, commit sole parent and allowed changed paths; create/fast-forward the ref without force and promote only after exact readback.
 - `branch_ready`: verify the recorded branch/head SHA and create/reuse a PR.
 - `pr_open`: wait while observed checks/statuses are pending.
 - failing check/status: write `ci_failed`; a later Worker may reclaim and repair the branch.
@@ -53,7 +60,7 @@ When a repository exposes no checks at all, the controller waits through a short
 ## Safety constraints
 
 - only active Sites Operator repositories are eligible;
-- only `seo/*` branches are accepted;
+- only exact task-bound `seo/<task-id>` refs are accepted for prepared commits; pre-cutover legacy in-flight branches may retain their original `seo/*` names;
 - recorded branch HEAD must exactly match the current GitHub branch HEAD;
 - a mismatched or missing branch is marked `ci_failed` instead of being merged;
 - feature-branch SHA is never written as `resultCommitSha`;
