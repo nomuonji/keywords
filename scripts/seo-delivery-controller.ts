@@ -6,8 +6,10 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
+const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
 const noCheckGraceMs = Math.max(60_000, Math.min(Number(process.env.SEO_DELIVERY_NO_CHECK_GRACE_MS ?? 120_000), 30 * 60_000));
@@ -35,6 +37,7 @@ type CheckSummary = {
   failed: string[];
   passed: string[];
   observed: number;
+  passedPullRequestActions: boolean;
 };
 
 const ghHeaders = {
@@ -136,7 +139,7 @@ async function optionalGitHubSignal<T>(url: string): Promise<T | null> {
   }
 }
 
-async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
+async function checkSummary(repo: string, sha: string, prNumber: number): Promise<CheckSummary> {
   const actionParams = new URLSearchParams({ head_sha: sha, per_page: '100' });
   const [actions, checks, combined] = await Promise.all([
     gh<{ workflow_runs: any[] }>(api(repo, `/actions/runs?${actionParams}`)),
@@ -175,7 +178,10 @@ async function checkSummary(repo: string, sha: string): Promise<CheckSummary> {
     else failed.push(`${name}=${status.state ?? 'unknown'}`);
   }
 
-  return { pending, failed, passed, observed: pending.length + failed.length + passed.length };
+  return {
+    pending, failed, passed, observed: pending.length + failed.length + passed.length,
+    passedPullRequestActions: preparedHandoffHasPassedPrCi(actions.workflow_runs ?? [], prNumber)
+  };
 }
 
 function mergeMethod(info: GitHubRepo): 'squash' | 'merge' | 'rebase' {
@@ -284,23 +290,122 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
   await deleteMergedBranch(task.repo, current.deliveryHandoff.branch ?? '');
 }
 
-async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord> {
+
+function isPreparedRefHandoff(task: SeoTaskRecord): boolean {
+  return task.status === 'in_progress'
+    && task.deliveryHandoff?.state === 'push_pending'
+    && task.deliveryHandoff.validationSummary?.startsWith(ACTIONS_MARKER) === true;
+}
+
+// Prepared commits are an opt-in transport usable by either Worker runtime. Never
+// be used to replay content for which another tool/safety gate rejected a write.
+async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null): Promise<string | null> {
+  if (!isPreparedRefHandoff(task)) return existingSha;
+  const h = task.deliveryHandoff;
+  if (!h.branch || !h.headSha || !h.baseSha) return existingSha;
+  if (!/^seo\/[A-Za-z0-9._/-]+$/.test(h.branch) || !/^[a-f0-9]{40}$/.test(h.baseSha)
+      || !/^[a-f0-9]{40}$/.test(h.headSha)) throw Error(`Malformed prepared-commit checkpoint ${task.id}`);
+  if (existingSha !== null && existingSha !== h.baseSha && existingSha !== h.headSha) {
+    console.log(`Waiting: ${task.id} has a concurrent branch change`);
+    return existingSha;
+  }
+  const repository = await repoInfo(task.repo);
+  const mainHead = existingSha === h.headSha ? h.baseSha : await branchSha(task.repo, repository.default_branch);
+  if (mainHead !== h.baseSha) {
+    console.log(`Waiting: ${task.id} base branch has advanced; Worker rebase required`);
+    return existingSha;
+  }
+  const commit = await gh<{ message: string; parents: { sha: string }[] }>(
+    api(task.repo, `/git/commits/${h.headSha}`)
+  );
+  if (!commit.message?.startsWith('[CF-Pages-Skip]') || commit.parents?.length !== 1
+      || commit.parents[0].sha !== h.baseSha) throw Error(`Invalid prepared commit ${task.id}`);
+  const compare = await gh<{
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit: { sha: string }; files: { filename: string }[];
+  }>(api(task.repo, `/compare/${h.baseSha}...${h.headSha}`));
+  if (compare.status !== 'ahead' || compare.ahead_by !== 1 || compare.behind_by !== 0
+      || compare.merge_base_commit?.sha !== h.baseSha
+      || !compare.files?.length || compare.files.length > 50) {
+    throw Error(`Unbounded/non-fast-forward prepared change ${task.id}`);
+  }
+  const scopeError = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
+  if (scopeError) throw Error(`Unsafe prepared commit ${task.id}: ${scopeError}`);
+  // Prevent stale observations from being delivered after a rival Worker
+  // or the Task controller has changed its revision/claim/checkpoint.
+  const current = await seoTaskGet({ id: task.id });
+  if (!isPreparedRefHandoff(current) || current.revision !== task.revision
+      || current.deliveryHandoff.headSha !== h.headSha
+      || current.deliveryHandoff.baseSha !== h.baseSha) {
+    console.log(`Waiting: ${task.id} checkpoint changed`);
+    return existingSha;
+  }
+  if (dryRun) {
+    console.log(`[dry-run] would fast-forward ${task.repo} ${h.branch} -> ${h.headSha}`);
+    return existingSha;
+  }
+  // An existing exact branch must pass the same provenance and scope checks.
+  if (existingSha === h.headSha) return existingSha;
+  const refPath = `/git/refs/heads/${encodeURIComponent(h.branch)}`;
+  if (existingSha === null) {
+    await gh(api(task.repo, '/git/refs'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${h.branch}`, sha: h.baseSha })
+    });
+  }
+  await gh(api(task.repo, refPath), {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sha: h.headSha, force: false })
+  });
+  const actual = await branchSha(task.repo, h.branch);
+  if (actual !== h.headSha) throw Error(`Prepared ref readback mismatch ${task.id}`);
+  console.log(`SEO prepared ref delivered: ${task.id} ${h.branch}@${actual}`);
+  return actual;
+}
+
+async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
+  // Legacy direct-push checkpoints stay intact. A declared prepared-ref checkpoint
+  // uses the same gate regardless of Worker runtime; an unmarked ChatGPT
+  // checkpoint is not an authorization to recover a failed direct push.
+  if (task.executionClaim?.actor === 'chatgpt_seo_worker' && !isPreparedRefHandoff(task)) {
+    console.log(`Waiting: ${task.id} ChatGPT checkpoint lacks an authorized prepared-ref marker`);
+    return task;
+  }
+  if (isPreparedRefHandoff(task)) {
+    const gateError = preparedRefHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
+    );
+    if (gateError) {
+      console.log(`Waiting: ${task.id} prepared-ref gate: ${gateError}`);
+      return task;
+    }
+  }
   if (!handoff.branch?.startsWith('seo/') || !handoff.headSha || !handoff.baseSha) {
     console.log(`Waiting: ${task.id} has incomplete push_pending metadata; Worker must repair the checkpoint.`);
     return task;
   }
 
-  let actualBranchSha: string;
+  let actualBranchSha: string | null;
   try {
     actualBranchSha = await branchSha(task.repo, handoff.branch);
-  } catch {
-    // The write-ahead checkpoint is intentionally allowed to exist before the remote push.
+  } catch (error) {
+    if (!/GitHub 404 Not Found/.test(String(error))) throw error;
+    actualBranchSha = null;
+  }
+  // Validate opted-in ChatGPT provenance even if somebody has already pushed the SHA.
+  if (isPreparedRefHandoff(task) || actualBranchSha !== handoff.headSha) {
+    actualBranchSha = await pushPreparedRef(task, actualBranchSha);
+  }
+  if (actualBranchSha === null) {
     console.log(`Waiting: ${task.id} push_pending branch is not visible remotely yet: ${handoff.branch}`);
     return task;
   }
-
   if (actualBranchSha !== handoff.headSha) {
     // An older remote branch head may still be visible while the Worker is pushing the expected commit.
     console.log(`Waiting: ${task.id} push_pending remote HEAD mismatch; expected=${handoff.headSha}, actual=${actualBranchSha}`);
@@ -346,9 +451,23 @@ async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord>
   return promoted;
 }
 
-async function processTask(task: SeoTaskRecord) {
+async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']) {
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
+  // A prepared-ref checkpoint does not become exempt from its rollout gate
+  // merely by progressing to branch_ready or pr_open. Direct-push checkpoints
+  // without the marker continue under the unchanged Groq delivery contract.
+  if (handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
+    const gateError = preparedRefHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
+    );
+    if (gateError) {
+      console.log(`Waiting: ${task.id} prepared-ref PR/merge gate: ${gateError}`);
+      return;
+    }
+  }
   if (!handoff.branch?.startsWith('seo/') || !handoff.headSha || !handoff.baseSha) {
     await markFailed(task, 'Invalid delivery handoff: branch_ready/pr_open requires seo/* branch, headSha and baseSha.');
     return;
@@ -411,13 +530,18 @@ async function processTask(task: SeoTaskRecord) {
     task = await seoTaskGet({ id: task.id });
   }
 
-  const checks = await checkSummary(task.repo, handoff.headSha);
+  const checks = await checkSummary(task.repo, handoff.headSha, pr.number);
   if (checks.failed.length) {
     await markFailed(task, `CI failed for ${handoff.headSha}: ${checks.failed.join(', ')}`);
     return;
   }
   if (checks.pending.length) {
     console.log(`Waiting: ${task.id} PR #${pr.number} has pending checks: ${checks.pending.join(', ')}`);
+    return;
+  }
+
+  if (handoff.validationSummary.startsWith(ACTIONS_MARKER) && !checks.passedPullRequestActions) {
+    console.log(`Waiting: ${task.id} Prepared-commit delivery requires a completed successful Actions run for PR #${pr.number}.`);
     return;
   }
 
@@ -476,7 +600,7 @@ async function main() {
 
   for (const pending of initialInProgress.filter(task => task.deliveryHandoff?.state === 'push_pending')) {
     try {
-      await reconcilePushPending(pending);
+      await reconcilePushPending(pending, activeSites.items);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Push reconciliation error for ${pending.id}: ${message}`);
@@ -494,7 +618,7 @@ async function main() {
   console.log(`SEO delivery controller found ${tasks.length} eligible task(s) after push reconciliation.`);
   for (const task of tasks) {
     try {
-      await processTask(task);
+      await processTask(task, activeSites.items);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Task ${task.id} controller error: ${message}`);
