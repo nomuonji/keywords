@@ -261,12 +261,18 @@ try {
     id: chatgptReady.id, expectedRevision: expiredChatgpt.revision,
     runId: 'groq-attempt-001', actor: 'seo_worker'
   }), /Pending centralized Actions handoff cannot be reclaimed/);
-  const chatgptReclaimed = await seoTaskClaim({
+  await assert.rejects(seoTaskClaim({
     id: chatgptReady.id, expectedRevision: expiredChatgpt.revision,
     runId: 'chatgpt-e2e-run-02', actor: 'chatgpt_seo_worker'
-  });
-  assert.equal(chatgptReclaimed.executionClaim?.runId, 'chatgpt-e2e-run-02');
-  assert.equal(chatgptReclaimed.deliveryHandoff.state, 'push_pending');
+  }), /Pending centralized Actions handoff cannot be reclaimed/);
+  // A runId is readable from the Task record, not an authentication secret.
+  await assert.rejects(seoTaskClaim({
+    id: chatgptReady.id, expectedRevision: expiredChatgpt.revision,
+    runId: 'chatgpt-e2e-run-01', actor: 'chatgpt_seo_worker'
+  }), /Pending centralized Actions handoff cannot be reclaimed/);
+  const stillPending = await seoTaskGet({ id: chatgptReady.id });
+  assert.equal(stillPending.revision, expiredChatgpt.revision);
+  assert.equal(stillPending.deliveryHandoff.state, 'push_pending');
 
   const handedOffTask = await seoTaskUpdate({
     id: readyTask.id,
