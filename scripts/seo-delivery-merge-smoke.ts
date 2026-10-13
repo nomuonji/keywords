@@ -36,6 +36,9 @@ const preflight = (t: SeoTaskRecord = task, enabled = '1', since = rollout, regi
   preparedRefHandoffPreflight(t, registry, enabled, since);
 assert.equal(preflight(), null);
 assert.equal(preflight({ ...task, executionClaim: { ...task.executionClaim!, actor: 'seo_worker' } }), null);
+assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'branch_ready' } }), null);
+assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'pr_open' } }), null);
+assert.match(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'push_pending' } })!, /explicitly opted-in/);
 assert.match(preflight({ ...task, executionClaim: { ...task.executionClaim!, actor: 'unknown_worker' } })!, /explicitly opted-in/);
 assert.match(preflight({ ...task, deliveryHandoff: { ...task.deliveryHandoff, validationSummary: 'ordinary Groq branch push' } })!, /explicitly opted-in/);
 assert.match(preflight(task,'0')!, /not been enabled/);
