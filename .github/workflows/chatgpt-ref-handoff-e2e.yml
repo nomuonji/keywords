@@ -1,0 +1,65 @@
+name: ChatGPT → Actions ref handoff E2E (isolated)
+on:
+  push:
+    branches:
+      - test/chatgpt-ref-handoff-20261013-1330
+    paths:
+      - .github/workflows/chatgpt-ref-handoff-e2e.yml
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SEO_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
+      TARGET_REPO: nomuonji/job-world
+      PREPARED_SHA: 9e299f61e874f4d50073954c4b72650929bc0abb
+      TARGET_BRANCH: test/chatgpt-actions-ref-handoff-20261013-1330
+    steps:
+      - name: Verify and move isolated ref using central delivery credential
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { SEO_TOKEN: token, TARGET_REPO: repo, PREPARED_SHA: sha, TARGET_BRANCH: branch } = process.env;
+          if (!token) throw Error('SEO_DELIVERY_GITHUB_TOKEN is not configured');
+          const root = 'https://api.github.com/repos/' + repo;
+          const headers = { Authorization: 'Bearer ' + token, Accept:'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
+          async function req(method, path, data) {
+            const r = await fetch(root + path, {method,headers:{...headers,...(data?{'Content-Type':'application/json'}:{})},body:data?JSON.stringify(data):undefined});
+            const payload = await r.text();
+            if (!r.ok) throw Error(method+' '+path+' HTTP '+r.status+' '+payload.slice(0,240));
+            return payload ? JSON.parse(payload) : null;
+          }
+          const main = (await req('GET','/git/ref/heads/main')).object.sha;
+          const prepared = await req('GET','/git/commits/'+sha);
+          if (prepared.parents.length !== 1 || prepared.parents[0].sha !== main) throw Error('Prepared commit is not a direct child of current main');
+          const compare = await req('GET','/compare/'+main+'...'+sha);
+          if (compare.ahead_by !== 1 || compare.behind_by !== 0 || compare.files.length !== 1 || compare.files[0].filename !== 'docs/chatgpt-actions-ref-test-20261013.md')
+            throw Error('Prepared commit changed unexpected content');
+          const ref = 'refs/heads/' + branch;
+          const url = '/git/refs/heads/' + branch;
+          const existing = await fetch(root + url, {headers});
+          if (existing.status !== 404) throw Error('Scratch branch must not exist before test; HTTP '+existing.status);
+          let created = false;
+          try {
+            await req('POST','/git/refs',{ref,sha:main});
+            created = true;
+            const before = (await req('GET',url)).object.sha;
+            if (before !== main) throw Error('Scratch branch initial head mismatch');
+            await req('PATCH',url,{sha,force:false});
+            const after = (await req('GET',url)).object.sha;
+            if (after !== sha) throw Error('Scratch branch ref update failed to reach prepared SHA');
+            console.log('PASS: ChatGPT-created commit -> GitHub Actions cross-repo ref update -> exact SHA readback');
+            console.log('PASS: target='+repo+' branch='+branch+' head='+after);
+          } finally {
+            if (created) {
+              await req('DELETE',url);
+              const gone = await fetch(root+url,{headers});
+              if (gone.status !== 404) throw Error('Temporary branch cleanup failed; HTTP '+gone.status);
+              console.log('PASS: Temporary target branch deleted and absence verified');
+            }
+          }
+          NODE
