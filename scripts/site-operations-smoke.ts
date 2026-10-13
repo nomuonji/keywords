@@ -299,7 +299,7 @@ try {
       branch: 'seo/groq-prepared-handoff-probe',
       headSha: 'c'.repeat(40),
       baseSha: 'b'.repeat(40),
-      validationSummary: 'Action-Ref-Handoff: v1\\nVerified transport-only fixture.',
+      validationSummary: 'Action-Ref-Handoff: v1\nVerified transport-only fixture.',
       handedOffAt: null, prNumber: null, prUrl: null, lastError: '',
       updatedAt: '2026-10-13T00:00:00.000Z'
     }
