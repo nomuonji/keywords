@@ -6,7 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -311,16 +311,11 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
   }
   const repository = await repoInfo(task.repo);
   const defaultHead = await branchSha(task.repo, repository.default_branch);
-  // Initial delivery is pinned to the live default-branch HEAD. For an
-  // existing CI-failed seo/<task-id> branch, a corrective commit may instead
-  // fast-forward from its exact current HEAD; force pushes are never used.
-  if (existingSha === null && defaultHead !== h.baseSha) {
-    console.log(`Waiting: ${task.id} default branch has advanced; Worker rebase required`);
-    return existingSha;
-  }
-  if (existingSha === h.baseSha && defaultHead !== h.baseSha
-      && !task.history?.some(event => event.event === 'delivery_failed')) {
-    console.log(`Waiting: ${task.id} non-default base is allowed only for an existing CI-failed branch`);
+  // Initial branch bases must match main; CI-failed task branches may safely
+  // accept a one-parent corrective child of their exact existing ref.
+  const baseError = preparedRefBaseError(task, existingSha, defaultHead, h.baseSha);
+  if (baseError) {
+    console.log(`Waiting: ${task.id} ${baseError}`);
     return existingSha;
   }
   const commit = await gh<{ message: string; parents: { sha: string }[] }>(
