@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { SeoTaskType } from '../../db/src/site-operations-schema.js';
 
-export const SEO_EVALUATION_REGISTRY_VERSION = '1.2.0';
+export const SEO_EVALUATION_REGISTRY_VERSION = '1.3.0';
 
 const evaluatorId = z.string().trim().regex(/^[a-z0-9_]{3,100}$/);
 const evaluatorVersion = z.string().trim().regex(/^\d+\.\d+\.\d+$/);
@@ -70,6 +70,39 @@ type SeoEvaluator = {
 };
 
 const evidenceSources: SeoEvidenceSource[] = [
+  {
+    id: 'google_helpful_reliable_people_first',
+    type: 'primary_guidance',
+    title: 'Google Search Central — Creating helpful, reliable, people-first content',
+    url: 'https://developers.google.com/search/docs/fundamentals/creating-helpful-content',
+    publishedAt: null,
+    checkedAt: '2026-10-13',
+    strength: 'strong',
+    supports: [
+      'Google recommends useful, original, trustworthy material, information beyond what is obvious, and a satisfying experience for the intended audience.',
+      'Its public self-assessment questions ask whether content adds substantial value relative to competing results; they do not constitute a numeric Google quality score.'
+    ],
+    caveats: [
+      'The page provides qualitative self-assessment guidance, not a published ranking algorithm or a guarantee that rewriting triggers indexation.'
+    ]
+  },
+  {
+    id: 'google_indexing_overview',
+    type: 'primary_guidance',
+    title: 'Google Search Central — How Search works: crawling and indexing',
+    url: 'https://developers.google.com/search/docs/fundamentals/how-search-works',
+    publishedAt: null,
+    checkedAt: '2026-10-13',
+    strength: 'strong',
+    supports: [
+      'Discovery, crawling and indexing are distinct stages; technical accessibility and crawl observations must be considered before attributing non-indexation to content.',
+      'Not every page that Google can crawl is necessarily indexed.'
+    ],
+    caveats: [
+      'Public guidance does not identify the private reason Google excluded a particular successfully fetched URL.'
+    ]
+  },
+
   {
     id: 'google_scaled_content_policy',
     type: 'primary_policy',
@@ -202,6 +235,73 @@ const evidenceSources: SeoEvidenceSource[] = [
 ];
 
 const evaluators: SeoEvaluator[] = [
+  {
+    id: 'indexation_content_quality',
+    version: '1.0.0',
+    current: true,
+    title: 'Indexation-aware full-body editorial audit',
+    status: 'active',
+    scopes: ['content_revision', 'new_article', 'portfolio_operations', 'technical'],
+    applicableTaskTypes: ['revise', 'new_article', 'technical', 'internal_links', 'merge', 'site_expansion'],
+    purpose: 'Require a concrete current-page diagnosis and verifiable reader-value rewrite instead of equating more SEO tasks or longer AI prose with Google indexing likelihood.',
+    decisionRule: 'For crawled-but-not-indexed, technically eligible pages, prioritize a source-backed review of the actual current article and meaningful competing answer bodies before deciding on a scoped rewrite. First rule out observed technical/canonical blockers and stale pre-publication crawling. Create a Worker task only with evidence of a missing reader answer or a directly verified factual/structural defect, a concrete rewrite, and rendered-content acceptance checks. Apply the same content acceptance standard to relevant new pages before delivery.',
+    principles: [
+      'Inspect the exact canonical URL and compare lastCrawlTime, lastInspectedAt, and verified publication time before interpreting indexation observations.',
+      'Differentiate discovery, technical indexing blockers, pending recrawl, indexed low exposure and content-quality hypotheses; missing observations are unknown.',
+      'Read actual current body, relevant query/user job, 2-3 competitor bodies when SERP evidence is applicable/available, same-site overlap, and primary/official sources.',
+      'Record observed omissions and justified rewrite sections instead of a generic instruction to make content comprehensive.',
+      'Keep page slug/canonical where appropriate; rewrite weak content rather than fail it and leave it thin. Recheck acceptance before Worker branch handoff.',
+      'Use the existing SEO Task and optimization event for provenance and review; do not add unbounded per-URL audit records or a separate crawling job.',
+      'After publication, inspect the next exact-canonical Google crawl observation before claiming indexing recovery; use matched complete GSC data separately for Search performance.'
+    ],
+    hardGates: [
+      { id: 'unverified_indexability_cause', description: 'The proposed content task asserts that Google excluded a page for thin content without ruling out observed technical/canonical blockers and stale or absent post-publication crawl evidence.' },
+      { id: 'no_current_body_proof', description: 'A substantive rewrite Task is proposed without reading the existing current body or establishing an independent factual/content defect.' },
+      { id: 'generic_rewrite_without_user_value', description: 'A rewrite Task adds length or keywords but names no specific unanswered reader question, evidence, or rendered-content acceptance condition.' },
+      { id: 'unsupported_editorial_assertions', description: 'The required improvement relies on material claims or competitor absences that could not be checked against suitable sources or an actually retrieved page.' }
+    ],
+    decisionSignals: [
+      'Accurate exact-canonical inspected state with valid post-publication timing, robot/fetch/canonical evidence, and a documented confidence level.',
+      'Current-source article body plus user question and retrieved competitor text, with failures/partial coverage documented.',
+      'An observable gap in actual answers: missing comparison, decision criteria, real example, primary evidence, accuracy boundary, or essential user workflow.',
+      'A bounded, independently verifiable Worker brief describing what to rewrite, what to substantiate, and how to validate actual rendered output.',
+      'Confirmed production body/canonical after delivery, followed by recrawl freshness and indexing/GSC observations separated by time.'
+    ],
+    antiMetrics: [
+      'Word count or heading count',
+      'LLM-generated composite SEO quality score',
+      'Count of competitors or keywords without reading their bodies',
+      'Google indexation inferred from deploy or sitemap alone',
+      'Assuming every uninspected URL is excluded',
+      'Assuming one before-after indexing result proves causation'
+    ],
+    inference: {
+      statement: 'An evidence-backed, rendered-body editorial improvement is a better use of recovery capacity than generic low-value expansion when exact-canonical observations show successful crawling but no indexation and no verified technical cause. Google may still choose not to index the page.',
+      confidence: 'medium_to_high',
+      caveats: [
+        'This is an internal editorial operating contract grounded in public guidance, not a reconstruction of the Google indexing classifier.',
+        'Do not require SERP research for independent verified technical defects or fact corrections, or when search source coverage is unavailable; record the limitation.',
+        'Post-publication recrawl and sufficient observation windows are prerequisites for interpreting results; freshness and sparse Search data can make the outcome inconclusive.'
+      ]
+    },
+    evidenceSourceIds: [
+      'google_helpful_reliable_people_first',
+      'google_indexing_overview',
+      'google_ai_content_guidance',
+      'google_canonicalization_guidance'
+    ],
+    falsification: [
+      'Repeated careful pilots show that audited rewrites do not improve meaningful user value or outcomes relative to comparable untouched pages.',
+      'Google materially revises primary indexing/helpful-content guidance in a way that invalidates this distinction between crawl observations and editorial hypotheses.'
+    ],
+    reviewTriggers: [
+      'New exact-canonical indexation evidence contradicts the technical/content classification.',
+      'At least one cohort of verified-live pages has mature recrawl and matched Search performance observations.',
+      'Primary Google Search helpful content or indexing guidance changes.'
+    ],
+    updatedAt: '2026-10-13'
+  },
+
   {
     id: 'content_incremental_value',
     version: '1.0.0',
