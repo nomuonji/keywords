@@ -8,6 +8,8 @@ import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/s
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
+const CHATGPT_ACTOR = 'chatgpt_seo_worker';
+const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
 const noCheckGraceMs = Math.max(60_000, Math.min(Number(process.env.SEO_DELIVERY_NO_CHECK_GRACE_MS ?? 120_000), 30 * 60_000));
@@ -284,6 +286,85 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
   await deleteMergedBranch(task.repo, current.deliveryHandoff.branch ?? '');
 }
 
+
+function isChatgptHandoff(task: SeoTaskRecord): boolean {
+  return task.status === 'in_progress'
+    && task.deliveryHandoff?.state === 'push_pending'
+    && task.executionClaim?.actor === CHATGPT_ACTOR
+    && task.deliveryHandoff.validationSummary?.startsWith(ACTIONS_MARKER) === true;
+}
+
+// This is a separate, explicit, forward-looking execution lane. It must never
+// be used to replay content for which another tool/safety gate rejected a write.
+async function pushChatgptPreparedRef(task: SeoTaskRecord, existingSha: string | null): Promise<string | null> {
+  if (!isChatgptHandoff(task)) return existingSha;
+  const h = task.deliveryHandoff;
+  if (!h.branch || !h.headSha || !h.baseSha) return existingSha;
+  if (h.lastError || (task.history ?? []).slice(-6).some(
+    event => /safety[_ -]?(rejected|blocked|refused)|authorization[_ -]?denied/i.test(event.event + ' ' + event.detail)
+  )) {
+    console.log(`Waiting: ${task.id} has a rejection/error, do not attempt a delegated write`);
+    return existingSha;
+  }
+  if (!/^seo\/[A-Za-z0-9._/-]+$/.test(h.branch) || !/^[a-f0-9]{40}$/.test(h.baseSha)
+      || !/^[a-f0-9]{40}$/.test(h.headSha)) throw Error(`Malformed ChatGPT checkpoint ${task.id}`);
+  if (existingSha === h.headSha) return existingSha;
+  if (existingSha !== null && existingSha !== h.baseSha) {
+    console.log(`Waiting: ${task.id} has a concurrent branch change`);
+    return existingSha;
+  }
+  const repository = await repoInfo(task.repo);
+  const mainHead = await branchSha(task.repo, repository.default_branch);
+  if (mainHead !== h.baseSha) {
+    console.log(`Waiting: ${task.id} base branch has advanced; Worker rebase required`);
+    return existingSha;
+  }
+  const commit = await gh<{ message: string; parents: { sha: string }[] }>(
+    api(task.repo, `/git/commits/${h.headSha}`)
+  );
+  if (!commit.message?.startsWith('[CF-Pages-Skip]') || commit.parents?.length !== 1
+      || commit.parents[0].sha !== h.baseSha) throw Error(`Invalid prepared commit ${task.id}`);
+  const compare = await gh<{
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit: { sha: string }; files: { filename: string }[];
+  }>(api(task.repo, `/compare/${h.baseSha}...${h.headSha}`));
+  if (compare.status !== 'ahead' || compare.ahead_by !== 1 || compare.behind_by !== 0
+      || compare.merge_base_commit?.sha !== h.baseSha
+      || !compare.files?.length || compare.files.length > 50) {
+    throw Error(`Unbounded/non-fast-forward prepared change ${task.id}`);
+  }
+  // Prevent stale observations from being delivered after a rival Worker
+  // or the Task controller has changed its revision/claim/checkpoint.
+  const current = await seoTaskGet({ id: task.id });
+  if (!isChatgptHandoff(current) || current.revision !== task.revision
+      || current.deliveryHandoff.headSha !== h.headSha
+      || current.deliveryHandoff.baseSha !== h.baseSha) {
+    console.log(`Waiting: ${task.id} checkpoint changed`);
+    return existingSha;
+  }
+  if (dryRun) {
+    console.log(`[dry-run] would fast-forward ${task.repo} ${h.branch} -> ${h.headSha}`);
+    return existingSha;
+  }
+  const refPath = `/git/refs/heads/${encodeURIComponent(h.branch)}`;
+  if (existingSha === null) {
+    await gh(api(task.repo, '/git/refs'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ref: `refs/heads/${h.branch}`, sha: h.baseSha })
+    });
+  }
+  await gh(api(task.repo, refPath), {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sha: h.headSha, force: false })
+  });
+  const actual = await branchSha(task.repo, h.branch);
+  if (actual !== h.headSha) throw Error(`ChatGPT ref readback mismatch ${task.id}`);
+  console.log(`ChatGPT prepared ref delivered: ${task.id} ${h.branch}@${actual}`);
+  return actual;
+}
+
 async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
@@ -292,15 +373,20 @@ async function reconcilePushPending(task: SeoTaskRecord): Promise<SeoTaskRecord>
     return task;
   }
 
-  let actualBranchSha: string;
+  let actualBranchSha: string | null;
   try {
     actualBranchSha = await branchSha(task.repo, handoff.branch);
-  } catch {
-    // The write-ahead checkpoint is intentionally allowed to exist before the remote push.
+  } catch (error) {
+    if (!/GitHub 404 Not Found/.test(String(error))) throw error;
+    actualBranchSha = null;
+  }
+  if (actualBranchSha !== handoff.headSha) {
+    actualBranchSha = await pushChatgptPreparedRef(task, actualBranchSha);
+  }
+  if (actualBranchSha === null) {
     console.log(`Waiting: ${task.id} push_pending branch is not visible remotely yet: ${handoff.branch}`);
     return task;
   }
-
   if (actualBranchSha !== handoff.headSha) {
     // An older remote branch head may still be visible while the Worker is pushing the expected commit.
     console.log(`Waiting: ${task.id} push_pending remote HEAD mismatch; expected=${handoff.headSha}, actual=${actualBranchSha}`);
