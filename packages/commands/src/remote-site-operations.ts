@@ -1131,7 +1131,7 @@ export async function seoTaskClaim(input: unknown) {
   if (current.status === 'in_progress'
       && current.deliveryHandoff.state === 'push_pending'
       && current.executionClaim?.actor === 'chatgpt_seo_worker'
-      && current.deliveryHandoff.validationSummary?.startsWith('Action-Ref-Handoff: v1\\n')
+      && current.deliveryHandoff.validationSummary?.startsWith('Action-Ref-Handoff: v1\n')
       && args.actor !== 'chatgpt_seo_worker') {
     throw new Error('Pending centralized Actions handoff cannot be reclaimed by another Worker lane');
   }
