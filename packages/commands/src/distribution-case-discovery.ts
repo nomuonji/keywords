@@ -125,7 +125,7 @@ const ALL_CONTEXT_NEUTRAL_TAGS = new Set(['あとで読む','まとめ','news','
 function providerTags(block: string): string[] {
   const tags:string[] = [];
   // Hatena RSS 1.0 dc:subject is provider-labelled metadata, not guessed topic text.
-  for (const [,raw] of block.matchAll(/<dc:subject(?:\\s[^>]*)?>([\\s\\S]*?)<\\/dc:subject>/gi)) {
+  for (const [,raw] of block.matchAll(/<dc:subject(?:\s[^>]*)?>([\s\S]*?)<\/dc:subject>/gi)) {
     const tag = entities(raw).replace(/<[^>]+>/g,'').trim().slice(0,60);
     if (tag && !tags.includes(tag)) tags.push(tag);
     if (tags.length >= 16) break;
