@@ -4,7 +4,14 @@ import { z } from 'zod';
 // source -> outbound-destination edges. They do NOT reveal traffic or conversions.
 const RSS_FEEDS = [
   { id: 'hatena_general', family: 'cross_category_curation', url: 'https://b.hatena.ne.jp/hotentry.rss', market: 'JP' },
-  { id: 'hatena_technology', family: 'technology_curation', url: 'https://b.hatena.ne.jp/hotentry/it.rss', market: 'JP' }
+  { id: 'hatena_life', family: 'lifestyle_curation', url: 'https://b.hatena.ne.jp/hotentry/life.rss', market: 'JP' },
+  { id: 'hatena_fun', family: 'humor_and_creativity_curation', url: 'https://b.hatena.ne.jp/hotentry/fun.rss', market: 'JP' },
+  { id: 'hatena_knowledge', family: 'learning_curation', url: 'https://b.hatena.ne.jp/hotentry/knowledge.rss', market: 'JP' },
+  { id: 'hatena_entertainment', family: 'entertainment_curation', url: 'https://b.hatena.ne.jp/hotentry/entertainment.rss', market: 'JP' },
+  { id: 'hatena_game', family: 'games_and_anime_curation', url: 'https://b.hatena.ne.jp/hotentry/game.rss', market: 'JP' },
+  { id: 'hatena_technology', family: 'technology_curation', url: 'https://b.hatena.ne.jp/hotentry/it.rss', market: 'JP' },
+  { id: 'hatena_social', family: 'social_curation', url: 'https://b.hatena.ne.jp/hotentry/social.rss', market: 'JP' },
+  { id: 'hatena_economics', family: 'economics_curation', url: 'https://b.hatena.ne.jp/hotentry/economics.rss', market: 'JP' }
 ] as const;
 const HN_STORIES_URL = 'https://hacker-news.firebaseio.com/v0/showstories.json';
 const HN_ITEM = (id: number) => 'https://hacker-news.firebaseio.com/v0/item/' + id + '.json';
@@ -14,7 +21,8 @@ export const distributionCaseDiscoveryShape = {
   topic: z.string().trim().min(2).max(120).optional(),
   maxCases: z.number().int().min(1).max(24).optional(),
   includeGlobalTech: z.boolean().optional(),
-  maxAgeDays: z.number().int().min(1).max(30).optional()
+  maxAgeDays: z.number().int().min(1).max(30).optional(),
+  rotation: z.number().int().min(0).max(100).optional()
 };
 
 type Input = {
@@ -22,6 +30,7 @@ type Input = {
   maxCases?: number;
   includeGlobalTech?: boolean;
   maxAgeDays?: number;
+  rotation?: number;
 };
 type Case = {
   sourceId: string;
@@ -33,6 +42,7 @@ type Case = {
   destinationDomain: string;
   title: string;
   publishedAt: string | null;
+  timestampProvenance: 'rss_entry_timestamp' | 'hn_story_timestamp';
   engagement: { metric: 'bookmarks' | 'upvotes' | 'comments'; value: number; provenance: string }[];
   evidenceClass: 'observed_curated_outbound_link';
   permissionToPublish: 'unknown';
@@ -109,7 +119,7 @@ export function parseHatenaDistributionRss(xml: string, feed: { id:string; famil
       sourceId: feed.id, sourceMarket: feed.market, sourceFamily: feed.family,
       discoverySourceUrl: feed.url, sourcePostUrl: null,
       destinationUrl: destination, destinationDomain: host(destination), title,
-      publishedAt: date,
+      publishedAt: date, timestampProvenance: 'rss_entry_timestamp',
       engagement: n !== null && Number.isSafeInteger(n)
         ? [{ metric: 'bookmarks', value: n, provenance: 'hatena_rss_bookmarkcount' }]
         : [],
@@ -142,7 +152,7 @@ export function parseHackerNewsDistribution(items: HnItem[], now: number, maxAge
       sourceId:'hacker_news_show', sourceMarket:'global', sourceFamily:'new_product_showcase',
       discoverySourceUrl:HN_STORIES_URL,
       sourcePostUrl:'https://news.ycombinator.com/item?id=' + item.id,
-      destinationUrl:url, destinationDomain:host(url), title, publishedAt:date,
+      destinationUrl:url, destinationDomain:host(url), title, publishedAt:date, timestampProvenance:'hn_story_timestamp',
       engagement, evidenceClass:'observed_curated_outbound_link',
       permissionToPublish:'unknown', observedVisits:null, observedConversions:null
     });
@@ -167,17 +177,34 @@ async function jsonFetch(url: string, timeout: number) {
   if (result.length > MAX_RESPONSE) throw Error('response_too_large');
   return JSON.parse(result);
 }
+type HeadlineClue = { kind: string; matchedText: string; provenance: 'literal_title_match' };
+const HEADLINE_CLUES: Array<{kind:string; pattern:RegExp}> = [
+  { kind:'interactive_experience', pattern: /診断|シミュレー(?:ター|ション)|クイズ|遊べる|体験|interactive|quiz|game you can play/i },
+  { kind:'utility_or_free_tool', pattern: /無料|ツール|便利|アプリ|自作|作った|計算機|チェッカー|open.source|virtual|generator|tool|utility|free app/i },
+  { kind:'original_data_or_reference', pattern: /データ|一覧|調査結果|統計|集計|可視化|データベース|比較表|dataset|database|visualization|benchmark/i },
+  { kind:'practical_walkthrough', pattern: /手順|使い方|やり方|入門|解説|管理しやすく|まとめ|チェックリスト|how to|tutorial|guide/i },
+  { kind:'news_or_editorial', pattern: /速報|警告|発表|報じ|恐れ|事件|news|breaking|announced|warning/i }
+];
+// Hints are literal headline tokens, not conclusions about the linked page or its CTA.
+export function headlineFormatClues(title: string): HeadlineClue[] {
+  const clues: HeadlineClue[] = [];
+  for (const rule of HEADLINE_CLUES) {
+    const m = rule.pattern.exec(title);
+    if (m) clues.push({kind:rule.kind, matchedText:m[0], provenance:'literal_title_match'});
+  }
+  return clues;
+}
 function interleave(groups: Case[][], max: number) {
-  const result: Case[] = [], seen = new Set<string>();
+  const result: Case[] = [], seen = new Set<string>(), domainUse = new Map<string,number>();
   let cursor = 0;
   while (result.length < max && groups.some(g => cursor < g.length)) {
     for (const group of groups) {
       const item = group[cursor];
-      if (item && !seen.has(item.destinationUrl)) {
-        seen.add(item.destinationUrl);
-        result.push(item);
-        if (result.length === max) break;
-      }
+      if (!item || seen.has(item.destinationUrl) || (domainUse.get(item.destinationDomain) ?? 0) >= 2) continue;
+      seen.add(item.destinationUrl);
+      domainUse.set(item.destinationDomain, (domainUse.get(item.destinationDomain) ?? 0) + 1);
+      result.push(item);
+      if (result.length === max) break;
     }
     cursor++;
   }
@@ -189,15 +216,21 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   const loadText = deps.fetchText ?? textFetch, loadJson = deps.fetchJson ?? jsonFetch;
   const health: Array<{sourceId:string; status:string; url:string; rawCases:number; warning?:string }> = [];
   const allGroups: Case[][] = [];
-  for (const feed of RSS_FEEDS) {
+  // Always read every Japanese category. Rotation affects presentation only:
+  // no category is dropped, and the agent does not choose the categories.
+  const offset = (args.rotation ?? 0) % RSS_FEEDS.length;
+  const feeds = [...RSS_FEEDS.slice(offset), ...RSS_FEEDS.slice(0, offset)];
+  const fetchedFeeds = await Promise.all(feeds.map(async feed => {
     try {
-      const parsed = parseHatenaDistributionRss(await loadText(feed.url, 8000), feed, now, maxAgeDays);
-      health.push({ sourceId:feed.id, status:parsed.length ? 'observed' : 'empty', url:feed.url, rawCases:parsed.length });
-      allGroups.push(parsed.filter(x => topicMatches(x.title, args.topic)));
+      return { feed, parsed: parseHatenaDistributionRss(await loadText(feed.url, 8000), feed, now, maxAgeDays), error: null as string | null };
     } catch (e) {
-      health.push({sourceId:feed.id,status:'unavailable',url:feed.url,rawCases:0,
-        warning: e instanceof Error ? e.message.slice(0,120) : 'source_failed' });
+      return {feed, parsed: [] as Case[], error:e instanceof Error ? e.message.slice(0,120) : 'source_failed'};
     }
+  }));
+  for (const result of fetchedFeeds) {
+    health.push({ sourceId:result.feed.id, status:result.error ? 'unavailable' : result.parsed.length ? 'observed' : 'empty',
+      url:result.feed.url, rawCases:result.parsed.length, ...(result.error ? {warning:result.error} : {}) });
+    if (!result.error) allGroups.push(result.parsed.filter(x => topicMatches(x.title,args.topic)));
   }
   if (args.includeGlobalTech ?? true) {
     let ids: number[] = [];
@@ -217,16 +250,30 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   }
   const cases = interleave(allGroups, limit);
   const domainCounts = new Map<string,number>();
-  for (const group of allGroups) for (const item of group) domainCounts.set(item.destinationDomain,(domainCounts.get(item.destinationDomain)||0)+1);
+  const urlMentions = new Map<string,Set<string>>();
+  const urlOccurrences = new Map<string,number>();
+  for (const group of allGroups) for (const item of group) {
+    domainCounts.set(item.destinationDomain,(domainCounts.get(item.destinationDomain)||0)+1);
+    if (!urlMentions.has(item.destinationUrl)) urlMentions.set(item.destinationUrl,new Set());
+    urlMentions.get(item.destinationUrl)!.add(item.sourceId);
+    urlOccurrences.set(item.destinationUrl,(urlOccurrences.get(item.destinationUrl)||0)+1);
+  }
   return {
     fetchedAt:new Date(now).toISOString(), topic:args.topic ?? null,
     status:cases.length ? 'observed_real_distribution_edges' : 'insufficient_observations',
     startingPoint:'public_discovery_feed_entries_not_model_named_channels',
     scope:{maxCases:limit, maxAgeDays, requestedSources:health.length,
-      maxUpstreamFetches:args.includeGlobalTech === false ? 2 : 15,
+      maxUpstreamFetches:args.includeGlobalTech === false ? RSS_FEEDS.length : RSS_FEEDS.length + 13,
+      collectionScope:'all_japanese_curated_categories_plus_optional_global_showcase',
       estimatedFirestoreReads:0, estimatedFirestoreWrites:0, estimatedSerpCalls:0},
     sources:health, cases:cases.map(c=>({
-      ...c, repeatsInSample:domainCounts.get(c.destinationDomain) ?? 1,
+      ...c,
+      repeatsInSample:urlOccurrences.get(c.destinationUrl) ?? 1,
+      independentSourceMentions:[...(urlMentions.get(c.destinationUrl) ?? [])],
+      independentSourceCount:urlMentions.get(c.destinationUrl)?.size ?? 1,
+      sameDomainEntriesInSample:domainCounts.get(c.destinationDomain) ?? 1,
+      headlineFormatClues:headlineFormatClues(c.title),
+      publicationMechanism:c.sourceId === 'hacker_news_show' ? 'community_showcase_post' : 'bookmark_aggregation',
       reproducibility:'not_yet_verified', placementEligibility:'not_yet_verified'
     })),
     observedDestinationDomains:[...new Set(cases.map(c=>c.destinationDomain))],
@@ -235,6 +282,8 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
       'Verify whether this venue accepts original submissions or earned editorial pickup, and whether external click-through is enabled and lawful.',
       'Compare with relevant buyers, creation cost, and an attributable UTM/referral experiment before recommending it.',
       'Sample engagement signals (bookmarks, votes, comments) are NOT referral sessions, purchases, or revenue.',
+      'Title clues are mechanically matched words, not a review of the landing-page contents or proof of a conversion mechanism.',
+      'Multiple Hatena categories are not independent platforms; repeated placement is counted separately from domain frequency.',
       'No posting, promotion, or contact attempt has been made. An unavailable feed is not a market absence signal.'
     ]
   };
