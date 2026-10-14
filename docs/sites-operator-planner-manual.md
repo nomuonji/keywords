@@ -5,6 +5,17 @@
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
 
+## SEO知見 → 実行 → 計測の閉ループ（2026-10-14）
+
+**この節は既存のSEO Manager/Worker、SEO Task、Optimization Event、Keywords Operator SEO Source Poolの使い方を具体化する。新しいDB、スケジュール、評価器やURL単位の分析履歴を作らない。** 先にlive `seo_agent_context(role=planner)` と現在のMacro Policyを読み、矛盾すればそちらを優先。
+
+1. **公開確認:** `seo_task_list(status=completed)` のうち `deploymentVerification.status=pending/failed` で、証拠を追加できる古い1〜2件を優先確認。提案中・取消・supersededを「公開確認滞留」に含めない。Cloudflare Pagesの最新成功・非skip productionが対象コミットそのもの、またはGitHubで祖先関係を確認できるものかを見て、さらに対象URLの実HTTP、表示内容、canonical等のTask固有の受入条件を検証する。**単にPRがマージ済み／ビルド成功／サブドメインがあるだけなら verified にしない。** 足りない証拠と次の確認条件を現行Taskに残し、同一証拠の再調査で更新を量産しない。
+2. **成果判定:** `optimization_event_list` から **公開確認済みでphase=implemented、evaluateAfterが到来したものだけ** を `optimization_evaluation_context` で確認する。旧`metricSnapshotList`と現在の上書き型`seo_planning_digest_get`は互換ではない。digestのrolling current/previous 28日を、eventに固定された別日付のbaselineに見せかけない。完全で同じ長さの比較窓がないなら **unknown/pending** として出典・期限を記録。方針上の十分な観測期間（目安14/28日、疎なら56日）を経過しても比較可能な記録がなく、実公開日とevaluateAfterが検証できる場合は、既存Eventへ理由を付けて **inconclusive** として閉じてよい。**neutral/改善なし/悪化と捏造しない。** 提案中・未公開は閉じない。効果は新鮮なクロール/インデックスとGSC実績を分離する。
+3. **知見照合:** 特定の問題・施策に関連する場合だけ `seo_source_pool_context` / `seo_source_get` で直近Findingを少数確認。必要があれば、そのうち1〜2ソースのみ原文を確認し `seo_source_scan_record` に保存する。毎回14ソースを走査してFirestoreを消費しない。二次情報の所感と一次資料を区別し、関連sourceId、scanId、原典URL、公開日、確度を**既存Task evidence/rationale**に残す。関連Evaluatorは現行版の`evidenceSourceIds`を使う（SEO Source PoolのIDをEvaluatorの一次資料IDとして流用しない）。知見が採用されなかった場合も理由を記す。証拠のない採用・Evaluator自動変更は禁止。
+4. **次の判断:** 改善後、根拠のある`supported / contradicted / inconclusive`と対象の`taskId` / `eventId` / 実測期間を既存Event notesに記録し、**同種の次の候補だけ** へ「再検証すべき仮説」として引き継ぐ。結果がまだ出ていなければ「未評価」と明記する。単一ページから全サイト共通ルールを作らない。
+
+Source Poolが429等で利用不可なら、その一回の該当ソース調査はスキップしてSource利用をでっち上げず、残りの公開・計測確認は継続する。新規Taskの作成は従来のMacro Policy割当と重複防止に従い、上記の公開/計測レビューに予算を使うための架空Taskを作らない。
+
 ## 現行Managerが使う汎用Macro Policy
 
 Actorの正本は [sites-operator-actor-model.md](./sites-operator-actor-model.md)。このマニュアルの"Planner"は、3時間ごとに起動する**単一のSEO Manager**の旧API role名(`role=planner`)であり、別エージェントではない。旧My PortalのSEO Managerはarchive済。
