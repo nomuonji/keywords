@@ -35,6 +35,7 @@ process.env.KEYWORDS_REMOTE_MCP_TOKEN = 'test-only-token';
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
+const firestorePointReads: string[] = [];
 const originalFetch = globalThis.fetch;
 const decodeField = (value: any): any => value?.stringValue ?? value?.integerValue ?? value?.doubleValue ?? value?.booleanValue ?? null;
 
@@ -46,6 +47,7 @@ globalThis.fetch = async (input, init) => {
   assert.ok(url.startsWith('https://firestore.googleapis.com/'), `Unexpected network: ${url}`);
   const parsed = new URL(url);
   const path = parsed.pathname.replace('/v1/', '');
+  if ((init?.method ?? 'GET') === 'GET') firestorePointReads.push(path);
   const body = init?.body ? JSON.parse(String(init.body)) : null;
 
   if (url.endsWith(':commit')) {
@@ -884,7 +886,13 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_list'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
+  firestorePointReads.length = 0;
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
+  assert.equal(firestorePointReads.length, 2, 'planner bootstrap must use exactly two point reads, no recovery-site scan or duplicated policy fetch');
+  assert.ok(firestorePointReads.some(p => p.includes('seoRecoveryControls/')));
+  assert.ok(firestorePointReads.some(p => p.includes('seoPortfolioPolicies/')));
+  assert.equal(agentPolicy.structuredContent.recovery.sitesOmitted, true);
+  assert.equal(agentPolicy.structuredContent.recovery.macroPolicyRevision, 1);
   assert.equal(agentPolicy.structuredContent.policyVersion, '1.32.2');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
@@ -942,7 +950,9 @@ try {
   assert.equal(scaledRisk.structuredContent.evaluator.inference.confidence, 'medium_to_high');
   assert.ok(scaledRisk.structuredContent.evidence.some((source: any) => source.id === 'google_scaled_content_policy'));
   assert.match(JSON.stringify(scaledRisk.structuredContent), /does not assert which Google system caused/i);
+  firestorePointReads.length = 0;
   const executorPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'executor' } });
+  assert.equal(firestorePointReads.length, 2, 'worker bootstrap must use exactly two point reads, no recovery-site scan');
   assert.match(executorPolicy.structuredContent.runContract.manual, /sites-operator-worker-manual.md$/);
   assert.equal(executorPolicy.structuredContent.actor.canonicalRole, 'seo_worker');
   assert.equal(executorPolicy.structuredContent.executionGate.mode, 'recovery');

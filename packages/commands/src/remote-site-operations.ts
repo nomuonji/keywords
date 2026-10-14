@@ -727,24 +727,42 @@ const normalizeSiteDirection = (direction: SiteDirectionRecord): SiteDirectionRe
   decidedAt: direction.decidedAt ?? null
 });
 
-export async function seoRecoveryStatus(input: unknown = {}) {
+// The scheduled Manager/Worker needs portfolio-level gates at bootstrap, not
+// a list of every recovery-site document. Keep the full public recovery tool
+// unchanged; the internal bootstrap shares its two point reads without a
+// collection scan or a second macro-policy read.
+export async function seoRecoveryStatus(input: unknown = {}, options: { agentBootstrap?: boolean } = {}) {
   const args = z.object(seoRecoveryStatusShape).strict().parse(input);
-  const { record: portfolio } = await readRecoveryPortfolio();
+  const [{ record: portfolio }, { record: macroPolicy, doc: policyDoc }] = await Promise.all([
+    readRecoveryPortfolio(),
+    readSeoPortfolioPolicy()
+  ]);
   let sites: SeoRecoverySiteRecord[] = [];
-  if (args.siteId) {
-    await ensureSite(args.siteId);
-    const { record } = await readRecoverySite(args.siteId);
-    if (record) sites = [record];
-  } else {
-    const listed = await listDocuments('seoRecoverySites', { limit: 100, orderBy: 'updatedAt desc' });
-    sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
+  if (!options.agentBootstrap) {
+    if (args.siteId) {
+      await ensureSite(args.siteId);
+      const { record } = await readRecoverySite(args.siteId);
+      if (record) sites = [record];
+    } else {
+      const listed = await listDocuments('seoRecoverySites', { limit: 100, orderBy: 'updatedAt desc' });
+      sites = (listed.documents ?? []).map((doc: any) => decoded(doc) as SeoRecoverySiteRecord);
+    }
   }
-  const { record: macroPolicy } = await readSeoPortfolioPolicy();
   const policyPermitsGrowth = portfolio.mode === 'recovery' &&
     macroPolicy.constraints.incidentGrowthIntake[portfolio.incidentCategory] === 'allow';
   return {
     portfolio,
     sites,
+    ...(options.agentBootstrap ? {
+      sitesOmitted: true,
+      policySnapshot: {
+        policy: macroPolicy,
+        persisted: Boolean(policyDoc),
+        policyVersion: macroPolicy.revision,
+        activeManager: { role: 'seo_manager', runtime: 'scheduled_chatgpt', contractAlias: 'seo_agent_context(role=planner)', legacyMyPortalJob: 'archived' },
+        activeWorker: { role: 'seo_executor', runtime: 'separate_execution_agent', macroPolicyNotRequired: true }
+      }
+    } : {}),
     macroPolicyRevision: macroPolicy.revision,
     allocation: macroPolicy.allocation,
     risk: macroPolicy.risk,
