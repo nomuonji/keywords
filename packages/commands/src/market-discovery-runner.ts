@@ -155,7 +155,7 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       if (!item.sellerUrl) continue;
       add({
         family: 'ranked_commerce', source: 'rakuten_rankings', sourcePlatform: 'rakuten',
-        sourceUrl: item.rankSourceUrl ?? prod?.source?.snapshotUrl ?? null,
+        sourceUrl: item.rankSourceUrl ?? null,
         label: item.name, url: item.sellerUrl, observedAt: category.observationDate,
         fact: 'A ranked item was observed; disclosed purchases are unknown.',
         measures: { rank: item.rank, genre: category.genreName }
