@@ -93,30 +93,60 @@ const outage=await distributionCaseDiscovery({includeGlobalTech:false},{fetchTex
 assert.equal(outage.status,'insufficient_observations');
 assert.ok(outage.sources.every(x=>x.status==='unavailable'));
 
-const nichePacket = await distributionCaseDiscovery({focus:'fandom',niche:'VTuber',maxCases:8},{
+const nichePacket = await distributionCaseDiscovery({focus:'fandom',niche:'VTuber',maxCases:8,includeGlobalTech:false},{
  fetchText:async(url:string)=>url.includes('/game.rss') ? fandomRss : rss,
  clock:()=>now
 });
 assert.equal(nichePacket.focus,'fandom');
-assert.equal(nichePacket.sources.length,3);
-assert.equal(nichePacket.scope.maxUpstreamFetches,3);
-assert.deepEqual(nichePacket.scope.attemptedFeedCategories,['hatena_fun','hatena_entertainment','hatena_game']);
+assert.equal(nichePacket.sources.length,9);
+assert.equal(nichePacket.scope.maxUpstreamFetches,9);
+assert.equal(nichePacket.scope.focusIsNonExclusivePresentationPreference,true);
+assert.deepEqual(nichePacket.scope.attemptedFeedCategories.slice(0,3),['hatena_game','hatena_entertainment','hatena_fun']);
+assert.ok(nichePacket.scope.attemptedFeedCategories.includes('hatena_economics'));
+assert.ok(nichePacket.scope.attemptedFeedCategories.includes('hatena_technology'));
 assert.equal(nichePacket.cases.length,1);
 assert.equal(nichePacket.cases[0].title,'ライブ後の個人レポート');
 assert.equal(nichePacket.cases[0].observedTags[0],'VTuber');
 assert.equal(nichePacket.cases[0].permissionToPublish,'unknown');
 assert.ok(nichePacket.observedCommunityTags.some(x=>x.tag==='VTuber'&&x.evidenceType==='rss_dc_subject'));
-const unseenNiche = await distributionCaseDiscovery({focus:'entertainment',niche:'架空の界隈XYZ'},{
+assert.ok(nichePacket.observedNiches.some(x=>x.name==='原神' && x.distinctLinkedPages===1));
+const unseenNiche = await distributionCaseDiscovery({focus:'entertainment',niche:'架空の界隈XYZ',includeGlobalTech:false},{
  fetchText:async()=>fandomRss,clock:()=>now
 });
 assert.equal(unseenNiche.status,'insufficient_observations');
 assert.equal(unseenNiche.nicheCoverage.assessment,'no_observed_match_in_sample');
 assert.equal(unseenNiche.cases.length,0);
-const topicTag = await distributionCaseDiscovery({focus:'fandom',topic:'原神'},{
+const topicTag = await distributionCaseDiscovery({focus:'fandom',topic:'原神',includeGlobalTech:false},{
  fetchText:async()=>fandomRss,clock:()=>now
 });
 assert.equal(topicTag.cases.length,1);
 assert.equal(topicTag.cases[0].observedTags[0],'原神');
+// Categories mentioned by the user are examples, not an exhaustive catalog.
+// Evidence from an unprioritized source must be discoverable even with a legacy focus.
+const unrelatedRss = `<?xml version="1.0"?><rss><channel>
+<item><title>地域の水族館が公開した珍しい生き物の飼育記録</title><link>https://biology.example.net/aquarium</link>
+<dc:subject>水族館飼育</dc:subject><dc:subject>地域自然史</dc:subject><dc:date>2026-10-14T02:00:00Z</dc:date></item>
+</channel></rss>`;
+const openMarkets = await distributionCaseDiscovery({focus:'fandom',niche:'水族館飼育',includeGlobalTech:false},{
+ fetchText:async(url:string)=>url.includes('/economics.rss') ? unrelatedRss : fandomRss,
+ clock:()=>now
+});
+assert.equal(openMarkets.sources.length,9);
+assert.equal(openMarkets.cases.length,1);
+assert.equal(openMarkets.cases[0].sourceId,'hatena_economics');
+assert.equal(openMarkets.cases[0].observedTags[0],'水族館飼育');
+assert.ok(openMarkets.observedNiches.some(x=>x.name==='地域自然史'&&x.exampleUrl==='https://biology.example.net/aquarium'));
+assert.equal(openMarkets.scope.estimatedFirestoreReads,0);
+assert.equal(openMarkets.scope.estimatedSerpCalls,0);
+// Unexpected tags must remain visible even when no user-defined niche matches.
+assert.ok(unseenNiche.observedNiches.some(x=>x.name==='原神'));
+assert.ok(unseenNiche.observedNiches.some(x=>x.name==='VTuber'));
+const allTagged = await distributionCaseDiscovery({focus:'technology',includeGlobalTech:false},{
+ fetchText:async()=>fandomRss,clock:()=>now
+});
+assert.equal(allTagged.sources.length,9);
+assert.equal(allTagged.observedNiches.find(x=>x.name==='原神')?.distinctLinkedPages,1);
+assert.equal(allTagged.observedNiches.find(x=>x.name==='原神')?.observedFeedCategories.length,9);
 const defaultShape = distributionCaseDiscoveryShape.focus;
 assert.equal(defaultShape.parse('entertainment'),'entertainment');
 assert.throws(()=>defaultShape.parse('celebrity_guesswork'));
