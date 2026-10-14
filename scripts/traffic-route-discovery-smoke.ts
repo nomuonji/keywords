@@ -16,6 +16,32 @@ assert.notEqual(trafficRouteQueries('原神 ファンアート', 1, 3, 'fandom')
 const creator = trafficRouteQueries('自主制作 ゲーム',0,3,'creator_community');
 assert.equal(creator[1].id,'creator_portfolios');
 
+// Observation-led follow-up must not be limited to a prewritten platform enum.
+const unknownVenues = trafficRouteQueries('地域自然史',0,4,'general',[
+  'https://small-regional-museum.example.org/exhibits/2026',
+  'https://local-aquarium.example.net/news',
+  'https://small-regional-museum.example.org/other'
+]);
+assert.equal(unknownVenues.length,4);
+assert.equal(unknownVenues[0].id,'open_discovery');
+assert.equal(unknownVenues[1].id,'observed_venue_0');
+assert.ok(unknownVenues[1].query.includes('site:small-regional-museum.example.org'));
+assert.ok(unknownVenues[2].query.includes('site:local-aquarium.example.net'));
+assert.equal(unknownVenues[3].id,'q_and_a');
+const arbitrarySource = await trafficRouteDiscovery({
+ topic:'地域自然史',observedVenueUrls:['https://small-regional-museum.example.org/exhibits/2026'],maxProbes:2
+},{
+ research:async input=>({results:[{
+ link:input.query.includes('site:small-regional-museum.example.org')
+ ? 'https://small-regional-museum.example.org/exhibits/2026'
+ : 'https://something.example.org/new', title:'地域自然史の企画'
+ }]})
+});
+assert.equal(arbitrarySource.observedVenueInputs,1);
+assert.equal(arbitrarySource.probes.length,2);
+assert.equal(arbitrarySource.probes[1].id,'observed_venue_0');
+assert.equal(arbitrarySource.findings[1].discoveredDomain,'small-regional-museum.example.org');
+assert.equal(arbitrarySource.execution.maximumSerpRequests,2);
 const calls: string[] = [];
 const research = async (input: { query: string; country: string; language: string; num: number; provider: 'api'; forceRefresh: false; maxCacheAgeHours: number }) => {
   calls.push(input.query);
