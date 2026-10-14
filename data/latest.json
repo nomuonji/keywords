@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-14",
-  "generatedAt": "2026-10-14T03:31:51.652Z",
+  "date": "2026-10-15",
+  "generatedAt": "2026-10-14T22:43:03.760Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,15 +14,15 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 9,
-    "historicObservations": 9
+    "historicObservations": 18
   },
   "warnings": [
     {
-      "genreId": "200304",
+      "genreId": "210904",
       "reason": "unsupported_subgenre"
     },
     {
-      "genreId": "101114",
+      "genreId": "111427",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -635,6 +635,583 @@
         }
       ],
       "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "100026",
+      "rootName": "パソコン・周辺機器",
+      "genreId": "100087",
+      "genreName": "PCパーツ",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "a-price:11272879",
+          "rank": 1
+        },
+        {
+          "itemCode": "kazamidori:10024670",
+          "rank": 2
+        },
+        {
+          "itemCode": "ukachi:10004007",
+          "rank": 3
+        },
+        {
+          "itemCode": "spd-shop:10005343",
+          "rank": 4
+        },
+        {
+          "itemCode": "fanxiang-official:10000004",
+          "rank": 5
+        },
+        {
+          "itemCode": "e-wankento:10000165",
+          "rank": 6
+        },
+        {
+          "itemCode": "silicon-power-direct:10000169",
+          "rank": 7
+        },
+        {
+          "itemCode": "jism:14526415",
+          "rank": 8
+        },
+        {
+          "itemCode": "bacestore:10000034",
+          "rank": 9
+        },
+        {
+          "itemCode": "dospara-r:10000400",
+          "rank": 10
+        },
+        {
+          "itemCode": "shoptsukumo:10024960",
+          "rank": 11
+        },
+        {
+          "itemCode": "archisite:10010568",
+          "rank": 12
+        },
+        {
+          "itemCode": "biccamera:15578253",
+          "rank": 13
+        },
+        {
+          "itemCode": "spd-shop:10003295",
+          "rank": 14
+        },
+        {
+          "itemCode": "fanxiang-official:10000010",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "101205",
+      "rootName": "テレビゲーム",
+      "genreId": "200192",
+      "genreName": "ゲームキューブ",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "iimoreuse:10008921",
+          "rank": 1
+        },
+        {
+          "itemCode": "bookoffonline:10317775",
+          "rank": 2
+        },
+        {
+          "itemCode": "smilesssss:10140476",
+          "rank": 3
+        },
+        {
+          "itemCode": "iimoreuse:10008026",
+          "rank": 4
+        },
+        {
+          "itemCode": "iimoreuse:10000248",
+          "rank": 5
+        },
+        {
+          "itemCode": "r1motors:10000367",
+          "rank": 6
+        },
+        {
+          "itemCode": "renet20:10680777",
+          "rank": 7
+        },
+        {
+          "itemCode": "centerwave:10004935",
+          "rank": 8
+        },
+        {
+          "itemCode": "iimoreuse:10000246",
+          "rank": 9
+        },
+        {
+          "itemCode": "iimoreuse:10000247",
+          "rank": 10
+        },
+        {
+          "itemCode": "iimoreuse:10002087",
+          "rank": 11
+        },
+        {
+          "itemCode": "iimoreuse:10002786",
+          "rank": 12
+        },
+        {
+          "itemCode": "iimoreuse:10003702",
+          "rank": 13
+        },
+        {
+          "itemCode": "seleco-shop:10000094",
+          "rank": 14
+        },
+        {
+          "itemCode": "kaitoriheroes-2:10022269",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "551169",
+      "rootName": "医薬品・コンタクト・介護",
+      "genreId": "567526",
+      "genreName": "人体模型",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "your-sales-shop:10317306",
+          "rank": 1
+        },
+        {
+          "itemCode": "hananail:10018814",
+          "rank": 2
+        },
+        {
+          "itemCode": "pasiro:10000188",
+          "rank": 3
+        },
+        {
+          "itemCode": "bakka:10020864",
+          "rank": 4
+        },
+        {
+          "itemCode": "aznable:10003152",
+          "rank": 5
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "100433",
+      "rootName": "インナー・下着・ナイトウェア",
+      "genreId": "566224",
+      "genreName": "ユニセックス",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "morishima:10000070",
+          "rank": 1
+        },
+        {
+          "itemCode": "red-jpn:10000026",
+          "rank": 2
+        },
+        {
+          "itemCode": "tential:10000338",
+          "rank": 3
+        },
+        {
+          "itemCode": "good-item-shop:10000001",
+          "rank": 4
+        },
+        {
+          "itemCode": "tential:10000335",
+          "rank": 5
+        },
+        {
+          "itemCode": "sweetmimistore:10000001",
+          "rank": 6
+        },
+        {
+          "itemCode": "tential:10000327",
+          "rank": 7
+        },
+        {
+          "itemCode": "tential:10000299",
+          "rank": 8
+        },
+        {
+          "itemCode": "tbsshopping:10007945",
+          "rank": 9
+        },
+        {
+          "itemCode": "red-jpn:10000074",
+          "rank": 10
+        },
+        {
+          "itemCode": "tential:10000419",
+          "rank": 11
+        },
+        {
+          "itemCode": "venex-j:10000055",
+          "rank": 12
+        },
+        {
+          "itemCode": "alpen:10472038",
+          "rank": 13
+        },
+        {
+          "itemCode": "red-jpn:10000038",
+          "rank": 14
+        },
+        {
+          "itemCode": "mtgec-beauty:10002719",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "551167",
+      "rootName": "スイーツ・お菓子",
+      "genreId": "509708",
+      "genreName": "和菓子",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "imokuniya:10000012",
+          "rank": 1
+        },
+        {
+          "itemCode": "tsukada:10000019",
+          "rank": 2
+        },
+        {
+          "itemCode": "kouta:10000274",
+          "rank": 3
+        },
+        {
+          "itemCode": "kanoza:10000035",
+          "rank": 4
+        },
+        {
+          "itemCode": "okashi:10000317",
+          "rank": 5
+        },
+        {
+          "itemCode": "aozorahonpo:10000074",
+          "rank": 6
+        },
+        {
+          "itemCode": "kogetsu:10000478",
+          "rank": 7
+        },
+        {
+          "itemCode": "kasumiya-0141:10000000",
+          "rank": 8
+        },
+        {
+          "itemCode": "kasumiya-0141:10000101",
+          "rank": 9
+        },
+        {
+          "itemCode": "kyunan:10021182",
+          "rank": 10
+        },
+        {
+          "itemCode": "imokuniya:10000310",
+          "rank": 11
+        },
+        {
+          "itemCode": "yumekaboutakara:10000000",
+          "rank": 12
+        },
+        {
+          "itemCode": "i-kappa:10002117",
+          "rank": 13
+        },
+        {
+          "itemCode": "oimoya:10003594",
+          "rank": 14
+        },
+        {
+          "itemCode": "kogetsu:10000740",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "558885",
+      "rootName": "靴",
+      "genreId": "216172",
+      "genreName": "靴ケア用品・アクセサリー",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "hot-safe:10000726",
+          "rank": 1
+        },
+        {
+          "itemCode": "fleuriste:10000002",
+          "rank": 2
+        },
+        {
+          "itemCode": "aubstore:10000037",
+          "rank": 3
+        },
+        {
+          "itemCode": "bacchus-onlineshop:10000051",
+          "rank": 4
+        },
+        {
+          "itemCode": "akuse-one:10014184",
+          "rank": 5
+        },
+        {
+          "itemCode": "neoryshop:10000058",
+          "rank": 6
+        },
+        {
+          "itemCode": "legendonlineshop:10000006",
+          "rank": 7
+        },
+        {
+          "itemCode": "withbambi:10000089",
+          "rank": 8
+        },
+        {
+          "itemCode": "sekiguchi-shokai:10000001",
+          "rank": 9
+        },
+        {
+          "itemCode": "bstashop:10000015",
+          "rank": 10
+        },
+        {
+          "itemCode": "primeavenue:10000140",
+          "rank": 11
+        },
+        {
+          "itemCode": "u-stream:10036512",
+          "rank": 12
+        },
+        {
+          "itemCode": "lifestyle-007:10000080",
+          "rank": 13
+        },
+        {
+          "itemCode": "insole-phoenix:10000419",
+          "rank": 14
+        },
+        {
+          "itemCode": "primeavenue:10000738",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "510901",
+      "rootName": "日本酒・焼酎",
+      "genreId": "110662",
+      "genreName": "焼酎",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "simazakiyaokamura:10000574",
+          "rank": 1
+        },
+        {
+          "itemCode": "liquor-boss:10004790",
+          "rank": 2
+        },
+        {
+          "itemCode": "manroku:10003165",
+          "rank": 3
+        },
+        {
+          "itemCode": "ichimura:10003242",
+          "rank": 4
+        },
+        {
+          "itemCode": "shochuya-doragon:10004740",
+          "rank": 5
+        },
+        {
+          "itemCode": "liquor-boss:10001688",
+          "rank": 6
+        },
+        {
+          "itemCode": "manroku:10003693",
+          "rank": 7
+        },
+        {
+          "itemCode": "likaman:10006854",
+          "rank": 8
+        },
+        {
+          "itemCode": "kikkys-33:10000211",
+          "rank": 9
+        },
+        {
+          "itemCode": "kikkys-33:10000053",
+          "rank": 10
+        },
+        {
+          "itemCode": "hukuya:10001365",
+          "rank": 11
+        },
+        {
+          "itemCode": "liquorisland:10001259",
+          "rank": 12
+        },
+        {
+          "itemCode": "chagatapark:10047804",
+          "rank": 13
+        },
+        {
+          "itemCode": "kikkys-33:10000054",
+          "rank": 14
+        },
+        {
+          "itemCode": "sake-ninja:10003256",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Wed, 14 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 1
+        },
+        {
+          "itemCode": "bearhomes:10617753",
+          "rank": 2
+        },
+        {
+          "itemCode": "biccamera:14106732",
+          "rank": 3
+        },
+        {
+          "itemCode": "seishinjapan:10000776",
+          "rank": 4
+        },
+        {
+          "itemCode": "stlike:10001622",
+          "rank": 5
+        },
+        {
+          "itemCode": "to-rulease:10011098",
+          "rank": 6
+        },
+        {
+          "itemCode": "skyblue-:10000269",
+          "rank": 7
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 8
+        },
+        {
+          "itemCode": "r-kojima:11437880",
+          "rank": 9
+        },
+        {
+          "itemCode": "rcmd:35842117",
+          "rank": 10
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 11
+        },
+        {
+          "itemCode": "cocoiine:10001717",
+          "rank": 12
+        },
+        {
+          "itemCode": "pickandpop:10000478",
+          "rank": 13
+        },
+        {
+          "itemCode": "idosawa:10003569",
+          "rank": 14
+        },
+        {
+          "itemCode": "vis-a-vis:10107641",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-14",
+        "sameItemCount": 2,
+        "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-15",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-14",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
     }
   ]
 }
