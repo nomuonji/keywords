@@ -321,7 +321,7 @@ function server() {
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await searchGapResearch(input)));
   mcp.registerTool('market_discovery_run', {
-    description: 'Read-only adaptive market evidence entry. Observe selected public sensors without supplied industry seeds, or directly investigate up to three existing candidates. Neither action requires the other. The agent chooses depth from the objective, remaining uncertainty, source costs and decision stakes; record observed facts separately from ideas. No automated approval or persistence.',
+    description: 'Read-only adaptive market evidence entry. Observe selected public sensors without supplied industry seeds, or directly investigate up to three existing candidates, including non-database questions. Neither action requires the other. A 429 stops remaining focused checks in the batch. The agent chooses depth from the objective, remaining uncertainty, source costs and decision stakes; record observed facts separately from ideas. No automated approval or persistence.',
     inputSchema: marketDiscoveryRunShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await marketDiscoveryRun(input, { demand: keywords => demandWithFallback({ keywords }) })));

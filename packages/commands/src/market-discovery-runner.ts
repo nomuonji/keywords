@@ -11,10 +11,11 @@ import { marketSignalScan } from '../../research/src/market-sensors.js';
  */
 const candidateShape = z.object({
   name: z.string().trim().min(3).max(140),
-  audience: z.string().trim().min(5).max(300),
-  userNeed: z.string().trim().min(8).max(450),
-  databaseUnit: z.string().trim().min(3).max(160),
-  interaction: z.string().trim().min(5).max(300),
+  audience: z.string().trim().min(5).max(300).optional(),
+  userNeed: z.string().trim().min(8).max(450).optional(),
+  databaseUnit: z.string().trim().min(3).max(160).optional(),
+  interaction: z.string().trim().min(5).max(300).optional(),
+  question: z.string().trim().min(8).max(450).optional(),
   query: z.string().trim().min(2).max(200),
   evidenceUrls: z.array(z.string().url().max(2000).refine(v => /^https?:\/\//i.test(v))).max(2).default([])
 }).strict();
@@ -183,8 +184,10 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
   if (args.sources?.length) throw Error('sources applies only to observe.');
   if (!args.candidates.length) throw Error('validate requires 1-3 explicit candidates; prior observe is optional.');
   const gap = dependencies.gap ?? searchGapResearch;
-  const results = await Promise.all(args.candidates.map(async (candidate: Candidate) => {
-    const question = 'For "' + candidate.name + '", what real user problem does existing content already solve? What structured source data and independent unmet need are visible? Proposed need: ' + candidate.userNeed.slice(0, 250);
+  const results = [];
+  let quotaStopped = false;
+  for (const candidate of args.candidates as Candidate[]) {
+    const question = candidate.question ?? ('For "' + candidate.name + '", what does existing content already answer? What remains uncertain about the proposed need: ' + (candidate.userNeed ?? 'not specified').slice(0, 250));
     const [search, demand] = await Promise.allSettled([
       gap({ query: candidate.query, question, maxPages: 3, maxCharsPerPage: 4500,
         evidenceUrls: candidate.evidenceUrls, num: 6, country: 'JP', language: 'ja' }),
@@ -202,9 +205,10 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       resultCount: research?.serp?.results?.length ?? 0,
       demandAvailable: demand.status === 'fulfilled' && demand.value !== null
     });
-    return {
-      candidate: { name: candidate.name, audience: candidate.audience, userNeed: candidate.userNeed,
-        databaseUnit: candidate.databaseUnit, interaction: candidate.interaction, query: candidate.query },
+    results.push({
+      candidate: { name: candidate.name, audience: candidate.audience ?? null, userNeed: candidate.userNeed ?? null,
+        databaseUnit: candidate.databaseUnit ?? null, interaction: candidate.interaction ?? null,
+        question, query: candidate.query },
       search: {
         provider: research?.serp?.provider ?? null,
         results: (research?.serp?.results ?? []).slice(0, 6).map(v => ({ title: v.title, url: v.link, snippet: v.snippet })),
@@ -214,10 +218,15 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       searchDemand: demand.status === 'fulfilled' ? demand.value : null,
       gate, warnings,
       verdict: 'evidence_for_agent_assessment_not_an_approved_market'
-    };
-  }));
+    });
+    if (warnings.some(v => /(?:429|quota)/i.test(v))) {
+      quotaStopped = true;
+      break;
+    }
+  }
   return {
     phase: 'validate' as const, objective: args.objective ?? null, mode: args.mode, fetchedAt, results,
+    skippedCandidates: quotaStopped ? args.candidates.slice(results.length).map(v => v.name) : [],
     interpretation: 'This targeted read does not establish search opportunity, source rights, user demand, distribution or revenue. The agent must assess evidence and contrary facts against the requested decision.',
     writes: 0
   };
