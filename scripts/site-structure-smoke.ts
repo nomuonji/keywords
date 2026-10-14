@@ -149,7 +149,8 @@ try {
   });
   assert.equal(groqBearerResponse.status, 200);
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 34);
+  assert.equal(listing.tools.length, 35);
+   assert.ok(listing.tools.some((tool: any) => tool.name === 'distribution_case_discovery'));
    assert.ok(listing.tools.some((tool: any) => tool.name === 'traffic_route_discovery'));
    assert.ok(listing.tools.some((tool: any) => tool.name === 'market_product_discovery'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_structure_patch' && tool.inputSchema.properties.expectedRevision));
