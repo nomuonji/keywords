@@ -379,18 +379,19 @@ export async function seoPortfolioPolicyUpdate(input: unknown) {
 export async function seoPortfolioAllocationStatus(input: unknown = {}) {
   z.object(seoPortfolioAllocationStatusShape).strict().parse(input);
   const { record: policy } = await readSeoPortfolioPolicy();
-  const collected: SeoTaskRecord[] = [];
-  let pageToken: string | undefined;
-  do {
-    const page = await listDocuments('seoTasks', { limit: 300, pageToken });
-    collected.push(...(page.documents ?? []).map((doc: any) => decoded(doc) as SeoTaskRecord));
-    pageToken = page.nextPageToken;
-    if (collected.length >= 3000 && pageToken) throw new Error('Allocation snapshot requires pagination beyond 3000 SEO tasks; narrow the dataset first');
-  } while (pageToken);
+  // Only active/queued tasks enter allocationSnapshot; reading every historical
+  // completed/cancelled task on each 2-hour Manager run wastes Firestore reads.
+  const statuses = ['ready', 'issued', 'in_progress'];
+  const pages = await Promise.all(statuses.map(status => queryByField('seoTasks', 'status', status, 1000)));
+  if (pages.some(rows => rows.length >= 1000)) {
+    throw new Error('More than 999 tasks share one active status; use a paginated allocation query rather than reporting truncated totals');
+  }
+  const active = pages.flatMap(rows => rows.map(doc => decoded(doc) as SeoTaskRecord));
   return { policyRevision: policy.revision, objective: policy.objective,
-    allocation: allocationSnapshot(policy, collected),
+    allocation: allocationSnapshot(policy, active),
     evaluation: policy.evaluation,
-    taskCountObserved: collected.length };
+    taskCountObserved: active.length,
+    taskCountScope: 'active_only' as const };
 }
 
 async function readRecoverySite(siteId: string): Promise<{ record: SeoRecoverySiteRecord | null; doc: any | null }> {
@@ -1132,6 +1133,12 @@ export async function seoTaskList(input: unknown) {
   if (args.siteId) {
     await ensureSite(args.siteId);
     items = ((await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[]).map(normalizeSeoTask);
+  } else if (args.status && ['ready', 'issued', 'in_progress'].includes(args.status)) {
+    // Hot scheduler path: server-side status equality, not a 500-document
+    // collection scan followed by a JavaScript filter.
+    const docs = await queryByField('seoTasks', 'status', args.status, 1000);
+    if (docs.length >= 1000) throw new Error('Active task list exceeds 999 matches; paginate before returning an incomplete queue');
+    items = docs.map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   } else {
     const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
     items = (listed.documents ?? []).map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
