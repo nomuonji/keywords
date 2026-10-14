@@ -76,7 +76,19 @@ async function main() {
           hash(today + ':' + a.genreId).localeCompare(hash(today + ':' + b.genreId)))[0];
       }
       await sleep(WAIT_MS);
-      const rank = await get('ranking', chosen.genreId);
+      let rank = null;
+      try {
+        rank = await get('ranking', chosen.genreId);
+      } catch (e) {
+        // Individual subgenres may not have ranking data; a malformed ID may be rejected.
+        if (!/upstream HTTP 400/.test(String(e))) throw e;
+        errors.push({ genreId: String(chosen.genreId), reason: 'unsupported_subgenre' });
+      }
+      if (!rank?.items?.length && String(chosen.genreId) !== selection.root.genreId) {
+        await sleep(WAIT_MS);
+        rank = await get('ranking', selection.root.genreId);
+        if (rank?.items?.length) chosen = selection.root;
+      }
       if (!rank?.items?.length) {
         errors.push({ genreId: String(chosen.genreId), reason: 'no_ranking' });
         continue;
