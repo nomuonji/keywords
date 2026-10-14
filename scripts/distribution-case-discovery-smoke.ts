@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { distributionCaseDiscovery, distributionCaseDiscoveryShape, parseHatenaDistributionRss, parseHackerNewsDistribution } from '../packages/commands/src/distribution-case-discovery.js';
+import { distributionCaseDiscovery, distributionCaseDiscoveryShape, parseHatenaDistributionRss, parseHackerNewsDistribution, headlineFormatClues } from '../packages/commands/src/distribution-case-discovery.js';
 
 const now = Date.parse('2026-10-14T09:00:00.000Z');
 const rss = `<?xml version="1.0"?><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:hatena="http://www.hatena.ne.jp/info/xmlns#">
@@ -42,20 +42,42 @@ const loadJson=async(url:string)=>{
 };
 const packet = await distributionCaseDiscovery({maxCases:9},{fetchText:loadText,fetchJson:loadJson,clock:()=>now});
 assert.equal(packet.status,'observed_real_distribution_edges');
-assert.equal(packet.sources.length,3);
+assert.equal(packet.sources.length,10);
+assert.ok(packet.sources.some(x=>x.sourceId==='hatena_fun'));
+assert.ok(packet.sources.some(x=>x.sourceId==='hatena_life'));
 assert.equal(packet.scope.estimatedSerpCalls,0);
 assert.equal(packet.scope.estimatedFirestoreReads,0);
-assert.equal(packet.scope.maxUpstreamFetches,15);
+assert.equal(packet.scope.maxUpstreamFetches,22);
 assert.equal(packet.cases.length,3);
 assert.equal(packet.cases[0].sourceId,'hatena_general');
 assert.equal(packet.cases[1].sourceId,'hacker_news_show');
 assert.equal(packet.cases[2].sourceId,'hatena_general');
-assert.equal(packet.cases[0].repeatsInSample,2);
+assert.equal(packet.cases[0].repeatsInSample,9);
+assert.equal(packet.cases[0].distinctFeedCategoryCount,9);
+assert.equal(packet.cases[0].distinctPlatformCount,1);
+assert.equal(packet.cases[0].sameDomainEntriesInSample,9);
+assert.ok(packet.cases[0].headlineFormatClues.some(h=>h.kind==='utility_or_free_tool'&&h.matchedText==='無料'));
+assert.ok(packet.cases[0].headlineFormatClues.some(h=>h.kind==='practical_walkthrough'));
+assert.equal(packet.cases[0].timestampProvenance,'rss_entry_timestamp');
+assert.equal(packet.cases[1].timestampProvenance,'hn_story_timestamp');
 assert.ok(packet.cases.every(c=>c.observedConversions===null && c.placementEligibility==='not_yet_verified'));
 const focused=await distributionCaseDiscovery({topic:'ギター',includeGlobalTech:false},{fetchText:loadText,clock:()=>now});
 assert.equal(focused.cases.length,1);
-assert.equal(focused.scope.maxUpstreamFetches,2);
+assert.equal(focused.scope.maxUpstreamFetches,9);
 assert.equal(focused.cases[0].title,'初心者のギター練習 無料チェックリスト');
+const rotated = await distributionCaseDiscovery({rotation:3,includeGlobalTech:false,maxCases:2},{fetchText:loadText,clock:()=>now});
+assert.equal(rotated.cases[0].sourceId,'hatena_knowledge');
+assert.equal(rotated.scope.estimatedSerpCalls,0);
+assert.deepEqual(headlineFormatClues('速報 明日の天気').map(x=>x.kind),['news_or_editorial']);
+const oneOutage = await distributionCaseDiscovery({includeGlobalTech:false}, {
+ fetchText: async(url:string) => {
+  if (url.includes('/life.rss')) throw Error('timeout');
+  return rss;
+ }, clock:()=>now
+});
+assert.equal(oneOutage.sources.filter(x=>x.status==='unavailable').length,1);
+assert.equal(oneOutage.status,'observed_real_distribution_edges');
+assert.ok(oneOutage.cases.every(x=>x.observedVisits===null));
 const outage=await distributionCaseDiscovery({includeGlobalTech:false},{fetchText:async()=>{throw Error('HTTP 503')},clock:()=>now});
 assert.equal(outage.status,'insufficient_observations');
 assert.ok(outage.sources.every(x=>x.status==='unavailable'));
