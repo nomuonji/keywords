@@ -22,7 +22,9 @@ export const distributionCaseDiscoveryShape = {
   maxCases: z.number().int().min(1).max(24).optional(),
   includeGlobalTech: z.boolean().optional(),
   maxAgeDays: z.number().int().min(1).max(30).optional(),
-  rotation: z.number().int().min(0).max(100).optional()
+  rotation: z.number().int().min(0).max(100).optional(),
+  focus: z.enum(['balanced','entertainment','fandom','everyday','technology']).optional(),
+  niche: z.string().trim().min(2).max(80).optional()
 };
 
 type Input = {
@@ -31,6 +33,8 @@ type Input = {
   includeGlobalTech?: boolean;
   maxAgeDays?: number;
   rotation?: number;
+  focus?: 'balanced' | 'entertainment' | 'fandom' | 'everyday' | 'technology';
+  niche?: string;
 };
 type Case = {
   sourceId: string;
@@ -42,6 +46,7 @@ type Case = {
   destinationUrl: string;
   destinationDomain: string;
   title: string;
+  observedTags: string[];
   publishedAt: string | null;
   timestampProvenance: 'rss_entry_timestamp' | 'hn_story_timestamp';
   engagement: { metric: 'bookmarks' | 'upvotes' | 'comments'; value: number; provenance: string }[];
@@ -95,10 +100,37 @@ function tokens(raw: string) {
   // never for the selection of the sources or generation of industry seeds.
   return raw.toLowerCase().normalize('NFKC').split(/[\s,、，／\/・()（）]+/).filter(x => x.length >= 2);
 }
-function topicMatches(title: string, topic?: string) {
+function topicMatches(title: string, topic?: string, tags: string[] = []) {
   if (!topic) return true;
   const terms = tokens(topic);
-  return !terms.length || terms.some(t => title.toLowerCase().normalize('NFKC').includes(t));
+  const haystack = [title,...tags].join(' ').toLowerCase().normalize('NFKC');
+  return !terms.length || terms.some(t => haystack.includes(t));
+}
+// A named fandom must have literal backing in an observed title or provider tag;
+// it is not inferred from a model's knowledge of a series or character.
+function nicheMatches(c: Case, niche?: string) {
+  if (!niche) return true;
+  const terms = tokens(niche);
+  const haystack = [c.title,...c.observedTags].join(' ').toLowerCase().normalize('NFKC');
+  return terms.length > 0 && terms.every(term => haystack.includes(term));
+}
+const FOCUS_FEEDS: Record<NonNullable<Input['focus']>, string[] | null> = {
+  balanced: null,
+  entertainment: ['hatena_entertainment','hatena_game','hatena_fun','hatena_life'],
+  fandom: ['hatena_game','hatena_entertainment','hatena_fun'],
+  everyday: ['hatena_life','hatena_fun','hatena_knowledge'],
+  technology: ['hatena_technology','hatena_knowledge']
+};
+const ALL_CONTEXT_NEUTRAL_TAGS = new Set(['あとで読む','まとめ','news','ニュース','話題','はてな','ブログ','blog']);
+function providerTags(block: string): string[] {
+  const tags:string[] = [];
+  // Hatena RSS 1.0 dc:subject is provider-labelled metadata, not guessed topic text.
+  for (const [,raw] of block.matchAll(/<dc:subject(?:\s[^>]*)?>([\s\S]*?)<\/dc:subject>/gi)) {
+    const tag = entities(raw).replace(/<[^>]+>/g,'').trim().slice(0,60);
+    if (tag && !tags.includes(tag)) tags.push(tag);
+    if (tags.length >= 16) break;
+  }
+  return tags;
 }
 function short(raw: unknown, limit = 200) {
   return typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ').slice(0, limit) : '';
@@ -114,12 +146,13 @@ export function parseHatenaDistributionRss(xml: string, feed: { id:string; famil
     if (/^(?:b\.)?hatena\.ne\.jp$/.test(host(destination))) continue;
     const date = instant(one(block,'date') ?? one(block,'pubDate'));
     if (!ageOk(date, now, maxAgeDays)) continue;
+    const observedTags = providerTags(block);
     const rawCount = one(block, 'bookmarkcount');
     const n = rawCount && /^\d+$/.test(rawCount) ? Number(rawCount) : null;
     cases.push({
       sourceId: feed.id, sourcePlatform:'hatena_bookmark', sourceMarket: feed.market, sourceFamily: feed.family,
       discoverySourceUrl: feed.url, sourcePostUrl: null,
-      destinationUrl: destination, destinationDomain: host(destination), title,
+      destinationUrl: destination, destinationDomain: host(destination), title, observedTags,
       publishedAt: date, timestampProvenance: 'rss_entry_timestamp',
       engagement: n !== null && Number.isSafeInteger(n)
         ? [{ metric: 'bookmarks', value: n, provenance: 'hatena_rss_bookmarkcount' }]
@@ -153,7 +186,7 @@ export function parseHackerNewsDistribution(items: HnItem[], now: number, maxAge
       sourceId:'hacker_news_show', sourcePlatform:'hacker_news', sourceMarket:'global', sourceFamily:'new_product_showcase',
       discoverySourceUrl:HN_STORIES_URL,
       sourcePostUrl:'https://news.ycombinator.com/item?id=' + item.id,
-      destinationUrl:url, destinationDomain:host(url), title, publishedAt:date, timestampProvenance:'hn_story_timestamp',
+      destinationUrl:url, destinationDomain:host(url), title, observedTags:[], publishedAt:date, timestampProvenance:'hn_story_timestamp',
       engagement, evidenceClass:'observed_curated_outbound_link',
       permissionToPublish:'unknown', observedVisits:null, observedConversions:null
     });
@@ -219,8 +252,11 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   const allGroups: Case[][] = [];
   // Always read every Japanese category. Rotation affects presentation only:
   // no category is dropped, and the agent does not choose the categories.
-  const offset = (args.rotation ?? 0) % RSS_FEEDS.length;
-  const feeds = [...RSS_FEEDS.slice(offset), ...RSS_FEEDS.slice(0, offset)];
+  const focus = args.focus ?? 'balanced';
+  const whitelist = FOCUS_FEEDS[focus];
+  const candidates = whitelist ? RSS_FEEDS.filter(f => whitelist.includes(f.id)) : RSS_FEEDS;
+  const offset = (args.rotation ?? 0) % candidates.length;
+  const feeds = [...candidates.slice(offset), ...candidates.slice(0, offset)];
   const fetchedFeeds = await Promise.all(feeds.map(async feed => {
     try {
       return { feed, parsed: parseHatenaDistributionRss(await loadText(feed.url, 8000), feed, now, maxAgeDays), error: null as string | null };
@@ -231,9 +267,10 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   for (const result of fetchedFeeds) {
     health.push({ sourceId:result.feed.id, status:result.error ? 'unavailable' : result.parsed.length ? 'observed' : 'empty',
       url:result.feed.url, rawCases:result.parsed.length, ...(result.error ? {warning:result.error} : {}) });
-    if (!result.error) allGroups.push(result.parsed.filter(x => topicMatches(x.title,args.topic)));
+    if (!result.error) allGroups.push(result.parsed.filter(x => topicMatches(x.title,args.topic,x.observedTags) && nicheMatches(x,args.niche)));
   }
-  if (args.includeGlobalTech ?? true) {
+  const includeGlobalTech = args.includeGlobalTech ?? (focus === 'balanced' || focus === 'technology');
+  if (includeGlobalTech) {
     let ids: number[] = [];
     try {
       const fetched = await loadJson(HN_STORIES_URL, 8000);
@@ -243,13 +280,26 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
       const parsed = parseHackerNewsDistribution(items.filter((x):x is PromiseFulfilledResult<unknown> => x.status === 'fulfilled').map(x=>x.value as HnItem), now, maxAgeDays);
       health.push({sourceId:'hacker_news_show', status:parsed.length ? 'observed' : 'empty',url:HN_STORIES_URL,rawCases:parsed.length,
         ...(items.some(x=>x.status === 'rejected') ? {warning:'some_items_unavailable'} : {})});
-      allGroups.push(parsed.filter(x=>topicMatches(x.title,args.topic)));
+      allGroups.push(parsed.filter(x=>topicMatches(x.title,args.topic,x.observedTags) && nicheMatches(x,args.niche)));
     } catch (e) {
       health.push({sourceId:'hacker_news_show',status:'unavailable',url:HN_STORIES_URL,rawCases:0,
         warning:e instanceof Error ? e.message.slice(0,120) : 'source_failed'});
     }
   }
   const cases = interleave(allGroups, limit);
+  const tagCounts = new Map<string,{tag:string,count:number,sourceIds:Set<string>,exampleUrl:string}>();
+  for (const group of allGroups) for (const entry of group) {
+    for (const tag of entry.observedTags) {
+      if (ALL_CONTEXT_NEUTRAL_TAGS.has(tag.toLowerCase().normalize('NFKC'))) continue;
+      const key = tag.toLowerCase().normalize('NFKC');
+      const existing = tagCounts.get(key);
+      if (existing) { existing.count++; existing.sourceIds.add(entry.sourceId); }
+      else tagCounts.set(key,{tag,count:1,sourceIds:new Set([entry.sourceId]),exampleUrl:entry.destinationUrl});
+    }
+  }
+  const observedCommunityTags = [...tagCounts.values()]
+    .sort((a,b)=>b.count-a.count||a.tag.localeCompare(b.tag,'ja')).slice(0,32)
+    .map(v=>({tag:v.tag,entryOccurrences:v.count,observedInFeedCategories:[...v.sourceIds],exampleUrl:v.exampleUrl,evidenceType:'rss_dc_subject'}));
   const domainCounts = new Map<string,number>();
   const urlMentions = new Map<string,Set<string>>();
   const urlOccurrences = new Map<string,number>();
@@ -263,12 +313,13 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
     urlOccurrences.set(item.destinationUrl,(urlOccurrences.get(item.destinationUrl)||0)+1);
   }
   return {
-    fetchedAt:new Date(now).toISOString(), topic:args.topic ?? null,
+    fetchedAt:new Date(now).toISOString(), topic:args.topic ?? null, focus, niche:args.niche ?? null,
     status:cases.length ? 'observed_real_distribution_edges' : 'insufficient_observations',
     startingPoint:'public_discovery_feed_entries_not_model_named_channels',
     scope:{maxCases:limit, maxAgeDays, requestedSources:health.length,
-      maxUpstreamFetches:args.includeGlobalTech === false ? RSS_FEEDS.length : RSS_FEEDS.length + 13,
-      collectionScope:'all_japanese_curated_categories_plus_optional_global_showcase',
+      maxUpstreamFetches:feeds.length + (includeGlobalTech ? 13 : 0),
+      collectionScope:focus === 'balanced' ? 'all_japanese_curated_categories_plus_optional_global_showcase' : 'selected_user_research_focus',
+      attemptedFeedCategories:feeds.map(f=>f.id),
       estimatedFirestoreReads:0, estimatedFirestoreWrites:0, estimatedSerpCalls:0},
     sources:health, cases:cases.map(c=>({
       ...c,
@@ -282,12 +333,18 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
       reproducibility:'not_yet_verified', placementEligibility:'not_yet_verified'
     })),
     observedDestinationDomains:[...new Set(cases.map(c=>c.destinationDomain))],
+    observedCommunityTags,
+    nicheCoverage:{matchedCases:cases.length, boundedHotentryScope:true,
+      assessment:cases.length ? 'literal_title_or_provider_tag_matches_only' : 'no_observed_match_in_sample',
+      nextStepIfEmpty:'Search this exact fandom in public community posts with traffic_route_discovery or web; absence in popular RSS cannot establish no active fans.'},
     nextInvestigation:[
       'Trace the observed source entry to the actual linked destination, then inspect the content, creator and its CTA where publicly available.',
       'Verify whether this venue accepts original submissions or earned editorial pickup, and whether external click-through is enabled and lawful.',
       'Compare with relevant buyers, creation cost, and an attributable UTM/referral experiment before recommending it.',
       'Sample engagement signals (bookmarks, votes, comments) are NOT referral sessions, purchases, or revenue.',
       'Title clues are mechanically matched words, not a review of the landing-page contents or proof of a conversion mechanism.',
+      'Observed community tags come only from dc:subject in public RSS, not model-inferred fandom labels; counts are feed entries, not people.',
+      'Niche matching is literal and bounded to this popularity-selected sample; an empty niche search is NOT evidence that the fandom or an acquisition channel does not exist.',
       'Multiple Hatena categories are not independent platforms; repeated placement is counted separately from domain frequency.',
       'No posting, promotion, or contact attempt has been made. An unavailable feed is not a market absence signal.'
     ]
