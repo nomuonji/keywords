@@ -20,6 +20,17 @@ assert.equal(parsed[0].destinationUrl,'https://example.jp/guitar/list?ref=hotent
 assert.deepEqual(parsed[0].engagement.map(m=>m.value),[187]);
 assert.equal(parsed[0].observedVisits,null);
 assert.equal(parsed[1].engagement.length,0);
+const fandomRss = `<?xml version="1.0"?><rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:hatena="http://www.hatena.ne.jp/info/xmlns#">
+<item><title>ライブ後の個人レポート</title><link>https://creative.example.net/fan-report</link>
+<dc:subject>VTuber</dc:subject><dc:subject>推し活</dc:subject><dc:date>2026-10-14T02:00:00Z</dc:date>
+<hatena:bookmarkcount>11</hatena:bookmarkcount></item>
+<item><title>原神のイベント分析</title><link>https://fan-research.example.net/genshin</link>
+<dc:subject>原神</dc:subject><dc:subject>ゲーム</dc:subject><dc:date>2026-10-14T02:00:00Z</dc:date></item>
+</rdf:RDF>`;
+const parsedFandom = parseHatenaDistributionRss(fandomRss,feed,now,7);
+assert.deepEqual(parsedFandom[0].observedTags,['VTuber','推し活']);
+assert.deepEqual(parsedFandom[1].observedTags,['原神','ゲーム']);
+
 const hn = parseHackerNewsDistribution([
  {id:456,type:'story',url:'https://guitaro.example.org',title:'Show HN: New guitar learning tool',score:120,descendants:26,time:Math.round(now/1000)-3600},
  {id:457,type:'story',url:'https://other.example.org',title:'Very old',time:Math.round(now/1000)-3600*24*45},
@@ -81,5 +92,33 @@ assert.ok(oneOutage.cases.every(x=>x.observedVisits===null));
 const outage=await distributionCaseDiscovery({includeGlobalTech:false},{fetchText:async()=>{throw Error('HTTP 503')},clock:()=>now});
 assert.equal(outage.status,'insufficient_observations');
 assert.ok(outage.sources.every(x=>x.status==='unavailable'));
+
+const nichePacket = await distributionCaseDiscovery({focus:'fandom',niche:'VTuber',maxCases:8},{
+ fetchText:async(url:string)=>url.includes('/game.rss') ? fandomRss : rss,
+ clock:()=>now
+});
+assert.equal(nichePacket.focus,'fandom');
+assert.equal(nichePacket.sources.length,3);
+assert.equal(nichePacket.scope.maxUpstreamFetches,3);
+assert.deepEqual(nichePacket.scope.attemptedFeedCategories,['hatena_fun','hatena_entertainment','hatena_game']);
+assert.equal(nichePacket.cases.length,1);
+assert.equal(nichePacket.cases[0].title,'ライブ後の個人レポート');
+assert.equal(nichePacket.cases[0].observedTags[0],'VTuber');
+assert.equal(nichePacket.cases[0].permissionToPublish,'unknown');
+assert.ok(nichePacket.observedCommunityTags.some(x=>x.tag==='VTuber'&&x.evidenceType==='rss_dc_subject'));
+const unseenNiche = await distributionCaseDiscovery({focus:'entertainment',niche:'架空の界隈XYZ'},{
+ fetchText:async()=>fandomRss,clock:()=>now
+});
+assert.equal(unseenNiche.status,'insufficient_observations');
+assert.equal(unseenNiche.nicheCoverage.assessment,'no_observed_match_in_sample');
+assert.equal(unseenNiche.cases.length,0);
+const topicTag = await distributionCaseDiscovery({focus:'fandom',topic:'原神'},{
+ fetchText:async()=>fandomRss,clock:()=>now
+});
+assert.equal(topicTag.cases.length,1);
+assert.equal(topicTag.cases[0].observedTags[0],'原神');
+const defaultShape = distributionCaseDiscoveryShape.focus;
+assert.equal(defaultShape.parse('entertainment'),'entertainment');
+assert.throws(()=>defaultShape.parse('celebrity_guesswork'));
 assert.throws(()=>distributionCaseDiscoveryShape.maxCases.parse(80));
 console.log('distribution case discovery smoke passed');
