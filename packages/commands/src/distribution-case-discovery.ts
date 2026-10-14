@@ -51,13 +51,13 @@ function externalUrl(raw: unknown): string | null {
     const url = new URL(raw.trim());
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
     if (url.username || url.password || !url.hostname || url.hostname === 'localhost') return null;
-    if (/^\\d+\\.\\d+\\.\\d+\\.\\d+$/.test(url.hostname)) return null;
+    if (/^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) return null;
     return url.toString();
   } catch { return null; }
 }
-function host(url: string) { return new URL(url).hostname.toLowerCase().replace(/^www\\./, ''); }
+function host(url: string) { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); }
 function entities(raw: string) {
-  return raw.replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')
+  return raw.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&#x([a-f0-9]+);/gi, (_, x) => String.fromCodePoint(parseInt(x, 16)))
     .replace(/&#([0-9]+);/g, (_, n) => String.fromCodePoint(parseInt(n, 10)))
     .replace(/&(?:amp|lt|gt|quot|apos|nbsp);/g, x => ({
@@ -82,7 +82,7 @@ function ageOk(date: string | null, now: number, days: number) {
 function tokens(raw: string) {
   // Explicit topic is used for literal relevance filtering AFTER market feeds are sampled,
   // never for the selection of the sources or generation of industry seeds.
-  return raw.toLowerCase().normalize('NFKC').split(/[\\s,、，／\/・()（）]+/).filter(x => x.length >= 2);
+  return raw.toLowerCase().normalize('NFKC').split(/[\s,、，／\/・()（）]+/).filter(x => x.length >= 2);
 }
 function topicMatches(title: string, topic?: string) {
   if (!topic) return true;
@@ -90,21 +90,21 @@ function topicMatches(title: string, topic?: string) {
   return !terms.length || terms.some(t => title.toLowerCase().normalize('NFKC').includes(t));
 }
 function short(raw: unknown, limit = 200) {
-  return typeof raw === 'string' ? raw.trim().replace(/\\s+/g, ' ').slice(0, limit) : '';
+  return typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ').slice(0, limit) : '';
 }
 
 export function parseHatenaDistributionRss(xml: string, feed: { id:string; family:string; url:string; market:string }, now: number, maxAgeDays: number): Case[] {
   const cases: Case[] = [];
-  for (const found of xml.matchAll(/<item\\b[^>]*>([\\s\\S]*?)<\\/item>/gi)) {
+  for (const found of xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
     const block = found[1];
     const destination = externalUrl(one(block,'link'));
     const title = short(one(block,'title'));
     if (!destination || !title) continue;
-    if (/^(?:b\\.)?hatena\\.ne\\.jp$/.test(host(destination))) continue;
+    if (/^(?:b\.)?hatena\.ne\.jp$/.test(host(destination))) continue;
     const date = instant(one(block,'date') ?? one(block,'pubDate'));
     if (!ageOk(date, now, maxAgeDays)) continue;
     const rawCount = one(block, 'bookmarkcount');
-    const n = rawCount && /^\\d+$/.test(rawCount) ? Number(rawCount) : null;
+    const n = rawCount && /^\d+$/.test(rawCount) ? Number(rawCount) : null;
     cases.push({
       sourceId: feed.id, sourceMarket: feed.market, sourceFamily: feed.family,
       discoverySourceUrl: feed.url, sourcePostUrl: null,
