@@ -114,8 +114,11 @@ function nicheMatches(c: Case, niche?: string) {
   const haystack = [c.title,...c.observedTags].join(' ').toLowerCase().normalize('NFKC');
   return terms.length > 0 && terms.every(term => haystack.includes(term));
 }
-const FOCUS_FEEDS: Record<NonNullable<Input['focus']>, string[] | null> = {
-  balanced: null,
+// Legacy focus options may influence which results appear first, but NEVER
+// exclude a domain or a source. An enum is not the universe of real niches.
+// Arbitrary user-supplied niche strings and previously unseen RSS tags are supported.
+const LEGACY_FOCUS_ORDER: Record<NonNullable<Input['focus']>, string[]> = {
+  balanced: [],
   entertainment: ['hatena_entertainment','hatena_game','hatena_fun','hatena_life'],
   fandom: ['hatena_game','hatena_entertainment','hatena_fun'],
   everyday: ['hatena_life','hatena_fun','hatena_knowledge'],
@@ -250,11 +253,15 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   const loadText = deps.fetchText ?? textFetch, loadJson = deps.fetchJson ?? jsonFetch;
   const health: Array<{sourceId:string; status:string; url:string; rawCases:number; warning?:string }> = [];
   const allGroups: Case[][] = [];
+  const sampledGroups: Case[][] = [];
   // Always read every Japanese category. Rotation affects presentation only:
   // no category is dropped, and the agent does not choose the categories.
   const focus = args.focus ?? 'balanced';
-  const whitelist = FOCUS_FEEDS[focus];
-  const candidates = whitelist ? RSS_FEEDS.filter(f => whitelist.includes(f.id)) : RSS_FEEDS;
+  const prioritised = LEGACY_FOCUS_ORDER[focus];
+  const candidates = [...RSS_FEEDS].sort((a,b) => {
+    const posA = prioritised.indexOf(a.id), posB = prioritised.indexOf(b.id);
+    return (posA < 0 ? 999 : posA) - (posB < 0 ? 999 : posB);
+  });
   const offset = (args.rotation ?? 0) % candidates.length;
   const feeds = [...candidates.slice(offset), ...candidates.slice(0, offset)];
   const fetchedFeeds = await Promise.all(feeds.map(async feed => {
@@ -267,9 +274,13 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   for (const result of fetchedFeeds) {
     health.push({ sourceId:result.feed.id, status:result.error ? 'unavailable' : result.parsed.length ? 'observed' : 'empty',
       url:result.feed.url, rawCases:result.parsed.length, ...(result.error ? {warning:result.error} : {}) });
-    if (!result.error) allGroups.push(result.parsed.filter(x => topicMatches(x.title,args.topic,x.observedTags) && nicheMatches(x,args.niche)));
+    if (!result.error) {
+      sampledGroups.push(result.parsed);
+      allGroups.push(result.parsed.filter(x => topicMatches(x.title,args.topic,x.observedTags) && nicheMatches(x,args.niche)));
+    }
   }
-  const includeGlobalTech = args.includeGlobalTech ?? (focus === 'balanced' || focus === 'technology');
+  // Cross-disciplinary sampling must not silently drop another market based on focus.
+  const includeGlobalTech = args.includeGlobalTech ?? true;
   if (includeGlobalTech) {
     let ids: number[] = [];
     try {
@@ -280,6 +291,7 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
       const parsed = parseHackerNewsDistribution(items.filter((x):x is PromiseFulfilledResult<unknown> => x.status === 'fulfilled').map(x=>x.value as HnItem), now, maxAgeDays);
       health.push({sourceId:'hacker_news_show', status:parsed.length ? 'observed' : 'empty',url:HN_STORIES_URL,rawCases:parsed.length,
         ...(items.some(x=>x.status === 'rejected') ? {warning:'some_items_unavailable'} : {})});
+      sampledGroups.push(parsed);
       allGroups.push(parsed.filter(x=>topicMatches(x.title,args.topic,x.observedTags) && nicheMatches(x,args.niche)));
     } catch (e) {
       health.push({sourceId:'hacker_news_show',status:'unavailable',url:HN_STORIES_URL,rawCases:0,
@@ -287,6 +299,21 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
     }
   }
   const cases = interleave(allGroups, limit);
+  // Discover unknown named micro-markets FROM provider labels. Count distinct
+  // outbound documents rather than mistaking 9 Hatena feed appearances for 9 independent communities.
+  const marketTags = new Map<string,{tag:string; urls:Set<string>; categories:Set<string>; exampleUrl:string; exampleTitle:string}>();
+  for (const group of sampledGroups) for (const entry of group) for (const tag of entry.observedTags) {
+    const normalized = tag.toLowerCase().normalize('NFKC');
+    if (ALL_CONTEXT_NEUTRAL_TAGS.has(normalized)) continue;
+    const hit = marketTags.get(normalized);
+    if (hit) { hit.urls.add(entry.destinationUrl); hit.categories.add(entry.sourceId); }
+    else marketTags.set(normalized,{tag,urls:new Set([entry.destinationUrl]),categories:new Set([entry.sourceId]),exampleUrl:entry.destinationUrl,exampleTitle:entry.title});
+  }
+  const observedNiches = [...marketTags.values()]
+    .sort((a,b)=> b.urls.size-a.urls.size || b.categories.size-a.categories.size || a.tag.localeCompare(b.tag,'ja'))
+    .slice(0,60)
+    .map(v=>({name:v.tag,distinctLinkedPages:v.urls.size,observedFeedCategories:[...v.categories],
+      exampleUrl:v.exampleUrl,exampleTitle:v.exampleTitle,evidenceType:'rss_dc_subject' as const}));
   const tagCounts = new Map<string,{tag:string,count:number,sourceIds:Set<string>,exampleUrl:string}>();
   for (const group of allGroups) for (const entry of group) {
     for (const tag of entry.observedTags) {
@@ -318,7 +345,8 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
     startingPoint:'public_discovery_feed_entries_not_model_named_channels',
     scope:{maxCases:limit, maxAgeDays, requestedSources:health.length,
       maxUpstreamFetches:feeds.length + (includeGlobalTech ? 13 : 0),
-      collectionScope:focus === 'balanced' ? 'all_japanese_curated_categories_plus_optional_global_showcase' : 'selected_user_research_focus',
+      collectionScope:'all_supported_japanese_categories_plus_optional_global_showcase',
+      focusIsNonExclusivePresentationPreference:true,
       attemptedFeedCategories:feeds.map(f=>f.id),
       estimatedFirestoreReads:0, estimatedFirestoreWrites:0, estimatedSerpCalls:0},
     sources:health, cases:cases.map(c=>({
@@ -334,9 +362,10 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
     })),
     observedDestinationDomains:[...new Set(cases.map(c=>c.destinationDomain))],
     observedCommunityTags,
+    observedNiches,
     nicheCoverage:{matchedCases:cases.length, boundedHotentryScope:true,
       assessment:cases.length ? 'literal_title_or_provider_tag_matches_only' : 'no_observed_match_in_sample',
-      nextStepIfEmpty:'Search this exact fandom in public community posts with traffic_route_discovery or web; absence in popular RSS cannot establish no active fans.'},
+      nextStepIfEmpty:'Search this exact user-specified niche in other public sources; absence in the currently supported popularity feeds does not mean the market or audience is absent.'},
     nextInvestigation:[
       'Trace the observed source entry to the actual linked destination, then inspect the content, creator and its CTA where publicly available.',
       'Verify whether this venue accepts original submissions or earned editorial pickup, and whether external click-through is enabled and lawful.',
@@ -344,7 +373,9 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
       'Sample engagement signals (bookmarks, votes, comments) are NOT referral sessions, purchases, or revenue.',
       'Title clues are mechanically matched words, not a review of the landing-page contents or proof of a conversion mechanism.',
       'Observed community tags come only from dc:subject in public RSS, not model-inferred fandom labels; counts are feed entries, not people.',
-      'Niche matching is literal and bounded to this popularity-selected sample; an empty niche search is NOT evidence that the fandom or an acquisition channel does not exist.',
+      'Focus labels are legacy non-exclusive presentation hints, not a fixed taxonomy of discoverable markets.',
+      'observedNiches comes from public provider tags in the complete fetched sample before topic/niche filtering; it is evidence of tagged pages, not independent communities or an exhaustive industry list.',
+      'Niche matching is literal and bounded to this popularity-selected sample; an empty niche search is NOT evidence that the market or an acquisition channel does not exist.',
       'Multiple Hatena categories are not independent platforms; repeated placement is counted separately from domain frequency.',
       'No posting, promotion, or contact attempt has been made. An unavailable feed is not a market absence signal.'
     ]
