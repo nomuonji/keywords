@@ -60,7 +60,7 @@ try {
   // SEO Manager context regression: acquisition choices must not be reduced to edit throughput.
   const { seoAgentContext } = await import('../packages/commands/src/seo-agent-policy.js');
   const manager = seoAgentContext({ role: 'planner' }) as any;
-  assert.equal(manager.policyVersion, '1.32.1');
+  assert.equal(manager.policyVersion, '1.32.2');
   assert.match(manager.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(manager.indexation.requiredDecisionCheck, /each site/i);
   assert.match(manager.indexation.credentialBoundary, /GitHub Actions/);
@@ -71,6 +71,9 @@ try {
   assert.match(manager.contentQualityAudit.triage.join(' '), /lastCrawlTime/);
   assert.match(manager.contentQualityAudit.taskPacket, /seo_task_create/);
   assert.match(manager.contentQualityAudit.persistence, /No per-URL audit DB/);
+  assert.match(manager.contentQualityAudit.editorialFeedback, /supported, contradicted or inconclusive/);
+  assert.match(manager.contentQualityAudit.editorialFeedback, /optimization_event/);
+  assert.ok(manager.instructions.some((x: string) => x.includes('EDITORIAL FEEDBACK:')));
   assert.ok(manager.instructions.some((s: string) => s.includes('CONTENT QUALITY AUDIT TASK')));
   assert.ok(manager.runContract.start.some((s: string) => s.includes('source-backed current-body')));
 
@@ -79,6 +82,8 @@ try {
   const worker = seoAgentContext({ role: 'executor' }) as any;
   assert.equal(worker.acquisitionReview, undefined, 'Worker remains execution-only and does not choose portfolio policy');
   assert.match(worker.contentQualityExecution.gate, /rewrite and recheck/);
+  assert.match(worker.contentQualityExecution.decisionTrace, /original reader question/);
+  assert.match(worker.contentQualityExecution.decisionTrace, /Worker does not update/);
   assert.ok(worker.instructions.some((s: string) => s.includes('Managers specific user-job')));
   assert.equal(worker.contentQualityAudit, undefined, 'Worker cannot run portfolio audits');
 
