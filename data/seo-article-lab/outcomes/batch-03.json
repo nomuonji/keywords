@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "meaning": "Indexation observed only, not editorial ground truth",
+  "outcomes": {
+    "lab-holdout-03": {
+      "indexedSide": "A",
+      "observedAt": "2026-10-08T07:29:03.092Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-23T23:33:46Z",
+        "inspectedAt": "2026-10-08T07:28:35.544Z",
+        "canonical": "https://en.chon-mage.com/blog/oguri-misao/"
+      },
+      "B": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-24T12:42:14Z",
+        "inspectedAt": "2026-10-08T07:29:03.092Z",
+        "canonical": "https://en.chon-mage.com/blog/tsukasa-aoi/"
+      }
+    },
+    "lab-holdout-04": {
+      "indexedSide": "B",
+      "observedAt": "2026-10-08T07:29:02.168Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-31T22:05:25Z",
+        "inspectedAt": "2026-10-08T07:29:02.168Z",
+        "canonical": "https://en.chon-mage.com/blog/sora-aoi/"
+      },
+      "B": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-19T01:13:06Z",
+        "inspectedAt": "2026-10-08T07:28:35.542Z",
+        "canonical": "https://en.chon-mage.com/blog/momonogi-kana/"
+      }
+    },
+    "lab-holdout-05": {
+      "indexedSide": "A",
+      "observedAt": "2026-10-08T07:27:51.386Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-22T01:21:25Z",
+        "inspectedAt": "2026-10-08T07:27:51.386Z",
+        "canonical": "https://en.chon-mage.com/blog/kitano-mina/"
+      },
+      "B": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-24T08:15:24Z",
+        "inspectedAt": "2026-10-08T07:27:45.860Z",
+        "canonical": "https://en.chon-mage.com/blog/kirara-asuka/"
+      }
+    },
+    "lab-holdout-06": {
+      "indexedSide": "B",
+      "observedAt": "2026-10-08T07:27:45.014Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-30T20:41:14Z",
+        "inspectedAt": "2026-10-08T07:26:08.386Z",
+        "canonical": "https://en.chon-mage.com/blog/amami-tsubasa/"
+      },
+      "B": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-21T16:55:11Z",
+        "inspectedAt": "2026-10-08T07:27:45.014Z",
+        "canonical": "https://en.chon-mage.com/blog/kashiwagi-konatsu/"
+      }
+    }
+  }
+}

@@ -9,3 +9,5 @@ data/
 .DS_Store
 *.tsbuildinfo
 .vercel
+
+.seo-article-lab-results/

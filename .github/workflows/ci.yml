@@ -84,6 +84,7 @@ jobs:
             npm run test:site-indexation
             npm run test:site-indexation-scheduler
             npm run test:site-recovery-circuit
+            npm run test:seo-article-lab
             npm run test:autopilot-preflight
             npm run test:seo-delivery-controller
             npm run db:init
