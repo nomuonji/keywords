@@ -150,8 +150,9 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       }, item.source + ':' + item.label + ':' + item.url);
     }
     const prod = raw.commerce_rankings as Awaited<ReturnType<typeof marketProductDiscovery>> | undefined;
-    if (prod && !prod.ok) failures.push({ source: 'commerce_rankings', detail: prod.status });
-    for (const category of prod?.ok ? prod.categories : []) for (const item of category.items ?? []) {
+    if (prod && !('categories' in prod)) failures.push({ source: 'commerce_rankings', detail: prod.status });
+    const categories = prod && 'categories' in prod ? prod.categories : [];
+    for (const category of categories) for (const item of category.items ?? []) {
       if (!item.sellerUrl) continue;
       add({
         family: 'ranked_commerce', source: 'rakuten_rankings', sourcePlatform: 'rakuten',
