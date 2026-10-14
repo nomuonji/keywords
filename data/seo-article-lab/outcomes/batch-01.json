@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "meaning": "Indexation observed only, not editorial ground truth",
+  "outcomes": {
+    "lab-train-01": {
+      "indexedSide": "A",
+      "observedAt": "2026-10-08T07:28:56.276Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-05T23:51:30Z",
+        "inspectedAt": "2026-10-08T07:28:56.031Z",
+        "canonical": "https://en.chon-mage.com/blog/shinjuku-nichome-guide/"
+      },
+      "B": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-09-05T23:50:57Z",
+        "inspectedAt": "2026-10-08T07:28:56.276Z",
+        "canonical": "https://en.chon-mage.com/blog/shinjuku-nightlife-guide/"
+      }
+    },
+    "lab-train-02": {
+      "indexedSide": "B",
+      "observedAt": "2026-10-08T07:27:51.701Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-22T03:52:33Z",
+        "inspectedAt": "2026-10-08T07:26:21.992Z",
+        "canonical": "https://en.chon-mage.com/blog/asakusa-night-guide/"
+      },
+      "B": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-19T07:16:45Z",
+        "inspectedAt": "2026-10-08T07:27:51.701Z",
+        "canonical": "https://en.chon-mage.com/blog/kyoto-nightlife-guide/"
+      }
+    },
+    "lab-train-03": {
+      "indexedSide": "A",
+      "observedAt": "2026-10-08T07:29:46.483Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-29T20:23:24Z",
+        "inspectedAt": "2026-10-08T07:29:02.809Z",
+        "canonical": "https://en.chon-mage.com/blog/tenma-yui/"
+      },
+      "B": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-29T16:40:44Z",
+        "inspectedAt": "2026-10-08T07:29:46.483Z",
+        "canonical": "https://en.chon-mage.com/blog/yumeno-aika/"
+      }
+    },
+    "lab-train-04": {
+      "indexedSide": "B",
+      "observedAt": "2026-10-08T07:28:49.351Z",
+      "comparisonValidity": "unverified_revision",
+      "A": {
+        "state": "Crawled - currently not indexed",
+        "lastCrawl": "2026-08-31T15:26:16Z",
+        "inspectedAt": "2026-10-08T07:28:49.351Z",
+        "canonical": "https://en.chon-mage.com/blog/saori-hara/"
+      },
+      "B": {
+        "state": "Submitted and indexed",
+        "lastCrawl": "2026-09-23T14:17:06Z",
+        "inspectedAt": "2026-10-08T07:28:49.232Z",
+        "canonical": "https://en.chon-mage.com/blog/satsuki-ena/"
+      }
+    }
+  }
+}
