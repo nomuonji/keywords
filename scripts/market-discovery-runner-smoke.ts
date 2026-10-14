@@ -119,6 +119,20 @@ assert.equal(unavailable.results[0].warnings.length, 2);
 assert.equal(unavailable.results[0].search.results.length, 0);
 assert.equal(unavailable.results[0].gate.canClaimVerifiedOpportunity, false);
 
+// A narrow, non-DB question can start directly, and a quota error stops the batch.
+let callsAfterQuota = 0;
+const flexible = await marketDiscoveryRun({ phase: 'validate', candidates: [
+  { name: 'Local history activity', query: 'local history activity',
+    question: 'Are people asking for neighborhood history events?' },
+  { name: 'Community archive', query: 'community archive',
+    question: 'Are original records available to the public?' }
+] }, { gap: (async () => { callsAfterQuota++; throw Error('HTTP 429 quota exceeded'); }) as any });
+if (flexible.phase !== 'validate') throw Error('expected validation');
+assert.equal(callsAfterQuota, 1);
+assert.deepEqual(flexible.skippedCandidates, ['Community archive']);
+assert.equal(flexible.results[0].candidate.databaseUnit, null);
+assert.equal(flexible.results[0].gate.canClaimVerifiedOpportunity, false);
+
 const gate = assessDiscoveryGate({
   competitorPages: [{ url: 'https://one.test', status: 'unavailable' }],
   evidencePages: [], resultCount: 2, demandAvailable: false
