@@ -34,6 +34,7 @@ type Input = {
 };
 type Case = {
   sourceId: string;
+  sourcePlatform: 'hatena_bookmark' | 'hacker_news';
   sourceMarket: string;
   sourceFamily: string;
   discoverySourceUrl: string;
@@ -116,7 +117,7 @@ export function parseHatenaDistributionRss(xml: string, feed: { id:string; famil
     const rawCount = one(block, 'bookmarkcount');
     const n = rawCount && /^\d+$/.test(rawCount) ? Number(rawCount) : null;
     cases.push({
-      sourceId: feed.id, sourceMarket: feed.market, sourceFamily: feed.family,
+      sourceId: feed.id, sourcePlatform:'hatena_bookmark', sourceMarket: feed.market, sourceFamily: feed.family,
       discoverySourceUrl: feed.url, sourcePostUrl: null,
       destinationUrl: destination, destinationDomain: host(destination), title,
       publishedAt: date, timestampProvenance: 'rss_entry_timestamp',
@@ -149,7 +150,7 @@ export function parseHackerNewsDistribution(items: HnItem[], now: number, maxAge
     if (Number.isSafeInteger(item.descendants) && item.descendants! >= 0)
       engagement.push({ metric:'comments', value:item.descendants!, provenance:'hn_official_story_api' });
     cases.push({
-      sourceId:'hacker_news_show', sourceMarket:'global', sourceFamily:'new_product_showcase',
+      sourceId:'hacker_news_show', sourcePlatform:'hacker_news', sourceMarket:'global', sourceFamily:'new_product_showcase',
       discoverySourceUrl:HN_STORIES_URL,
       sourcePostUrl:'https://news.ycombinator.com/item?id=' + item.id,
       destinationUrl:url, destinationDomain:host(url), title, publishedAt:date, timestampProvenance:'hn_story_timestamp',
@@ -252,10 +253,13 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
   const domainCounts = new Map<string,number>();
   const urlMentions = new Map<string,Set<string>>();
   const urlOccurrences = new Map<string,number>();
+  const urlPlatforms = new Map<string,Set<string>>();
   for (const group of allGroups) for (const item of group) {
     domainCounts.set(item.destinationDomain,(domainCounts.get(item.destinationDomain)||0)+1);
     if (!urlMentions.has(item.destinationUrl)) urlMentions.set(item.destinationUrl,new Set());
     urlMentions.get(item.destinationUrl)!.add(item.sourceId);
+    if (!urlPlatforms.has(item.destinationUrl)) urlPlatforms.set(item.destinationUrl,new Set());
+    urlPlatforms.get(item.destinationUrl)!.add(item.sourcePlatform);
     urlOccurrences.set(item.destinationUrl,(urlOccurrences.get(item.destinationUrl)||0)+1);
   }
   return {
@@ -269,8 +273,9 @@ export async function distributionCaseDiscovery(input: unknown = {}, deps: Http 
     sources:health, cases:cases.map(c=>({
       ...c,
       repeatsInSample:urlOccurrences.get(c.destinationUrl) ?? 1,
-      independentSourceMentions:[...(urlMentions.get(c.destinationUrl) ?? [])],
-      independentSourceCount:urlMentions.get(c.destinationUrl)?.size ?? 1,
+      observedFeedCategoryIds:[...(urlMentions.get(c.destinationUrl) ?? [])],
+      distinctFeedCategoryCount:urlMentions.get(c.destinationUrl)?.size ?? 1,
+      distinctPlatformCount:urlPlatforms.get(c.destinationUrl)?.size ?? 1,
       sameDomainEntriesInSample:domainCounts.get(c.destinationDomain) ?? 1,
       headlineFormatClues:headlineFormatClues(c.title),
       publicationMechanism:c.sourceId === 'hacker_news_show' ? 'community_showcase_post' : 'bookmark_aggregation',
