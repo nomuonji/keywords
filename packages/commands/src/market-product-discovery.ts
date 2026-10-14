@@ -100,7 +100,8 @@ export async function marketProductDiscovery(input: Input = {}, dependencies: {
     const permitted = new Set(input.genreIds);
     possible = possible.filter(row => permitted.has(row.genreId));
   } else {
-    const latestDate = possible.map(row => row.date).sort().at(-1) || '';
+    const dates = possible.map(row => row.date).sort();
+    const latestDate = dates[dates.length - 1] || '';
     possible = possible.filter(row => row.date === latestDate);
   }
   // Stable, reproducible rotation across the *observed* universe, never a model-selected niche.
