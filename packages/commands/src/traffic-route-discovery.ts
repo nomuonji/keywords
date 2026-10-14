@@ -10,9 +10,10 @@ export const trafficRouteDiscoveryShape = {
   rotation: z.number().int().min(0).max(12).optional(),
   maxProbes: z.number().int().min(1).max(4).optional(),
   resultsPerProbe: z.number().int().min(3).max(10).optional(),
-  audience: z.enum(['general','fandom','creator_community']).optional()
+  audience: z.enum(['general','fandom','creator_community']).optional(),
+  observedVenueUrls: z.array(z.string().url().max(600)).max(3).optional()
 };
-type Input = { topic: string; geo?: string; rotation?: number; maxProbes?: number; resultsPerProbe?: number; audience?: 'general' | 'fandom' | 'creator_community' };
+type Input = { topic: string; geo?: string; rotation?: number; maxProbes?: number; resultsPerProbe?: number; audience?: 'general' | 'fandom' | 'creator_community'; observedVenueUrls?: string[] };
 type Result = { link?: string; url?: string; title?: string; domain?: string; position?: number; snippet?: string | null };
 type SearchResult = { fetchedAt?: string; results?: Result[]; cache?: { hit?: boolean }; provider?: string };
 type Probe = { id: string; family: string; sites: string[]; mechanic: string; uncertainty: string };
@@ -49,10 +50,25 @@ function safeLink(link: unknown): string | null {
 }
 function hostname(link: string) { return new URL(link).hostname.toLowerCase().replace(/^www\./, ''); }
 function taggedSite(host: string, sites: string[]) { return sites.find(site => host === site || host.endsWith('.' + site)) ?? null; }
-export function trafficRouteQueries(topic: string, rotation = 0, maxProbes = 3, audience: 'general' | 'fandom' | 'creator_community' = 'general'): Array<Probe & { query: string }> {
+export function trafficRouteQueries(topic: string, rotation = 0, maxProbes = 3, audience: 'general' | 'fandom' | 'creator_community' = 'general', observedVenueUrls: string[] = []): Array<Probe & { query: string }> {
   const surfaces = audience === 'fandom' ? FAN_SURFACES : audience === 'creator_community' ? CREATOR_SURFACES : SURFACES;
   const order = [...surfaces.slice(rotation % surfaces.length), ...surfaces.slice(0, rotation % surfaces.length)];
-  const selected = order.slice(0, Math.max(0, maxProbes - 1));
+  // Observed URLs are optional leads, not an allowlist or model-generated categories.
+  // Query the real observed domains before any fallback examples. Reject unsafe hosts.
+  const observed: Probe[] = [];
+  const seen = new Set<string>();
+  for (const raw of observedVenueUrls) {
+    const safe = safeLink(raw);
+    if (!safe) continue;
+    const host = hostname(safe);
+    if (host === 'x.com' || host.endsWith('.x.com') || host === 'threads.net' || host.endsWith('.threads.net')) continue;
+    if (seen.has(host)) continue;
+    seen.add(host);
+    observed.push({id:'observed_venue_'+observed.length, family:'source_observed_venue',
+      sites:[host], mechanic:'Investigate the observed site for a real on-topic distribution or author submission mechanism.',
+      uncertainty:'URL was supplied as an observation lead, not proof of posting rights, audience size or referral traffic.'});
+  }
+  const selected = [...observed,...order].slice(0, Math.max(0, maxProbes - 1));
   return [
     { ...OPEN_DISCOVERY, query: topic + (audience === 'fandom' ? ' (ファン OR 二次創作 OR 推し OR 考察 OR 参加)' : audience === 'creator_community' ? ' (作品 OR 制作 OR 公開 OR 創作)' : ' (質問 OR 口コミ OR 比較 OR 体験談)') },
     ...selected.map(p => ({ ...p, query: '(' + p.sites.map(site => 'site:' + site).join(' OR ') + ') ' + topic }))
@@ -65,7 +81,7 @@ export async function trafficRouteDiscovery(
   const args = z.object(trafficRouteDiscoveryShape).strict().parse(input);
   const topic = args.topic.replace(/\s+/g, ' ');
   const geo = (args.geo || 'JP').toUpperCase();
-  const probes = trafficRouteQueries(topic, args.rotation ?? 0, args.maxProbes ?? 3, args.audience ?? 'general');
+  const probes = trafficRouteQueries(topic, args.rotation ?? 0, args.maxProbes ?? 3, args.audience ?? 'general',args.observedVenueUrls ?? []);
   const research = deps.research ?? serpResearchCached;
   const findings: Array<{
     probeId: string; family: string; platform: string | null; discoveredDomain: string;
@@ -121,7 +137,7 @@ export async function trafficRouteDiscovery(
     }
   }
   return {
-    topic, geo, audience:args.audience ?? 'general', retrievedAt: new Date().toISOString(), snapshotType: 'on_demand_search_index_observations',
+    topic, geo, audience:args.audience ?? 'general', observedVenueInputs:(args.observedVenueUrls ?? []).length, retrievedAt: new Date().toISOString(), snapshotType: 'on_demand_search_index_observations',
     stage: findings.length ? 'candidate_surfaces_only' : 'insufficient_evidence',
     execution: { provider: 'existing_cached_serp', probeCount: probes.length, maximumSerpRequests: probes.length, writesNewResearchLedger: false, usesExistingFirestoreSerpCacheAndQuota: true },
     observations: { indexedPages: findings.length, distinctDomains: new Set(findings.map(x => x.discoveredDomain)).size },
