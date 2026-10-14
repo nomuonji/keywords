@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.32.3';
+export const SEO_AGENT_POLICY_VERSION = '1.32.4';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
