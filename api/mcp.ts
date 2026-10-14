@@ -33,6 +33,7 @@ import {
 } from '../packages/commands/src/seo-source-pool.js';
 import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
+import { marketDiscoveryRun, marketDiscoveryRunShape } from '../packages/commands/src/market-discovery-runner.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
 import { trafficRouteDiscovery, trafficRouteDiscoveryShape } from '../packages/commands/src/traffic-route-discovery.js';
@@ -319,6 +320,11 @@ function server() {
     inputSchema: searchGapResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await searchGapResearch(input)));
+  mcp.registerTool('market_discovery_run', {
+    description: 'Read-only adaptive market evidence entry. Observe selected public sensors without supplied industry seeds, or directly investigate up to three existing candidates. Neither action requires the other. The agent chooses depth from the objective, remaining uncertainty, source costs and decision stakes; record observed facts separately from ideas. No automated approval or persistence.',
+    inputSchema: marketDiscoveryRunShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketDiscoveryRun(input, { demand: keywords => demandWithFallback({ keywords }) })));
   mcp.registerTool('trend_article_research', {
     description: 'Read-only research bundle for an X/web trend article. Combines historical keyword demand, bounded cached SERP evidence, optional site structure context, and literal existing-page overlap hints. Fresh zero-volume terms remain eligible for SERP checks. Does not save, publish, or mutate site structure.',
     inputSchema: trendArticleResearchShape,
