@@ -1,6 +1,11 @@
 name: market-discovery
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/market-discovery*.mjs'
+      - '.github/workflows/market-discovery.yml'
   workflow_dispatch:
   schedule:
     # 04:47 JST every day; isolated from SEO measurement and its Firestore quotas.
