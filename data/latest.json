@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-10-14",
-  "generatedAt": "2026-10-14T03:25:44.143Z",
+  "generatedAt": "2026-10-14T03:31:51.652Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -38,64 +38,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "cocodecow:10914155",
-          "rank": 30
+          "itemCode": "netbaby:10051098",
+          "rank": 1
         },
         {
-          "itemCode": "happyhouse:10000567",
-          "rank": 29
+          "itemCode": "alljapan-online-shop:10021763",
+          "rank": 2
         },
         {
-          "itemCode": "supersonic-webstore:10001004",
-          "rank": 28
+          "itemCode": "ulifeshop:10000448",
+          "rank": 3
         },
         {
-          "itemCode": "cocodecow:10922672",
-          "rank": 27
+          "itemCode": "recred-online:10000011",
+          "rank": 4
         },
         {
-          "itemCode": "book:22082656",
-          "rank": 26
+          "itemCode": "ulife-ulife:10000458",
+          "rank": 5
         },
         {
-          "itemCode": "toymarket:10000403",
-          "rank": 25
+          "itemCode": "e-zakka-one:10000563",
+          "rank": 6
         },
         {
-          "itemCode": "emedama:11289379",
-          "rank": 24
+          "itemCode": "cocodecow:10917959",
+          "rank": 7
         },
         {
-          "itemCode": "kjtrust:10000620",
-          "rank": 23
+          "itemCode": "ilychee:10000709",
+          "rank": 8
         },
         {
-          "itemCode": "recred-online:10000012",
-          "rank": 22
+          "itemCode": "keitaistrap:10075773",
+          "rank": 9
         },
         {
-          "itemCode": "hello-network:10007035",
-          "rank": 21
+          "itemCode": "zaczac188:10001058",
+          "rank": 10
         },
         {
-          "itemCode": "kayotoys:10000173",
-          "rank": 20
+          "itemCode": "fjoonline:10000634",
+          "rank": 11
         },
         {
-          "itemCode": "supersonic-webstore:10001003",
-          "rank": 19
+          "itemCode": "rakuten24:11365799",
+          "rank": 12
         },
         {
-          "itemCode": "mg-mail:10019698",
-          "rank": 18
+          "itemCode": "cocodecow:10874672",
+          "rank": 13
         },
         {
-          "itemCode": "ulifeshop:10000490",
-          "rank": 17
+          "itemCode": "cocodecow:10920102",
+          "rank": 14
         },
         {
-          "itemCode": "keitaistrap:10076763",
-          "rank": 16
+          "itemCode": "osdmarket:10001741",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -111,64 +111,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "book:21948802",
-          "rank": 30
+          "itemCode": "book:22103917",
+          "rank": 1
         },
         {
-          "itemCode": "book:22104547",
-          "rank": 29
+          "itemCode": "book:22123883",
+          "rank": 2
         },
         {
-          "itemCode": "book:22109555",
-          "rank": 28
+          "itemCode": "book:22126994",
+          "rank": 3
         },
         {
-          "itemCode": "book:22115798",
-          "rank": 27
+          "itemCode": "book:22126996",
+          "rank": 4
         },
         {
-          "itemCode": "book:22021288",
-          "rank": 26
+          "itemCode": "book:22077971",
+          "rank": 5
         },
         {
-          "itemCode": "cosmetque:10000704",
-          "rank": 25
+          "itemCode": "book:22123881",
+          "rank": 6
         },
         {
-          "itemCode": "book:21938559",
-          "rank": 24
+          "itemCode": "book:22103918",
+          "rank": 7
         },
         {
-          "itemCode": "book:22124871",
-          "rank": 23
+          "itemCode": "book:22103915",
+          "rank": 8
         },
         {
-          "itemCode": "creacoshop:10027732",
-          "rank": 22
+          "itemCode": "book:22123882",
+          "rank": 9
         },
         {
-          "itemCode": "book:22129411",
-          "rank": 21
+          "itemCode": "book:22124280",
+          "rank": 10
         },
         {
-          "itemCode": "book:22129236",
-          "rank": 20
+          "itemCode": "book:22124276",
+          "rank": 11
         },
         {
-          "itemCode": "book:22060131",
-          "rank": 19
+          "itemCode": "joshin-cddvd:11218338",
+          "rank": 12
         },
         {
-          "itemCode": "book:22127387",
-          "rank": 18
+          "itemCode": "book:21948801",
+          "rank": 13
         },
         {
-          "itemCode": "book:22045894",
-          "rank": 17
+          "itemCode": "book:22086519",
+          "rank": 14
         },
         {
-          "itemCode": "book:22093413",
-          "rank": 16
+          "itemCode": "book:21938133",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -184,64 +184,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "kuunel:10000002",
-          "rank": 30
+          "itemCode": "high-high:10000174",
+          "rank": 1
         },
         {
-          "itemCode": "tansu:10050088",
-          "rank": 29
+          "itemCode": "kaitekistore:10000835",
+          "rank": 2
         },
         {
-          "itemCode": "ai-corp:10000143",
-          "rank": 28
+          "itemCode": "kaitekistore:10000964",
+          "rank": 3
         },
         {
-          "itemCode": "gumode:10000393",
-          "rank": 27
+          "itemCode": "baby-days:10002366",
+          "rank": 4
         },
         {
-          "itemCode": "seastar:10061781",
-          "rank": 26
+          "itemCode": "soyott-camp:10000039",
+          "rank": 5
         },
         {
-          "itemCode": "luckynavi:10000646",
-          "rank": 25
+          "itemCode": "valueprice:10000161",
+          "rank": 6
         },
         {
-          "itemCode": "seastar:10061857",
-          "rank": 24
+          "itemCode": "gumode:10000178",
+          "rank": 7
         },
         {
-          "itemCode": "gumode:10000438",
-          "rank": 23
+          "itemCode": "valueprice:10000150",
+          "rank": 8
         },
         {
-          "itemCode": "valueprice:10000131",
-          "rank": 22
+          "itemCode": "plusiine:10001461",
+          "rank": 9
         },
         {
-          "itemCode": "happiness2016:10000251",
-          "rank": 21
+          "itemCode": "secupcs:10000025",
+          "rank": 10
         },
         {
-          "itemCode": "os-parts:10001423",
-          "rank": 20
+          "itemCode": "seastar:10061850",
+          "rank": 11
         },
         {
-          "itemCode": "maxshare:10061314",
-          "rank": 19
+          "itemCode": "kaitekistore:10000759",
+          "rank": 12
         },
         {
-          "itemCode": "plusiine:10000184",
-          "rank": 18
+          "itemCode": "soyott-camp:10000007",
+          "rank": 13
         },
         {
-          "itemCode": "babyplanetes:10000298",
-          "rank": 17
+          "itemCode": "gumode:10000394",
+          "rank": 14
         },
         {
-          "itemCode": "irisplaza-r:10102899",
-          "rank": 16
+          "itemCode": "ebaby-select:10001543",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -257,64 +257,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "coconem:10000050",
-          "rank": 30
+          "itemCode": "ibiki-kenkyujyo:10000974",
+          "rank": 1
         },
         {
-          "itemCode": "auc-plusone-store:10003089",
-          "rank": 29
+          "itemCode": "salua-eyemaskstore:10000000",
+          "rank": 2
         },
         {
-          "itemCode": "rakutensokuhaimart:10021030",
-          "rank": 28
+          "itemCode": "guardner:10000000",
+          "rank": 3
         },
         {
-          "itemCode": "livactivestore:10000064",
-          "rank": 27
+          "itemCode": "ibiki-kenkyujyo:10000763",
+          "rank": 4
         },
         {
-          "itemCode": "tokiiro64:10000002",
-          "rank": 26
+          "itemCode": "lorelife:10000137",
+          "rank": 5
         },
         {
-          "itemCode": "bakaure-onlineshop:10000933",
-          "rank": 25
+          "itemCode": "nissoplus:10000058",
+          "rank": 6
         },
         {
-          "itemCode": "nakayama-shiki:10000374",
-          "rank": 24
+          "itemCode": "toripurussss:10000044",
+          "rank": 7
         },
         {
-          "itemCode": "dinos-tv:10011755",
-          "rank": 23
+          "itemCode": "globalroad:10001661",
+          "rank": 8
         },
         {
-          "itemCode": "illumina:10000169",
-          "rank": 22
+          "itemCode": "bakaure-onlineshop:10000338",
+          "rank": 9
         },
         {
-          "itemCode": "lorelife:10000083",
-          "rank": 21
+          "itemCode": "rutawa:10000076",
+          "rank": 10
         },
         {
-          "itemCode": "mishii-list:10001825",
-          "rank": 20
+          "itemCode": "mtgec-beauty:10002377",
+          "rank": 11
         },
         {
-          "itemCode": "lorelife:10000084",
-          "rank": 19
+          "itemCode": "venex-j:10000051",
+          "rank": 12
         },
         {
-          "itemCode": "denkimono:10000019",
-          "rank": 18
+          "itemCode": "nissoplus:10000015",
+          "rank": 13
         },
         {
-          "itemCode": "worldzakka:10000002",
-          "rank": 17
+          "itemCode": "maple-market:10000032",
+          "rank": 14
         },
         {
-          "itemCode": "morimotoshoji:10000035",
-          "rank": 16
+          "itemCode": "doshisha-marche:10000488",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -330,60 +330,60 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "happy-sunrise:10003045",
-          "rank": 30
+          "itemCode": "full-house:10000497",
+          "rank": 1
         },
         {
-          "itemCode": "nanaple:10014598",
-          "rank": 29
+          "itemCode": "p-select:10066575",
+          "rank": 2
         },
         {
-          "itemCode": "lucky13:10231626",
-          "rank": 28
+          "itemCode": "p-select:10097868",
+          "rank": 3
         },
         {
-          "itemCode": "r-four:10002161",
-          "rank": 27
+          "itemCode": "nanaple:10155597",
+          "rank": 4
         },
         {
-          "itemCode": "all-for-you:10000752",
-          "rank": 26
+          "itemCode": "p-select:10095683",
+          "rank": 5
         },
         {
-          "itemCode": "maruzeki:10000254",
-          "rank": 25
+          "itemCode": "aobax:10000572",
+          "rank": 6
         },
         {
-          "itemCode": "p-select:10095279",
-          "rank": 24
+          "itemCode": "watch-lab:10142577",
+          "rank": 7
         },
         {
-          "itemCode": "axzes:10028609",
-          "rank": 23
+          "itemCode": "all-for-you:10000723",
+          "rank": 8
         },
         {
-          "itemCode": "mtkshop:10030468",
-          "rank": 22
+          "itemCode": "gryps-:10019050",
+          "rank": 9
         },
         {
-          "itemCode": "wakufuri:10001252",
-          "rank": 21
+          "itemCode": "lafitte:10795406",
+          "rank": 10
         },
         {
-          "itemCode": "reborn-online:10000181",
-          "rank": 20
+          "itemCode": "shop-cross9:10195115",
+          "rank": 12
         },
         {
-          "itemCode": "timelovers:10039904",
-          "rank": 19
+          "itemCode": "shop-cross9:10204838",
+          "rank": 13
         },
         {
-          "itemCode": "shop-cross9:10204877",
-          "rank": 18
+          "itemCode": "blessyou:10048692",
+          "rank": 14
         },
         {
-          "itemCode": "akaiyane:10000559",
-          "rank": 17
+          "itemCode": "full-house:10000500",
+          "rank": 15
         },
         {
           "itemCode": "nanaple:10155639",
@@ -403,64 +403,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "stylife:14243234",
-          "rank": 30
+          "itemCode": "stylife:15874634",
+          "rank": 1
         },
         {
-          "itemCode": "champion-ec1:10000730",
-          "rank": 29
+          "itemCode": "classical:10016215",
+          "rank": 2
         },
         {
-          "itemCode": "stylife:15900107",
-          "rank": 28
+          "itemCode": "darkangel:10036193",
+          "rank": 3
         },
         {
-          "itemCode": "classical:10018222",
-          "rank": 27
+          "itemCode": "darkangel:10037257",
+          "rank": 4
         },
         {
-          "itemCode": "stylife:15781753",
-          "rank": 26
+          "itemCode": "stylife:15919855",
+          "rank": 5
         },
         {
-          "itemCode": "hhh-style:10029360",
-          "rank": 25
+          "itemCode": "stylife:15874768",
+          "rank": 6
         },
         {
-          "itemCode": "antelp:10005758",
-          "rank": 24
+          "itemCode": "osharewalker:10030149",
+          "rank": 7
         },
         {
-          "itemCode": "darkangel:10037392",
-          "rank": 23
+          "itemCode": "hhh-style:10028411",
+          "rank": 8
         },
         {
-          "itemCode": "cocacoca:10017654",
-          "rank": 22
+          "itemCode": "stylife:15230293",
+          "rank": 9
         },
         {
-          "itemCode": "antiqua-a:10033360",
-          "rank": 21
+          "itemCode": "hhh-style:10027534",
+          "rank": 10
         },
         {
-          "itemCode": "tu-hacci:10005458",
-          "rank": 20
+          "itemCode": "stylife:14687244",
+          "rank": 11
         },
         {
-          "itemCode": "tu-hacci:10000858",
-          "rank": 19
+          "itemCode": "sljapan1:10004735",
+          "rank": 12
         },
         {
-          "itemCode": "mxcznr:10017205",
-          "rank": 18
+          "itemCode": "stylife:15785339",
+          "rank": 13
         },
         {
-          "itemCode": "stylife:15860129",
-          "rank": 17
+          "itemCode": "stylife:15748261",
+          "rank": 14
         },
         {
-          "itemCode": "sutekitaiken:10001518",
-          "rank": 16
+          "itemCode": "stylife:15776069",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -476,64 +476,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "book:17898059",
-          "rank": 30
+          "itemCode": "book:22130865",
+          "rank": 1
         },
         {
-          "itemCode": "book:21910954",
-          "rank": 29
+          "itemCode": "book:20034188",
+          "rank": 2
         },
         {
-          "itemCode": "book:20486264",
-          "rank": 28
+          "itemCode": "book:22086377",
+          "rank": 3
         },
         {
-          "itemCode": "bookfan:13137941",
-          "rank": 27
+          "itemCode": "books-sanseido:10358029",
+          "rank": 4
         },
         {
-          "itemCode": "book:21926149",
-          "rank": 26
+          "itemCode": "book:21503357",
+          "rank": 5
         },
         {
-          "itemCode": "book:22058498",
-          "rank": 25
+          "itemCode": "book:21988709",
+          "rank": 6
         },
         {
-          "itemCode": "book:20204974",
-          "rank": 24
+          "itemCode": "book:21445784",
+          "rank": 7
         },
         {
-          "itemCode": "book:21589107",
-          "rank": 23
+          "itemCode": "book:21325064",
+          "rank": 8
         },
         {
-          "itemCode": "book:20789652",
-          "rank": 22
+          "itemCode": "book:21445696",
+          "rank": 9
         },
         {
-          "itemCode": "sekaiya:10006307",
-          "rank": 21
+          "itemCode": "book:22077637",
+          "rank": 10
         },
         {
-          "itemCode": "bookfan:13168421",
-          "rank": 20
+          "itemCode": "book:19950235",
+          "rank": 11
         },
         {
-          "itemCode": "book:20774931",
-          "rank": 19
+          "itemCode": "book:20480771",
+          "rank": 12
         },
         {
-          "itemCode": "book:20516204",
-          "rank": 18
+          "itemCode": "dorama:16298565",
+          "rank": 13
         },
         {
-          "itemCode": "bookfan:12954279",
-          "rank": 17
+          "itemCode": "book:21835810",
+          "rank": 14
         },
         {
-          "itemCode": "babyhouse:10003455",
-          "rank": 16
+          "itemCode": "book:17265709",
+          "rank": 15
         }
       ],
       "comparison": null
@@ -549,16 +549,16 @@
       "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "goodlifeshopstore:10199375",
-          "rank": 3
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
         },
         {
           "itemCode": "tesseractrk:10004472",
           "rank": 2
         },
         {
-          "itemCode": "gameskshop:10069902",
-          "rank": 1
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
         }
       ],
       "comparison": null
@@ -574,64 +574,64 @@
       "rankingUpdatedAt": "Tue, 13 Oct 2026 00:00:00 +0900",
       "items": [
         {
-          "itemCode": "to-rulease:10011055",
-          "rank": 22
+          "itemCode": "biccamera:13635083",
+          "rank": 1
         },
         {
-          "itemCode": "to-rulease:10011096",
-          "rank": 21
+          "itemCode": "skyblue-:10000269",
+          "rank": 2
         },
         {
-          "itemCode": "a-price:11220733",
-          "rank": 20
+          "itemCode": "farson:10007690",
+          "rank": 3
         },
         {
-          "itemCode": "kounotorinodvd:10009115",
-          "rank": 19
+          "itemCode": "premiumgarage:10000022",
+          "rank": 4
         },
         {
-          "itemCode": "to-rulease:10011358",
-          "rank": 18
+          "itemCode": "rcmdse:16200354",
+          "rank": 5
         },
         {
-          "itemCode": "kounotorinodvd:10007805",
-          "rank": 17
+          "itemCode": "rcmdse:16512348",
+          "rank": 6
         },
         {
-          "itemCode": "kounotorinodvd:10008452",
-          "rank": 16
+          "itemCode": "hauteproduit:10225878",
+          "rank": 7
         },
         {
-          "itemCode": "to-rulease:10011483",
-          "rank": 15
-        },
-        {
-          "itemCode": "souplesse:10001478",
-          "rank": 14
-        },
-        {
-          "itemCode": "tubame-store:10000134",
-          "rank": 13
-        },
-        {
-          "itemCode": "superdeal:10005737",
-          "rank": 12
-        },
-        {
-          "itemCode": "farson:10008982",
-          "rank": 11
-        },
-        {
-          "itemCode": "snetshop:10069200",
-          "rank": 10
+          "itemCode": "biccamera:13635082",
+          "rank": 8
         },
         {
           "itemCode": "cecs2022:10000269",
           "rank": 9
         },
         {
-          "itemCode": "biccamera:13635082",
-          "rank": 8
+          "itemCode": "snetshop:10069200",
+          "rank": 10
+        },
+        {
+          "itemCode": "farson:10008982",
+          "rank": 11
+        },
+        {
+          "itemCode": "superdeal:10005737",
+          "rank": 12
+        },
+        {
+          "itemCode": "tubame-store:10000134",
+          "rank": 13
+        },
+        {
+          "itemCode": "souplesse:10001478",
+          "rank": 14
+        },
+        {
+          "itemCode": "to-rulease:10011483",
+          "rank": 15
         }
       ],
       "comparison": null
