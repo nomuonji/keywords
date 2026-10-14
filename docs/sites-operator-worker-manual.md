@@ -100,6 +100,15 @@ Validate the **change itself** using the repository's available mechanisms:
 
 Never claim a check ran when it did not.
 
+### Autonomous validation fallback (2026-10-15)
+
+- Do not treat inability to run local `npm install`, a full build, or generated-page inspection as an automatic stop for every SEO Task. Choose the narrowest meaningful checks supported by the current runner and task: source/diff review, syntax or type validation where available, static invariants, source evidence, and existing repository checks. Check every acceptance criterion and distinguish verified items from items awaiting CI.
+- When local build tooling is unavailable, continue only if the change can be meaningfully validated without it and the remaining build/render assertions are enforceable by the repository's existing central PR CI before merge. Record exactly which checks ran, which did not, and the required CI gates in `validationSummary`; never represent deferred CI as passed.
+- If a task specifically requires runtime/rendered-output proof that neither this runner nor configured downstream CI can provide, do not hand off an unverified implementation. Preserve an unclaimed `ready` task, report the concrete missing acceptance evidence, and inspect other eligible tasks instead.
+- For a repeated environment-only blocker, avoid duplicate history writes and redundant connectivity probes unless evidence has changed. Evaluate other eligible tasks; finish with a concise zero-work report only when none can be validated adequately.
+- These fallbacks do not relax safety/authorization refusals, Task scope, claim isolation, Git-object/readback preflight, the prohibition on direct ref/PR writes, or central CI merge gates. Do not alter ChatGPT automation schedules because of a task-level blocker.
+
+
 ### Task size, completeness and quality
 
 A larger Task is not permission to implement superficially. The Worker owns the **whole documented outcome**.
