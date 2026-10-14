@@ -1,3 +1,4 @@
+import { KEYWORDS_MCP_TOOL_NAMES } from '../api/mcp-contract.js';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { siteStructureSave, siteStructureGet, siteStructureList, siteStructurePatch } from '../packages/commands/src/site-structure.js';
@@ -149,7 +150,7 @@ try {
   });
   assert.equal(groqBearerResponse.status, 200);
   const listing = await call('tools/list', {});
-  assert.equal(listing.tools.length, 35);
+  assert.equal(listing.tools.length, KEYWORDS_MCP_TOOL_NAMES.length);
    assert.ok(listing.tools.some((tool: any) => tool.name === 'distribution_case_discovery'));
    assert.ok(listing.tools.some((tool: any) => tool.name === 'traffic_route_discovery'));
    assert.ok(listing.tools.some((tool: any) => tool.name === 'market_product_discovery'));
