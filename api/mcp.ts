@@ -34,6 +34,7 @@ import {
 import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
+import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
@@ -250,6 +251,12 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('market_product_discovery', {
+    description: 'Start here when the user asks to find products that sell or to discover unknown buying markets. Read current Rakuten category observations sampled independently of LLM interests, diversify by unrelated root categories, and fetch actual ranked item names, item codes, ranks and official seller URLs from the affiliate API. Returns bounded product evidence and prior-rank overlap, explicitly not purchase counts, conversion rates or approval. Costs 0 Firestore and 0 SERP; max 8 live ranking API reads. Follow with independent demand, buyer/review, competing offers and affiliate viability research, not generic brainstorming. Read-only; does not auto-publish.',
+    inputSchema: marketProductDiscoveryShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await marketProductDiscovery(input)));
+
   mcp.registerTool('market_signal_scan', {
     description: 'Read current public market signals on demand before ideation. Without query it scans broad Google Trends RSS, TikTok Creative Center public trends, and Hacker News. With query, Hacker News switches to relevance search; broad Google/TikTok surfaces remain context only. For actual query-focused market research use market_intelligence_research.',
     inputSchema: {
