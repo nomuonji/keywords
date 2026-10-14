@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac, generateKeyPairSync } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { field } from '../packages/db/src/firestore.js';
 import {
   metricSnapshotSave,
@@ -856,7 +857,7 @@ try {
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_summary'));
   assert.ok(listing.tools.some((tool: any) => tool.name === 'site_indexation_snapshot_save'));
   const agentPolicy = await call('tools/call', { name: 'seo_agent_context', arguments: { role: 'planner' } });
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.32.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.32.1');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
@@ -937,6 +938,19 @@ try {
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /seo_task_claim/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /claimRunId/);
   assert.match(executorPolicy.structuredContent.runContract.claimModel, /temporary run lease/);
+  const executorText = JSON.stringify(executorPolicy.structuredContent.instructions);
+  assert.match(executorText, /SEO Worker MUST NEVER call site_article_save/);
+  assert.match(executorText, /READ-ONLY article metadata/);
+  assert.match(executorText, /PREFLIGHT BEFORE CLAIM/);
+  assert.match(executorText, /create_blob\/create_tree\/create_commit/);
+  assert.match(executorText, /safety-rejected tool action/);
+  assert.match(executorText, /do not replay the same content through GitHub or any other API/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.runContract.start), /never site_article_save/);
+  const workerManual = readFileSync(new URL('../docs/sites-operator-worker-manual.md', import.meta.url), 'utf8');
+  assert.match(workerManual, /An SEO Worker must not call them/);
+  assert.match(workerManual, /Do not call `site_article_save`/);
+  assert.match(workerManual, /must not claim/);
+  assert.doesNotMatch(workerManual, /then register only that target with `site_article_save`/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /expectedRevision/);
   const status = await call('tools/call', { name: 'remote_sites_status', arguments: {} });
   assert.equal(status.structuredContent.sourceOfTruth.articleBody, 'git_repository');
