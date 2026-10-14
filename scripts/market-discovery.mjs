@@ -96,7 +96,13 @@ async function main() {
       const preceding = [...retained].reverse().find(row => row.genreId === String(chosen.genreId));
       const priorCodes = new Set((preceding?.items || []).map(x => x.itemCode));
       const items = rank.items.filter(x => typeof x.itemCode === 'string' && x.itemCode.length < 161 && Number.isInteger(x.rank) && x.rank > 0)
-        .map(x => ({ itemCode: x.itemCode, rank: x.rank }));
+        .map(x => ({ itemCode: x.itemCode, rank: x.rank }))
+        .sort((a, b) => a.rank - b.rank);
+      // Do not label ranks 16-30 as a top-15 observation if a provider changes its sort order.
+      if (items.length && items[0].rank > 15) {
+        errors.push({ genreId: String(chosen.genreId), reason: 'rank_window_invalid' });
+        continue;
+      }
       const overlap = items.filter(x => priorCodes.has(x.itemCode)).length;
       observations.push({
         date: today, rootGenreId: String(selection.root.genreId), rootName: selection.root.name,
