@@ -9,9 +9,10 @@ export const trafficRouteDiscoveryShape = {
   geo: z.string().length(2).optional(),
   rotation: z.number().int().min(0).max(12).optional(),
   maxProbes: z.number().int().min(1).max(4).optional(),
-  resultsPerProbe: z.number().int().min(3).max(10).optional()
+  resultsPerProbe: z.number().int().min(3).max(10).optional(),
+  audience: z.enum(['general','fandom','creator_community']).optional()
 };
-type Input = { topic: string; geo?: string; rotation?: number; maxProbes?: number; resultsPerProbe?: number };
+type Input = { topic: string; geo?: string; rotation?: number; maxProbes?: number; resultsPerProbe?: number; audience?: 'general' | 'fandom' | 'creator_community' };
 type Result = { link?: string; url?: string; title?: string; domain?: string; position?: number; snippet?: string | null };
 type SearchResult = { fetchedAt?: string; results?: Result[]; cache?: { hit?: boolean }; provider?: string };
 type Probe = { id: string; family: string; sites: string[]; mechanic: string; uncertainty: string };
@@ -29,19 +30,31 @@ const SURFACES: Probe[] = [
   { id: 'forums', family: 'enthusiast_forums', sites: ['5ch.net', 'girlschannel.net'], mechanic: 'Observe language and pain points of a niche community; do not automate promotional posts.', uncertainty: 'Links and promotional participation may be restricted or inappropriate.' },
   { id: 'newsletter', family: 'newsletter_and_owned_media', sites: ['substack.com', 'note.com'], mechanic: 'Identify topic-specific writers for possible editorial coverage or permissioned partnerships.', uncertainty: 'No evidence of collaboration access, deliverability or referral volume.' }
 ];
+const FAN_SURFACES: Probe[] = [
+  { id:'fan_art_communities', family:'fan_art', sites:['pixiv.net','poipiku.com'], mechanic:'Observe actual fan creations and creator profiles before investigating opt-in links or partnerships.', uncertainty:'A fan illustration or profile is NOT a permission to promote or republish copyrighted works.' },
+  { id:'fan_goods_and_events', family:'fan_goods', sites:['booth.pm','suzuri.jp'], mechanic:'Observe actual fan goods, events and creator storefronts to investigate licensed listings and traffic discovery.', uncertainty:'The existence of merchandise is not proof that third-party referral/affiliate links are permitted.' },
+  { id:'fan_discussions', family:'fan_discussion', sites:['reddit.com','note.com'], mechanic:'Study documented discussions and creator commentary; any participation must respect each community policy.', uncertainty:'Presence of fans is not evidence that promotions or outbound links are welcome.' },
+  { id:'fan_video', family:'fan_video', sites:['youtube.com','nicovideo.jp'], mechanic:'Observe concrete fan videos, coverage and creator channels; check actual permitted outbound destinations.', uncertainty:'Views do not equal site visits, and video/copyright rules differ by franchise.' }
+];
+const CREATOR_SURFACES: Probe[] = [
+  { id:'creator_portfolios', family:'creative_portfolios', sites:['pixiv.net','note.com'], mechanic:'Find creators producing original community-specific references or tools and their actual author destinations.', uncertainty:'The creative works and fan assets may be copyrighted; collaboration or referrals require permission.' },
+  { id:'creator_products', family:'creator_stores', sites:['booth.pm','suzuri.jp'], mechanic:'Observe actual storefronts or publications and check legitimate creator collaboration routes.', uncertainty:'Publishing merchandise requires rights clearance and review of platform listing terms.' },
+  { id:'creator_video', family:'creative_video', sites:['youtube.com','nicovideo.jp'], mechanic:'Identify existing original creator demonstration formats and inspect reachable external links.', uncertainty:'Engagement and viewer intent are unproven until measured.' }
+];
 // One general discovery probe can reveal a venue not named in our initial taxonomy.
 const OPEN_DISCOVERY: Probe = { id: 'open_discovery', family: 'unknown_referral_surfaces', sites: [], mechanic: 'Identify actual venues repeatedly publishing or discussing this buying problem.', uncertainty: 'A surfaced website is only a lead; a usable acquisition mechanism is not established.' };
-const knownSites = new Set(SURFACES.flatMap(p => p.sites));
+const knownSites = new Set([...SURFACES,...FAN_SURFACES,...CREATOR_SURFACES].flatMap(p => p.sites));
 function safeLink(link: unknown): string | null {
   try { if (typeof link !== 'string') return null; const url = new URL(link); if (url.protocol !== 'https:' && url.protocol !== 'http:') return null; if (url.hostname === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(url.hostname)) return null; return url.href; } catch { return null; }
 }
 function hostname(link: string) { return new URL(link).hostname.toLowerCase().replace(/^www\./, ''); }
 function taggedSite(host: string, sites: string[]) { return sites.find(site => host === site || host.endsWith('.' + site)) ?? null; }
-export function trafficRouteQueries(topic: string, rotation = 0, maxProbes = 3): Array<Probe & { query: string }> {
-  const order = [...SURFACES.slice(rotation % SURFACES.length), ...SURFACES.slice(0, rotation % SURFACES.length)];
+export function trafficRouteQueries(topic: string, rotation = 0, maxProbes = 3, audience: 'general' | 'fandom' | 'creator_community' = 'general'): Array<Probe & { query: string }> {
+  const surfaces = audience === 'fandom' ? FAN_SURFACES : audience === 'creator_community' ? CREATOR_SURFACES : SURFACES;
+  const order = [...surfaces.slice(rotation % surfaces.length), ...surfaces.slice(0, rotation % surfaces.length)];
   const selected = order.slice(0, Math.max(0, maxProbes - 1));
   return [
-    { ...OPEN_DISCOVERY, query: topic + ' (質問 OR 口コミ OR 比較 OR 体験談)' },
+    { ...OPEN_DISCOVERY, query: topic + (audience === 'fandom' ? ' (ファン OR 二次創作 OR 推し OR 考察 OR 参加)' : audience === 'creator_community' ? ' (作品 OR 制作 OR 公開 OR 創作)' : ' (質問 OR 口コミ OR 比較 OR 体験談)') },
     ...selected.map(p => ({ ...p, query: '(' + p.sites.map(site => 'site:' + site).join(' OR ') + ') ' + topic }))
   ];
 }
@@ -52,7 +65,7 @@ export async function trafficRouteDiscovery(
   const args = z.object(trafficRouteDiscoveryShape).strict().parse(input);
   const topic = args.topic.replace(/\s+/g, ' ');
   const geo = (args.geo || 'JP').toUpperCase();
-  const probes = trafficRouteQueries(topic, args.rotation ?? 0, args.maxProbes ?? 3);
+  const probes = trafficRouteQueries(topic, args.rotation ?? 0, args.maxProbes ?? 3, args.audience ?? 'general');
   const research = deps.research ?? serpResearchCached;
   const findings: Array<{
     probeId: string; family: string; platform: string | null; discoveredDomain: string;
@@ -108,7 +121,7 @@ export async function trafficRouteDiscovery(
     }
   }
   return {
-    topic, geo, retrievedAt: new Date().toISOString(), snapshotType: 'on_demand_search_index_observations',
+    topic, geo, audience:args.audience ?? 'general', retrievedAt: new Date().toISOString(), snapshotType: 'on_demand_search_index_observations',
     stage: findings.length ? 'candidate_surfaces_only' : 'insufficient_evidence',
     execution: { provider: 'existing_cached_serp', probeCount: probes.length, maximumSerpRequests: probes.length, writesNewResearchLedger: false, usesExistingFirestoreSerpCacheAndQuota: true },
     observations: { indexedPages: findings.length, distinctDomains: new Set(findings.map(x => x.discoveredDomain)).size },
