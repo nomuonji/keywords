@@ -5,6 +5,8 @@ Canonical **chat orchestration instructions**: My Portal `chatSkills/market-rese
 ## Runtime architecture
 The ChatGPT agent orchestrates; operators remain independent. There is **no new cross-operator database, background poller or credential-sharing server**.
 
+`market_discovery_run` accepts a focused candidate with a name, query and optional research question. Database-specific fields are optional. Focused checks run one candidate at a time; after a 429/quota failure, any remaining candidates are reported as skipped for that call.
+
 | Stage / concern | Evidence-owning system | Representative capability (examples, not permanent list) | What it does not prove |
 | --- | --- | --- | --- |
 | Blind market/traffic observation | Keywords | `market_discovery_run(phase=observe)` or relevant source-specific tools | Visitors, sales, promotion rights |
