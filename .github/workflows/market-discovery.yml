@@ -1,0 +1,57 @@
+name: market-discovery
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 04:47 JST every day; isolated from SEO measurement and its Firestore quotas.
+    - cron: '47 19 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-discovery
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Load prior derived observations (if any)
+        run: |
+          if git fetch origin market-data:refs/remotes/origin/market-data; then
+            git show origin/market-data:data/latest.json > "$RUNNER_TEMP/previous.json" || true
+          fi
+      - name: Observe distinct Rakuten categories
+        env:
+          MARKET_DISCOVERY_API: https://api-three-gilt-37.vercel.app/api/affiliate
+        run: |
+          node scripts/market-discovery.mjs \
+            --previous="$RUNNER_TEMP/previous.json" \
+            --output="$RUNNER_TEMP/latest.json"
+      - name: Persist only category ranks to separate branch
+        run: |
+          git config user.name "market-discovery[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git show-ref --verify --quiet refs/remotes/origin/market-data; then
+            git checkout -B market-data refs/remotes/origin/market-data
+          else
+            git checkout --orphan market-data
+            git rm -rf --ignore-unmatch .
+          fi
+          mkdir -p data
+          cp "$RUNNER_TEMP/latest.json" data/latest.json
+          git add data/latest.json
+          if git diff --cached --quiet; then
+            echo "No new observation"
+          else
+            git commit -m "data: category rank observations $(date -u +%F)"
+            git push origin market-data
+          fi
