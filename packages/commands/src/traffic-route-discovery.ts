@@ -67,10 +67,11 @@ export async function trafficRouteDiscovery(
         num: args.resultsPerProbe ?? 8, provider: 'api', forceRefresh: false, maxCacheAgeHours: 72
       });
       const observed = [];
-      for (const raw of Array.isArray(packet.results) ? packet.results : []) {
+      for (const raw of (Array.isArray(packet.results) ? packet.results : []) as Result[]) {
         const url = safeLink(raw.link ?? raw.url);
         if (!url) continue;
         const host = hostname(url);
+        if (host === 'x.com' || host.endsWith('.x.com') || host === 'twitter.com' || host.endsWith('.twitter.com') || host === 'threads.net' || host.endsWith('.threads.net')) continue;
         const matched = taggedSite(host, probe.sites);
         if (probe.sites.length && !matched) continue; // OR search can return unrelated domains.
         const title = String(raw.title || '').slice(0, 240);
