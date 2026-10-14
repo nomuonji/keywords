@@ -1051,6 +1051,16 @@ export async function seoTaskCreate(input: unknown) {
     throw new Error('articleIds or targetUrls is required unless taskType is data_expansion or schema_expansion');
   }
   const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+  // A safety-denied implementation is not ordinary cancelled work: changing
+  // task ID or allowing a new active record with the same dedupe key would
+  // silently route the rejected action back to another scheduled Worker.
+  const safetyRefusedDuplicate = existing.find(task =>
+    task.dedupeKey === args.dedupeKey &&
+    task.history?.some(event => event.event === 'safety_write_rejected_task_cancelled')
+  );
+  if (safetyRefusedDuplicate) {
+    throw new Error(`Safety-rejected SEO task ${safetyRefusedDuplicate.id} cannot be recreated under the same dedupeKey; independent review is required`);
+  }
   const duplicate = existing.find(task =>
     task.dedupeKey === args.dedupeKey &&
     !['completed', 'cancelled', 'superseded'].includes(task.status)
@@ -1123,6 +1133,9 @@ export async function seoTaskClaim(input: unknown) {
   if (!previous) throw new Error('SEO task not found');
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and retry the claim');
+  if (current.history?.some(event => event.event === 'safety_write_rejected_task_cancelled')) {
+    throw new Error('Safety-rejected SEO task cannot be reclaimed or continued by a scheduled Worker');
+  }
   if (!['ready', 'issued', 'in_progress'].includes(current.status)) {
     throw new Error('SEO task is not claimable in its current status');
   }
@@ -1216,6 +1229,10 @@ export async function seoTaskUpdate(input: unknown) {
     allocationPolicyRevision = macroPolicy.revision;
   }
   const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, claimRunId, ...patch } = args;
+  if (current.history?.some(event => event.event === 'safety_write_rejected_task_cancelled') &&
+      patch.status && !['cancelled', 'superseded'].includes(patch.status)) {
+    throw new Error('Safety-rejected SEO task cannot be restarted by changing its status; independent review is required');
+  }
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
   }
