@@ -19,7 +19,7 @@ const candidateShape = z.object({
   query: z.string().trim().min(2).max(200),
   // Candidate-provided leads are checked by fetching the actual pages.
   // Merely submitting a URL does not count as corroborated evidence.
-  evidenceUrls: z.array(z.string().url().max(2000).refine(v => /^https?:\\/\\//i.test(v))).max(2).default([])
+  evidenceUrls: z.array(z.string().url().max(2000).refine(v => /^https?:\/\//i.test(v))).max(2).default([])
 }).strict();
 
 export const marketDiscoveryRunShape = {
@@ -44,10 +44,10 @@ type SourceObservation = {
 };
 
 const domain = (url: string) => {
-  try { return new URL(url).hostname.toLowerCase().replace(/^www\\./,''); } catch { return ''; }
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./,''); } catch { return ''; }
 };
 const errorLabel = (e: unknown) =>
-  e instanceof Error ? e.message.replace(/https?:\\/\\/\\S+/g,'[url]').slice(0,160) : 'source_unavailable';
+  e instanceof Error ? e.message.replace(/https?:\/\/\S+/g,'[url]').slice(0,160) : 'source_unavailable';
 
 export function assessDiscoveryGate(input: {
   competitorPages: { url: string; status: string }[];
