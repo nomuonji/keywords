@@ -126,9 +126,11 @@ function server() {
   mcp.registerTool('remote_sites_status', { description: 'Check Sites Operator version, deployment, source-of-truth policy, Firestore configuration and tool contract. No secrets are returned.' }, async () => structured(runtimeStatus()));
   mcp.registerTool('seo_agent_context', { description: 'Role-specific contract: planner is the active scheduled SEO Manager; executor is a separate Worker with only a minimal operational gate. The archived My Portal Manager is not an actor.', inputSchema: seoAgentContextShape, annotations: { readOnlyHint: true } }, async input => {
     const context = seoAgentContext(input);
-    const recovery = await seoRecoveryStatus({});
+    // Bootstrap from two point reads. Site-level recovery details belong to the
+    // explicit seo_recovery_status tool, not every scheduled agent invocation.
+    const { policySnapshot, ...recovery } = await seoRecoveryStatus({}, { agentBootstrap: true });
     return structured(context.role === 'planner'
-      ? { ...context, recovery, macroPolicy: await seoPortfolioPolicyGet({}) }
+      ? { ...context, recovery, macroPolicy: policySnapshot }
       : { ...context, executionGate: { incidentCategory: recovery.portfolio.incidentCategory, mode: recovery.portfolio.mode,
         growthFrozenByDefault: recovery.effectivePolicy.growthFrozenByDefault,
         blockedTaskTypesUntilSiteClearance: recovery.effectivePolicy.blockedTaskTypesUntilSiteClearance,
