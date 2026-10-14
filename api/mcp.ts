@@ -36,6 +36,7 @@ import { searchGapResearch, searchGapResearchShape } from '../packages/commands/
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
 import { trafficRouteDiscovery, trafficRouteDiscoveryShape } from '../packages/commands/src/traffic-route-discovery.js';
+import { distributionCaseDiscovery, distributionCaseDiscoveryShape } from '../packages/commands/src/distribution-case-discovery.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
@@ -252,6 +253,12 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('distribution_case_discovery', {
+    description: 'START HERE for open-ended new traffic routes: observe actual recent public cross-category outbound placements from Japan Hatena hotentry RSS and official Hacker News Show stories, without first asking an LLM to name platforms or search terms. Returns source-to-destination links, original post URLs when available, dates, and explicitly sourced bookmark/upvote/comment counts (NOT referral clicks, visits or sales); optional topic filters evidence AFTER collection. No SERP/Firestore quota, no publishing, no inferred link permission. Follow with precise buyer relevance, platform submission rules, creator content patterns and measurable attribution experiments. Use traffic_route_discovery only to investigate a concrete observed niche or to seek additional venues.',
+    inputSchema: distributionCaseDiscoveryShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await distributionCaseDiscovery(input)));
+
   mcp.registerTool('traffic_route_discovery', {
     description: 'Find non-X, non-Threads, non-SEO acquisition/distribution surfaces from real indexed pages around a concrete product, problem or audience. Rotate reproducibly across Q&A, niche communities, third-party publishing, video, visual discovery, newsletters, bookmark curation, directories and marketplaces, plus an open-web discovery probe for previously unknown sites. Uses 1-4 cached/quota-accounted SERP queries and returns ONLY page evidence; page presence does not prove traffic, self-promotion permission, referral capability or conversions. Follow up by checking the exact venue rules, outbound path, cost, original content requirements and trackable referrals. No automated posting, writes or launch.',
     inputSchema: trafficRouteDiscoveryShape,

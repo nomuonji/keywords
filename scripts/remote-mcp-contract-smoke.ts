@@ -39,6 +39,7 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'trend_article_research',
   'market_product_discovery',
   'traffic_route_discovery',
+  'distribution_case_discovery',
   'market_signal_scan',
   'market_intelligence_research',
   'market_signal_snapshot_save',
@@ -46,7 +47,7 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'marketplace_research',
   'search_gap_research'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 34);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 35);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
