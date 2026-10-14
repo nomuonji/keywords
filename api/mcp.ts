@@ -35,6 +35,7 @@ import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packag
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
+import { trafficRouteDiscovery, trafficRouteDiscoveryShape } from '../packages/commands/src/traffic-route-discovery.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
@@ -251,6 +252,12 @@ function server() {
     inputSchema: keywordResearchPipelineShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordResearchPipeline(input, demandWithFallback)));
+  mcp.registerTool('traffic_route_discovery', {
+    description: 'Find non-X, non-Threads, non-SEO acquisition/distribution surfaces from real indexed pages around a concrete product, problem or audience. Rotate reproducibly across Q&A, niche communities, third-party publishing, video, visual discovery, newsletters, bookmark curation, directories and marketplaces, plus an open-web discovery probe for previously unknown sites. Uses 1-4 cached/quota-accounted SERP queries and returns ONLY page evidence; page presence does not prove traffic, self-promotion permission, referral capability or conversions. Follow up by checking the exact venue rules, outbound path, cost, original content requirements and trackable referrals. No automated posting, writes or launch.',
+    inputSchema: trafficRouteDiscoveryShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await trafficRouteDiscovery(input)));
+
   mcp.registerTool('market_product_discovery', {
     description: 'Start here when the user asks to find products that sell or to discover unknown buying markets. Read current Rakuten category observations sampled independently of LLM interests, diversify by unrelated root categories, and fetch actual ranked item names, item codes, ranks and official seller URLs from the affiliate API. Returns bounded product evidence and prior-rank overlap, explicitly not purchase counts, conversion rates or approval. Costs 0 Firestore and 0 SERP; max 8 live ranking API reads. Follow with independent demand, buyer/review, competing offers and affiliate viability research, not generic brainstorming. Read-only; does not auto-publish.',
     inputSchema: marketProductDiscoveryShape,
