@@ -35,6 +35,8 @@ process.env.KEYWORDS_REMOTE_MCP_TOKEN = 'test-only-token';
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
+let seoTaskCollectionScans = 0;
+const seoTaskStatusQueries: string[] = [];
 const firestorePointReads: string[] = [];
 const originalFetch = globalThis.fetch;
 const decodeField = (value: any): any => value?.stringValue ?? value?.integerValue ?? value?.doubleValue ?? value?.booleanValue ?? null;
@@ -49,6 +51,11 @@ globalThis.fetch = async (input, init) => {
   const path = parsed.pathname.replace('/v1/', '');
   if ((init?.method ?? 'GET') === 'GET') firestorePointReads.push(path);
   const body = init?.body ? JSON.parse(String(init.body)) : null;
+  if (path.endsWith('/seoTasks') && (init?.method ?? 'GET') === 'GET') seoTaskCollectionScans++;
+  if (url.endsWith(':runQuery') && body?.structuredQuery?.from?.[0]?.collectionId === 'seoTasks'
+      && body?.structuredQuery?.where?.fieldFilter?.field?.fieldPath === 'status') {
+    seoTaskStatusQueries.push(String(decodeField(body.structuredQuery.where.fieldFilter.value)));
+  }
 
   if (url.endsWith(':commit')) {
     for (const write of body.writes) {
@@ -132,6 +139,14 @@ try {
   assert.equal(readyTask.history[0].event, 'ready');
   assert.equal((await seoTaskGet({ id: readyTask.id })).status, 'ready');
   assert.equal((await seoTaskList({ siteId: 'site-a', status: 'ready' })).items.length, 1);
+  const scansBeforeReady = seoTaskCollectionScans;
+  const readyFromStatusQuery = await seoTaskList({ status: 'ready', limit: 20 });
+  assert.ok(readyFromStatusQuery.items.some(item => item.id === readyTask.id));
+  assert.equal(seoTaskCollectionScans, scansBeforeReady, 'scheduler ready lookup must not list 500 unrelated task documents');
+  assert.ok(seoTaskStatusQueries.includes('ready'));
+  const emptyProgress = await seoTaskList({ status: 'in_progress', limit: 20 });
+  assert.equal(emptyProgress.items.length, 0);
+  assert.ok(seoTaskStatusQueries.includes('in_progress'));
   await assert.rejects(seoTaskCreate({
     siteId: 'site-a', targetUrls: ['https://example.com/article-a'], repo: 'nomuonji/site-a',
     taskType: 'revise', title: 'Duplicate wording', rationale: 'Same underlying change.',
@@ -771,7 +786,12 @@ try {
   });
   assert.equal(changingScope.policyRevisionAtCreation, 1);
   assert.equal(changingScope.allocationBucket, 'structural');
-  assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].assignedTasks >= 1, true);
+  const scansBeforeAllocation = seoTaskCollectionScans;
+  const activeAllocation = await seoPortfolioAllocationStatus({});
+  assert.equal(activeAllocation.taskCountScope, 'active_only');
+  assert.equal(seoTaskCollectionScans, scansBeforeAllocation, 'allocation must not scan completed or cancelled task history');
+  assert.ok(['ready','issued','in_progress'].every(status => seoTaskStatusQueries.includes(status)));
+  assert.equal(activeAllocation.allocation.buckets[1].assignedTasks >= 1, true);
   assert.equal((await seoPortfolioAllocationStatus({})).allocation.buckets[1].estimatedEffortUnits, 3);
   const rebucketed = await seoTaskUpdate({
     id: changingScope.id, expectedRevision: changingScope.revision,
