@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Verify category sampling and safe retention
+        run: node scripts/market-discovery-smoke.mjs
       - name: Load prior derived observations (if any)
         run: |
           if git fetch origin market-data:refs/remotes/origin/market-data; then
