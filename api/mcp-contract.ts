@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.17.3';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.18.0';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',
@@ -35,5 +35,6 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'market_signal_snapshot_save',
   'market_signal_snapshot_compare',
   'marketplace_research',
-  'search_gap_research'
+  'search_gap_research',
+  'market_discovery_run'
 ] as const;
