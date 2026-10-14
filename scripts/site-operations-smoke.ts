@@ -135,6 +135,34 @@ try {
     taskType: 'revise', title: 'Duplicate wording', rationale: 'Same underlying change.',
     evidence: ['Same existing action.'], dedupeKey: 'site-a:revise:article-a:claim-correction'
   }), /Open SEO task already exists/);
+  // A safety refusal is not an ordinary cancelled draft. Verify that the
+  // scheduler cannot reissue the same dedupeKey or revive the Task status.
+  const rejectedFixture = {
+    siteId: 'site-a', targetUrls: ['https://example.com/safety-refusal'],
+    repo: 'nomuonji/site-a', taskType: 'revise' as const,
+    title: 'Verify task safety refusal replay boundary',
+    rationale: 'Test that a safety-denied change cannot be recycled into a new active task.',
+    evidence: ['Synthetic in-memory regression fixture only.'],
+    dedupeKey: 'site-a:revise:safety-denied-001', createdBy: 'site-operations-smoke'
+  };
+  const safetyReady = await seoTaskCreate(rejectedFixture);
+  const safetyCancelled = await seoTaskUpdate({
+    id: safetyReady.id, expectedRevision: safetyReady.revision, status: 'cancelled',
+    appendHistory: {
+      actor: 'site-operations-smoke', event: 'safety_write_rejected_task_cancelled',
+      detail: 'Synthetic tool safety refusal; no source write, branch or handoff.'
+    }
+  });
+  assert.equal(safetyCancelled.status, 'cancelled');
+  assert.equal(safetyCancelled.executionClaim, null);
+  await assert.rejects(seoTaskCreate(rejectedFixture), /Safety-rejected SEO task/);
+  await assert.rejects(seoTaskUpdate({
+    id: safetyCancelled.id, expectedRevision: safetyCancelled.revision, status: 'ready'
+  }), /Safety-rejected SEO task cannot be restarted/);
+  await assert.rejects(seoTaskClaim({
+    id: safetyCancelled.id, expectedRevision: safetyCancelled.revision,
+    runId: 'smoke-safety-run-001'
+  }), /Safety-rejected SEO task cannot be reclaimed/);
   await assert.rejects(seoTaskCreate({
     siteId: 'site-a', targetUrls: ['https://example.com/article-b'], repo: 'nomuonji/site-a',
     taskType: 'new_article', title: 'Invalid evaluator provenance', rationale: 'Exercise source validation.',
