@@ -6,13 +6,12 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
-const noCheckGraceMs = Math.max(60_000, Math.min(Number(process.env.SEO_DELIVERY_NO_CHECK_GRACE_MS ?? 120_000), 30 * 60_000));
 
 type GitHubRepo = {
   default_branch: string;
@@ -28,16 +27,10 @@ type GitHubPull = {
   merged?: boolean;
   merged_at?: string | null;
   merge_commit_sha?: string | null;
+  mergeable?: boolean | null;
+  mergeable_state?: string;
   head: { sha: string; ref: string };
   base: { ref: string };
-};
-
-type CheckSummary = {
-  pending: string[];
-  failed: string[];
-  passed: string[];
-  observed: number;
-  passedPullRequestActions: boolean;
 };
 
 const ghHeaders = {
@@ -112,76 +105,6 @@ async function createPull(task: SeoTaskRecord, base: string, handoff: SeoTaskDel
 
 async function pullByNumber(repo: string, number: number) {
   return gh<GitHubPull>(api(repo, `/pulls/${number}`));
-}
-
-function latestStatuses(statuses: any[]) {
-  const seen = new Set<string>();
-  const result: any[] = [];
-  for (const status of statuses) {
-    const key = String(status.context ?? '');
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    result.push(status);
-  }
-  return result;
-}
-
-async function optionalGitHubSignal<T>(url: string): Promise<T | null> {
-  try {
-    return await gh<T>(url);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/GitHub 403 Forbidden/.test(message)) {
-      console.log(`Optional GitHub signal unavailable: ${url}`);
-      return null;
-    }
-    throw error;
-  }
-}
-
-async function checkSummary(repo: string, sha: string, prNumber: number): Promise<CheckSummary> {
-  const actionParams = new URLSearchParams({ head_sha: sha, per_page: '100' });
-  const [actions, checks, combined] = await Promise.all([
-    gh<{ workflow_runs: any[] }>(api(repo, `/actions/runs?${actionParams}`)),
-    optionalGitHubSignal<{ check_runs: any[] }>(api(repo, `/commits/${sha}/check-runs?per_page=100`)),
-    optionalGitHubSignal<{ statuses: any[] }>(api(repo, `/commits/${sha}/status`))
-  ]);
-  const pending: string[] = [];
-  const failed: string[] = [];
-  const passed: string[] = [];
-
-  for (const run of actions.workflow_runs ?? []) {
-    const name = `actions:${run.name ?? run.id}`;
-    if (run.status !== 'completed') pending.push(name);
-    else if (['success', 'neutral', 'skipped'].includes(run.conclusion)) passed.push(name);
-    else failed.push(`${name}=${run.conclusion ?? 'unknown'}`);
-  }
-
-  for (const run of checks?.check_runs ?? []) {
-    const rawName = String(run.name ?? run.id);
-    // Hosting preview checks are intentionally not part of the SEO delivery gate.
-    // seo/* preview deployments may be disabled to avoid duplicate build spend.
-    if (/cloudflare pages/i.test(rawName) || /vercel/i.test(rawName) || /netlify/i.test(rawName)) {
-      passed.push(`hosting-preview-ignored:${rawName}`);
-      continue;
-    }
-    const name = `check:${rawName}`;
-    if (run.status !== 'completed') pending.push(name);
-    else if (['success', 'neutral', 'skipped'].includes(run.conclusion)) passed.push(name);
-    else failed.push(`${name}=${run.conclusion ?? 'unknown'}`);
-  }
-
-  for (const status of latestStatuses(combined?.statuses ?? [])) {
-    const name = `status:${status.context ?? 'unknown'}`;
-    if (status.state === 'pending') pending.push(name);
-    else if (status.state === 'success') passed.push(name);
-    else failed.push(`${name}=${status.state ?? 'unknown'}`);
-  }
-
-  return {
-    pending, failed, passed, observed: pending.length + failed.length + passed.length,
-    passedPullRequestActions: preparedHandoffHasPassedPrCi(actions.workflow_runs ?? [], prNumber)
-  };
 }
 
 function mergeMethod(info: GitHubRepo): 'squash' | 'merge' | 'rebase' {
@@ -532,37 +455,46 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
       lastError: ''
     });
     if (!dryRun) {
-      await updateDelivery(task.id, updated, 'delivery_pr_opened', `PR #${pr.number} opened for ${handoff.branch} -> ${base}; waiting for CI.`);
+      await updateDelivery(task.id, updated, 'delivery_pr_opened', `PR #${pr.number} opened for ${handoff.branch} -> ${base}; central delivery will verify exact Git ref and mergeability without peripheral Actions.`);
     }
     task = await seoTaskGet({ id: task.id });
   }
 
-  const checks = await checkSummary(task.repo, handoff.headSha, pr.number);
-  if (checks.failed.length) {
-    await markFailed(task, `CI failed for ${handoff.headSha}: ${checks.failed.join(', ')}`);
+  // PR CI runs in peripheral repositories are intentionally NOT required.
+  // GitHub Actions execution is centralized in the public keywords repository;
+  // the hosting provider builds on default-branch push. The Worker has already
+  // supplied source-level acceptance evidence in the immutable task handoff,
+  // while this controller verified exact commit parent, scoped diff, ref and PR.
+  // Production build/HTTP/canonical verification is a separate post-merge gate.
+  // Never treat a preview check, failed satellite job or a missing check as proof.
+  const freshPr = await pullByNumber(task.repo, pr.number);
+  if (freshPr.head.sha !== handoff.headSha || freshPr.base.ref !== base) {
+    await markFailed(task, `PR #${pr.number} changed HEAD/base during delivery; stop instead of merging an unvalidated change.`);
     return;
   }
-  if (checks.pending.length) {
-    console.log(`Waiting: ${task.id} PR #${pr.number} has pending checks: ${checks.pending.join(', ')}`);
+  if (freshPr.mergeable !== true) {
+    console.log(`Waiting: ${task.id} PR #${pr.number} not yet GitHub-mergeable (mergeable=${String(freshPr.mergeable)}, state=${freshPr.mergeable_state ?? 'unknown'}).`);
     return;
   }
-
-  if (handoff.validationSummary.startsWith(ACTIONS_MARKER) && !checks.passedPullRequestActions) {
-    console.log(`Waiting: ${task.id} Prepared-commit delivery requires a completed successful Actions run for PR #${pr.number}.`);
-    return;
-  }
-
-  const prOpenAt = Date.parse(task.deliveryHandoff.updatedAt ?? task.updatedAt);
-  if (checks.observed === 0 && Number.isFinite(prOpenAt) && Date.now() - prOpenAt < noCheckGraceMs) {
-    console.log(`Waiting: ${task.id} PR #${pr.number} has no check signal yet; grace period active.`);
+  const currentMainSha = await branchSha(task.repo, base);
+  if (handoff.baseSha !== currentMainSha) {
+    console.log(`Waiting: ${task.id} base advanced from ${handoff.baseSha} to ${currentMainSha}; Worker must validate a fresh exact-main-based commit.`);
     return;
   }
 
   if (dryRun) {
-    console.log(`[dry-run] would merge ${task.id} PR #${pr.number}; observed checks=${checks.observed}`);
+    console.log(`[dry-run] would merge ${task.id} PR #${pr.number}; exact HEAD/base and GitHub mergeability verified; peripheral GitHub Actions not consulted.`);
     return;
   }
 
+  // Last-minute checkpoint verification; do not merge after a stale cancellation
+  // or an updated handoff/claim by another actor.
+  const currentTask = await seoTaskGet({ id: task.id });
+  if (currentTask.status !== 'in_progress' || currentTask.deliveryHandoff.headSha !== handoff.headSha
+      || currentTask.deliveryHandoff.prNumber !== pr.number || currentTask.deliveryHandoff.state !== 'pr_open') {
+    console.log(`Waiting: ${task.id} delivery Task changed before merge; refusing stale PR action.`);
+    return;
+  }
   let mergeResult: { sha?: string; merged: boolean; message?: string };
   try {
     mergeResult = await mergePull(task, pr.number, handoff.headSha, mergeMethod(info));
