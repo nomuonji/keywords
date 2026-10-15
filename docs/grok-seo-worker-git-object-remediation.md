@@ -1,26 +1,27 @@
-# Groq SEO Worker: two supported transports (2026-10-15)
+# SEO Worker Git transport capabilities (historical Groq incident, 2026-10-15)
 
-## Confirmed capability gap
-Grok/Groq runner advertises `create_branch`, `push_files`, `get_commit`, `get_repository_tree`, `get_file_contents` but not `create_blob`, `create_tree`, `create_commit`. Repeated `preflight_git_objects_unavailable` reports do not mean source/Task refusal; they describe this connector mismatch only.
+## Transport selection — capabilities, not model names
 
-## Preferred path
-Where low-level Git blob/tree/commit creation works, use `Action-Ref-Handoff: v1` with an unreferenced one-parent `[CF-Pages-Skip]` commit. The public `nomuonji/keywords` Action attaches `seo/<task-id>` and owns PR/main merge/completion.
+The repository originally documented a missing Git-object writer capability in one Groq connection. That incident remains historical context, **not a reason to lock the fallback to Groq**. Every authorized SEO Worker (ChatGPT, Groq or a future executor) must select a supported Git transport **before claiming a new Task**, using its *own currently callable tools*.
 
-## Groq-only branch fallback (now authorized for future eligible tasks)
-Use only if low-level Git-object writers are missing AND `create_branch`, `push_files`, raw Git commit/tree/diff and source readback are callable within the Groq runner. No claim if neither transport works. Only for a fresh Task with active valid claim `actor=seo_worker`, no existing conflicting branch/PR, no cooldown and no historic refusal. User authorization to use a transport is **not** clearance to replay any specifically refused GitHub/Sites Operator write.
+| Decision | Result |
+| --- | --- |
+| Low-level `create_blob`, `create_tree`, `create_commit` and commit/tree/blob readback all available | **A — prepared commit**: create unreferenced Git commit, read back source and SHA, write `Action-Ref-Handoff: v1` |
+| Any A creation API **not exposed**, but `create_branch`, `push_files`, commit/tree/source/diff/ref readback all available | **B — verified branch**: create exact `seo/<task-id>` at main, push **one** `[CF-Pages-Skip]` commit, independently read back, write `Action-Branch-Handoff: v1` |
+| Neither complete transport available | Do **not claim**; concise capability blocker, no repeated history spam |
+| Any action explicitly safety/authorization refused | **Stop that operation**; never change transport to retry the refused content |
 
-1. Verify Task exact site/repo, active registry, current default HEAD `B`, absent `seo/<task-id>`, acceptance and diff scope BEFORE claim. No `site_article_save` or bulk article registry writes.
-2. Claim once; implement and validate. Call `create_branch` only for `seo/<task-id>` at `B`, then one `push_files` write to THAT branch with `[CF-Pages-Skip]` commit message. Do not force push, update an existing/other branch, write main, create PR or merge.
-3. Read back branch HEAD `H`, commit and its **sole parent `B`**, tree and changed-file source, and compare `B...H`: one commit ahead, none behind, safe allowlisted paths only. Main must still be `B`. If any part cannot be verified, stop without falsely claiming handoff.
-4. Persist `deliveryHandoff.state=push_pending`, exact task-bound branch, `baseSha=B`, `headSha=H`, summary starting with literal marker `Action-Branch-Handoff: v1` followed by ONE newline, actual validation receipts, and structured history `{actor: "seo_worker", event: "delivery_branch_push_pending", detail: "..."}`. Use active `claimRunId`; read the checkpoint back; stop.
-5. Central Actions verifies rollout/registry/refusal history, branch SHA, one-parent commit, changed scope and current main, then records branch_ready, makes PR, verifies exact PR SHA/mergeability, merges and records completion. No peripheral GitHub Actions or GitHub site builds are involved; hosting builds after main push.
+This is discovery **before claim**, not an automatic catch-and-retry mechanism after a failed `create_commit`. If tools were advertised but a write was denied, do not silently switch to B. Lack of an A tool in the actual runner is a capability gap, not itself an authorization refusal.
 
-Corrective passes and existing quarantined Tasks require independent valid authorization; do not reuse this fallback to replay a refused action. Branch fallback is initial one-commit-from-main only; no force update for stale/failed branches.
+## Shared hard constraints
 
-## Failure categories
-- Git capability absent: do not claim if both transports unavailable. Do not spam duplicate preflight histories.
-- Git readback mismatch or main advances: stop; reconcile with current Task and main, never force update.
-- Safety or authorization refusal: **stop the refused operation immediately**, record safely where permitted; switching transport is prohibited.
-- Host build/publication pending after merge: implementation can be merged while `deploymentVerification` remains pending; Site Operator verifies exact deployed SHA/HTTP/canonical separately.
+- Verify the active site registry, exact Task ID, execution claim, no cooldown, latest main HEAD, task-bound branch `seo/<task-id>` and no prior safety/authorization rejection. Never resurrect the previously refused Book Discovery Task deliveries or the cancelled Task `21531a6b-6f80-4801-ae3a-6b4c671cc13d`.
+- Scope must pass central changed-path allowlist. Never change `.github/workflows`, secrets, lockfiles, infrastructure or unrelated files through an SEO Worker. GitHub is content source of truth; Sites Operator article registry is read-only for Worker.
+- Both transports require SHA/parent/tree/source readback and actual acceptance evidence. Commit subject begins `[CF-Pages-Skip]`; main may not advance before handoff. No force push, `update_ref`, direct main push, PR or merge from Workers.
+- A saves `push_pending` with `Action-Ref-Handoff: v1\n`; B saves `push_pending` with `Action-Branch-Handoff: v1\n` and structured history `delivery_branch_push_pending` whose actor equals the active valid `executionClaim.actor` (supported values `seo_worker` and `chatgpt_seo_worker` for compatibility). This actor is an audit identifier, **not a model-specific transport selector**.
+- The central public `nomuonji/keywords` Actions selects its verification path from the **handoff marker**, repeats Task/safety/one-parent/diff/ref checks, updates the ref only for A, verifies B's pre-existing task branch without rewriting it, then owns PR/merge and completion. Peripheral site Actions do not run SEO CI; hosting builds on main push and Site Operator verifies production separately.
+- Do not change other SNS posting, content generation, token refresh, affiliate jobs, unrelated workflows or ChatGPT task schedules.
 
-Repository Actions ownership applies to SEO delivery only. Do not change unrelated SNS posting, token refresh, content ingestion, product generation or other operational jobs in peripheral repositories.
+## End-to-end acceptance
+
+On the next **new eligible** Task, confirm A or B tool discovery, claim once, implement and verify source, create its single Git commit, validate Git metadata and scope, persist the proper typed handoff, read back Task, then observe central Action → exact branch → PR → merge → completed. Since this is a functional change, an existing already-refused Task cannot be used as a test fixture. Passing central Actions CI alone does not prove this live end-to-end path.
