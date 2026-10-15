@@ -147,13 +147,27 @@ export async function ideaMemoryFeedbackProfile(input: unknown = {}) {
 // Feedback mutations remain exclusively in ideaFeedbackAppend.
 export const ideaReviewListShape = {
   limit: z.number().int().min(1).max(100).default(60),
-  cursor: z.string().max(4000).optional()
+  cursor: z.string().max(4000).optional(),
+  summary: z.boolean().default(false)
 };
 export async function ideaReviewList(input: unknown = {}) {
   const args = z.object(ideaReviewListShape).strict().parse(input);
   const params = new URLSearchParams({ pageSize: String(args.limit), orderBy: 'updatedAt desc' });
   if (args.cursor) params.set('pageToken', args.cursor);
+  if (args.summary) {
+    // Firestore field mask: overview payload excludes long evidence arrays and history.
+    for (const name of ['title', 'status', 'audience', 'userTask', 'entities',
+      'informationMechanism', 'marketCategory', 'updatedAt']) {
+      params.append('mask.fieldPaths', name);
+    }
+  }
   const result = await firestore('/ideaMemory?' + params);
   const items = (result.documents ?? []).map((d: any) => parse<Idea>(d));
   return { items, nextCursor: result.nextPageToken ?? null };
+}
+
+// Authenticated owner-only point read, used only when the drawer is opened.
+export async function ideaReviewDetail(ideaId: string) {
+  const document = await read(path(ideaId));
+  return document ? parse<Idea>(document) : null;
 }

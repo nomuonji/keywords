@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewList } from '../packages/commands/src/idea-memory.js';
+import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewDetail, ideaReviewList } from '../packages/commands/src/idea-memory.js';
 
 const app = new Hono();
 const cookieName = 'keywords_idea_review';
@@ -53,7 +53,7 @@ function boundedInt(input: string | undefined, fallback: number, max: number): n
 }
 
 app.get('/api/theme-research', async (c, next) => {
-  if (!['idea-session', 'idea-inbox', 'idea-feedback'].includes(c.req.query('resource') ?? '')) return next();
+  if (!['idea-session', 'idea-inbox', 'idea-detail', 'idea-feedback'].includes(c.req.query('resource') ?? '')) return next();
   if (c.req.query('resource') === 'idea-session') {
     return c.json({ authenticated: authenticated(c.req.raw), configured: !!adminSecret() },
       200, { 'cache-control': 'no-store' });
@@ -65,9 +65,17 @@ app.get('/api/theme-research', async (c, next) => {
         cursor: c.req.query('cursor') || undefined });
       return c.json({ events: result.events, nextCursor: result.nextCursor }, 200, { 'cache-control': 'no-store' });
     }
+    if (c.req.query('resource') === 'idea-detail') {
+      const ideaId = c.req.query('id') || '';
+      if (!/^[a-zA-Z0-9_-]{1,100}$/.test(ideaId)) return c.json({error:'アイデアIDが不正です。'}, 400);
+      const item = await ideaReviewDetail(ideaId);
+      return item ? c.json(item, 200, {'cache-control':'no-store'}) :
+        c.json({error:'指定したアイデアが見つかりません。'}, 404);
+    }
     const result = await ideaReviewList({
       limit: boundedInt(c.req.query('limit'), 60, 100),
-      cursor: c.req.query('cursor') || undefined
+      cursor: c.req.query('cursor') || undefined,
+      summary: c.req.query('summary') === '1'
     });
     return c.json(result, 200, { 'cache-control': 'no-store' });
   } catch (error) {
