@@ -988,7 +988,10 @@ try {
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=push_pending/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /unreferenced GitHub Git commit/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /branch_ready/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /must not create\/update refs/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /No other Worker may push/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Action-Branch-Handoff/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /delivery_branch_push_pending/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Never switch paths after a specifically refused write/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Central Actions validates/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /ci_failed/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Task stays in_progress across push_pending, branch_ready and pr_open/);
