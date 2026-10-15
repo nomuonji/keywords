@@ -293,19 +293,19 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
   return actual;
 }
 
-// Groq has already written the task-specific branch using create_branch +
-// push_files. It must be an EXACT one-commit child of the current main HEAD.
+// A capability-fallback Worker has already written a task-specific branch via
+// create_branch + push_files. It must be an EXACT one-commit child of main.
 // A receipt is not sufficient: independently inspect commit, compare and diff.
 async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null) {
   const h = task.deliveryHandoff;
   if (!h.branch || !h.headSha || !h.baseSha || actualSha !== h.headSha) {
-    console.log(`Waiting: ${task.id} Groq branch missing or HEAD mismatch`);
+    console.log(`Waiting: ${task.id} Worker branch missing or HEAD mismatch`);
     return null;
   }
   const repository = await repoInfo(task.repo);
   const defaultSha = await branchSha(task.repo, repository.default_branch);
   if (defaultSha !== h.baseSha) {
-    console.log(`Waiting: ${task.id} Groq fallback base is no longer main; fresh validation required`);
+    console.log(`Waiting: ${task.id} Branch fallback base is no longer main; fresh validation required`);
     return null;
   }
   const commit = await gh<{ message: string; tree: { sha: string }; parents: { sha: string }[] }>(
@@ -313,7 +313,7 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
   );
   if (!commit.message?.startsWith('[CF-Pages-Skip]') || commit.parents?.length !== 1
       || commit.parents[0].sha !== h.baseSha || !/^[a-f0-9]{40}$/.test(commit.tree?.sha ?? '')) {
-    throw Error(`Invalid Groq branch commit provenance ${task.id}`);
+    throw Error(`Invalid Worker branch commit provenance ${task.id}`);
   }
   const compare = await gh<{
     status: string; ahead_by: number; behind_by: number;
@@ -321,24 +321,23 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
   }>(api(task.repo, `/compare/${h.baseSha}...${h.headSha}`));
   if (compare.status !== 'ahead' || compare.ahead_by !== 1 || compare.behind_by !== 0
       || compare.merge_base_commit?.sha !== h.baseSha || !compare.files?.length || compare.files.length > 50) {
-    throw Error(`Invalid/non-fast-forward Groq branch ${task.id}`);
+    throw Error(`Invalid/non-fast-forward Worker branch ${task.id}`);
   }
   const unsafe = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
-  if (unsafe) throw Error(`Groq branch has prohibited paths: ${unsafe}`);
+  if (unsafe) throw Error(`Worker branch has prohibited paths: ${unsafe}`);
   const reread = await branchSha(task.repo, h.branch);
-  if (reread !== h.headSha) throw Error(`Groq branch changed during verification ${task.id}`);
+  if (reread !== h.headSha) throw Error(`Worker branch changed during verification ${task.id}`);
   return reread;
 }
 
 async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
-  // Two authorized transports: prepared unreferenced commit from any equipped
-  // Worker, or a single exact-main-based, pre-pushed Groq seo/* branch.
+  // Two capability-selected transports: prepared unreferenced commit, or
+  // a single exact-main-based pre-pushed seo/* branch from an eligible Worker.
   // Never accept an unmarked post-cutover direct push.
-  if ((preparedHandoffRequired(task) || task.executionClaim?.actor === 'chatgpt_seo_worker')
-      && !isPreparedRefHandoff(task) && !isBranchFallback(task)) {
-    console.log(`Waiting: ${task.id} requires an authorized prepared or Groq branch handoff marker`);
+  if (preparedHandoffRequired(task) && !isPreparedRefHandoff(task) && !isBranchFallback(task)) {
+    console.log(`Waiting: ${task.id} requires an authorized prepared or verified branch handoff marker`);
     return task;
   }
   if (isPreparedRefHandoff(task)) {
@@ -359,7 +358,7 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
       process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
     );
     if (branchError) {
-      console.log(`Waiting: ${task.id} Groq branch gate: ${branchError}`);
+      console.log(`Waiting: ${task.id} verified branch gate: ${branchError}`);
       return task;
     }
   }
@@ -434,7 +433,7 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
   // Post-cutover must use either the validated prepared ref or the task-bound
-  // Groq pre-pushed branch (legacy pre-cutover delivery may still drain).
+  // pre-pushed branch (legacy pre-cutover delivery may still drain).
   if (preparedHandoffRequired(task) && !isPrepared(task) && !isBranchFallback(task)) {
     console.log(`Waiting: ${task.id} new task lacks an authorized handoff marker`);
     return;
@@ -457,7 +456,7 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
       process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
     );
     if (error) {
-      console.log(`Waiting: ${task.id} Groq branch PR/merge gate: ${error}`);
+      console.log(`Waiting: ${task.id} verified branch PR/merge gate: ${error}`);
       return;
     }
   }
