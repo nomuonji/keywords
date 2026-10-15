@@ -19,7 +19,7 @@ type IdeaPage = { items: Idea[]; nextCursor: string | null };
 type EventPage = { events: ReviewEvent[]; nextCursor: string | null };
 type Rating = 'good' | 'reject' | 'hold' | 'reset';
 type Axis = 'appeal' | 'dbValue' | 'seo' | 'revenue' | 'upkeep';
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 9;
 const axes: Array<{ id: Axis; label: string }> = [
   { id: 'appeal', label: '面白さ・興味' },
   { id: 'dbValue', label: 'DBの必然性' },
