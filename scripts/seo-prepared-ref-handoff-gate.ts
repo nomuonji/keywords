@@ -113,7 +113,7 @@ export function preparedRefHandoffPreflight(
  * it. The safety/cutover/registry/Task gates are exactly the prepared-ref
  * ones; this is never an alternative for a refused operation.
  */
-export const BRANCH_HANDOFF_MARKER = 'Action-Branch-Handoff: v1\\n';
+export const BRANCH_HANDOFF_MARKER = 'Action-Branch-Handoff: v1\n';
 
 export function verifiedBranchHandoffPreflight(
   task: SeoTaskRecord,
@@ -138,7 +138,7 @@ export function verifiedBranchHandoffPreflight(
     ...task,
     deliveryHandoff: {
       ...handoff,
-      validationSummary: 'Action-Ref-Handoff: v1\\n' + handoff.validationSummary.slice(BRANCH_HANDOFF_MARKER.length)
+      validationSummary: 'Action-Ref-Handoff: v1\n' + handoff.validationSummary.slice(BRANCH_HANDOFF_MARKER.length)
     }
   } as SeoTaskRecord;
   return preparedRefHandoffPreflight(preparedEquivalent, activeSites, enabled, notBefore);
