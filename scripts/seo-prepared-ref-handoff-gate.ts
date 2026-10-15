@@ -35,6 +35,34 @@ export function preparedRefBaseError(
   return null;
 }
 
+/**
+ * Earlier ChatGPT runs received an actual tool-level safety refusal while
+ * attempting these Tasks' push_pending checkpoints. That refusal was not
+ * persisted to the Task's history; later checkpoint writes do not authorize
+ * the central Action to replay the previously refused delivery.
+ *
+ * Keep this narrow historical quarantine until separately resolved. Do not
+ * infer clearance from an absent structured event.
+ */
+const HISTORICALLY_REFUSED_TASK_IDS = new Set([
+  'seo-book-night-circus-canonical-slug-20261015',
+  'seo-book-swanns-way-seven-parts-editions-20261015'
+]);
+
+/**
+ * Only stable event identifiers can attest to a refusal. Free-form history
+ * details include negated phrases such as "No safety refusal" and must never
+ * be parsed as an authorization decision.
+ */
+export function preparedHandoffHasRecordedRefusal(
+  task: Pick<SeoTaskRecord, 'id' | 'history'>
+): boolean {
+  if (HISTORICALLY_REFUSED_TASK_IDS.has(task.id)) return true;
+  return (task.history ?? []).some(({ event }) =>
+    /^(?:safety|authorization|permission|authz|tool_safety|worker_safety)(?:_[a-z0-9]+)*_(?:rejected|rejection|refused|refusal|denied|blocked)(?:_[a-z0-9]+)*$/i.test(event)
+  );
+}
+
 export function preparedRefHandoffPreflight(
   task: SeoTaskRecord,
   activeSites: readonly Pick<SiteRecord, 'id' | 'repository' | 'status'>[],
@@ -72,10 +100,8 @@ export function preparedRefHandoffPreflight(
     return 'Invalid base/head SHA in prepared-commit checkpoint';
   }
   if (handoff.lastError) return 'Checkpoint has an unresolved error; no delegated retry is authorized';
-  if ((task.history ?? []).some(event =>
-    /safety.{0,30}(reject|deni|refus|block)|authoriz.{0,30}(reject|deni|refus|block)|permission.{0,30}(reject|deni|refus|block)/i
-      .test(event.event + ' ' + event.detail))) {
-    return 'Task contains a recorded refusal; delegated retry is prohibited';
+  if (preparedHandoffHasRecordedRefusal(task)) {
+    return 'Task contains a recorded or independently observed refusal; delegated retry is prohibited';
   }
   return null;
 }
