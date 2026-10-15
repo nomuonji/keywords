@@ -390,8 +390,31 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
     return task;
   }
 
+  // A capability-selected transport is never authority to promote a stale
+  // checkpoint after a rival Worker/Manager changed the Task during Git readback.
   const current = await seoTaskGet({ id: task.id });
-  if (current.deliveryHandoff.state !== 'push_pending') return current;
+  if (current.status !== 'in_progress' || current.revision !== task.revision
+      || current.deliveryHandoff.state !== 'push_pending'
+      || current.deliveryHandoff.branch !== handoff.branch
+      || current.deliveryHandoff.headSha !== handoff.headSha
+      || current.deliveryHandoff.baseSha !== handoff.baseSha
+      || current.deliveryHandoff.validationSummary !== handoff.validationSummary) {
+    console.log(`Waiting: ${task.id} handoff changed during exact remote-ref verification`);
+    return current;
+  }
+  const currentGateError = isBranchFallback(current)
+    ? verifiedBranchHandoffPreflight(current, activeSites,
+        process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+        process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE)
+    : isPreparedRefHandoff(current)
+      ? preparedRefHandoffPreflight(current, activeSites,
+          process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+          process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE)
+      : null;
+  if (currentGateError) {
+    console.log(`Waiting: ${task.id} transport gate changed during reconciliation: ${currentGateError}`);
+    return current;
+  }
   const claimRunId = current.executionClaim?.runId;
   if (!claimRunId) {
     console.log(`Waiting: ${task.id} push_pending has exact remote HEAD but no execution claim; a Worker must reclaim before promotion.`);
