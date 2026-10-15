@@ -28,7 +28,6 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
       SEO_DELIVERY_MAX_TASKS: '20'
-      SEO_DELIVERY_NO_CHECK_GRACE_MS: '120000'
       # Unified post-cutover transport for both ChatGPT and Groq Workers.
       # Existing pre-cutover PRs drain through the legacy controller path.
       # Set repo variable ENABLED=0 only to halt new prepared-ref delivery.
