@@ -1236,6 +1236,17 @@ export async function seoTaskUpdate(input: unknown) {
   if (!previous) throw new Error('SEO task not found');
   const current = normalizeSeoTask(decoded(previous) as SeoTaskRecord);
   if (current.revision !== args.expectedRevision) throw new Error('Revision conflict: read the current SEO task and reapply the edit');
+  // A capability gap in an external runner does not change the Task. Its
+  // identical preflight report must not write another document revision every
+  // hour (and churn the queue) while the connector is still unavailable.
+  // Limit this no-op to pure history-only updates: never swallow real state,
+  // claim, handoff, priority or deployment changes.
+  if (args.appendHistory?.event === 'preflight_git_objects_unavailable'
+      && Object.keys(args).every(key => ['id', 'expectedRevision', 'appendHistory'].includes(key))
+      && (current.history ?? []).some(entry =>
+        entry.event === 'preflight_git_objects_unavailable' && entry.actor === args.appendHistory?.actor)) {
+    return current;
+  }
   const t = now();
   const changingAllocation = args.allocationBucket !== undefined || args.estimatedEffortUnits !== undefined;
   let allocationPolicyRevision = current.allocationPolicyRevision ?? current.policyRevisionAtCreation ?? 0;
