@@ -8,8 +8,9 @@ import { SiteStructures } from './SiteStructures';
 import { ThemeResearch } from './ThemeResearch';
 import { SeoSourcePool } from './SeoSourcePool';
 import { MarketDiscovery } from './MarketDiscovery';
+import { IdeaReview } from './IdeaReview';
 
-type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research'|'sources'|'market';
+type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research'|'sources'|'market'|'ideas';
 const views:Array<{id:View;label:string;hint:string}>=[
   {id:'operations',label:'運用',hint:'Issue・実行履歴'},
   {id:'sites',label:'サイト',hint:'Agent管理対象'},
@@ -18,7 +19,8 @@ const views:Array<{id:View;label:string;hint:string}>=[
   {id:'structures',label:'サイト構想',hint:'設計・ページ構造'},
   {id:'research',label:'テーマ研究',hint:'候補・反証・次の疑問'},
   {id:'sources',label:'情報源',hint:'X・媒体の監視プール'},
-  {id:'market',label:'市場発見',hint:'実売順位・未知市場'}
+  {id:'market',label:'市場発見',hint:'実売順位・未知市場'},
+  {id:'ideas',label:'アイデア評価',hint:'GOOD・ボツ・保留'}
 ];
 
 function readLocation(){
@@ -61,6 +63,7 @@ export function App(){
       {view==='research'&&<ThemeResearch/>}
       {view==='sources'&&<SeoSourcePool/>}
       {view==='market'&&<MarketDiscovery/>}
+      {view==='ideas'&&<IdeaReview/>}
     </main>
   </div>;
 }
