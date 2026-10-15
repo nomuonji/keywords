@@ -30,7 +30,7 @@ function authenticated(request: Request): boolean {
   return equals(stored, makeSession(expires, secret));
 }
 function cookieHeader(request: Request, value: string, seconds: number): string {
-  return cookieName + '=' + value + '; HttpOnly; SameSite=Strict; Path=/api/idea-memory; Max-Age=' + seconds
+  return cookieName + '=' + value + '; HttpOnly; SameSite=Strict; Path=/api/theme-research; Max-Age=' + seconds
     + (new URL(request.url).protocol === 'https:' ? '; Secure' : '');
 }
 function safeError(error: unknown): { error: string; status: 400 | 409 | 503 } {
@@ -52,14 +52,15 @@ function boundedInt(input: string | undefined, fallback: number, max: number): n
   return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), max) : fallback;
 }
 
-app.get('/api/idea-memory', async c => {
-  if (c.req.query('resource') === 'session') {
+app.get('/api/theme-research', async (c, next) => {
+  if (!['idea-session', 'idea-inbox', 'idea-feedback'].includes(c.req.query('resource') ?? '')) return next();
+  if (c.req.query('resource') === 'idea-session') {
     return c.json({ authenticated: authenticated(c.req.raw), configured: !!adminSecret() },
       200, { 'cache-control': 'no-store' });
   }
   if (!authenticated(c.req.raw)) return c.json({ error: '認証が必要です。' }, 401);
   try {
-    if (c.req.query('resource') === 'feedback') {
+    if (c.req.query('resource') === 'idea-feedback') {
       const result = await ideaMemoryFeedbackProfile({ limit: boundedInt(c.req.query('limit'), 100, 100),
         cursor: c.req.query('cursor') || undefined });
       return c.json({ events: result.events, nextCursor: result.nextCursor }, 200, { 'cache-control': 'no-store' });
@@ -75,7 +76,7 @@ app.get('/api/idea-memory', async c => {
   }
 });
 
-app.post('/api/idea-memory', async c => {
+app.post('/api/theme-research', async c => {
   if (!sameOrigin(c.req.raw)) return c.json({ error: '不正なリクエストです。' }, 403);
   let input: Record<string, unknown>;
   try {
