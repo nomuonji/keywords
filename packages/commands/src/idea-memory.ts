@@ -141,3 +141,19 @@ export async function ideaMemoryFeedbackProfile(input: unknown = {}) {
   const events = (result.documents ?? []).map((d:any) => parse<any>(d));
   return { events, counts:events.reduce((a:any,v:any) => { const key=`${v.scope}:${v.polarity}`; a[key]=(a[key] ?? 0)+1; return a; },{}), nextCursor:result.nextPageToken ?? null, scope:'page_only', guidance:'Preserve source and scope. Pattern criticism does not reject specific ideas.' };
 }
+
+
+// Owner-facing Idea Memory inbox. One ordered Firestore page, no N+1 reads.
+// Feedback mutations remain exclusively in ideaFeedbackAppend.
+export const ideaReviewListShape = {
+  limit: z.number().int().min(1).max(100).default(60),
+  cursor: z.string().max(4000).optional()
+};
+export async function ideaReviewList(input: unknown = {}) {
+  const args = z.object(ideaReviewListShape).strict().parse(input);
+  const params = new URLSearchParams({ pageSize: String(args.limit), orderBy: 'updatedAt desc' });
+  if (args.cursor) params.set('pageToken', args.cursor);
+  const result = await firestore('/ideaMemory?' + params);
+  const items = (result.documents ?? []).map((d: any) => parse<Idea>(d));
+  return { items, nextCursor: result.nextPageToken ?? null };
+}
