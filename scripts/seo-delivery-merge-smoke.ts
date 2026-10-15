@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -171,3 +171,21 @@ assert.doesNotMatch(controller, /task\.executionClaim\?\.actor === 'chatgpt_seo_
 assert.match(controller, /compare\.ahead_by !== 1/);
 assert.match(controller, /preparedRefHandoffScopeError\(compare\.files\.map/);
 console.log('Central-only SEO delivery passed: no satellite Actions, exact PR SHA/main checks and GitHub mergeability retained.');
+
+const botBase = 'a'.repeat(40);
+const drift = (files: string[], overrides: Record<string, unknown> = {}) => ({
+  status: 'ahead', ahead_by: 1, behind_by: 0,
+  merge_base_commit: { sha: botBase },
+  files: files.map(filename => ({ filename })), ...overrides
+});
+assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/certifications_state.json']), ['docs/qualifications.md']), true);
+assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/certifications_state.json']), ['sns-bot/certifications_state.json']), false);
+for (const forbidden of ['src/pages/index.astro', 'package.json', '.github/workflows/ci.yml', 'sns-bot/certifications_state.json.bak']) {
+  assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift([forbidden]), ['docs/qualifications.md']), false);
+}
+assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/certifications_state.json'], { merge_base_commit: { sha: 'wrong' } }), ['docs/qualifications.md']), false);
+assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/certifications_state.json'], { behind_by: 1 }), ['docs/qualifications.md']), false);
+assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/certifications_state.json'], { ahead_by: 11 }), ['docs/qualifications.md']), false);
+assert.match(controller, /compatibleFallbackMainDrift/);
+assert.match(controller, /freshPr\.mergeable !== true/);
+console.log('Stale-main branch fallback proof passed: disjoint, bounded bot-state change only; denial quarantine unchanged.');
