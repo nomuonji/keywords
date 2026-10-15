@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-15",
-  "generatedAt": "2026-10-14T22:43:03.760Z",
+  "date": "2026-10-16",
+  "generatedAt": "2026-10-15T22:42:45.001Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -13,16 +13,32 @@
   "interpretation": "Category rank is not sales units or evidence of an affiliate conversion. No buyer motivations are inferred from rank alone.",
   "coverage": {
     "rootGenreCount": 39,
-    "sampledToday": 9,
-    "historicObservations": 18
+    "sampledToday": 7,
+    "historicObservations": 25
   },
   "warnings": [
     {
-      "genreId": "210904",
+      "genreId": "304564",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "101114",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "210900",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "111427",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "100004",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -1211,6 +1227,385 @@
         "previousDate": "2026-10-14",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "215783",
+      "rootName": "日用品雑貨・文房具・手芸",
+      "genreId": "100901",
+      "genreName": "文房具・事務用品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "bungushop:10335149",
+          "rank": 1
+        },
+        {
+          "itemCode": "bunbougu-shibuya:10160053",
+          "rank": 2
+        },
+        {
+          "itemCode": "hankoya-shop:10024424",
+          "rank": 3
+        },
+        {
+          "itemCode": "hauhau:10035452",
+          "rank": 4
+        },
+        {
+          "itemCode": "ogawahan:10010247",
+          "rank": 5
+        },
+        {
+          "itemCode": "ideazakkaten:10000307",
+          "rank": 6
+        },
+        {
+          "itemCode": "chips:10011416",
+          "rank": 7
+        },
+        {
+          "itemCode": "bugyo:10004467",
+          "rank": 8
+        },
+        {
+          "itemCode": "bungushop:10335150",
+          "rank": 9
+        },
+        {
+          "itemCode": "bunbougu-shibuya:10159192",
+          "rank": 10
+        },
+        {
+          "itemCode": "office-vender:10043798",
+          "rank": 11
+        },
+        {
+          "itemCode": "eunicedress:10001934",
+          "rank": 12
+        },
+        {
+          "itemCode": "enmyarts:10000000",
+          "rank": 13
+        },
+        {
+          "itemCode": "hankoya-shop:10029762",
+          "rank": 14
+        },
+        {
+          "itemCode": "ideazakkaten:10000288",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "101438",
+      "rootName": "サービス・リフォーム",
+      "genreId": "566241",
+      "genreName": "ジュエリー・アクセサリーの修理・リフォーム",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "onjewelry:10000140",
+          "rank": 1
+        },
+        {
+          "itemCode": "jyueri-rifomyumekougei:10000027",
+          "rank": 2
+        },
+        {
+          "itemCode": "bungunoarukurashi:10078389",
+          "rank": 3
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "565004",
+      "rootName": "光回線・モバイル通信",
+      "genreId": "568381",
+      "genreName": "モバイルルーター用アクセサリー",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "nec-aterm:10000020",
+          "rank": 1
+        },
+        {
+          "itemCode": "nec-aterm:10000076",
+          "rank": 2
+        },
+        {
+          "itemCode": "raloe:10006804",
+          "rank": 3
+        },
+        {
+          "itemCode": "seemoba:10000019",
+          "rank": 4
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "112493",
+      "rootName": "楽器・音響機器",
+      "genreId": "566954",
+      "genreName": "ギター・ベース",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "shimamuragakki:10258931",
+          "rank": 1
+        },
+        {
+          "itemCode": "sakuragk:10020491",
+          "rank": 2
+        },
+        {
+          "itemCode": "shimamuragakki:10127527",
+          "rank": 3
+        },
+        {
+          "itemCode": "sakuragk:10018452",
+          "rank": 4
+        },
+        {
+          "itemCode": "shimamuragakki:10269057",
+          "rank": 5
+        },
+        {
+          "itemCode": "nihonbashi-gakki:10000003",
+          "rank": 6
+        },
+        {
+          "itemCode": "chuya-online:10172009",
+          "rank": 7
+        },
+        {
+          "itemCode": "key:10060271",
+          "rank": 8
+        },
+        {
+          "itemCode": "jeugia:10081802",
+          "rank": 9
+        },
+        {
+          "itemCode": "sakaedori:10000001",
+          "rank": 10
+        },
+        {
+          "itemCode": "shimamuragakki:10226211",
+          "rank": 11
+        },
+        {
+          "itemCode": "shimamuragakki:10278216",
+          "rank": 12
+        },
+        {
+          "itemCode": "shimamuragakki:10262535",
+          "rank": 13
+        },
+        {
+          "itemCode": "shimamuragakki:10279960",
+          "rank": 14
+        },
+        {
+          "itemCode": "sakuragk:10018526",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "558944",
+      "rootName": "キッチン用品・食器・調理器具",
+      "genreId": "210238",
+      "genreName": "業務用厨房機器・用品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "auc-risecreation:10005305",
+          "rank": 1
+        },
+        {
+          "itemCode": "auc-risecreation:10005393",
+          "rank": 2
+        },
+        {
+          "itemCode": "iwaki-uni:10002654",
+          "rank": 3
+        },
+        {
+          "itemCode": "smartiv:10000137",
+          "rank": 4
+        },
+        {
+          "itemCode": "japan-net-hitachi:10000000",
+          "rank": 5
+        },
+        {
+          "itemCode": "sekiguchi-shokai:10000270",
+          "rank": 6
+        },
+        {
+          "itemCode": "112store:10000021",
+          "rank": 7
+        },
+        {
+          "itemCode": "sodastream:10000438",
+          "rank": 8
+        },
+        {
+          "itemCode": "protoolshop:10071208",
+          "rank": 9
+        },
+        {
+          "itemCode": "imaginelife:10053928",
+          "rank": 10
+        },
+        {
+          "itemCode": "goodfeel:10006412",
+          "rank": 11
+        },
+        {
+          "itemCode": "kainets:10000136",
+          "rank": 12
+        },
+        {
+          "itemCode": "babynews:10000150",
+          "rank": 13
+        },
+        {
+          "itemCode": "recyclemart:10000865",
+          "rank": 14
+        },
+        {
+          "itemCode": "tenpos2:10307230",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-15",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-16",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Thu, 15 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "farson:10007690",
+          "rank": 1
+        },
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 2
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 3
+        },
+        {
+          "itemCode": "kaden-bbx:10013160",
+          "rank": 4
+        },
+        {
+          "itemCode": "pykespeak:10002416",
+          "rank": 5
+        },
+        {
+          "itemCode": "biccamera:14106732",
+          "rank": 6
+        },
+        {
+          "itemCode": "superdeal:10005737",
+          "rank": 7
+        },
+        {
+          "itemCode": "cocoiine:10001717",
+          "rank": 8
+        },
+        {
+          "itemCode": "skyblue-:10000269",
+          "rank": 9
+        },
+        {
+          "itemCode": "kounotorinodvd:10008741",
+          "rank": 10
+        },
+        {
+          "itemCode": "bestdo-rk-shop:10082148",
+          "rank": 11
+        },
+        {
+          "itemCode": "tantan:13364417",
+          "rank": 12
+        },
+        {
+          "itemCode": "cocoiine:10002196",
+          "rank": 13
+        },
+        {
+          "itemCode": "souplesse:10001478",
+          "rank": 14
+        },
+        {
+          "itemCode": "rcmdse:17012232",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-15",
+        "sameItemCount": 5,
+        "denominator": 15
       }
     }
   ]
