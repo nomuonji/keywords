@@ -214,7 +214,7 @@ Use this only for a **new, executable, unrefused** SEO Task when the actual runn
 3. Create only `seo/<task-id>` at the observed current default-branch SHA `B` using `create_branch`. Use `push_files` **once on that branch** to make one commit with subject `[CF-Pages-Skip] ...`. Never push main, use `update_ref`/force-push, modify another Task branch, create PR, or merge. No `create_or_update_file` substitute for this transport.
 4. Read back branch HEAD `H`, raw commit, tree/source and comparison `B...H`. Require one parent exactly `B`, one commit ahead, no behind commits, and only permitted changed paths; current main must still equal `B`. On mismatch, stop without handoff.
 5. With the current `claimRunId`, save `deliveryHandoff.state=push_pending`, `branch=seo/<task-id>`, `baseSha=B`, `headSha=H`, `validationSummary` beginning with `Action-Branch-Handoff: v1\n` (one newline) and actual validation evidence. Keep handedOffAt/prNumber/prUrl null, lastError empty and updatedAt current UTC. Append history `{actor:<actual executionClaim.actor>,event:"delivery_branch_push_pending",detail:"...verified exact SHA and source..."}`. The actor must be an authorized executor claim identity (`seo_worker` or `chatgpt_seo_worker`), and the central verifier requires the history actor to match the active claim for `push_pending`. Read Task back and stop.
-6. Central `keywords` Actions verifies claim, registry, task creation cutoff, historical refusals, Task-bound branch, one-parent Git commit, base/main SHA, exact branch/ref, changed paths and receipt. It does **not** rewrite the Groq branch; it alone marks `branch_ready`, creates/merges PR and records `completed`. Site builds are performed by Cloudflare or the configured host after main push, with independent publication verification.
+6. Central `keywords` Actions verifies claim, registry, task creation cutoff, historical refusals, Task-bound branch, one-parent Git commit, base/main SHA, exact branch/ref, changed paths and receipt. It does **not** rewrite the existing B-transport branch; it alone marks `branch_ready`, creates/merges PR and records `completed`. Site builds are performed by Cloudflare or the configured host after main push, with independent publication verification.
 
 Corrective follow-ups must not force-update a B-transport branch. Use a separately authorized and validated correction path. No altered ChatGPT schedules, article registry writes or foreign operational automation changes.
 
@@ -246,7 +246,7 @@ Corrective follow-ups must not force-update a B-transport branch. Use a separate
 ```
 
 The central Action owns:
-`push_pending -> [attach prepared commit OR validate exact Groq branch] -> branch_ready -> PR -> merge -> resultCommitSha -> completed -> merged branch cleanup`.
+`push_pending -> [attach prepared commit OR validate exact B-transport branch] -> branch_ready -> PR -> merge -> resultCommitSha -> completed -> merged branch cleanup`.
 
 ## 6. Completion is controller-owned
 
