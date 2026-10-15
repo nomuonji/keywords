@@ -6,10 +6,12 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
+const isBranchFallback = (task: SeoTaskRecord) => task.deliveryHandoff?.validationSummary.startsWith(BRANCH_HANDOFF_MARKER) === true;
+const isPrepared = (task: SeoTaskRecord) => task.deliveryHandoff?.validationSummary.startsWith(ACTIONS_MARKER) === true;
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
 
@@ -291,15 +293,52 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
   return actual;
 }
 
+// Groq has already written the task-specific branch using create_branch +
+// push_files. It must be an EXACT one-commit child of the current main HEAD.
+// A receipt is not sufficient: independently inspect commit, compare and diff.
+async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null) {
+  const h = task.deliveryHandoff;
+  if (!h.branch || !h.headSha || !h.baseSha || actualSha !== h.headSha) {
+    console.log(`Waiting: ${task.id} Groq branch missing or HEAD mismatch`);
+    return null;
+  }
+  const repository = await repoInfo(task.repo);
+  const defaultSha = await branchSha(task.repo, repository.default_branch);
+  if (defaultSha !== h.baseSha) {
+    console.log(`Waiting: ${task.id} Groq fallback base is no longer main; fresh validation required`);
+    return null;
+  }
+  const commit = await gh<{ message: string; tree: { sha: string }; parents: { sha: string }[] }>(
+    api(task.repo, `/git/commits/${h.headSha}`)
+  );
+  if (!commit.message?.startsWith('[CF-Pages-Skip]') || commit.parents?.length !== 1
+      || commit.parents[0].sha !== h.baseSha || !/^[a-f0-9]{40}$/.test(commit.tree?.sha ?? '')) {
+    throw Error(`Invalid Groq branch commit provenance ${task.id}`);
+  }
+  const compare = await gh<{
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit: { sha: string }; files: { filename: string }[];
+  }>(api(task.repo, `/compare/${h.baseSha}...${h.headSha}`));
+  if (compare.status !== 'ahead' || compare.ahead_by !== 1 || compare.behind_by !== 0
+      || compare.merge_base_commit?.sha !== h.baseSha || !compare.files?.length || compare.files.length > 50) {
+    throw Error(`Invalid/non-fast-forward Groq branch ${task.id}`);
+  }
+  const unsafe = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
+  if (unsafe) throw Error(`Groq branch has prohibited paths: ${unsafe}`);
+  const reread = await branchSha(task.repo, h.branch);
+  if (reread !== h.headSha) throw Error(`Groq branch changed during verification ${task.id}`);
+  return reread;
+}
+
 async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']): Promise<SeoTaskRecord> {
   const handoff = task.deliveryHandoff;
   if (handoff?.state !== 'push_pending') return task;
-  // All post-cutover Workers use the same prepared-ref transport. Historic
-  // in-flight direct-push checkpoints may drain; no new direct-push handoff
-  // is accepted, regardless of which Worker runtime wrote it.
+  // Two authorized transports: prepared unreferenced commit from any equipped
+  // Worker, or a single exact-main-based, pre-pushed Groq seo/* branch.
+  // Never accept an unmarked post-cutover direct push.
   if ((preparedHandoffRequired(task) || task.executionClaim?.actor === 'chatgpt_seo_worker')
-      && !isPreparedRefHandoff(task)) {
-    console.log(`Waiting: ${task.id} requires an authorized prepared-ref marker`);
+      && !isPreparedRefHandoff(task) && !isBranchFallback(task)) {
+    console.log(`Waiting: ${task.id} requires an authorized prepared or Groq branch handoff marker`);
     return task;
   }
   if (isPreparedRefHandoff(task)) {
@@ -310,6 +349,17 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
     );
     if (gateError) {
       console.log(`Waiting: ${task.id} prepared-ref gate: ${gateError}`);
+      return task;
+    }
+  }
+  if (isBranchFallback(task)) {
+    const branchError = verifiedBranchHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
+    );
+    if (branchError) {
+      console.log(`Waiting: ${task.id} Groq branch gate: ${branchError}`);
       return task;
     }
   }
@@ -325,8 +375,10 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
     if (!/GitHub 404 Not Found/.test(String(error))) throw error;
     actualBranchSha = null;
   }
-  // Validate prepared-commit provenance for both Worker runtimes, including an existing exact ref.
-  if (isPreparedRefHandoff(task) || actualBranchSha !== handoff.headSha) {
+  if (isBranchFallback(task)) {
+    actualBranchSha = await verifyWorkerBranch(task, actualBranchSha);
+  } else if (isPreparedRefHandoff(task) || actualBranchSha !== handoff.headSha) {
+    // Only the prepared-commit protocol may create/update a ref centrally.
     actualBranchSha = await pushPreparedRef(task, actualBranchSha);
   }
   if (actualBranchSha === null) {
@@ -381,13 +433,13 @@ async function reconcilePushPending(task: SeoTaskRecord, activeSites: Awaited<Re
 async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<typeof siteRegistryList>>['items']) {
   const handoff = task.deliveryHandoff;
   if (!handoff || !['branch_ready', 'pr_open'].includes(handoff.state)) return;
-  // Post-cutover tasks must use prepared commits even when a branch happens
-  // to exist already; pre-cutover in-flight direct-push PRs can still drain.
-  if (preparedHandoffRequired(task) && !handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
-    console.log(`Waiting: ${task.id} new task lacks mandatory prepared-ref marker`);
+  // Post-cutover must use either the validated prepared ref or the task-bound
+  // Groq pre-pushed branch (legacy pre-cutover delivery may still drain).
+  if (preparedHandoffRequired(task) && !isPrepared(task) && !isBranchFallback(task)) {
+    console.log(`Waiting: ${task.id} new task lacks an authorized handoff marker`);
     return;
   }
-  if (handoff.validationSummary.startsWith(ACTIONS_MARKER)) {
+  if (isPrepared(task)) {
     const gateError = preparedRefHandoffPreflight(
       task, activeSites,
       process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
@@ -395,6 +447,17 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
     );
     if (gateError) {
       console.log(`Waiting: ${task.id} prepared-ref PR/merge gate: ${gateError}`);
+      return;
+    }
+  }
+  if (isBranchFallback(task)) {
+    const error = verifiedBranchHandoffPreflight(
+      task, activeSites,
+      process.env.SEO_PREPARED_REF_HANDOFF_ENABLED,
+      process.env.SEO_PREPARED_REF_HANDOFF_NOT_BEFORE
+    );
+    if (error) {
+      console.log(`Waiting: ${task.id} Groq branch PR/merge gate: ${error}`);
       return;
     }
   }
