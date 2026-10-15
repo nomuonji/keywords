@@ -1022,6 +1022,51 @@ try {
   assert.equal(oauthStatus.structuredContent.serverVersion, '0.22.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.3.0');
 
+  // An incapable Grok Git connector must not produce an hourly stream of
+  // identical preflight history writes that churns Task revisions.
+  const preflightTask = await seoTaskCreate({
+    id: 'seo-preflight-dedupe-01',
+    siteId: 'site-a',
+    repo: 'nomuonji/site-a',
+    targetUrls: ['https://example.com/git-preflight'],
+    taskType: 'technical',
+    title: 'Test Git preflight idempotence',
+    rationale: 'Synthetic in-memory fixture for duplicate capability logs.',
+    evidence: ['No production source changes are performed.'],
+    dedupeKey: 'site-a:technical:git-preflight-dedupe',
+    createdBy: 'site-operations-smoke'
+  });
+  const firstPreflight = await seoTaskUpdate({
+    id: preflightTask.id, expectedRevision: preflightTask.revision,
+    appendHistory: {
+      actor: 'grok_seo_worker', event: 'preflight_git_objects_unavailable',
+      detail: 'Grok Git object create_blob/create_tree/create_commit unavailable.'
+    }
+  });
+  const secondPreflight = await seoTaskUpdate({
+    id: preflightTask.id, expectedRevision: firstPreflight.revision,
+    appendHistory: {
+      actor: 'grok_seo_worker', event: 'preflight_git_objects_unavailable',
+      detail: 'Same missing tools observed on another run; no new evidence.'
+    }
+  });
+  assert.equal(secondPreflight.revision, firstPreflight.revision,
+    'Repeated capability-only report must not change Task revision');
+  assert.equal(secondPreflight.history.length, firstPreflight.history.length,
+    'Repeated capability-only report must not append history');
+  assert.equal(secondPreflight.status, 'ready');
+  const changedPreflight = await seoTaskUpdate({
+    id: preflightTask.id, expectedRevision: secondPreflight.revision,
+    status: 'proposed',
+    appendHistory: {
+      actor: 'grok_seo_worker', event: 'preflight_git_objects_unavailable',
+      detail: 'Capability gap plus legitimate queue deferral change.'
+    }
+  });
+  assert.equal(changedPreflight.status, 'proposed');
+  assert.equal(changedPreflight.revision, firstPreflight.revision + 1,
+    'Real state transition must not be suppressed by duplicate-history guard');
+
   console.log('site operations smoke passed: evaluator provenance, run leases, structured centralized delivery handoff, controller-owned completion, separate deployment verification, dedupe, normalized site/article identities, optimization cooldown and updated MCP contract');
 } finally {
   globalThis.fetch = originalFetch;
