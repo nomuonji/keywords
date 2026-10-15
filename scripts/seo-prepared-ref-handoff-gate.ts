@@ -106,6 +106,44 @@ export function preparedRefHandoffPreflight(
   return null;
 }
 
+/**
+ * Groq connector fallback: when the runner lacks create_blob/tree/commit but
+ * CAN create a task-bound branch and push exactly one regular commit, the
+ * central controller verifies the already-existing ref instead of creating
+ * it. The safety/cutover/registry/Task gates are exactly the prepared-ref
+ * ones; this is never an alternative for a refused operation.
+ */
+export const BRANCH_HANDOFF_MARKER = 'Action-Branch-Handoff: v1\\n';
+
+export function verifiedBranchHandoffPreflight(
+  task: SeoTaskRecord,
+  activeSites: readonly Pick<SiteRecord, 'id' | 'repository' | 'status'>[],
+  enabled: string | undefined,
+  notBefore: string | undefined
+): string | null {
+  const handoff = task.deliveryHandoff;
+  if (!handoff?.validationSummary.startsWith(BRANCH_HANDOFF_MARKER)) {
+    return 'Verified branch fallback requires its exact transport marker';
+  }
+  // A Groq branch write is never authorized by a ChatGPT label or a free-form
+  // claim. Central reconciliation also verifies the actual Git history.
+  if (handoff.state === 'push_pending' && task.executionClaim?.actor !== 'seo_worker') {
+    return 'Groq branch fallback requires an active seo_worker execution claim';
+  }
+  if (!(task.history ?? []).some(event =>
+    event.event === 'delivery_branch_push_pending' && event.actor === 'seo_worker')) {
+    return 'Groq branch fallback requires a structured Worker handoff receipt';
+  }
+  const preparedEquivalent = {
+    ...task,
+    deliveryHandoff: {
+      ...handoff,
+      validationSummary: 'Action-Ref-Handoff: v1\\n' + handoff.validationSummary.slice(BRANCH_HANDOFF_MARKER.length)
+    }
+  } as SeoTaskRecord;
+  return preparedRefHandoffPreflight(preparedEquivalent, activeSites, enabled, notBefore);
+}
+
 /** Conservative content-only scope for unattended initial rollout. */
 export function preparedRefHandoffScopeError(files: readonly string[]): string | null {
   if (!files.length || files.length > 50) return 'Prepared commit has no files or exceeds 50 changed files';
