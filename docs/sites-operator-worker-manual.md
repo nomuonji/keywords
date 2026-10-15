@@ -51,7 +51,7 @@ The Worker does **not** create/update pull requests or merge to the repository d
 | Create/update remote `seo/*` branch reference or push | **no** — central Action |
 | Verify remote HEAD and persist `branch_ready`, release execution claim | **no** — central Action |
 | Create/update PR | **no** — centralized delivery controller |
-| Gate on PR CI and merge to main | **no** — centralized delivery controller |
+| Verify exact PR/head/main and merge | **no** — centralized delivery controller; no peripheral GitHub Actions |
 | Record actual main result SHA / set `completed` | **no** — centralized delivery controller after merge |
 | Verify production/public URL | optional |
 | Repair unrelated hosting/deployment/platform defects | **no** |
@@ -118,10 +118,10 @@ Never claim a check ran when it did not.
 ### Autonomous validation fallback (2026-10-15)
 
 - Do not treat inability to run local `npm install`, a full build, or generated-page inspection as an automatic stop for every SEO Task. Choose the narrowest meaningful checks supported by the current runner and task: source/diff review, syntax or type validation where available, static invariants, source evidence, and existing repository checks. Check every acceptance criterion and distinguish verified items from items awaiting CI.
-- When local build tooling is unavailable, continue only if the change can be meaningfully validated without it and the remaining build/render assertions are enforceable by the repository's existing central PR CI before merge. Record exactly which checks ran, which did not, and the required CI gates in `validationSummary`; never represent deferred CI as passed.
+- When local build tooling is unavailable, proceed only if the Task's relevant acceptance criteria can be meaningfully verified from trusted source/readback and actual target-output evidence before handoff. Cloudflare Pages or another configured host builds on default-branch push; this is **post-merge verification, not a replacement for missing required pre-merge acceptance evidence**. If an unverified build/render criterion is essential, do not hand off. Never claim deferred hosting validation already passed.
 - If a task specifically requires runtime/rendered-output proof that neither this runner nor configured downstream CI can provide, do not hand off an unverified implementation. Preserve an unclaimed `ready` task, report the concrete missing acceptance evidence, and inspect other eligible tasks instead.
 - For a repeated environment-only blocker, avoid duplicate history writes and redundant connectivity probes unless evidence has changed. Evaluate other eligible tasks; finish with a concise zero-work report only when none can be validated adequately.
-- These fallbacks do not relax safety/authorization refusals, Task scope, claim isolation, Git-object/readback preflight, the prohibition on direct ref/PR writes, or central CI merge gates. Do not alter ChatGPT automation schedules because of a task-level blocker.
+- These fallbacks do not relax safety/authorization refusals, Task scope, claim isolation, Git-object/readback preflight, the prohibition on direct ref/PR writes, or central commit-integrity and GitHub mergeability gates. Do not alter ChatGPT automation schedules because of a task-level blocker.
 
 
 ### Task size, completeness and quality
@@ -202,7 +202,7 @@ Both ChatGPT and Groq use the **same** transport for Tasks created at or after t
    - `handedOffAt:null`, `prNumber:null`, `prUrl:null`, `lastError:""`, and `updatedAt` = real current ISO timestamp;
    - append `delivery_push_pending` history.
 6. Read back the Sites Operator Task. Confirm exact checkpoint SHA, marker, branch, active claim and revision. **Stop the Worker run**. Neither remote branch creation nor PR creation/merge is a Worker action.
-7. The central scheduled GitHub Action independently checks the active Site Registry, task creation cutoff, claim, task-bound branch, prior refusal history, Git object parent and allowable diff. It non-force fast-forwards `seo/<task-id>`, reads back the exact remote HEAD, sets `branch_ready` and releases the Worker claim, then creates/reuses PR, observes successful repository PR Actions CI, merges, writes resultCommitSha/completed, and cleans the branch. If base/main advances before an initial ref is created or a concurrent ref wins, **stop and re-evaluate**; no force push or automatic replay.
+7. The central scheduled GitHub Action independently checks the active Site Registry, task creation cutoff, claim, task-bound branch, prior refusal history, Git object parent and allowable diff. It non-force fast-forwards `seo/<task-id>`, reads back the exact remote HEAD, sets `branch_ready` and releases the Worker claim, then creates/reuses PR, revalidates exact head/base SHA and GitHub mergeability, merges, writes resultCommitSha/completed, and cleans the branch. No peripheral-repository Actions or central site build are started. Actual host build success and live publication are checked separately after merging. If base/main advances before an initial ref is created or a concurrent ref wins, **stop and re-evaluate**; no force push or automatic replay.
 8. If Actions reports `ci_failed`, the Worker may perform a genuinely new corrective pass with fresh evidence and a new valid child commit of the existing branch HEAD. Old PRs with merge conflicts are not automatically rewritten by the Worker.
 
 ### Example of the Worker-side final checkpoint
@@ -246,7 +246,7 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 3. creating or reusing the PR;
 4. recording `deliveryHandoff.state=pr_open`;
 5. waiting for observed repository PR checks/statuses to finish;
-6. refusing merge on genuine repository-CI failures while ignoring Cloudflare Pages / Vercel / Netlify hosting-preview checks;
+6. refusing merge if PR cannot be merged cleanly or the exact main/ref/Task changed; no peripheral GitHub Actions checks or hosting-preview builds are a prerequisite. After main push, verify host build and canonical publication independently;
 7. merging when repository checks pass and repository rules permit;
 8. reading the merge result SHA;
 9. setting `status=completed`, `resultCommitSha=<actual merge/default-branch SHA>`, and `deliveryHandoff.state=merged`;
@@ -318,7 +318,7 @@ Report:
 
 A good final line is:
 
-> Verified unreferenced GitHub commit created; `deliveryHandoff=push_pending` recorded and read back. Central Actions owns the ref/PR/CI/merge/completion.
+> Verified unreferenced GitHub commit created; `deliveryHandoff=push_pending` recorded and read back. Central Actions owns ref/PR/exact-SHA-and-mergeability-gate/merge/completion; hosting owns production build, which must be verified separately.
 
 Do not say “completed” merely because the prepared commit was created or a branch was updated. Only say “completed” after the exact change is observed on the repository default branch. Do not say “production verified” without an actual production check.
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, preparedHandoffHasPassedPrCi } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -105,14 +106,14 @@ assert.match(preparedRefHandoffScopeError([])!, /no files/);
 assert.match(preparedRefHandoffScopeError(['a.md','a.md'])!, /duplicate/);
 console.log('Shared prepared-ref gate passed: cutover, historic refusal, site/task/branch binding, safe corrective fast-forward, restricted paths');
 
-const prSuccess = {
-  event:'pull_request', status:'completed', conclusion:'success',
-  pull_requests:[{number:42}]
-};
-assert.equal(preparedHandoffHasPassedPrCi([prSuccess],42),true);
-assert.equal(preparedHandoffHasPassedPrCi([prSuccess],41),false);
-assert.equal(preparedHandoffHasPassedPrCi([{...prSuccess,event:'push'}],42),false);
-assert.equal(preparedHandoffHasPassedPrCi([{...prSuccess,conclusion:'skipped'}],42),false);
-assert.equal(preparedHandoffHasPassedPrCi([{...prSuccess,status:'in_progress'}],42),false);
-assert.equal(preparedHandoffHasPassedPrCi([],42),false);
-console.log('Common prepared-ref PR CI gate passed: exact PR, successful completed PR Actions run only');
+// Satellite GitHub Actions are not a delivery dependency. All PR delivery
+// is driven by the public keywords controller; the target hosting platform
+// builds on default-branch push and separate publication verification follows.
+const controller = readFileSync(new URL('./seo-delivery-controller.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(controller, /checkSummary\s*\(|passedPullRequestActions|NO_CHECK_GRACE_MS/);
+assert.doesNotMatch(controller, /api\(repo, `\/actions\/runs/);
+assert.match(controller, /freshPr\.mergeable !== true/);
+assert.match(controller, /currentMainSha !==|handoff\.baseSha !== currentMainSha/);
+assert.match(controller, /currentTask\.deliveryHandoff\.headSha !== handoff\.headSha/);
+assert.match(controller, /mergePull\(task, pr\.number, handoff\.headSha/);
+console.log('Central-only SEO delivery passed: no satellite Actions, exact PR SHA/main checks and GitHub mergeability retained.');
