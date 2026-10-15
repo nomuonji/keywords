@@ -13,8 +13,10 @@ process.env.KEYWORDS_FIRESTORE_RETRY_ATTEMPTS = '0';
 const json = (content: unknown, status = 200) =>
   new Response(JSON.stringify(content), {status, headers: {'content-type':'application/json'}});
 const priorFetch = globalThis.fetch;
+const fetchedUris: string[] = [];
 globalThis.fetch = async (input: any) => {
   const uri = String(input);
+  fetchedUris.push(uri);
   if (uri.includes('oauth2.googleapis.com')) return json({access_token:'test-token',expires_in:3600});
   if (uri.includes('firestore.googleapis.com')) return json({documents:[]});
   return priorFetch(input);
@@ -37,6 +39,14 @@ assert.match(cookie,/SameSite=Strict/);
 const inbox = await app.request(url + '?resource=idea-inbox', {headers:{Cookie: cookie.split(';')[0]}});
 assert.equal(inbox.status,200);
 assert.deepEqual((await inbox.json()).items,[]);
+const summary = await app.request(url + '?resource=idea-inbox&summary=1', {headers:{Cookie: cookie.split(';')[0]}});
+assert.equal(summary.status,200);
+assert.deepEqual((await summary.json()).items,[]);
+assert.ok(fetchedUris.some(uri => uri.includes('mask.fieldPaths=title')), 'summary requests field mask');
+const unauthDetail = await app.request(url + '?resource=idea-detail&id=idea-1');
+assert.equal(unauthDetail.status,401);
+const badDetail = await app.request(url + '?resource=idea-detail&id=%3Cbad%3E', {headers:{Cookie: cookie.split(';')[0]}});
+assert.equal(badDetail.status,400);
 const feedback = await app.request(url + '?resource=idea-feedback', {headers:{Cookie: cookie.split(';')[0]}});
 assert.equal(feedback.status,200);
 assert.deepEqual((await feedback.json()).events,[]);
