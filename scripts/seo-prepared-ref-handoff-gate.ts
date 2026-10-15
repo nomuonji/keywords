@@ -210,3 +210,34 @@ export function preparedHandoffHasPassedPrCi(
     && run.pull_requests?.some(pr => pr.number === prNumber) === true
   );
 }
+
+/**
+ * Allow central branch-fallback delivery past a strictly unrelated bot-state
+ * update, without rewriting the Worker commit or weakening refusal gates.
+ * Source/config/unknown default-branch changes still require fresh validation.
+ */
+export function verifiedBranchMainDriftIsNonInterfering(
+  baseSha: string,
+  comparison: {
+    status: string;
+    ahead_by: number;
+    behind_by: number;
+    merge_base_commit?: { sha: string } | null;
+    files?: readonly { filename: string }[];
+  },
+  workerChangedPaths: readonly string[]
+): boolean {
+  const files = comparison.files ?? [];
+  return comparison.status === 'ahead'
+    && comparison.behind_by === 0
+    && comparison.ahead_by >= 1
+    && comparison.ahead_by <= 10
+    && comparison.merge_base_commit?.sha === baseSha
+    && files.length > 0
+    && files.length <= 10
+    && workerChangedPaths.length > 0
+    && files.every(({ filename }) =>
+      /^sns-bot\/[A-Za-z0-9_-]+_state\.json$/.test(filename)
+      && !workerChangedPaths.includes(filename)
+    );
+}
