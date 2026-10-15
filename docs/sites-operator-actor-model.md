@@ -9,7 +9,7 @@
 | **SEO Manager** | 有効なChatGPTスケジュールタスク `Site SEO Task Planner`（JST 0,3,6,9,12,15,18,21時の10分、3時間ごと）。MCP API roleは互換性のため `planner` | 16のactive Sites Operatorサイトを横断し、投資先を選び、SEOタスクを作る。配分・観測・再配分の判断を同一エージェントが行う |
 | **Sites Operator** | `nomuonji/keywords` / Sites MCP / Firestore | マクロ政策・サイト方針・検索観測・SEO task・実行ゲート・履歴の正本。判断するLLM自身ではなくデータ／制約／永続状態 |
 | **SEO Worker** | 別の実行エージェント。ChatGPT側の旧 `Site SEO Worker` schedule は無効化済み | タスクをclaimし、GitHub内のサイトコードを変更・検証・`seo/*` push。投資配分を独自に決定しない |
-| **Central Delivery** | GitHub Actions | WorkerがpushしたブランチからPR/CI/main merge。Sites Operatorに完成receiptを書き戻す |
+| **Central Delivery** | GitHub Actions | Workerのprepared Git commitを検査し、seo/* ref、PR、正確なSHA／mergeability確認、main mergeを実行。周縁repoのGitHub Actionsは使用せず、ホストがmain pushをビルド。Sites Operatorに完成receiptを書き戻す |
 | **Legacy My Portal SEO Manager** | `site-seo-operations` Manager Jobは2026-09-30にarchived、ChatGPTスケジュールもdisabled | 現行運用に参加しない。旧My Portal queueをSEO現場の正本として読まない |
 | **Keywords Operator** | 独立した市場探索／検索需要のエビデンス提供プラグイン | Managerが呼び出すデータソースであり、別のSEO Plannerアクターではない |
 
