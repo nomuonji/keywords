@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
+import ideaReviewApp from '../server/idea-memory.js';
 import { researchSessionList } from '../packages/commands/src/remote-keyword-research.js';
 import { themeResearchContext } from '../packages/commands/src/theme-research.js';
 import { seoSourcePoolContext } from '../packages/commands/src/seo-source-pool.js';
 
 const app = new Hono();
+// Reuse this Vercel function for the owner-only Idea Memory UI.
+app.route('/', ideaReviewApp);
 
 app.get('/api/theme-research', async c => {
   try {
