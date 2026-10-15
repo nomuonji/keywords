@@ -107,11 +107,11 @@ export function preparedRefHandoffPreflight(
 }
 
 /**
- * Groq connector fallback: when the runner lacks create_blob/tree/commit but
- * CAN create a task-bound branch and push exactly one regular commit, the
- * central controller verifies the already-existing ref instead of creating
- * it. The safety/cutover/registry/Task gates are exactly the prepared-ref
- * ones; this is never an alternative for a refused operation.
+ * Capability-based fallback for a Worker without Git-object creation APIs.
+ * Both supported executor claim identities may provide an already-pushed
+ * task-bound branch. The marker identifies the transport, not the model.
+ * The controller independently verifies commit provenance, safe paths, ref
+ * and Task before promotion; this cannot retry a safety-refused operation.
  */
 export const BRANCH_HANDOFF_MARKER = 'Action-Branch-Handoff: v1\n';
 
@@ -125,14 +125,18 @@ export function verifiedBranchHandoffPreflight(
   if (!handoff?.validationSummary.startsWith(BRANCH_HANDOFF_MARKER)) {
     return 'Verified branch fallback requires its exact transport marker';
   }
-  // A Groq branch write is never authorized by a ChatGPT label or a free-form
-  // claim. Central reconciliation also verifies the actual Git history.
-  if (handoff.state === 'push_pending' && task.executionClaim?.actor !== 'seo_worker') {
-    return 'Groq branch fallback requires an active seo_worker execution claim';
+  // Preserve existing claim identities for backward compatibility; never
+  // grant fallback access based on a Worker/model name or a self-claimed label.
+  const recognizedActors = ['seo_worker', 'chatgpt_seo_worker'];
+  const activeActor = task.executionClaim?.actor ?? '';
+  if (handoff.state === 'push_pending' && !recognizedActors.includes(activeActor)) {
+    return 'Verified branch fallback requires an active authorized SEO Worker claim';
   }
   if (!(task.history ?? []).some(event =>
-    event.event === 'delivery_branch_push_pending' && event.actor === 'seo_worker')) {
-    return 'Groq branch fallback requires a structured Worker handoff receipt';
+    event.event === 'delivery_branch_push_pending'
+    && recognizedActors.includes(event.actor)
+    && (handoff.state !== 'push_pending' || event.actor === activeActor))) {
+    return 'Verified branch fallback requires a structured receipt matching the Worker claim actor';
   }
   const preparedEquivalent = {
     ...task,
