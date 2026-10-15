@@ -114,6 +114,27 @@ export function preparedRefHandoffPreflight(
  * and Task before promotion; this cannot retry a safety-refused operation.
  */
 export const BRANCH_HANDOFF_MARKER = 'Action-Branch-Handoff: v1\n';
+/**
+ * Decide the transport BEFORE claiming a Task. Missing tool exposure is a
+ * capability gap; a denied write is never a reason to try another route.
+ * Actor/model identities are intentionally absent from this decision.
+ */
+export function selectSeoGitTransport(capabilities: {
+  preparedWriters: boolean;
+  branchWriters: boolean;
+  commitTreeSourceReadback: boolean;
+  branchRefAndDiffReadback: boolean;
+  hasSafetyOrAuthorizationRefusal: boolean;
+}): 'prepared' | 'verified_branch' | null {
+  if (capabilities.hasSafetyOrAuthorizationRefusal
+      || !capabilities.commitTreeSourceReadback) return null;
+  if (capabilities.preparedWriters) return 'prepared';
+  return capabilities.branchWriters && capabilities.branchRefAndDiffReadback
+    ? 'verified_branch'
+    : null;
+}
+
+
 
 export function verifiedBranchHandoffPreflight(
   task: SeoTaskRecord,
