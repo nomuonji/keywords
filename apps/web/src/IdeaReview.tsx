@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api } from './api';
 import './idea-review.css';
 
@@ -108,7 +108,7 @@ export function IdeaReview() {
     setError('');
     setMessage('');
   }
-  async function logIn(event: React.FormEvent<HTMLFormElement>) {
+  async function logIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true); setError('');
     try {
