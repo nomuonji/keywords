@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -98,27 +98,54 @@ for (const id of [
   })!, /refusal/);
 }
 
-// Groq may use exactly one verified task branch on a NEW unrefused Task.
-const groqTask = {
+// Any authorized SEO Worker may use the same verified fallback on a NEW unrefused Task.
+const branchTask = {
   ...task,
   executionClaim: { ...task.executionClaim!, actor: 'seo_worker' },
   deliveryHandoff: { ...task.deliveryHandoff, validationSummary: BRANCH_HANDOFF_MARKER + 'Checked current main, one-parent commit, tree and source.' },
   history: [{ event: 'delivery_branch_push_pending', actor: 'seo_worker', at: '2026-10-15T00:00:00Z', detail: 'read back branch head, parent and changed source' }]
 } as SeoTaskRecord;
-const groqCheck = (t: SeoTaskRecord = groqTask) => verifiedBranchHandoffPreflight(t, sites, '1', rollout);
-assert.equal(groqCheck(), null);
-assert.match(groqCheck({...groqTask, executionClaim: { ...groqTask.executionClaim!, actor: 'chatgpt_seo_worker' }})!, /seo_worker/);
-assert.match(groqCheck({...groqTask, history: []})!, /structured/);
-assert.match(groqCheck({...groqTask, status: 'cancelled'})!, /Checkpoint/);
-assert.match(groqCheck({...groqTask, deliveryHandoff: {...groqTask.deliveryHandoff, branch: 'seo/other-task'}})!, /task-bound/);
-assert.match(groqCheck({...groqTask, deliveryHandoff: {...groqTask.deliveryHandoff, lastError: 'permission denied'}})!, /unresolved/);
-assert.match(groqCheck({...groqTask, history: [...groqTask.history, { event: 'authorization_denied', actor: 'seo_worker', at: '2026-10-15T00:00:01Z', detail: 'do not replay' }]})!, /refusal/);
+const branchCheck = (t: SeoTaskRecord = branchTask) => verifiedBranchHandoffPreflight(t, sites, '1', rollout);
+assert.equal(branchCheck(), null);
+const chatgptBranchTask = {
+  ...branchTask,
+  executionClaim: {...branchTask.executionClaim!, actor: 'chatgpt_seo_worker'},
+  history: [{...branchTask.history[0], actor: 'chatgpt_seo_worker'}]
+} as SeoTaskRecord;
+assert.equal(branchCheck(chatgptBranchTask), null);
+assert.match(branchCheck({...branchTask, executionClaim: {...branchTask.executionClaim!, actor: 'chatgpt_seo_worker'}})!, /matching/);
+assert.match(branchCheck({...chatgptBranchTask, history: branchTask.history})!, /matching/);
+assert.match(branchCheck({...branchTask, executionClaim: {...branchTask.executionClaim!, actor: 'unknown_worker'}})!, /authorized/);
+assert.match(branchCheck({...branchTask, history: []})!, /structured/);
+assert.match(branchCheck({...branchTask, status: 'cancelled'})!, /Checkpoint/);
+assert.match(branchCheck({...branchTask, deliveryHandoff: {...branchTask.deliveryHandoff, branch: 'seo/other-task'}})!, /task-bound/);
+assert.match(branchCheck({...branchTask, deliveryHandoff: {...branchTask.deliveryHandoff, lastError: 'permission denied'}})!, /unresolved/);
+assert.match(branchCheck({...branchTask, history: [...branchTask.history, { event: 'authorization_denied', actor: 'seo_worker', at: '2026-10-15T00:00:01Z', detail: 'do not replay' }]})!, /refusal/);
 for (const id of ['seo-book-night-circus-canonical-slug-20261015','seo-book-swanns-way-seven-parts-editions-20261015']) {
-  assert.match(groqCheck({...groqTask, id, deliveryHandoff: {...groqTask.deliveryHandoff, branch: `seo/${id}`}})!, /refusal/);
+  assert.match(branchCheck({...branchTask, id, deliveryHandoff: {...branchTask.deliveryHandoff, branch: `seo/${id}`}})!, /refusal/);
 }
-assert.equal(groqCheck({...groqTask, executionClaim: null, deliveryHandoff: {...groqTask.deliveryHandoff, state: 'branch_ready'}}), null);
-assert.equal(groqCheck({...groqTask, executionClaim: null, deliveryHandoff: {...groqTask.deliveryHandoff, state: 'pr_open'}}), null);
-console.log('Groq branch fallback gate passed: exact marker, actor/receipt, refusal quarantine and branch binding');
+assert.equal(branchCheck({...branchTask, executionClaim: null, deliveryHandoff: {...branchTask.deliveryHandoff, state: 'branch_ready'}}), null);
+assert.equal(branchCheck({...branchTask, executionClaim: null, deliveryHandoff: {...branchTask.deliveryHandoff, state: 'pr_open'}}), null);
+console.log('Worker-independent branch fallback gate passed: exact marker, claim/receipt match, refusal quarantine and branch binding');
+
+// Capability, not model, decides transport. Select only BEFORE claim.
+const transport = (overrides: Partial<Parameters<typeof selectSeoGitTransport>[0]> = {}) =>
+  selectSeoGitTransport({
+    preparedWriters: true,
+    branchWriters: true,
+    commitTreeSourceReadback: true,
+    branchRefAndDiffReadback: true,
+    hasSafetyOrAuthorizationRefusal: false,
+    ...overrides
+  });
+assert.equal(transport(), 'prepared');
+assert.equal(transport({preparedWriters:false}), 'verified_branch');
+assert.equal(transport({preparedWriters:false,branchWriters:false}), null);
+assert.equal(transport({preparedWriters:false,branchRefAndDiffReadback:false}), null);
+assert.equal(transport({preparedWriters:false,commitTreeSourceReadback:false}), null);
+assert.equal(transport({hasSafetyOrAuthorizationRefusal:true}), null);
+assert.equal(transport({preparedWriters:false,hasSafetyOrAuthorizationRefusal:true}), null);
+console.log('Capability-only transport selection passed: A preferred, B for missing writers, no denial fallback');
 
 assert.equal(preparedRefHandoffScopeError(['src/content/article.md','src/pages/index.astro']), null);
 for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-manual.md','src/../main.ts','src/.env','src/secret/key','package.json','/root.md','src//other.md','src\\\\other.md']) {
@@ -140,6 +167,7 @@ assert.match(controller, /currentTask\.deliveryHandoff\.headSha !== handoff\.hea
 assert.match(controller, /mergePull\(task, pr\.number, handoff\.headSha/);
 assert.match(controller, /verifyWorkerBranch\(task, actualBranchSha\)/);
 assert.match(controller, /verifiedBranchHandoffPreflight\(/);
+assert.doesNotMatch(controller, /task\.executionClaim\?\.actor === 'chatgpt_seo_worker'/);
 assert.match(controller, /compare\.ahead_by !== 1/);
 assert.match(controller, /preparedRefHandoffScopeError\(compare\.files\.map/);
 console.log('Central-only SEO delivery passed: no satellite Actions, exact PR SHA/main checks and GitHub mergeability retained.');
