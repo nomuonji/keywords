@@ -988,7 +988,8 @@ try {
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /state=push_pending/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /unreferenced GitHub Git commit/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /branch_ready/);
-  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /No other Worker may push/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Transport selection depends only on callable capabilities/);
+  assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /No other branch\/ref writes are allowed/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Action-Branch-Handoff/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /delivery_branch_push_pending/);
   assert.match(JSON.stringify(executorPolicy.structuredContent.instructions), /Never switch paths after a specifically refused write/);
