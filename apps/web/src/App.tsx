@@ -1,14 +1,14 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { isRemoteBackend } from './api';
-import { OperationsOverview } from './OperationsOverview';
-import { ArticlesOverview } from './ArticlesOverview';
-import { SitesOverview } from './SitesOverview';
-import { KeywordTreasury } from './KeywordTreasury';
-import { SiteStructures } from './SiteStructures';
-import { ThemeResearch } from './ThemeResearch';
-import { SeoSourcePool } from './SeoSourcePool';
-import { MarketDiscovery } from './MarketDiscovery';
-import { IdeaReview } from './IdeaReview';
+const OperationsOverview = lazy(() => import('./OperationsOverview').then(module => ({ default: module.OperationsOverview })));
+const ArticlesOverview = lazy(() => import('./ArticlesOverview').then(module => ({ default: module.ArticlesOverview })));
+const SitesOverview = lazy(() => import('./SitesOverview').then(module => ({ default: module.SitesOverview })));
+const KeywordTreasury = lazy(() => import('./KeywordTreasury').then(module => ({ default: module.KeywordTreasury })));
+const SiteStructures = lazy(() => import('./SiteStructures').then(module => ({ default: module.SiteStructures })));
+const ThemeResearch = lazy(() => import('./ThemeResearch').then(module => ({ default: module.ThemeResearch })));
+const SeoSourcePool = lazy(() => import('./SeoSourcePool').then(module => ({ default: module.SeoSourcePool })));
+const MarketDiscovery = lazy(() => import('./MarketDiscovery').then(module => ({ default: module.MarketDiscovery })));
+const IdeaReview = lazy(() => import('./IdeaReview').then(module => ({ default: module.IdeaReview })));
 
 type View='operations'|'articles'|'sites'|'treasury'|'structures'|'research'|'sources'|'market'|'ideas';
 const views:Array<{id:View;label:string;hint:string}>=[
@@ -55,6 +55,7 @@ export function App(){
       <div className="coreTopMeta"><span className="stateDot live"/>{isRemoteBackend() ? 'remote · Firestore' : 'local workspace'}</div>
     </header>
     <main className="coreMain" id="main-content">
+      <Suspense fallback={<section className="corePage" role="status"><p>画面を読み込んでいます…</p></section>}>
       {view==='operations'&&<OperationsOverview focusedProjectId={projectId} onFocusProject={id=>navigate('operations',id,true)} onOpenArticles={id=>navigate('articles',id??projectId)} onOpenSites={id=>navigate('sites',id??projectId)}/>}
       {view==='articles'&&<ArticlesOverview focusedProjectId={projectId} onFocusProject={id=>navigate('articles',id,true)} onOpenOperations={id=>navigate('operations',id)}/>}
       {view==='sites'&&<SitesOverview focusedProjectId={projectId} onClearProject={()=>navigate('sites','',true)} onOpenArticles={id=>navigate('articles',id)} onOpenOperations={id=>navigate('operations',id)}/>}
@@ -64,6 +65,7 @@ export function App(){
       {view==='sources'&&<SeoSourcePool/>}
       {view==='market'&&<MarketDiscovery/>}
       {view==='ideas'&&<IdeaReview/>}
+      </Suspense>
     </main>
   </div>;
 }
