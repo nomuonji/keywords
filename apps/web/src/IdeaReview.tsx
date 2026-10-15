@@ -58,7 +58,7 @@ export function IdeaReview() {
     setLoading(true);
     setError('');
     try {
-      const path = '/api/idea-memory?limit=100' + (next ? '&cursor=' + encodeURIComponent(next) : '');
+      const path = '/api/theme-research?resource=idea-inbox&limit=100' + (next ? '&cursor=' + encodeURIComponent(next) : '');
       const data = await api<IdeaPage>(path);
       setIdeas(previous => firstPage ? data.items : [
         ...previous, ...data.items.filter(item => !previous.some(old => old.id === item.id))
@@ -66,7 +66,7 @@ export function IdeaReview() {
       setCursor(data.nextCursor);
       if (firstPage) setSelectedId(data.items[0]?.id ?? '');
       if (firstPage) {
-        const feedback = await api<EventPage>('/api/idea-memory?resource=feedback&limit=100');
+        const feedback = await api<EventPage>('/api/theme-research?resource=idea-feedback&limit=100');
         setEvents(feedback.events);
       }
     } catch (e) {
@@ -76,7 +76,7 @@ export function IdeaReview() {
 
   useEffect(() => {
     let alive = true;
-    void api<{ authenticated: boolean; configured: boolean }>('/api/idea-memory?resource=session')
+    void api<{ authenticated: boolean; configured: boolean }>('/api/theme-research?resource=idea-session')
       .then(session => {
         if (!alive) return;
         setLoggedIn(session.authenticated);
@@ -112,7 +112,7 @@ export function IdeaReview() {
     event.preventDefault();
     setSubmitting(true); setError('');
     try {
-      await api('/api/idea-memory', {
+      await api('/api/theme-research', {
         method: 'POST', body: JSON.stringify({ action: 'login', password })
       });
       setPassword('');
@@ -122,7 +122,7 @@ export function IdeaReview() {
     finally { setSubmitting(false); }
   }
   async function logOut() {
-    await api('/api/idea-memory', { method: 'POST', body: JSON.stringify({ action: 'logout' }) })
+    await api('/api/theme-research', { method: 'POST', body: JSON.stringify({ action: 'logout' }) })
       .catch(() => undefined);
     setLoggedIn(false); setIdeas([]); setEvents([]); setSelectedId('');
   }
@@ -130,7 +130,7 @@ export function IdeaReview() {
     if (!selected || submitting) return;
     setSubmitting(true); setError(''); setMessage('');
     try {
-      const response = await api<{ status: IdeaStatus; event: ReviewEvent }>('/api/idea-memory', {
+      const response = await api<{ status: IdeaStatus; event: ReviewEvent }>('/api/theme-research', {
         method: 'POST',
         body: JSON.stringify({
           action: 'review', ideaId: selected.id, rating,
