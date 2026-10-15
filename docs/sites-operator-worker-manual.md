@@ -39,6 +39,8 @@ If `GitHub.fetch` or Git-object readback is truly denied/unavailable in a differ
 
 The Worker implements and validates one real Task, then uses its **preselected, capability-supported** Git transport: (A) verified unreferenced Git commit or (B) verified one-commit task-bound branch. Both write a `deliveryHandoff=push_pending` checkpoint. Central GitHub Actions attaches A's commit or independently verifies B's existing branch, then promotes `branch_ready`. Workers never create PRs or merge, and previously refused changes cannot be replayed through another transport.
 
+**Unrelated main drift exception (central Actions only).** After a verified task-bound branch fallback, the central controller may continue if main has advanced exclusively through at most ten commits affecting only disjoint `sns-bot/*_state.json` files. It independently verifies GitHub's base/compare result, the Worker diff, branch HEAD and PR mergeability before merging. Any source/config overlap, divergent ancestry, unknown change, or safety/authorization refusal remains blocked. The Worker must still branch from the exact current main during its own claim; this exception never authorizes it to rebase, force-push or replay rejected content.
+
 The Worker does **not** create/update pull requests or merge to the repository default branch. Those mutations belong to an external GitHub delivery lane. The Worker also does not own the hosting platform, production deployment, cache propagation, or unrelated pre-existing build/deployment failures. A later delivery/reconciliation step records completion only after the exact change is observed on the default branch.
 
 | Responsibility | Worker |
