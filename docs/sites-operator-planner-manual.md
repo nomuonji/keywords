@@ -5,6 +5,14 @@
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
 
+## クールダウン中のTaskをreadyキューから退避する（2026-10-15）
+
+実装可能なTaskのみを`ready`に置く。対象記事の`optimization_context.changeAllowed=false`で評価待ち／cooldownが判明した場合、Workerはclaimせず、Managerが対象Taskの`status`を`proposed`へ戻し、一度だけ`appendHistory.event=cooldown_deferred`で対象記事・`cooldownUntil`のUTC・理由を記録する。新しいDB／独立スケジュールを作らず、`proposed`はready capacityに算入しない。
+
+Managerは通常の`seo_task_list(status=proposed)`の再評価時、`cooldown_deferred`を持つTaskを**期限到来順に少数だけ**見直す。保留中に他者が同じ差分をPR化／main反映した場合は再実装させない。期限が到来しても`optimization_context.changeAllowed=false`なら復活させず、評価Eventの適切な評価／終了を検討する。真に変更可能（`changeAllowed=true`）となり、現行HEAD／未完了PR／安全拒否履歴／Task受入条件／マクロ政策を再検証してなお未実装であれば、同じTask IDの`status=ready`へ戻す。重複Taskを新規発行しない。
+
+中断／保留原因が環境・CI障害の場合も、その時点で実装不能なら`ready`に放置し続けず、`proposed`と具体的再開条件へ整理する。ただし、Taskを`cancelled`してユーザーが依頼した実装を消したり、受入基準を緩めたり、スケジュール頻度を勝手に変えたりしない。
+
 ## SEO知見 → 実行 → 計測の閉ループ（2026-10-14）
 
 **この節は既存のSEO Manager/Worker、SEO Task、Optimization Event、Keywords Operator SEO Source Poolの使い方を具体化する。新しいDB、スケジュール、評価器やURL単位の分析履歴を作らない。** 先にlive `seo_agent_context(role=planner)` と現在のMacro Policyを読み、矛盾すればそちらを優先。
