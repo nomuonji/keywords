@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { compareIdeas, ideaMemoryBatchUpsert, ideaMemorySearch, ideaMemoryContext, ideaFeedbackAppend, ideaMemoryFeedbackProfile } from '../packages/commands/src/idea-memory.js';
+import { compareIdeas, ideaMemoryBatchUpsert, ideaMemorySearch, ideaMemoryContext, ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewList } from '../packages/commands/src/idea-memory.js';
 import { value } from '../packages/db/src/firestore.js';
 
 const privateKey = generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}).toString();
@@ -54,6 +54,7 @@ await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠
 const retry=await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});
 assert.equal(retry.outcome,'unchanged');
 const profile=await ideaMemoryFeedbackProfile({limit:10}); assert.equal(profile.events.length,3);
+const inbox = await ideaReviewList({limit:10}); assert.equal(inbox.items.length,10); assert.ok(inbox.nextCursor);
 assert.equal(value(db.get('ideaMemory/smoke-2').fields.status),'unreviewed');
 assert.equal(value(db.get('ideaMemory/smoke-0').fields.status),'rejected');
 assert.equal(value(db.get('ideaMemory/smoke-1').fields.status),'liked');
