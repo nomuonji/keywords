@@ -17,7 +17,7 @@ This adds **a quality acceptance obligation**, not a new Worker policy-planning 
 ## Runtime and article-registry safety boundary (2026-10-14)
 
 - **Source and metadata are distinct.** SEO Task implementation changes the GitHub repository's canonical data/pages; `site_article_list/get` reads Sites Operator article registry metadata. `site_article_save` and registry bulk-save are NOT editing tools for source pages. **An SEO Worker must not call them.** Do not register a missing article as a prerequisite for implementation. Record the missing article mapping in Task history for later independently authorized review by Planner/human; this tracking gap must not silently transform implementation into audit-only work.
-- **Check actual tool capability in this run before claim.** The common new-task transport requires `create_blob`, `create_tree`, `create_commit` and readback of the resulting GitHub objects. The availability of Git tools in ChatGPT says nothing about Groq, and vice versa. If this runner cannot perform the required Git-object operations, **do not claim** new work; report the capability gap. Never substitute `update_file`, `git push`, `update_ref` or a registry write for the committed handoff.
+- **Check actual tool capability in this run before claim.** Prefer `create_blob`, `create_tree`, `create_commit` plus raw commit/tree/blob readback. ONLY the Groq runtime may use the narrowly authorized `create_branch` + `push_files` fallback with full Git/source readback and exact task-bound branch, as detailed in §5. If neither complete route is actually callable, the Worker **must not claim** a Task; report the capability gap. Never switch methods after a safety/authorization refusal, force-update a ref, push main, create a PR, merge, or use an article registry write as a source edit.
 ### Git-object readback: supported ChatGPT GitHub connector route (verified 2026-10-15)
 
 The required commit/tree/blob readback **is available** through the GitHub connector even when no tool literally named `get_tree` or `get_git_commit` is advertised. **Do not mark preflight unavailable based solely on dedicated tool-name discovery or the limited normalized fields of `fetch_commit`.** Inspect the existing read-only `GitHub.fetch` tool, which accepts approved `api.github.com` Git data endpoints.
@@ -188,7 +188,7 @@ The Worker does not create or mutate PRs to obtain preview checks. PR/merge CI, 
 
 ## 5. Unified prepared-commit Actions handoff (new Tasks)
 
-Both ChatGPT and Groq use the **same** transport for Tasks created at or after the authorized rollout cutoff (2026-10-13T05:50:00.000Z). This is a task creation cutoff, **not** authorization to replay older, refused or unauthorized content. Older already-running `branch_ready`/`pr_open` deliveries may finish under the legacy contract. First determine whether the actual scheduled runtime exposes GitHub `create_blob/create_tree/create_commit` and readback operations. If not, the Worker **must not claim** new or stale work; tool parity between runners must never be assumed.
+For Tasks created at or after the authorized rollout cutoff (2026-10-13T05:50:00.000Z), prefer verified unreferenced Git commits. **Groq only** may use the task-bound branch-push fallback below if create_blob/create_tree/create_commit are unavailable but create_branch, push_files and commit/tree/source readback are usable in that actual runner. This does not authorize replay of previously denied operations. Workers never create PRs, merge or mark delivery completed.
 
 1. Before claiming, check the exact active site/repo, Task state/lease and GitHub default branch. Check the exact desired branch `seo/<task-id>` is absent for a new Task. Do not claim if an existing branch or PR is owned by another Task/run or any applicable write was previously denied.
 2. Verify implementation scope and sources, then implement the full bounded change and perform the meaningful repository validation and diff review. The changed paths must be within the actual Task scope and the central Action's allowlist; the Action rejects sensitive configuration, workflows, secrets, lockfiles, deploy files and more than 50 changed paths.
@@ -204,6 +204,19 @@ Both ChatGPT and Groq use the **same** transport for Tasks created at or after t
 6. Read back the Sites Operator Task. Confirm exact checkpoint SHA, marker, branch, active claim and revision. **Stop the Worker run**. Neither remote branch creation nor PR creation/merge is a Worker action.
 7. The central scheduled GitHub Action independently checks the active Site Registry, task creation cutoff, claim, task-bound branch, prior refusal history, Git object parent and allowable diff. It non-force fast-forwards `seo/<task-id>`, reads back the exact remote HEAD, sets `branch_ready` and releases the Worker claim, then creates/reuses PR, revalidates exact head/base SHA and GitHub mergeability, merges, writes resultCommitSha/completed, and cleans the branch. No peripheral-repository Actions or central site build are started. Actual host build success and live publication are checked separately after merging. If base/main advances before an initial ref is created or a concurrent ref wins, **stop and re-evaluate**; no force push or automatic replay.
 8. If Actions reports `ci_failed`, the Worker may perform a genuinely new corrective pass with fresh evidence and a new valid child commit of the existing branch HEAD. Old PRs with merge conflicts are not automatically rewritten by the Worker.
+
+### Groq-only fallback: already-pushed, verified task branch
+
+Use this only for a **new, executable, unrefused** SEO Task in a Groq runner missing the preferred low-level Git-object writers. No fallback after an actual safety/authorization refusal, even if that refusal was not written into Task history. This is not permission to retry previously quarantined Book Discovery work. If neither complete transport is available, do not claim.
+
+1. Before claiming, inspect current Task/claim/history, active site registry, optimization cooldown, main HEAD, existing refs/PRs and the exact branch `seo/<task-id>`. Confirm in this Groq runner that `create_branch`, `push_files`, commit/tree/diff and source readback work. There must be no prior safety denial and no existing conflicting branch.
+2. Claim the authorized Task once with fresh `expectedRevision`, implement its scoped acceptance criteria, validate the source/diff, and enforce the same changed-path allowlist (no `.github/`, secrets, lockfiles, infrastructure files, or unrelated paths).
+3. Create only `seo/<task-id>` at the observed current default-branch SHA `B` using `create_branch`. Use `push_files` **once on that branch** to make one commit with subject `[CF-Pages-Skip] ...`. Never push main, use `update_ref`/force-push, modify another Task branch, create PR, or merge. No `create_or_update_file` substitute for this transport.
+4. Read back branch HEAD `H`, raw commit, tree/source and comparison `B...H`. Require one parent exactly `B`, one commit ahead, no behind commits, and only permitted changed paths; current main must still equal `B`. On mismatch, stop without handoff.
+5. With the current `claimRunId`, save `deliveryHandoff.state=push_pending`, `branch=seo/<task-id>`, `baseSha=B`, `headSha=H`, `validationSummary` beginning with `Action-Branch-Handoff: v1\n` (one newline) and actual validation evidence. Keep handedOffAt/prNumber/prUrl null, lastError empty and updatedAt current UTC. Append history `{actor:"seo_worker",event:"delivery_branch_push_pending",detail:"...verified exact SHA and source..."}`. Read Task back and stop.
+6. Central `keywords` Actions verifies claim, registry, task creation cutoff, historical refusals, Task-bound branch, one-parent Git commit, base/main SHA, exact branch/ref, changed paths and receipt. It does **not** rewrite the Groq branch; it alone marks `branch_ready`, creates/merges PR and records `completed`. Site builds are performed by Cloudflare or the configured host after main push, with independent publication verification.
+
+Corrective follow-ups must not force-update a Groq branch. Use a separately authorized and validated correction path. No altered ChatGPT schedules, article registry writes or foreign operational automation changes.
 
 ### Example of the Worker-side final checkpoint
 
@@ -233,7 +246,7 @@ Both ChatGPT and Groq use the **same** transport for Tasks created at or after t
 ```
 
 The central Action owns:
-`push_pending -> create/update seo/* ref -> verify remote HEAD -> branch_ready -> PR -> CI -> merge -> resultCommitSha -> completed -> merged branch cleanup`.
+`push_pending -> [attach prepared commit OR validate exact Groq branch] -> branch_ready -> PR -> merge -> resultCommitSha -> completed -> merged branch cleanup`.
 
 ## 6. Completion is controller-owned
 
@@ -245,9 +258,9 @@ The centralized delivery controller in `nomuonji/keywords` is responsible for:
 2. verifying the recorded `seo/*` branch HEAD still matches the handoff;
 3. creating or reusing the PR;
 4. recording `deliveryHandoff.state=pr_open`;
-5. waiting for observed repository PR checks/statuses to finish;
+5. verifying exact task, commit/branch HEAD, current main SHA, PR head/base and GitHub mergeability;
 6. refusing merge if PR cannot be merged cleanly or the exact main/ref/Task changed; no peripheral GitHub Actions checks or hosting-preview builds are a prerequisite. After main push, verify host build and canonical publication independently;
-7. merging when repository checks pass and repository rules permit;
+7. merging only when central commit-integrity checks and GitHub repository rules permit;
 8. reading the merge result SHA;
 9. setting `status=completed`, `resultCommitSha=<actual merge/default-branch SHA>`, and `deliveryHandoff.state=merged`;
 10. appending `delivery_merged` history;

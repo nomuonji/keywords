@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -98,6 +98,28 @@ for (const id of [
   })!, /refusal/);
 }
 
+// Groq may use exactly one verified task branch on a NEW unrefused Task.
+const groqTask = {
+  ...task,
+  executionClaim: { ...task.executionClaim!, actor: 'seo_worker' },
+  deliveryHandoff: { ...task.deliveryHandoff, validationSummary: BRANCH_HANDOFF_MARKER + 'Checked current main, one-parent commit, tree and source.' },
+  history: [{ event: 'delivery_branch_push_pending', actor: 'seo_worker', at: '2026-10-15T00:00:00Z', detail: 'read back branch head, parent and changed source' }]
+} as SeoTaskRecord;
+const groqCheck = (t: SeoTaskRecord = groqTask) => verifiedBranchHandoffPreflight(t, sites, '1', rollout);
+assert.equal(groqCheck(), null);
+assert.match(groqCheck({...groqTask, executionClaim: { ...groqTask.executionClaim!, actor: 'chatgpt_seo_worker' }})!, /seo_worker/);
+assert.match(groqCheck({...groqTask, history: []})!, /structured/);
+assert.match(groqCheck({...groqTask, status: 'cancelled'})!, /Checkpoint/);
+assert.match(groqCheck({...groqTask, deliveryHandoff: {...groqTask.deliveryHandoff, branch: 'seo/other-task'}})!, /task-bound/);
+assert.match(groqCheck({...groqTask, deliveryHandoff: {...groqTask.deliveryHandoff, lastError: 'permission denied'}})!, /unresolved/);
+assert.match(groqCheck({...groqTask, history: [...groqTask.history, { event: 'authorization_denied', actor: 'seo_worker', at: '2026-10-15T00:00:01Z', detail: 'do not replay' }]})!, /refusal/);
+for (const id of ['seo-book-night-circus-canonical-slug-20261015','seo-book-swanns-way-seven-parts-editions-20261015']) {
+  assert.match(groqCheck({...groqTask, id, deliveryHandoff: {...groqTask.deliveryHandoff, branch: `seo/${id}`}})!, /refusal/);
+}
+assert.equal(groqCheck({...groqTask, executionClaim: null, deliveryHandoff: {...groqTask.deliveryHandoff, state: 'branch_ready'}}), null);
+assert.equal(groqCheck({...groqTask, executionClaim: null, deliveryHandoff: {...groqTask.deliveryHandoff, state: 'pr_open'}}), null);
+console.log('Groq branch fallback gate passed: exact marker, actor/receipt, refusal quarantine and branch binding');
+
 assert.equal(preparedRefHandoffScopeError(['src/content/article.md','src/pages/index.astro']), null);
 for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-manual.md','src/../main.ts','src/.env','src/secret/key','package.json','/root.md','src//other.md','src\\\\other.md']) {
   assert.ok(preparedRefHandoffScopeError([unsafe]), `Unsafe change must be refused: ${unsafe}`);
@@ -116,4 +138,8 @@ assert.match(controller, /freshPr\.mergeable !== true/);
 assert.match(controller, /currentMainSha !==|handoff\.baseSha !== currentMainSha/);
 assert.match(controller, /currentTask\.deliveryHandoff\.headSha !== handoff\.headSha/);
 assert.match(controller, /mergePull\(task, pr\.number, handoff\.headSha/);
+assert.match(controller, /verifyWorkerBranch\(task, actualBranchSha\)/);
+assert.match(controller, /verifiedBranchHandoffPreflight\(/);
+assert.match(controller, /compare\.ahead_by !== 1/);
+assert.match(controller, /preparedRefHandoffScopeError\(compare\.files\.map/);
 console.log('Central-only SEO delivery passed: no satellite Actions, exact PR SHA/main checks and GitHub mergeability retained.');
