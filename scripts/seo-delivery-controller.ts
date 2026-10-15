@@ -6,7 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -293,6 +293,21 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
   return actual;
 }
 
+// Permit only bounded, independently compared state-only bot commits on main.
+ // This does not apply to prepared refs, safety-refused tasks, source/config
+ // drift, or worker edits overlapping the bot's state. GitHub PR mergeability
+ // and exact-HEAD checks still apply before any merge.
+async function compatibleFallbackMainDrift(
+  repo: string, baseSha: string, currentMainSha: string, workerPaths: readonly string[]
+): Promise<boolean> {
+  if (baseSha === currentMainSha) return true;
+  const delta = await gh<{
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit: { sha: string }; files: { filename: string }[];
+  }>(api(repo, `/compare/${baseSha}...${currentMainSha}`));
+  return verifiedBranchMainDriftIsNonInterfering(baseSha, delta, workerPaths);
+}
+
 // A capability-fallback Worker has already written a task-specific branch via
 // create_branch + push_files. It must be an EXACT one-commit child of main.
 // A receipt is not sufficient: independently inspect commit, compare and diff.
@@ -304,10 +319,6 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
   }
   const repository = await repoInfo(task.repo);
   const defaultSha = await branchSha(task.repo, repository.default_branch);
-  if (defaultSha !== h.baseSha) {
-    console.log(`Waiting: ${task.id} Branch fallback base is no longer main; fresh validation required`);
-    return null;
-  }
   const commit = await gh<{ message: string; tree: { sha: string }; parents: { sha: string }[] }>(
     api(task.repo, `/git/commits/${h.headSha}`)
   );
@@ -323,8 +334,13 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
       || compare.merge_base_commit?.sha !== h.baseSha || !compare.files?.length || compare.files.length > 50) {
     throw Error(`Invalid/non-fast-forward Worker branch ${task.id}`);
   }
-  const unsafe = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
+  const workerPaths = compare.files.map(file => file.filename);
+  const unsafe = preparedRefHandoffScopeError(workerPaths);
   if (unsafe) throw Error(`Worker branch has prohibited paths: ${unsafe}`);
+  if (!(await compatibleFallbackMainDrift(task.repo, h.baseSha, defaultSha, workerPaths))) {
+    console.log(`Waiting: ${task.id} main advanced by non-state or overlapping changes; fresh Worker validation required`);
+    return null;
+  }
   const reread = await branchSha(task.repo, h.branch);
   if (reread !== h.headSha) throw Error(`Worker branch changed during verification ${task.id}`);
   return reread;
@@ -563,8 +579,24 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
   }
   const currentMainSha = await branchSha(task.repo, base);
   if (handoff.baseSha !== currentMainSha) {
-    console.log(`Waiting: ${task.id} base advanced from ${handoff.baseSha} to ${currentMainSha}; Worker must validate a fresh exact-main-based commit.`);
-    return;
+    // The only exception to exact-main matching is a previously verified
+    // branch fallback plus disjoint, non-content SNS bot state changes.
+    const workerDelta = isBranchFallback(task)
+      ? await gh<{ status: string; ahead_by: number; behind_by: number; files: { filename: string }[] }>(
+          api(task.repo, `/compare/${handoff.baseSha}...${handoff.headSha}`)
+        )
+      : null;
+    const stillCompatible = workerDelta?.status === 'ahead' && workerDelta.ahead_by === 1
+      && workerDelta.behind_by === 0 && workerDelta.files?.length > 0
+      && await compatibleFallbackMainDrift(
+        task.repo, handoff.baseSha, currentMainSha,
+        workerDelta.files.map(file => file.filename)
+      );
+    if (!stillCompatible) {
+      console.log(`Waiting: ${task.id} main advanced beyond the exact or narrowly compatible branch base; revalidation required.`);
+      return;
+    }
+    console.log(`Verified unrelated SNS bot-state-only main drift for ${task.id}; PR mergeability and exact SHA checks still required.`);
   }
 
   if (dryRun) {
