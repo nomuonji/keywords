@@ -2,7 +2,8 @@ import {
   seoTaskGet,
   seoTaskList,
   seoTaskUpdate,
-  siteRegistryList
+  siteRegistryList,
+  siteRegistryGet
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
@@ -689,6 +690,34 @@ async function cleanupMergedSeoBranches(allowedRepos: Set<string>, limit: number
 async function main() {
   if (!token) {
     console.log('SEO_DELIVERY_GITHUB_TOKEN is not configured; central delivery controller is idle.');
+    return;
+  }
+
+  // A dispatch is only a wakeup. Read the latest persisted Task and its exact
+  // site mapping; never trust payload repository, SHA, claim or handoff data.
+  const notifiedId = process.env.SEO_DELIVERY_TASK_ID?.trim();
+  if (notifiedId) {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(notifiedId)) throw Error('Invalid dispatch Task ID');
+    const task = await seoTaskGet({ id: notifiedId });
+    const site = await siteRegistryGet({ id: task.siteId });
+    if (site.status !== 'active' || site.repository !== task.repo) {
+      console.log(`Ignoring delivery wakeup ${notifiedId}: inactive or mismatched site registry.`);
+      return;
+    }
+    if (task.status !== 'in_progress' || !['push_pending', 'branch_ready', 'pr_open'].includes(task.deliveryHandoff?.state ?? 'none')) {
+      console.log(`Ignoring stale or duplicate delivery wakeup ${notifiedId}.`);
+      return;
+    }
+    const sites = [site];
+    const reconciled = task.deliveryHandoff.state === 'push_pending'
+      ? await reconcilePushPending(task, sites)
+      : task;
+    if (['branch_ready', 'pr_open'].includes(reconciled.deliveryHandoff?.state ?? 'none')) {
+      const current = await seoTaskGet({ id: notifiedId });
+      if (current.status === 'in_progress' && current.deliveryHandoff.headSha === reconciled.deliveryHandoff.headSha) {
+        await processTask(current, sites);
+      }
+    }
     return;
   }
 
