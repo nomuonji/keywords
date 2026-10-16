@@ -231,7 +231,7 @@ assert.equal(firestoreRateLimited(new Error('Firestore request failed (429)')), 
 assert.equal(firestoreRateLimited({ status: 429 }), true);
 assert.equal(firestoreRateLimited(new Error('GitHub 429 Too Many Requests')), false);
 assert.equal(firestoreRateLimited({ status: 403 }), false);
-assert.equal((controller.match(/seoTaskList\\(\\{ status: 'in_progress', limit: 100 \\}\\)/g) ?? []).length, 1,
+assert.equal(controller.split("seoTaskList({ status: 'in_progress', limit: 100 })").length - 1, 1,
   'Only one global in_progress Task query is allowed per delivery cycle');
 assert.match(controller, /const candidates: SeoTaskRecord\[\] = \[\]/);
 assert.match(controller, /const current = await seoTaskGet\(\{ id: task\.id \}\)/);
