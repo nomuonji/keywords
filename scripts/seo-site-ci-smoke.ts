@@ -10,6 +10,8 @@ assert.throws(() => verifyGeneratedPage(page.replace('/guides/b/', '/other/'), u
 assert.throws(() => verifyGeneratedPage(page.replace(url, 'https://example.com/other/'), url, check), /Canonical mismatch/);
 // No exact-string assertions is normal; generated page and canonical must still be valid.
 assert.doesNotThrow(() => verifyGeneratedPage(page, url, []));
+assert.doesNotThrow(() => verifyGeneratedPage(page, url.slice(0, -1), []));
+assert.throws(() => verifyGeneratedPage(page, 'https://another.example/guides/a', []), /Canonical mismatch/);
 assert.throws(() => verifyGeneratedPage(page.replace(url, 'https://example.com/other/'), url, []), /Canonical mismatch/);
 assert.throws(() => verifyGeneratedPage('<html><head></head></html>', url, []), /body missing/);
 console.log('Central generated-page route/canonical smoke passed (optional assertions)');
