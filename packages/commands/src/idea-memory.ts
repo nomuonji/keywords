@@ -26,6 +26,32 @@ const dedupe = <T>(values: T[]) => [...new Set(values)];
 const status = z.enum(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']);
 const scope = z.enum(['specific_idea', 'proposal_format', 'research_quality', 'discovery_process', 'whole_batch']);
 const polarity = z.enum(['positive', 'negative', 'mixed', 'neutral']);
+
+const reviewAxis = z.number().int().min(1).max(5);
+const reviewAxisName = z.enum(['dbValue','seo','revenue','upkeep']);
+const agentReviewShape = z.object({
+  rubricVersion: z.literal('idea-final-judge-v2'),
+  assessedAt: z.string().datetime(),
+  verdict: z.literal('pass'),
+  axes: z.object({
+    appeal: reviewAxis,
+    dbValue: reviewAxis.optional(),
+    seo: reviewAxis.optional(),
+    revenue: reviewAxis.optional(),
+    upkeep: reviewAxis.optional()
+  }).strict(),
+  requiredAxes: z.array(reviewAxisName).max(4),
+  strongestObjection: txt,
+  passRationale: txt
+}).strict().superRefine((review, context) => {
+  if (review.axes.appeal !== 5) context.addIssue({ code:'custom',message:'Only appeal 5/5 may pass',path:['axes','appeal'] });
+  for (const axis of review.requiredAxes) {
+    if (review.axes[axis] === undefined || review.axes[axis]! < 4) {
+      context.addIssue({ code:'custom',message:'Required axis must score at least 4/5',path:['axes',axis] });
+    }
+  }
+});
+
 const ideaShape = z.object({
   id: id.optional(), title: z.string().trim().min(1).max(200), aliases: list.optional(),
   audience: txt, userTask: txt, entities: txt, informationMechanism: txt, interaction: txt,
@@ -33,6 +59,7 @@ const ideaShape = z.object({
   marketCountries: marketCountriesShape.optional(), contentLanguages: contentLanguagesShape.optional(),
   marketEvidenceRefs: list.optional(), unknowns: list.optional(), reconsiderWhen: txt.optional(),
   tags: tagsShape.optional(), destinations: destinationsShape.optional(),
+  agentReview: agentReviewShape.optional(),
   presentedAt: z.string().datetime().optional(), sessionId: id.optional(),
   status: z.literal('unreviewed').optional(), legacySourceId: id.optional()
 }).strict();
@@ -96,6 +123,9 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
   let i = 0;
   for (const [key, idea] of unique) {
     const doc = previous[i++]; const old = doc ? parse<Idea>(doc) : null;
+    if (old && idea.agentReview && JSON.stringify(old.agentReview ?? null) !== JSON.stringify(idea.agentReview)) {
+      throw new Error('Agent self-review is frozen at initial idea creation and cannot be backfilled or overwritten');
+    }
     const payloadHash = hash(JSON.stringify(idea));
     const presentation = { runId: args.runId, presentedAt: idea.presentedAt ?? now, sessionId: idea.sessionId };
     const history = old?.presentationHistory ?? [];
@@ -103,6 +133,8 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
     const next: Idea = {
       ...old, ...idea, id: key, aliases: idea.aliases ?? old?.aliases ?? [], normalizedTitle: norm(idea.title), searchTokens: searchTokens(idea),
       status: old?.status ?? idea.status ?? 'unreviewed',
+      // First-registration snapshot only. Human verdict and subsequent revisions cannot rewrite it.
+      agentReview: old ? old.agentReview : idea.agentReview,
       // One canonical idea can travel across regions; do not fragment user verdict/history.
       marketCountries: dedupe([...(old?.marketCountries ?? []), ...(idea.marketCountries ?? [])]),
       contentLanguages: dedupe([...(old?.contentLanguages ?? []), ...(idea.contentLanguages ?? [])]),
@@ -254,7 +286,7 @@ export async function ideaReviewList(input: unknown = {}) {
     // Firestore field mask: overview payload excludes long evidence arrays and history.
     for (const name of ['title', 'status', 'audience', 'userTask', 'entities',
       'informationMechanism', 'marketCategory', 'marketCountries', 'contentLanguages', 'updatedAt',
-      'tags', 'destinations', 'destinationVerdicts', 'assetCount', 'revision']) {
+      'tags', 'destinations', 'destinationVerdicts', 'agentReview', 'assetCount', 'revision']) {
       params.append('mask.fieldPaths', name);
     }
   }
