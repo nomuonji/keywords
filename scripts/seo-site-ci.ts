@@ -105,13 +105,17 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
     const output = join(root, generated);
     let containerId = '';
     try {
-      containerId = (await command('docker', [
+      const createOutput = await command('docker', [
         'create', '--security-opt=no-new-privileges', '--cap-drop=ALL',
         '--pids-limit=256', '--memory=4g', '--cpus=2',
         '-w', '/work', 'node:22-bookworm',
         'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
-      ], root, 120_000)).trim();
-      await command('docker', ['cp', root, `${containerId}:/work`], root, 120_000);
+      ], root, 120_000);
+      // docker create may emit image-pull logs before its 64-hex container ID.
+      containerId = createOutput.split(/\r?\n/).map(line => line.trim()).filter(line => /^[a-f0-9]{64}$/.test(line)).pop() ?? '';
+      if (!containerId) throw Error(`Docker create returned no container ID: ${createOutput.slice(-400)}`);
+      // The '/.' copies the contents, not an extra nested source directory.
+      await command('docker', ['cp', `${root}/.`, `${containerId}:/work`], root, 120_000);
       const buildLog = await command('docker', ['start', '-a', containerId], root, 780_000);
       const exitCode = (await command('docker', ['inspect', '-f', '{{.State.ExitCode}}', containerId], root, 20_000)).trim();
       if (exitCode !== '0') throw Error(`Isolated site build failed (${exitCode}): ${buildLog.slice(-3000)}`);

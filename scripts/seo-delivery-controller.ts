@@ -155,7 +155,6 @@ async function markFailed(task: SeoTaskRecord, message: string) {
     id: task.id,
     expectedRevision: current.revision,
     deliveryHandoff: handoff,
-    executionSummary: [current.executionSummary, `Delivery controller failure: ${message}`].filter(Boolean).join('\n'),
     appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_failed', detail: message.slice(0, 2000) }
   });
 }
@@ -237,16 +236,17 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
     console.log(`[dry-run] would complete ${task.id} at ${mergeSha}`);
     return;
   }
+  const deliveryNote = `Central delivery merged PR #${pr.number} to main/default branch at ${mergeSha}. Production verification remains ${current.deploymentVerification.status}.`;
+  // Failure details are already in Task history; do not make executionSummary
+  // grow indefinitely on delivery retries or block a verified merge.
+  const sourceSummary = current.executionSummary.split('\nDelivery controller failure:')[0];
   await seoTaskUpdate({
     id: task.id,
     expectedRevision: current.revision,
     status: 'completed',
     resultCommitSha: mergeSha,
     deliveryHandoff: handoff,
-    executionSummary: [
-      current.executionSummary,
-      `Central delivery merged PR #${pr.number} to main/default branch at ${mergeSha}. Production verification remains ${current.deploymentVerification.status}.`
-    ].filter(Boolean).join('\n'),
+    executionSummary: [sourceSummary.slice(0, 3999 - deliveryNote.length), deliveryNote].filter(Boolean).join('\n'),
     appendHistory: {
       actor: 'seo_delivery_controller',
       event: 'delivery_merged',
