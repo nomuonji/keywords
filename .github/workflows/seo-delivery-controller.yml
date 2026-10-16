@@ -21,6 +21,7 @@ on:
     paths:
       - '.github/workflows/seo-delivery-controller.yml'
       - 'scripts/seo-delivery-controller.ts'
+      - 'scripts/seo-site-ci.ts'
       - 'scripts/seo-delivery-throughput.ts'
       - 'scripts/seo-prepared-ref-handoff-gate.ts'
       - 'packages/commands/src/seo-delivery-merge.ts'
