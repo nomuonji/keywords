@@ -36,19 +36,16 @@ export function preparedRefBaseError(
 }
 
 /**
- * Earlier ChatGPT runs received an actual tool-level safety refusal while
- * attempting these Tasks' push_pending checkpoints. That refusal was not
- * persisted to the Task's history; later checkpoint writes do not authorize
- * the central Action to replay the previously refused delivery.
+ * Historical refusals belong to structured Sites Operator Task history.
+ * The two 2026-10-15 Book Discovery incidents were migrated on 2026-10-16
+ * to safety_write_rejected_task_cancelled and the Tasks were cancelled.
+ * Never use hard-coded task IDs as a hidden authorization or retry policy.
+ * A refused write still may not be replayed via a different transport.
  *
- * Keep this narrow historical quarantine until separately resolved. Do not
- * infer clearance from an absent structured event.
+ * If the refusal itself prevented history persistence, stop and report the
+ * incident for separately authorized migration. Do not infer clearance from
+ * a missing event until the incident is reconciled.
  */
-const HISTORICALLY_REFUSED_TASK_IDS = new Set([
-  'seo-book-night-circus-canonical-slug-20261015',
-  'seo-book-swanns-way-seven-parts-editions-20261015'
-]);
-
 /**
  * Only stable event identifiers can attest to a refusal. Free-form history
  * details include negated phrases such as "No safety refusal" and must never
@@ -57,7 +54,6 @@ const HISTORICALLY_REFUSED_TASK_IDS = new Set([
 export function preparedHandoffHasRecordedRefusal(
   task: Pick<SeoTaskRecord, 'id' | 'history'>
 ): boolean {
-  if (HISTORICALLY_REFUSED_TASK_IDS.has(task.id)) return true;
   return (task.history ?? []).some(({ event }) =>
     /^(?:safety|authorization|permission|authz|tool_safety|worker_safety)(?:_[a-z0-9]+)*_(?:rejected|rejection|refused|refusal|denied|blocked)(?:_[a-z0-9]+)*$/i.test(event)
   );
@@ -99,10 +95,10 @@ export function preparedRefHandoffPreflight(
       || handoff.baseSha === handoff.headSha) {
     return 'Invalid base/head SHA in prepared-commit checkpoint';
   }
-  if (handoff.lastError) return 'Checkpoint has an unresolved error; no delegated retry is authorized';
   if (preparedHandoffHasRecordedRefusal(task)) {
-    return 'Task contains a recorded or independently observed refusal; delegated retry is prohibited';
+    return 'Task has an explicit safety/authorization refusal event; independent review required, no delegated retry';
   }
+  if (handoff.lastError) return 'Checkpoint has an unresolved error; no delegated retry is authorized';
   return null;
 }
 
