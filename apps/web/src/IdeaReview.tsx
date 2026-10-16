@@ -177,11 +177,15 @@ export function IdeaReview() {
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const reviews = events.filter(e => e.ideaId === selectedId && e.scope === 'specific_idea' && e.source === 'direct_user');
-  const stats = useMemo(() => Object.fromEntries(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']
-    .map(status => [status, ideas.filter(item =>
-      (outletFilter==='all' || (outletFilter==='unassigned' ? !(item.destinations?.length) :
-        (item.destinations??[]).includes(outletFilter))) && verdictFor(item)===status).length]))
-    as Record<IdeaStatus, number>, [ideas, outletFilter]);
+  const stats = useMemo(() => {
+    const withinOutlet = ideas.filter(item => outletFilter==='all' ||
+      (outletFilter==='unassigned' ? !(item.destinations?.length) :
+        (item.destinations??[]).includes(outletFilter)));
+    return Object.fromEntries(
+      (['unreviewed','liked','rejected','deferred','exploring'] as IdeaStatus[])
+        .map(state => [state, withinOutlet.filter(item=>verdictFor(item)===state).length])
+    ) as Record<IdeaStatus,number>;
+  }, [ideas,outletFilter]);
 
   function openDetail(id: string) {
     setSelectedId(id);
