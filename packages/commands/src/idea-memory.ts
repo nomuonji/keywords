@@ -40,6 +40,7 @@ export const ideaFeedbackAppendShape = {
   ideaId: id.optional(), runId: id.optional(), scope, polarity, reason: txt, feedback: txt,
   source: z.enum(['direct_user', 'agent_inference', 'market_evidence']), sourceDate: z.string().datetime(),
   statusAfter: status.optional(), reconsiderWhen: txt.optional(), idempotencyKey: id,
+  destination: destinationKey.optional(),
   axes: z.object({
     appeal: z.number().int().min(1).max(5).optional(),
     dbValue: z.number().int().min(1).max(5).optional(),
@@ -57,7 +58,8 @@ export const ideaMemoryFeedbackProfileShape = { limit: z.number().int().min(1).m
 type IdeaInput = z.infer<typeof ideaShape>;
 type Idea = Omit<IdeaInput,'status'> & { id: string; status: z.infer<typeof status>; normalizedTitle: string; searchTokens: string[]; payloadHash: string; createdAt: string; updatedAt: string; presentationHistory: { runId: string; presentedAt: string; sessionId?: string }[];
   revision: number; tags?: string[]; destinations?: string[];
-  assetRefs?: z.infer<typeof assetRefShape>[]; assetCount?: number };
+  assetRefs?: z.infer<typeof assetRefShape>[]; assetCount?: number;
+  destinationVerdicts?: Record<string,z.infer<typeof status>> };
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const norm = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
 const tokens = (s: string) => { const n = norm(s); return [...new Set(n.length < 3 ? [n] : Array.from({ length: n.length - 1 }, (_, i) => n.slice(i, i + 2)))].filter(Boolean).slice(0, 80); };
@@ -176,8 +178,11 @@ export async function ideaMemoryContext(input: unknown = {}) {
 export async function ideaFeedbackAppend(input: unknown) {
   const args = z.object(ideaFeedbackAppendShape).strict().parse(input);
   if (args.scope === 'specific_idea' && !args.ideaId) throw new Error('specific_idea requires ideaId');
-  if (args.scope !== 'specific_idea' && (args.ideaId || args.statusAfter)) throw new Error('Broad feedback cannot set an individual idea status');
+  if (args.scope !== 'specific_idea' && (args.ideaId || args.statusAfter || args.destination)) throw new Error('Broad feedback cannot set an individual idea status');
   if (args.source !== 'direct_user' && args.statusAfter) throw new Error('User verdict requires direct_user source');
+  if (args.destination && (!args.ideaId || args.scope !== 'specific_idea' || !args.statusAfter || args.source !== 'direct_user')) {
+    throw new Error('An outlet-specific verdict requires direct_user, specific_idea and statusAfter');
+  }
   const eventId = `feedback-${hash(args.idempotencyKey).slice(0,32)}`;
   const oldEvent = await read(`ideaFeedback/${eventId}`);
   if (oldEvent) {
@@ -188,11 +193,23 @@ export async function ideaFeedbackAppend(input: unknown) {
   const ideaDoc = args.ideaId ? await read(path(args.ideaId)) : null;
   const legacyDoc = args.ideaId && !ideaDoc ? await read(`researchSessions/market-idea-feedback/themeCandidates/${args.ideaId}`) : null;
   if (args.ideaId && !ideaDoc && !legacyDoc) throw new Error('Idea not found');
+  if (args.destination && ideaDoc) {
+    const proposed = parse<Idea>(ideaDoc);
+    if (!(proposed.destinations ?? []).includes(args.destination)) {
+      throw new Error('Cannot rate an outlet that is not assigned to this idea');
+    }
+  }
+  if (args.destination && !ideaDoc) throw new Error('Outlet-specific feedback requires a canonical idea');
   const now = new Date().toISOString();
   const event = { ...args,id:eventId,createdAt:now };
   const writes:any[] = [{ update:{name:firestoreDocumentName(`ideaFeedback/${eventId}`),fields:fields(event)},currentDocument:{exists:false} }];
   if (ideaDoc && args.statusAfter) {
-    const idea = parse<Idea>(ideaDoc); const next = { ...idea,status:args.statusAfter,reconsiderWhen:args.reconsiderWhen ?? idea.reconsiderWhen,updatedAt:now,revision:idea.revision+1 };
+    const idea = parse<Idea>(ideaDoc);
+    const next: Idea = args.destination
+      ? { ...idea, destinationVerdicts:{...(idea.destinationVerdicts ?? {}),[args.destination]:args.statusAfter},
+          updatedAt:now, revision:idea.revision+1 }
+      : { ...idea,status:args.statusAfter,reconsiderWhen:args.reconsiderWhen ?? idea.reconsiderWhen,
+          updatedAt:now,revision:idea.revision+1 };
     writes.push({update:{name:firestoreDocumentName(path(idea.id)),fields:fields(next)},currentDocument:{updateTime:ideaDoc.updateTime}});
   }
   await firestore(':commit',{method:'POST',body:JSON.stringify({writes})});
@@ -223,7 +240,7 @@ export async function ideaReviewList(input: unknown = {}) {
     // Firestore field mask: overview payload excludes long evidence arrays and history.
     for (const name of ['title', 'status', 'audience', 'userTask', 'entities',
       'informationMechanism', 'marketCategory', 'updatedAt',
-      'tags', 'destinations', 'assetCount', 'revision']) {
+      'tags', 'destinations', 'destinationVerdicts', 'assetCount', 'revision']) {
       params.append('mask.fieldPaths', name);
     }
   }
