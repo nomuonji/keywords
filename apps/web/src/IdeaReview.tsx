@@ -22,10 +22,11 @@ type Idea = {
   unknowns?: string[]; maintenance?: string; reconsiderWhen?: string;
   sessionId?: string; createdAt?: string; updatedAt?: string;
   tags?: string[]; destinations?: string[]; assetRefs?: AssetRef[]; assetCount?:number; revision?:number;
+  destinationVerdicts?: Record<string,IdeaStatus>;
   presentationHistory?: Array<{ runId: string; presentedAt: string }>;
 };
 type ReviewEvent = {
-  id: string; ideaId?: string; scope: string; source: string;
+  id: string; ideaId?: string; scope: string; source: string; destination?:string;
   feedback: string; reason: string; statusAfter?: IdeaStatus; createdAt: string;
 };
 type IdeaPage = { items: Idea[]; nextCursor: string | null };
@@ -35,10 +36,10 @@ type Axis = 'appeal' | 'dbValue' | 'seo' | 'revenue' | 'upkeep';
 const PAGE_SIZE = 9;
 const axes: Array<{ id: Axis; label: string }> = [
   { id: 'appeal', label: '面白さ・興味' },
-  { id: 'dbValue', label: 'DBの必然性' },
-  { id: 'seo', label: 'SEOでの強さ' },
+  { id: 'dbValue', label: '形式・用途との相性' },
+  { id: 'seo', label: '見つけられやすさ・集客' },
   { id: 'revenue', label: '収益性' },
-  { id: 'upkeep', label: '維持のしやすさ' }
+  { id: 'upkeep', label: '制作・維持のしやすさ' }
 ];
 const names: Record<IdeaStatus, string> = {
   unreviewed: '未評価', liked: 'GOOD', rejected: 'ボツ', deferred: '保留', exploring: '探索中'
@@ -67,6 +68,16 @@ export function IdeaReview() {
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all');
   const [outletFilter, setOutletFilter] = useState('all');
+  const [reviewTarget,setReviewTarget]=useState('overall');
+  const isOutlet=(value:string)=>outlets.some(outlet=>outlet.id===value);
+  const targetFor=(item:Idea,detailView=false)=>{
+    const choice=detailView ? reviewTarget : outletFilter;
+    return isOutlet(choice) && (item.destinations??[]).includes(choice) ? choice : 'overall';
+  };
+  const verdictFor=(item:Idea,detailView=false)=>{
+    const target=targetFor(item,detailView);
+    return target==='overall' ? item.status : item.destinationVerdicts?.[target] ?? 'unreviewed';
+  };
   const [tagInput, setTagInput] = useState('');
   const [destInput, setDestInput] = useState<string[]>([]);
   const [assetTitle, setAssetTitle] = useState('');
@@ -154,7 +165,7 @@ export function IdeaReview() {
   }, [detailOpen, historyLoaded, selectedId]);
 
   const filtered = useMemo(() => ideas
-    .filter(item => filter === 'all' || item.status === filter)
+    .filter(item => filter === 'all' || verdictFor(item) === filter)
     .filter(item => outletFilter === 'all' || (outletFilter === 'unassigned'
       ? !(item.destinations?.length) : (item.destinations ?? []).includes(outletFilter)))
     .filter(item => !query.trim() || [
@@ -166,13 +177,22 @@ export function IdeaReview() {
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const reviews = events.filter(e => e.ideaId === selectedId && e.scope === 'specific_idea' && e.source === 'direct_user');
-  const stats = useMemo(() => Object.fromEntries(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']
-    .map(status => [status, ideas.filter(item => item.status === status).length])) as Record<IdeaStatus, number>, [ideas]);
+  const stats = useMemo(() => {
+    const withinOutlet = ideas.filter(item => outletFilter==='all' ||
+      (outletFilter==='unassigned' ? !(item.destinations?.length) :
+        (item.destinations??[]).includes(outletFilter)));
+    return Object.fromEntries(
+      (['unreviewed','liked','rejected','deferred','exploring'] as IdeaStatus[])
+        .map(state => [state, withinOutlet.filter(item=>verdictFor(item)===state).length])
+    ) as Record<IdeaStatus,number>;
+  }, [ideas,outletFilter]);
 
   function openDetail(id: string) {
     setSelectedId(id);
     setComment('');
     setScores({});
+    const idea=ideas.find(item=>item.id===id);
+    setReviewTarget(idea && isOutlet(outletFilter) && (idea.destinations??[]).includes(outletFilter) ? outletFilter : 'overall');
     setDetailOpen(true);
   }
   async function logIn(event: FormEvent<HTMLFormElement>) {
@@ -198,26 +218,36 @@ export function IdeaReview() {
     if (busyId || submitting) return;
     const target = ideas.find(item => item.id === ideaId);
     if (!target) return;
+    const selectedTarget=targetFor(target,fromDetail);
+    const destination=selectedTarget==='overall' ? undefined : selectedTarget;
     setBusyId(ideaId); setError(''); setMessage(''); setSavedId('');
     try {
       const response = await api<{ status: IdeaStatus; event: ReviewEvent }>('/api/theme-research', {
         method: 'POST',
         body: JSON.stringify({
           action: 'review', ideaId, rating,
+          ...(destination ? {destination} : {}),
           comment: fromDetail ? comment : '',
           axes: fromDetail ? scores : {},
           idempotencyKey: 'ui_' + crypto.randomUUID().replaceAll('-', '')
         })
       });
       setIdeas(items => items.map(item => item.id === ideaId
-        ? { ...item, status: response.status, updatedAt: response.event.createdAt,
+        ? { ...item,
+            ...(destination ? {destinationVerdicts:{...(item.destinationVerdicts??{}),[destination]:response.status}} :
+              {status:response.status}),
+            updatedAt: response.event.createdAt,
             revision: item.revision ? item.revision + 1 : undefined } : item));
-      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt,
+      setDetail(current => current?.id === ideaId ? { ...current,
+            ...(destination ? {destinationVerdicts:{...(current.destinationVerdicts??{}),[destination]:response.status}} :
+              {status:response.status}),
+            updatedAt: response.event.createdAt,
             revision: current.revision ? current.revision + 1 : undefined } : current);
       setEvents(old => [response.event, ...old]);
       if (fromDetail) { setComment(''); setScores({}); }
       setSavedId(ideaId);
-      setMessage('「' + target.title + '」を' + names[response.status] + 'として保存しました。');
+      setMessage('「' + target.title + '」の' + (destination ? outletName(destination) : 'アイデア全体') +
+        'を' + names[response.status] + 'として保存しました。');
     } catch (e) { setError(e instanceof Error ? e.message : '評価を保存できませんでした'); }
     finally { setBusyId(null); }
   }
@@ -264,12 +294,13 @@ export function IdeaReview() {
   }
 
   const ratingButtons = (item: Idea, insideDetail = false) => <div className={'ideaQuickActions ' + (insideDetail ? 'ideaQuickActionsLarge' : '')}
-    role="group" aria-label={item.title + 'の評価'}>
-    <button type="button" className="good" aria-pressed={item.status === 'liked'} title="GOODとして保存"
+    role="group" aria-label={item.title + 'の' + (targetFor(item,insideDetail)==='overall'
+      ? 'アイデア全体' : outletName(targetFor(item,insideDetail))) + 'の評価'}>
+    <button type="button" className="good" aria-pressed={verdictFor(item,insideDetail) === 'liked'} title="GOODとして保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'good', insideDetail)}>GOOD</button>
-    <button type="button" className="reject" aria-pressed={item.status === 'rejected'} title="ボツとして保存"
+    <button type="button" className="reject" aria-pressed={verdictFor(item,insideDetail) === 'rejected'} title="ボツとして保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'reject', insideDetail)}>ボツ</button>
-    <button type="button" className="hold" aria-pressed={item.status === 'deferred'} title="保留として保存"
+    <button type="button" className="hold" aria-pressed={verdictFor(item,insideDetail) === 'deferred'} title="保留として保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'hold', insideDetail)}>保留</button>
     {busyId === item.id && <span className="ideaSaving" role="status">保存中…</span>}
   </div>;
@@ -292,7 +323,7 @@ export function IdeaReview() {
   return <section className="corePage ideaReviewPage">
     <div className="coreTitleRow ideaReviewHeader">
       <div><p className="coreEyebrow">IDEA MEMORY / REVIEW DESK</p><h1>アイデアを仕分ける</h1>
-        <p>GOOD・ボツの評価と、タグ・展開先・派生成果物を1つのIdea DBで管理します。</p>
+        <p>1つのIdea DBから7つの用途に展開。全体・出口別にGOOD・ボツ・保留を独立して保存できます。</p>
       </div>
       <div className="ideaReviewTools"><button type="button" onClick={() => void load(true)} disabled={loading}>再読込</button>
         <button type="button" onClick={() => void logOut()}>ログアウト</button></div>
@@ -309,16 +340,23 @@ export function IdeaReview() {
     <nav className="ideaOutletTabs" aria-label="アイデアの展開先">
       {[{id:'all',label:'すべて'},{id:'unassigned',label:'未振り分け'},...outlets].map(outlet =>
         <button key={outlet.id} type="button" aria-pressed={outletFilter === outlet.id}
-          onClick={() => {setOutletFilter(outlet.id);setPage(0);}}>
+          onClick={() => {setOutletFilter(outlet.id);setFilter('all');setPage(0);}}>
           {outlet.label}
           <small>{outlet.id === 'all' ? ideas.length : ideas.filter(item =>
             outlet.id === 'unassigned' ? !(item.destinations?.length) :
             (item.destinations ?? []).includes(outlet.id)).length}</small>
         </button>)}
     </nav>
+    <div className="ideaReviewScope" role="status">
+      <div><strong>現在の評価対象：{isOutlet(outletFilter) ? outletName(outletFilter) : 'アイデア全体'}</strong>
+      <small>{isOutlet(outletFilter)
+        ? 'この用途に対する評価だけを保存。ほかの用途・全体の評価は変わりません。'
+        : outletFilter==='unassigned' ? '未振り分けの案にはまず出口を割り当てられます。'
+        : '用途ごとの評価をするには上の出口を選択してください。'}</small></div>
+    </div>
     <div className="ideaReviewFilters">
       <label className="ideaSearchLabel" htmlFor="ideaSearch">検索
-        <input id="ideaSearch" type="search" placeholder="テーマ・対象・DBの仕組み" value={query}
+        <input id="ideaSearch" type="search" placeholder="タイトル・対象・テーマタグ・出口" value={query}
           onChange={e => {setQuery(e.target.value);setPage(0);}} />
       </label>
       <div className="ideaViewToggle" role="group" aria-label="一覧の表示形式">
@@ -330,25 +368,35 @@ export function IdeaReview() {
     {error && <p className="ideaReviewError" role="alert">{error}</p>}
     {message && <p className="ideaReviewSuccess" role="status">{message}</p>}
     <div className={'ideaInbox ideaInbox-' + mode} aria-label="アイデア一覧">
-      {mode === 'rows' && <div className="ideaInboxHead" aria-hidden="true"><span>評価 / テーマ</span><span>誰の・何のため</span><span>DBにする理由</span><span>その場で評価</span></div>}
+      {mode === 'rows' && <div className="ideaInboxHead" aria-hidden="true"><span>アイデアと判定</span><span>用途（複数可）・タグ</span><span>提案の切り口</span><span>表示中の対象を評価</span></div>}
       <div className="ideaInboxItems">
         {visible.map(item => <article key={item.id} className={'ideaInboxItem ' + (savedId === item.id ? 'justSaved' : '')}>
           <div className="ideaInboxIdentity">
-            <span className={'ideaStatus ' + item.status}>{names[item.status]}</span>
+            <span className={'ideaStatus ' + verdictFor(item)}>{names[verdictFor(item)]}</span>
             <button type="button" className="ideaOpenDetail" onClick={() => openDetail(item.id)} aria-label={item.title + 'の詳細・理由を開く'}>
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
             <small>{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
-             {(item.destinations?.length || item.tags?.length) ? <div className="ideaMiniTags">
-               {item.destinations?.slice(0,2).map(dest => <span key={dest}>{outletName(dest)}</span>)}
-               {item.tags?.slice(0,2).map(tag => <span key={tag}>#{tag}</span>)}
-             </div> : null}
           </div>
-          <div className="ideaInboxContext"><span className="ideaCellHint">誰の・何のため</span>
-            <p>{short(item.userTask, mode === 'cards' ? 110 : 90)}</p>
-            {item.audience && <small>{short(item.audience, 65)}</small>}
+          <div className="ideaInboxRoutes">
+            <span className="ideaCellHint">利用先・制作媒体</span>
+            <div className="ideaRouteBadges">
+              {item.destinations?.length ? item.destinations.map(dest =>
+                <button type="button" key={dest} className={outletFilter===dest?'selected':''}
+                  title={outletName(dest)+'について評価する'}
+                  onClick={()=>{setOutletFilter(dest);setFilter('all');setPage(0);}}>
+                  {outletName(dest)}
+                  {item.destinationVerdicts?.[dest] && item.destinationVerdicts[dest]!=='unreviewed' &&
+                    <em>{names[item.destinationVerdicts[dest]]}</em>}
+                </button>) : <span className="ideaUnassigned">展開先なし</span>}
+            </div>
+            {item.tags?.length ? <div className="ideaSubjectTags">{item.tags.map(tag =>
+              <span key={tag}>#{tag}</span>)}</div> : null}
           </div>
-          <div className="ideaInboxMechanism"><span className="ideaCellHint">DBにする理由</span><p>{short(item.informationMechanism, mode === 'cards' ? 125 : 105)}</p></div>
+          <div className="ideaInboxMechanism"><span className="ideaCellHint">提案の仕組み・切り口</span>
+            <p>{short(item.informationMechanism,mode==='cards'?100:72)}</p>
+            <small>{short(item.userTask,66)}</small>
+          </div>
           {ratingButtons(item)}
         </article>)}
         {visible.length === 0 && !loading && <p className="ideaReviewEmpty">条件に一致するアイデアはありません。検索・評価状態を変えてください。</p>}
@@ -382,7 +430,7 @@ export function IdeaReview() {
           <dl className="ideaFacts">
             <div><dt>対象となる人</dt><dd>{detail.audience}</dd></div>
             <div><dt>蓄積するデータ</dt><dd>{detail.entities}</dd></div>
-            <div><dt>なぜDBにするか</dt><dd>{detail.informationMechanism}</dd></div>
+            <div><dt>企画の仕組み・切り口</dt><dd>{detail.informationMechanism}</dd></div>
             <div><dt>使い方</dt><dd>{detail.interaction}</dd></div>
             {detail.maintenance && <div><dt>更新・運用</dt><dd>{detail.maintenance}</dd></div>}
           </dl>
@@ -434,8 +482,20 @@ export function IdeaReview() {
             </div>
           </section>
           <section className="ideaRateSection" aria-label="アイデアの詳細評価">
-            <h3>理由も残して評価</h3>
-            <p>一覧でのワンクリック評価に加え、強み・弱点を次回の探索へ伝えられます。</p>
+            <h3>評価する対象を選択</h3>
+            <p>「全体」と各出口の評価は独立しています。例えばDBサイトはボツ、YouTube動画はGOODと記録できます。</p>
+            <div className="ideaReviewTargetChoices" role="group" aria-label="評価する対象">
+              {[{id:'overall',label:'アイデア全体'},...(detail.destinations??[]).map(dest=>({id:dest,label:outletName(dest)}))].map(target=>
+                <button type="button" key={target.id} aria-pressed={reviewTarget===target.id}
+                  onClick={()=>setReviewTarget(target.id)}>
+                  <span>{target.label}</span>
+                  <small>{names[target.id==='overall' ? detail.status :
+                    detail.destinationVerdicts?.[target.id]??'unreviewed']}</small>
+                </button>)}
+            </div>
+            <div className="ideaReviewActiveTarget">
+              評価対象：<strong>{reviewTarget==='overall'?'アイデア全体':outletName(reviewTarget)}</strong>
+            </div>
             <div className="ideaScores">
               {axes.map(axis => <label key={axis.id}>{axis.label}
                 <select value={scores[axis.id] || ''} onChange={event => setScores(old => ({
@@ -450,7 +510,10 @@ export function IdeaReview() {
             <button type="button" className="ideaReset" disabled={!!busyId} onClick={() => void rate(detail.id, 'reset', true)}>未評価に戻す</button>
           </section>
           {reviews.length > 0 && <div className="ideaHistory"><h3>最近の評価履歴</h3>
-            {reviews.slice(0, 8).map(review => <p key={review.id}><small>{dateLabel(review.createdAt)} — {names[review.statusAfter ?? 'unreviewed']}</small>{review.feedback}</p>)}
+            {reviews.slice(0, 8).map(review => <p key={review.id}>
+              <small>{dateLabel(review.createdAt)} — {review.destination ? outletName(review.destination) : 'アイデア全体'} ／ {names[review.statusAfter ?? 'unreviewed']}</small>
+              {review.feedback}
+            </p>)}
           </div>}
         </article>}
       </div>

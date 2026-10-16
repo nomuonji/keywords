@@ -135,6 +135,10 @@ app.post('/api/theme-research', async c => {
   const ideaId = String(input.ideaId ?? '');
   const idempotencyKey = String(input.idempotencyKey ?? '');
   const comment = typeof input.comment === 'string' ? input.comment.trim() : '';
+  const destination = typeof input.destination === 'string' ? input.destination : '';
+  if (destination && !/^[a-z][a-z0-9_-]{1,59}$/.test(destination)) {
+    return c.json({error:'評価する展開先が不正です。'},400);
+  }
   if (!rating || !/^[a-zA-Z0-9_-]{1,100}$/.test(ideaId) || !/^[a-zA-Z0-9_-]{1,100}$/.test(idempotencyKey) || comment.length > 1000) {
     return c.json({ error: '評価内容が不正です。' }, 400);
   }
@@ -146,7 +150,8 @@ app.post('/api/theme-research', async c => {
     const n = Number(axes[key]);
     if (Number.isInteger(n) && n >= 1 && n <= 5) scores.push(label + ':' + n + '/5');
   }
-  const feedback = ['Web管理画面評価=' + rating.label, scores.join('、'), comment].filter(Boolean).join(' | ');
+  const feedback = ['Web管理画面評価=' + rating.label, destination ? '展開先='+destination : 'アイデア全体',
+    scores.join('、'), comment].filter(Boolean).join(' | ');
   const axesForStorage = Object.fromEntries(Object.keys(names).filter(key => axes[key] !== undefined).map(key => [key, Number(axes[key])]));
   if (Object.values(axesForStorage).some(n => !Number.isInteger(n) || n < 1 || n > 5)) {
     return c.json({error:'採点は1〜5の整数で指定してください。'},400);
@@ -155,6 +160,7 @@ app.post('/api/theme-research', async c => {
   try {
     const result = await ideaFeedbackAppend({
       ideaId, scope: 'specific_idea', statusAfter: rating.status,
+      ...(destination ? { destination } : {}),
       polarity: rating.polarity, reason: comment || rating.label,
       feedback, source: 'direct_user', sourceDate, idempotencyKey,
       ...(Object.keys(axesForStorage).length ? {axes: axesForStorage} : {}),
