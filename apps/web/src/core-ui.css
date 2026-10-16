@@ -738,3 +738,27 @@ button:active:not(:disabled), summary:active { transform: translateY(1px); }
 .sourceScan article p { margin:0; color:#97a8a1; font-size:13px; line-height:1.55; }
 .sourceScan article small { color:#71827b; }
 @media (max-width: 900px) { .sourcePoolLayout { grid-template-columns:1fr; } .sourceMeta div { grid-template-columns:1fr; gap:5px; } }
+
+/* A single discovery workspace; legacy research stores remain specialized beneath it. */
+.coreMain:has(.discoveryWorkspace){max-width:1700px;padding-top:16px}
+.discoveryWorkspace{display:grid;gap:14px;min-width:0}
+.discoveryHubIntro{padding:18px 21px 17px;background:linear-gradient(115deg,#17251d 0%,#101b18 64%,#101919 100%);border:1px solid #31453a;border-radius:15px}
+.discoveryHubIntro .coreEyebrow{margin:0 0 6px;font-size:10px;color:#a4d491;letter-spacing:.12em}
+.discoveryHubTitle{display:flex;gap:16px;align-items:center;justify-content:space-between}
+.discoveryHubTitle h1{font-size:clamp(20px,2.4vw,29px);letter-spacing:-.04em;margin:0 0 5px}
+.discoveryHubTitle p{color:#b6cbbd;font-size:12px;line-height:1.7;max-width:740px;margin:0}
+.discoveryHubSource{flex-shrink:0;display:inline-flex;align-items:center;gap:8px;border:1px solid #425a43;border-radius:9px;padding:9px 12px;background:#1f3324;color:#d8f4cd;font-weight:700;font-size:11px;letter-spacing:.08em}
+.discoveryHubSource b{color:#8ecf9b}
+.discoveryHubTabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.discoveryHubTabs button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;border:1px solid #2d4136;border-radius:12px;padding:11px 14px;background:#111d19;color:#e1eee3;min-width:0;cursor:pointer}
+.discoveryHubTabs button:hover{background:#1b3023;border-color:#658566}
+.discoveryHubTabs button.active{border-color:#abe283;background:#203527}
+.discoveryHubStep{font-size:9px;font-weight:700;color:#8bb49a;letter-spacing:.12em}
+.discoveryHubTabs strong{font-size:14px}
+.discoveryHubTabs small{font-size:10px;color:#98b7a3;line-height:1.5}
+.discoveryHubContent{min-width:0}
+.discoveryHubContent>.corePage,.discoveryHubContent>.treasuryView{max-width:none}
+.discoveryHubNext{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #314139;padding:11px 15px;border-radius:11px;background:#13211a;color:#a6b9aa;font-size:11px;line-height:1.7}
+.discoveryHubNext button{border:1px solid #66865b;background:#263c2b;color:#e9ffdc;border-radius:8px;padding:9px 12px;white-space:nowrap;cursor:pointer}
+@media(max-width:1050px){.discoveryHubTabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.coreMain:has(.discoveryWorkspace){padding-top:10px}.discoveryHubIntro{padding:14px}.discoveryHubTitle{display:block}.discoveryHubSource{margin-top:12px}.discoveryHubTabs{gap:5px}.discoveryHubTabs button{padding:10px}.discoveryHubTabs strong{font-size:12px}.discoveryHubTabs small{font-size:9px}.discoveryHubNext{display:grid}.discoveryHubNext button{width:100%}}
