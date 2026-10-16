@@ -8,9 +8,9 @@ const SAFE_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const SHA = /^[a-f0-9]{40}$/;
 const MAX_OUTPUT = 16_000;
 
-async function command(bin: string, argv: string[], cwd: string, timeoutMs: number): Promise<string> {
+async function command(bin: string, argv: string[], cwd: string, timeoutMs: number, extraEnv: Record<string, string> = {}): Promise<string> {
   return new Promise((fulfill, reject) => {
-    const child = spawn(bin, argv, { cwd, shell: false, env: { ...process.env, CI: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(bin, argv, { cwd, shell: false, env: { ...process.env, CI: '1', ...extraEnv }, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     const append = (chunk: Buffer) => { output = (output + chunk.toString('utf8')).slice(-MAX_OUTPUT); };
     child.stdout.on('data', append);
@@ -72,7 +72,16 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
   try {
     await command('git', ['init', '--quiet'], root, 20_000);
     await command('git', ['remote', 'add', 'origin', `https://github.com/${task.repo}.git`], root, 20_000);
-    await command('git', ['fetch', '--quiet', '--depth=1', 'origin', sha], root, 120_000);
+    // Managed site repositories can be private. Authorize *only* the Git fetch
+    // with the existing delivery token. Keep the remote URL/token out of logs
+    // and never forward these Git credential variables into the Docker build.
+    const gitToken = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim();
+    const fetchEnv = gitToken ? {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${gitToken}`).toString('base64')}`
+    } : {};
+    await command('git', ['fetch', '--quiet', '--depth=1', 'origin', sha], root, 120_000, fetchEnv);
     await command('git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD'], root, 20_000);
     const head = (await command('git', ['rev-parse', 'HEAD'], root, 20_000)).trim();
     if (head !== sha) throw Error('Central CI checked out a different commit');
