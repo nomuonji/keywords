@@ -3,12 +3,25 @@ import { api } from './api';
 import './idea-review.css';
 
 type IdeaStatus = 'unreviewed' | 'liked' | 'rejected' | 'deferred' | 'exploring';
+type AssetRef = {id:string; destination:string; kind:string; title:string;
+  owner:string; stage:'proposed'|'draft'|'handed_off'; targetRef?:string; contentRef?:string};
+const outlets = [
+  {id:'new_site_db',label:'新規サイト・DB'},
+  {id:'existing_site_growth',label:'既存サイト改善'},
+  {id:'product_affiliate',label:'商品・アフィリエイト'},
+  {id:'traffic_distribution',label:'集客・販路'},
+  {id:'product_business',label:'新規プロダクト・事業'},
+  {id:'social_content',label:'SNSコンテンツ'},
+  {id:'youtube_video',label:'YouTube・動画'}
+];
+const outletName = (id:string) => outlets.find(v=>v.id===id)?.label ?? id;
 type Idea = {
   id: string; title: string; status: IdeaStatus; audience: string; userTask: string;
   entities?: string; informationMechanism: string; interaction?: string;
   marketCategory?: string; dataSources?: string[]; marketEvidenceRefs?: string[];
   unknowns?: string[]; maintenance?: string; reconsiderWhen?: string;
   sessionId?: string; createdAt?: string; updatedAt?: string;
+  tags?: string[]; destinations?: string[]; assetRefs?: AssetRef[]; assetCount?:number; revision?:number;
   presentationHistory?: Array<{ runId: string; presentedAt: string }>;
 };
 type ReviewEvent = {
@@ -53,6 +66,14 @@ export function IdeaReview() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all');
+  const [outletFilter, setOutletFilter] = useState('all');
+  const [tagInput, setTagInput] = useState('');
+  const [destInput, setDestInput] = useState<string[]>([]);
+  const [assetTitle, setAssetTitle] = useState('');
+  const [assetKind, setAssetKind] = useState('social_post');
+  const [assetDestination, setAssetDestination] = useState('social_content');
+  const [assetTarget, setAssetTarget] = useState('');
+  const [organizing, setOrganizing] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [mode, setMode] = useState<'rows' | 'cards'>('rows');
@@ -112,7 +133,12 @@ export function IdeaReview() {
     setDetailError('');
     setDetailLoading(true);
     void api<Idea>('/api/theme-research?resource=idea-detail&id=' + encodeURIComponent(selectedId))
-      .then(result => { if (alive) setDetail(result); })
+      .then(result => { if (alive) {
+        setDetail(result);
+        setTagInput((result.tags ?? []).join('、'));
+        setDestInput(result.destinations ?? []);
+        setAssetTitle(''); setAssetTarget('');
+      } })
       .catch(e => { if (alive) setDetailError(e instanceof Error ? e.message : '詳細の取得に失敗しました'); })
       .finally(() => { if (alive) setDetailLoading(false); });
     return () => { alive = false; };
@@ -129,11 +155,13 @@ export function IdeaReview() {
 
   const filtered = useMemo(() => ideas
     .filter(item => filter === 'all' || item.status === filter)
+    .filter(item => outletFilter === 'all' || (outletFilter === 'unassigned'
+      ? !(item.destinations?.length) : (item.destinations ?? []).includes(outletFilter)))
     .filter(item => !query.trim() || [
       item.title, item.audience, item.userTask, item.entities, item.informationMechanism,
-      item.marketCategory
+      item.marketCategory, ...(item.tags ?? []), ...(item.destinations ?? [])
     ].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()))
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, query]);
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, outletFilter, query]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -182,8 +210,10 @@ export function IdeaReview() {
         })
       });
       setIdeas(items => items.map(item => item.id === ideaId
-        ? { ...item, status: response.status, updatedAt: response.event.createdAt } : item));
-      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt } : current);
+        ? { ...item, status: response.status, updatedAt: response.event.createdAt,
+            revision: item.revision ? item.revision + 1 : undefined } : item));
+      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt,
+            revision: current.revision ? current.revision + 1 : undefined } : current);
       setEvents(old => [response.event, ...old]);
       if (fromDetail) { setComment(''); setScores({}); }
       setSavedId(ideaId);
@@ -221,7 +251,7 @@ export function IdeaReview() {
   return <section className="corePage ideaReviewPage">
     <div className="coreTitleRow ideaReviewHeader">
       <div><p className="coreEyebrow">IDEA MEMORY / REVIEW DESK</p><h1>アイデアを仕分ける</h1>
-        <p>一覧から直接GOOD・ボツ・保留。詳細では理由と5項目の評価も残せます。</p>
+        <p>GOOD・ボツの評価と、タグ・展開先・派生成果物を1つのIdea DBで管理します。</p>
       </div>
       <div className="ideaReviewTools"><button type="button" onClick={() => void load(true)} disabled={loading}>再読込</button>
         <button type="button" onClick={() => void logOut()}>ログアウト</button></div>
@@ -235,6 +265,16 @@ export function IdeaReview() {
           <strong>{stats[status]}</strong><span>{names[status]}</span>
         </button>)}
     </div>
+    <nav className="ideaOutletTabs" aria-label="アイデアの展開先">
+      {[{id:'all',label:'すべて'},{id:'unassigned',label:'未振り分け'},...outlets].map(outlet =>
+        <button key={outlet.id} type="button" aria-pressed={outletFilter === outlet.id}
+          onClick={() => {setOutletFilter(outlet.id);setPage(0);}}>
+          {outlet.label}
+          <small>{outlet.id === 'all' ? ideas.length : ideas.filter(item =>
+            outlet.id === 'unassigned' ? !(item.destinations?.length) :
+            (item.destinations ?? []).includes(outlet.id)).length}</small>
+        </button>)}
+    </nav>
     <div className="ideaReviewFilters">
       <label className="ideaSearchLabel" htmlFor="ideaSearch">検索
         <input id="ideaSearch" type="search" placeholder="テーマ・対象・DBの仕組み" value={query}
@@ -257,7 +297,11 @@ export function IdeaReview() {
             <button type="button" className="ideaOpenDetail" onClick={() => openDetail(item.id)} aria-label={item.title + 'の詳細・理由を開く'}>
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
-            <small>{dateLabel(item.updatedAt)}</small>
+            <small>{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
+             {(item.destinations?.length || item.tags?.length) ? <div className="ideaMiniTags">
+               {item.destinations?.slice(0,2).map(dest => <span key={dest}>{outletName(dest)}</span>)}
+               {item.tags?.slice(0,2).map(tag => <span key={tag}>#{tag}</span>)}
+             </div> : null}
           </div>
           <div className="ideaInboxContext"><span className="ideaCellHint">誰の・何のため</span>
             <p>{short(item.userTask, mode === 'cards' ? 110 : 90)}</p>
