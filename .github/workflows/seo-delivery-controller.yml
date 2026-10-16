@@ -22,6 +22,7 @@ on:
   schedule:
     # Offset from the top of the hour to reduce GitHub scheduled-run congestion.
     - cron: '7,37 * * * *'
+    - cron: '13 4 * * *'
 
 permissions:
   contents: read
@@ -74,5 +75,9 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Deliver SEO branches
-        if: steps.config.outputs.enabled == 'true'
+        if: steps.config.outputs.enabled == 'true' && github.event.schedule != '13 4 * * *'
         run: npx tsx scripts/seo-delivery-controller.ts
+
+      - name: Verify published SEO Tasks
+        if: steps.config.outputs.enabled == 'true' && github.event.schedule == '13 4 * * *'
+        run: npx tsx scripts/seo-publication-verifier.ts

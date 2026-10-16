@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
@@ -45,8 +45,8 @@ function canonicalOf(html: string): string | null {
 }
 
 export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Promise<string> {
-  if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || task.targetUrls.length === 0) {
-    throw Error('Central CI needs a valid repository, exact commit SHA and target URLs');
+  if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || task.targetUrls.length === 0 || !task.acceptanceChecks?.length) {
+    throw Error('Central CI needs a valid repository, exact commit SHA, target URLs and Manager-fixed acceptance checks');
   }
   const root = await mkdtemp(join(tmpdir(), 'seo-site-ci-'));
   try {
@@ -82,6 +82,16 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
       const canonical = canonicalOf(html);
       if (!canonical || new URL(canonical, raw).href !== url.href) {
         throw Error(`Canonical mismatch at ${url.pathname}: ${canonical ?? 'absent'}`);
+      }
+      const checks = task.acceptanceChecks.filter(check => check.url === raw);
+      if (!checks.length) throw Error(`No Manager-fixed content acceptance for ${url.pathname}`);
+      for (const check of checks) {
+        if (!html.includes(check.containsText)) throw Error(`Required page text missing at ${url.pathname}`);
+        for (const link of check.internalLinks) {
+          if (!html.includes(link) && !html.includes(new URL(link).pathname)) {
+            throw Error(`Required internal link missing at ${url.pathname}`);
+          }
+        }
       }
     }
     return `Central CI passed at exact ${head}: approved ${astro ? 'Astro' : docusaurus ? 'Docusaurus' : 'Next'} build and ${task.targetUrls.length} generated target/canonical checks.`;

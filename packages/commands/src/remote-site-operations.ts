@@ -185,11 +185,17 @@ export const seoRecoverySiteUpdateShape = {
 const seoRecoverySiteUpdateSchema = z.object(seoRecoverySiteUpdateShape).strict();
 
 export const seoTaskGetShape = { id: entityId };
+const seoTaskAcceptanceCheck = z.object({
+  url: webUrl,
+  containsText: z.string().trim().min(8).max(300),
+  internalLinks: z.array(webUrl).max(10).default([])
+}).strict();
 export const seoTaskCreateShape = {
   id: entityId.optional(),
   siteId: entityId,
   articleIds: z.array(entityId).max(20).default([]),
   targetUrls: z.array(webUrl).max(20).default([]),
+  acceptanceChecks: z.array(seoTaskAcceptanceCheck).max(20).default([]),
   repo: repository,
   taskType: seoTaskType,
   priority: seoTaskPriority.default('medium'),
@@ -241,6 +247,7 @@ export const seoTaskUpdateShape = {
   resultCommitSha: commitSha.nullable().optional(),
   executionSummary: note.optional(),
   deploymentVerification: seoTaskDeploymentVerificationPatch.optional(),
+  acceptanceChecks: z.array(seoTaskAcceptanceCheck).max(20).optional(),
   deliveryHandoff: seoTaskDeliveryHandoffShape.optional(),
   claimRunId: seoTaskRunId.optional(),
   appendHistory: historyEntry.optional()
@@ -1028,6 +1035,7 @@ const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   directionId: task.directionId ?? null,
   evaluation: task.evaluation ?? null,
   research: task.research ?? null,
+  acceptanceChecks: task.acceptanceChecks ?? [],
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
   executionClaim: task.executionClaim ?? null,
   deliveryHandoff: task.deliveryHandoff ?? defaultDeliveryHandoff()
@@ -1070,7 +1078,10 @@ export async function seoTaskCreate(input: unknown) {
   if (!siteLevelExpansion && !args.articleIds.length && !args.targetUrls.length) {
     throw new Error('articleIds or targetUrls is required unless taskType is data_expansion or schema_expansion');
   }
-  const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+  // A dedupe-key equality avoids reading the entire site's Task history for each new candidate.
+  const existing = (await queryByField('seoTasks', 'dedupeKey', args.dedupeKey, 30))
+    .map((doc: any) => decoded(doc) as SeoTaskRecord)
+    .filter(task => task.siteId === args.siteId);
   // A safety-denied implementation is not ordinary cancelled work: changing
   // task ID or allowing a new active record with the same dedupe key would
   // silently route the rejected action back to another scheduled Worker.
@@ -1094,6 +1105,7 @@ export async function seoTaskCreate(input: unknown) {
     siteId: args.siteId,
     articleIds: await taskArticleIds(args),
     targetUrls: args.targetUrls,
+    acceptanceChecks: args.acceptanceChecks,
     repo: args.repo,
     taskType: args.taskType,
     status: 'ready',
@@ -1272,6 +1284,9 @@ export async function seoTaskUpdate(input: unknown) {
   if (current.history?.some(event => event.event === 'safety_write_rejected_task_cancelled') &&
       patch.status && !['cancelled', 'superseded'].includes(patch.status)) {
     throw new Error('Safety-rejected SEO task cannot be restarted by changing its status; independent review is required');
+  }
+  if (args.acceptanceChecks && !['ready', 'proposed', 'issued'].includes(current.status)) {
+    throw new Error('Acceptance checks must be fixed before Worker execution');
   }
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
