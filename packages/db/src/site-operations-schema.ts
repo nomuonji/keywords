@@ -241,11 +241,19 @@ export type SeoTaskEvaluationReference = {
   inference: string;
 };
 
+export type SeoTaskAcceptanceCheck = {
+  url: string;
+  /** A short exact phrase from the intended page, fixed by the Manager before Worker claim. */
+  containsText: string;
+  internalLinks: string[];
+};
+
 export type SeoTaskRecord = {
   id: string;
   siteId: string;
   articleIds: string[];
   targetUrls: string[];
+  acceptanceChecks?: SeoTaskAcceptanceCheck[];
   repo: string;
   taskType: SeoTaskType;
   status: SeoTaskStatus;

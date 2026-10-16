@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { dispatchSeoDelivery } from './seo-delivery-dispatch.js';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, SeoRecoverySiteRecord, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -184,11 +185,17 @@ export const seoRecoverySiteUpdateShape = {
 const seoRecoverySiteUpdateSchema = z.object(seoRecoverySiteUpdateShape).strict();
 
 export const seoTaskGetShape = { id: entityId };
+const seoTaskAcceptanceCheck = z.object({
+  url: webUrl,
+  containsText: z.string().trim().min(8).max(300),
+  internalLinks: z.array(webUrl).max(10).default([])
+}).strict();
 export const seoTaskCreateShape = {
   id: entityId.optional(),
   siteId: entityId,
   articleIds: z.array(entityId).max(20).default([]),
   targetUrls: z.array(webUrl).max(20).default([]),
+  acceptanceChecks: z.array(seoTaskAcceptanceCheck).max(20).default([]),
   repo: repository,
   taskType: seoTaskType,
   priority: seoTaskPriority.default('medium'),
@@ -240,6 +247,7 @@ export const seoTaskUpdateShape = {
   resultCommitSha: commitSha.nullable().optional(),
   executionSummary: note.optional(),
   deploymentVerification: seoTaskDeploymentVerificationPatch.optional(),
+  acceptanceChecks: z.array(seoTaskAcceptanceCheck).max(20).optional(),
   deliveryHandoff: seoTaskDeliveryHandoffShape.optional(),
   claimRunId: seoTaskRunId.optional(),
   appendHistory: historyEntry.optional()
@@ -1027,6 +1035,7 @@ const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   directionId: task.directionId ?? null,
   evaluation: task.evaluation ?? null,
   research: task.research ?? null,
+  acceptanceChecks: task.acceptanceChecks ?? [],
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
   executionClaim: task.executionClaim ?? null,
   deliveryHandoff: task.deliveryHandoff ?? defaultDeliveryHandoff()
@@ -1069,7 +1078,11 @@ export async function seoTaskCreate(input: unknown) {
   if (!siteLevelExpansion && !args.articleIds.length && !args.targetUrls.length) {
     throw new Error('articleIds or targetUrls is required unless taskType is data_expansion or schema_expansion');
   }
-  const existing = (await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[];
+  // A dedupe-key equality avoids reading the entire site's Task history for each new candidate.
+  const matchingDocs = await queryByField('seoTasks', 'dedupeKey', args.dedupeKey, 30);
+  if (matchingDocs.length >= 30) throw new Error('Dedupe-key lookup is incomplete; review historical duplicates before creating a Task');
+  const existing = matchingDocs.map((doc: any) => decoded(doc) as SeoTaskRecord)
+    .filter(task => task.siteId === args.siteId);
   // A safety-denied implementation is not ordinary cancelled work: changing
   // task ID or allowing a new active record with the same dedupe key would
   // silently route the rejected action back to another scheduled Worker.
@@ -1093,6 +1106,7 @@ export async function seoTaskCreate(input: unknown) {
     siteId: args.siteId,
     articleIds: await taskArticleIds(args),
     targetUrls: args.targetUrls,
+    acceptanceChecks: args.acceptanceChecks,
     repo: args.repo,
     taskType: args.taskType,
     status: 'ready',
@@ -1133,12 +1147,14 @@ export async function seoTaskList(input: unknown) {
   if (args.siteId) {
     await ensureSite(args.siteId);
     items = ((await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[]).map(normalizeSeoTask);
-  } else if (args.status) {
-    // All status-scoped queries (including completed/pending publication
-    // verification and proposed/cooldown review) must use Firestore's indexed
-    // status equality. Avoid reading 500 unrelated Task records per query.
-    const docs = await queryByField('seoTasks', 'status', args.status, 1000);
-    if (docs.length >= 1000) throw new Error('Status-scoped SEO Task list exceeds 999 matches; paginate before returning an incomplete queue');
+  } else if (args.status || args.deploymentVerificationStatus) {
+    // Choose the narrowest indexed equality. Pending publication is normally
+    // far smaller than all completed Tasks; avoid fetching every completed
+    // record on each bounded verification pass.
+    const key = args.deploymentVerificationStatus ? 'deploymentVerification.status' : 'status';
+    const match = args.deploymentVerificationStatus ?? args.status!;
+    const docs = await queryByField('seoTasks', key, match, 1000);
+    if (docs.length >= 1000) throw new Error('SEO Task status query exceeds 999 matches; pagination is required');
     items = docs.map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   } else {
     const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
@@ -1270,6 +1286,9 @@ export async function seoTaskUpdate(input: unknown) {
       patch.status && !['cancelled', 'superseded'].includes(patch.status)) {
     throw new Error('Safety-rejected SEO task cannot be restarted by changing its status; independent review is required');
   }
+  if (args.acceptanceChecks && !['ready', 'proposed', 'issued'].includes(current.status)) {
+    throw new Error('Acceptance checks must be fixed before Worker execution');
+  }
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
   }
@@ -1361,6 +1380,11 @@ export async function seoTaskUpdate(input: unknown) {
   if (record.deploymentVerification.status === 'verified' && !record.deploymentVerification.checkedAt) throw new Error('verified deployment requires checkedAt');
   if (record.deploymentVerification.status === 'failed' && !record.deploymentVerification.detail.trim()) throw new Error('failed deployment verification requires detail');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
+  // Wake central Actions only after the durable write. Delivery remains recoverable by cron.
+  if (deliveryPatch?.state === 'push_pending'
+      && (current.deliveryHandoff.state !== 'push_pending' || current.deliveryHandoff.headSha !== deliveryPatch.headSha)) {
+    await dispatchSeoDelivery(record.id, record.revision);
+  }
   return { ...record, runId };
 }
 

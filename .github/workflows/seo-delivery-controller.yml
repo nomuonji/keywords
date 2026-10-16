@@ -1,6 +1,8 @@
 name: seo-delivery-controller
 
 on:
+  repository_dispatch:
+    types: [seo_push_pending]
   workflow_dispatch:
     inputs:
       cleanup_limit:
@@ -18,8 +20,9 @@ on:
       - 'scripts/seo-prepared-ref-handoff-gate.ts'
       - 'packages/commands/src/seo-delivery-merge.ts'
   schedule:
-    # Offset from the top of the hour to reduce GitHub scheduled-run congestion.
-    - cron: '7,37 * * * *'
+    # Recovery sweep every two hours; push_pending normally wakes delivery via dispatch.
+    - cron: '17 */2 * * *'
+    - cron: '13 4 * * *'
 
 permissions:
   contents: read
@@ -36,7 +39,8 @@ jobs:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
-      SEO_DELIVERY_MAX_TASKS: '20'
+      SEO_DELIVERY_MAX_TASKS: '2'
+      SEO_DELIVERY_TASK_ID: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.task_id || '' }}
       # Normal delivery never rescans and deletes up to 100 historical refs.
       # A manual workflow_dispatch may opt in to at most ten legacy deletions.
       SEO_DELIVERY_CLEANUP_SWEEP_LIMIT: ${{ github.event.inputs.cleanup_limit || '0' }}
@@ -71,5 +75,9 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Deliver SEO branches
-        if: steps.config.outputs.enabled == 'true'
+        if: steps.config.outputs.enabled == 'true' && github.event.schedule != '13 4 * * *'
         run: npx tsx scripts/seo-delivery-controller.ts
+
+      - name: Verify published SEO Tasks
+        if: steps.config.outputs.enabled == 'true' && github.event.schedule == '13 4 * * *'
+        run: npx tsx scripts/seo-publication-verifier.ts

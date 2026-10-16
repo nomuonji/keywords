@@ -2,10 +2,12 @@ import {
   seoTaskGet,
   seoTaskList,
   seoTaskUpdate,
-  siteRegistryList
+  siteRegistryList,
+  siteRegistryGet
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 
@@ -645,8 +647,31 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
     console.log(`Verified unrelated SNS bot-state-only main drift for ${task.id}; PR mergeability and exact SHA checks still required.`);
   }
 
+  // GitHub mergeability only proves that git can merge. Build the exact
+  // immutable PR head and inspect generated target HTML before merge.
+  const receipt = `head=${handoff.headSha};urls=${task.targetUrls.join('|')}`;
+  if (!(task.history ?? []).some(entry => entry.event === 'central_ci_passed' && entry.detail.startsWith(receipt + ';'))) {
+    try {
+      const summary = await verifySeoSiteBuild(task, handoff.headSha);
+      console.log(summary);
+      if (!dryRun) {
+        const current = await seoTaskGet({ id: task.id });
+        if (current.status !== 'in_progress' || current.deliveryHandoff.headSha !== handoff.headSha) return;
+        await seoTaskUpdate({
+          id: task.id, expectedRevision: current.revision,
+          appendHistory: { actor: 'seo_delivery_controller', event: 'central_ci_passed', detail: receipt + ';' + summary }
+        });
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`Central site CI failed for ${task.id}: ${reason}`);
+      if (!dryRun) await markFailed(task, `Central site CI: ${reason.slice(0, 1400)}`);
+      return;
+    }
+  }
+
   if (dryRun) {
-    console.log(`[dry-run] would merge ${task.id} PR #${pr.number}; exact HEAD/base and GitHub mergeability verified; peripheral GitHub Actions not consulted.`);
+    console.log(`[dry-run] would merge ${task.id} after exact HEAD, mergeability and central site CI.`);
     return;
   }
 
@@ -692,14 +717,37 @@ async function main() {
     return;
   }
 
-  const activeSites = await siteRegistryList({ status: 'active', limit: 100 });
-  const allowedRepos = new Set<string>(
-    activeSites.items
-      .map(site => site.repository)
-      .filter((repo): repo is string => typeof repo === 'string' && repo.length > 0)
-  );
-  const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
-    .filter(task => allowedRepos.has(task.repo));
+  // A dispatch is only a wakeup. Read the latest persisted Task and its exact
+  // site mapping; never trust payload repository, SHA, claim or handoff data.
+  const notifiedId = process.env.SEO_DELIVERY_TASK_ID?.trim();
+  if (notifiedId) {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(notifiedId)) throw Error('Invalid dispatch Task ID');
+    const task = await seoTaskGet({ id: notifiedId });
+    const site = await siteRegistryGet({ id: task.siteId });
+    if (site.status !== 'active' || site.repository !== task.repo) {
+      console.log(`Ignoring delivery wakeup ${notifiedId}: inactive or mismatched site registry.`);
+      return;
+    }
+    if (task.status !== 'in_progress' || !['push_pending', 'branch_ready', 'pr_open'].includes(task.deliveryHandoff?.state ?? 'none')) {
+      console.log(`Ignoring stale or duplicate delivery wakeup ${notifiedId}.`);
+      return;
+    }
+    const sites = [site];
+    const reconciled = task.deliveryHandoff.state === 'push_pending'
+      ? await reconcilePushPending(task, sites)
+      : task;
+    if (['branch_ready', 'pr_open'].includes(reconciled.deliveryHandoff?.state ?? 'none')) {
+      const current = await seoTaskGet({ id: notifiedId });
+      if (current.status === 'in_progress' && current.deliveryHandoff.headSha === reconciled.deliveryHandoff.headSha) {
+        await processTask(current, sites);
+      }
+    }
+    return;
+  }
+
+  // Query the small delivery queue before reading the site registry. A routine
+  // idle cron now performs one status query rather than scanning every site.
+  const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items;
 
   // Keep the exact Task records returned by the initial read. Reusing the
   // reconciliation return value avoids another global Firestore status scan.
@@ -707,12 +755,22 @@ async function main() {
   // Task state, refusal history and exact Worker checkpoint.
   const candidates: SeoTaskRecord[] = [];
   for (const pending of initialInProgress) {
+    if (!['push_pending', 'branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) continue;
+    let site;
+    try {
+      site = await siteRegistryGet({ id: pending.siteId });
+    } catch (error) {
+      if (firestoreRateLimited(error)) throw error;
+      console.warn(`Site lookup failed for ${pending.id}: ${String(error)}`);
+      continue;
+    }
+    if (site.status !== 'active' || site.repository !== pending.repo) continue;
     if (pending.deliveryHandoff?.state !== 'push_pending') {
       if (['branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) candidates.push(pending);
       continue;
     }
     try {
-      const reconciled = await reconcilePushPending(pending, activeSites.items);
+      const reconciled = await reconcilePushPending(pending, [site]);
       if (['branch_ready', 'pr_open'].includes(reconciled.deliveryHandoff?.state ?? 'none')) candidates.push(reconciled);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -740,7 +798,9 @@ async function main() {
         console.log(`Delivery Task ${task.id} changed before PR processing; skipping.`);
         continue;
       }
-      await processTask(current, activeSites.items);
+      const site = await siteRegistryGet({ id: current.siteId });
+      if (site.status !== 'active' || site.repository !== current.repo) continue;
+      await processTask(current, [site]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Task ${task.id} controller error: ${message}`);
@@ -757,7 +817,10 @@ async function main() {
   // Already cleaned at markCompleted(). A broad completed-task sweep on
   // every run wastes GitHub API calls and slows down real deliveries.
   // Explicit maintenance runs can opt into a small bounded cleanup sweep.
-  if (cleanupLimit > 0) await cleanupMergedSeoBranches(allowedRepos, cleanupLimit);
+  if (cleanupLimit > 0) {
+    const sites = await siteRegistryList({ status: 'active', limit: 100 });
+    await cleanupMergedSeoBranches(new Set(sites.items.map(site => site.repository)), cleanupLimit);
+  }
 }
 
 await main();
