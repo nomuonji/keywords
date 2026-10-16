@@ -6,7 +6,7 @@
 
 After source and acceptance readback, save the existing `seo_task_update` `push_pending` checkpoint once and stop. The Sites Operator backend sends an opaque Task-ID wakeup after the durable save. A failed or missing event credential does not undo the Task; the existing 30-minute central cron retries. Workers do not dispatch Actions, create PRs or merge.
 
-The Manager fixes `acceptanceChecks` before the claim. Confirm that the final generated page can satisfy its text and internal-link assertions. The central controller checks out the exact commit SHA, runs an approved Astro/Docusaurus/Next build, and checks generated target HTML/canonical/acceptance before merge. A failed or unavailable build remains unmerged for a bounded correction; do not relabel it success. Public deployment and the Optimization Event window are later, separate checks.
+The Task rationale/evidence defines the substantive change. Optional `acceptanceChecks` provide targeted text/link assertions but are **not** a prerequisite for Task delivery. The central controller checks out the exact commit SHA, runs an approved Astro/Docusaurus/Next build, and checks generated target HTML/canonical before merge; it applies optional assertions when explicitly present. A failed or unavailable build remains unmerged for a bounded correction; do not relabel it success. Public deployment and the Optimization Event window are later, separate checks.
 
 ## Editorial recovery acceptance contract (2026-10-13)
 

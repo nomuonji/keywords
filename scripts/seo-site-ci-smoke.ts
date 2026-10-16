@@ -8,5 +8,8 @@ assert.doesNotThrow(() => verifyGeneratedPage(page, url, check));
 assert.throws(() => verifyGeneratedPage(page.replace('Evidence-based article correction', 'Old text'), url, check), /text missing/);
 assert.throws(() => verifyGeneratedPage(page.replace('/guides/b/', '/other/'), url, check), /internal link missing/);
 assert.throws(() => verifyGeneratedPage(page.replace(url, 'https://example.com/other/'), url, check), /Canonical mismatch/);
-assert.throws(() => verifyGeneratedPage(page, url, []), /No Manager-fixed/);
-console.log('Central generated-page acceptance smoke passed');
+// No exact-string assertions is normal; generated page and canonical must still be valid.
+assert.doesNotThrow(() => verifyGeneratedPage(page, url, []));
+assert.throws(() => verifyGeneratedPage(page.replace(url, 'https://example.com/other/'), url, []), /Canonical mismatch/);
+assert.throws(() => verifyGeneratedPage('<html><head></head></html>', url, []), /body missing/);
+console.log('Central generated-page route/canonical smoke passed (optional assertions)');
