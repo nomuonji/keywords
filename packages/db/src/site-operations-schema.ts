@@ -243,7 +243,7 @@ export type SeoTaskEvaluationReference = {
 
 export type SeoTaskAcceptanceCheck = {
   url: string;
-  /** A short exact phrase from the intended page, fixed by the Manager before Worker claim. */
+  /** Optional exact phrase assertion for a meaningful targeted regression. */
   containsText: string;
   internalLinks: string[];
 };
