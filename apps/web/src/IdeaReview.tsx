@@ -319,7 +319,7 @@ export function IdeaReview() {
   return <section className="corePage ideaReviewPage">
     <div className="coreTitleRow ideaReviewHeader">
       <div><p className="coreEyebrow">IDEA MEMORY / REVIEW DESK</p><h1>アイデアを仕分ける</h1>
-        <p>GOOD・ボツの評価と、タグ・展開先・派生成果物を1つのIdea DBで管理します。</p>
+        <p>1つのIdea DBから7つの用途に展開。全体・出口別にGOOD・ボツ・保留を独立して保存できます。</p>
       </div>
       <div className="ideaReviewTools"><button type="button" onClick={() => void load(true)} disabled={loading}>再読込</button>
         <button type="button" onClick={() => void logOut()}>ログアウト</button></div>
@@ -343,9 +343,16 @@ export function IdeaReview() {
             (item.destinations ?? []).includes(outlet.id)).length}</small>
         </button>)}
     </nav>
+    <div className="ideaReviewScope" role="status">
+      <div><strong>現在の評価対象：{isOutlet(outletFilter) ? outletName(outletFilter) : 'アイデア全体'}</strong>
+      <small>{isOutlet(outletFilter)
+        ? 'この用途に対する評価だけを保存。ほかの用途・全体の評価は変わりません。'
+        : outletFilter==='unassigned' ? '未振り分けの案にはまず出口を割り当てられます。'
+        : '用途ごとの評価をするには上の出口を選択してください。'}</small></div>
+    </div>
     <div className="ideaReviewFilters">
       <label className="ideaSearchLabel" htmlFor="ideaSearch">検索
-        <input id="ideaSearch" type="search" placeholder="テーマ・対象・DBの仕組み" value={query}
+        <input id="ideaSearch" type="search" placeholder="タイトル・対象・テーマタグ・出口" value={query}
           onChange={e => {setQuery(e.target.value);setPage(0);}} />
       </label>
       <div className="ideaViewToggle" role="group" aria-label="一覧の表示形式">
@@ -357,25 +364,35 @@ export function IdeaReview() {
     {error && <p className="ideaReviewError" role="alert">{error}</p>}
     {message && <p className="ideaReviewSuccess" role="status">{message}</p>}
     <div className={'ideaInbox ideaInbox-' + mode} aria-label="アイデア一覧">
-      {mode === 'rows' && <div className="ideaInboxHead" aria-hidden="true"><span>評価 / テーマ</span><span>誰の・何のため</span><span>DBにする理由</span><span>その場で評価</span></div>}
+      {mode === 'rows' && <div className="ideaInboxHead" aria-hidden="true"><span>アイデアと判定</span><span>用途（複数可）・タグ</span><span>提案の切り口</span><span>表示中の対象を評価</span></div>}
       <div className="ideaInboxItems">
         {visible.map(item => <article key={item.id} className={'ideaInboxItem ' + (savedId === item.id ? 'justSaved' : '')}>
           <div className="ideaInboxIdentity">
-            <span className={'ideaStatus ' + item.status}>{names[item.status]}</span>
+            <span className={'ideaStatus ' + verdictFor(item)}>{names[verdictFor(item)]}</span>
             <button type="button" className="ideaOpenDetail" onClick={() => openDetail(item.id)} aria-label={item.title + 'の詳細・理由を開く'}>
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
             <small>{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
-             {(item.destinations?.length || item.tags?.length) ? <div className="ideaMiniTags">
-               {item.destinations?.slice(0,2).map(dest => <span key={dest}>{outletName(dest)}</span>)}
-               {item.tags?.slice(0,2).map(tag => <span key={tag}>#{tag}</span>)}
-             </div> : null}
           </div>
-          <div className="ideaInboxContext"><span className="ideaCellHint">誰の・何のため</span>
-            <p>{short(item.userTask, mode === 'cards' ? 110 : 90)}</p>
-            {item.audience && <small>{short(item.audience, 65)}</small>}
+          <div className="ideaInboxRoutes">
+            <span className="ideaCellHint">利用先・制作媒体</span>
+            <div className="ideaRouteBadges">
+              {item.destinations?.length ? item.destinations.map(dest =>
+                <button type="button" key={dest} className={outletFilter===dest?'selected':''}
+                  title={outletName(dest)+'について評価する'}
+                  onClick={()=>{setOutletFilter(dest);setPage(0);}}>
+                  {outletName(dest)}
+                  {item.destinationVerdicts?.[dest] && item.destinationVerdicts[dest]!=='unreviewed' &&
+                    <em>{names[item.destinationVerdicts[dest]]}</em>}
+                </button>) : <span className="ideaUnassigned">展開先なし</span>}
+            </div>
+            {item.tags?.length ? <div className="ideaSubjectTags">{item.tags.map(tag =>
+              <span key={tag}>#{tag}</span>)}</div> : null}
           </div>
-          <div className="ideaInboxMechanism"><span className="ideaCellHint">DBにする理由</span><p>{short(item.informationMechanism, mode === 'cards' ? 125 : 105)}</p></div>
+          <div className="ideaInboxMechanism"><span className="ideaCellHint">提案の仕組み・切り口</span>
+            <p>{short(item.informationMechanism,mode==='cards'?100:72)}</p>
+            <small>{short(item.userTask,66)}</small>
+          </div>
           {ratingButtons(item)}
         </article>)}
         {visible.length === 0 && !loading && <p className="ideaReviewEmpty">条件に一致するアイデアはありません。検索・評価状態を変えてください。</p>}
@@ -409,7 +426,7 @@ export function IdeaReview() {
           <dl className="ideaFacts">
             <div><dt>対象となる人</dt><dd>{detail.audience}</dd></div>
             <div><dt>蓄積するデータ</dt><dd>{detail.entities}</dd></div>
-            <div><dt>なぜDBにするか</dt><dd>{detail.informationMechanism}</dd></div>
+            <div><dt>企画の仕組み・切り口</dt><dd>{detail.informationMechanism}</dd></div>
             <div><dt>使い方</dt><dd>{detail.interaction}</dd></div>
             {detail.maintenance && <div><dt>更新・運用</dt><dd>{detail.maintenance}</dd></div>}
           </dl>
@@ -461,8 +478,20 @@ export function IdeaReview() {
             </div>
           </section>
           <section className="ideaRateSection" aria-label="アイデアの詳細評価">
-            <h3>理由も残して評価</h3>
-            <p>一覧でのワンクリック評価に加え、強み・弱点を次回の探索へ伝えられます。</p>
+            <h3>評価する対象を選択</h3>
+            <p>「全体」と各出口の評価は独立しています。例えばDBサイトはボツ、YouTube動画はGOODと記録できます。</p>
+            <div className="ideaReviewTargetChoices" role="group" aria-label="評価する対象">
+              {[{id:'overall',label:'アイデア全体'},...(detail.destinations??[]).map(dest=>({id:dest,label:outletName(dest)}))].map(target=>
+                <button type="button" key={target.id} aria-pressed={reviewTarget===target.id}
+                  onClick={()=>setReviewTarget(target.id)}>
+                  <span>{target.label}</span>
+                  <small>{names[target.id==='overall' ? detail.status :
+                    detail.destinationVerdicts?.[target.id]??'unreviewed']}</small>
+                </button>)}
+            </div>
+            <div className="ideaReviewActiveTarget">
+              評価対象：<strong>{reviewTarget==='overall'?'アイデア全体':outletName(reviewTarget)}</strong>
+            </div>
             <div className="ideaScores">
               {axes.map(axis => <label key={axis.id}>{axis.label}
                 <select value={scores[axis.id] || ''} onChange={event => setScores(old => ({
