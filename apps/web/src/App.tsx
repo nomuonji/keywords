@@ -62,7 +62,7 @@ export function App(){
     <a className="skipLink" href="#main-content">本文へ移動</a>
     <header className="coreTopbar">
       <button className="coreBrand" onClick={()=>navigate('operations','')} aria-label="今日の運用へ"><span/>KEYWORDS</button>
-      <nav className="coreNav" aria-label="メインナビゲーション">{views.map(item=><button key={item.id} className={view===item.id?'active':''} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id)}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav>
+      <nav className="coreNav" aria-label="メインナビゲーション">{views.map(item=><button key={item.id} className={view===item.id?'active':''} aria-current={view===item.id?'page':undefined} onClick={()=>navigate(item.id,projectId,false,item.id==='discover'?null:discoveryTool)}><b>{item.label}</b><small>{item.hint}</small></button>)}</nav>
       <div className="coreTopMeta"><span className="stateDot live"/>{isRemoteBackend() ? 'remote · Firestore' : 'local workspace'}</div>
     </header>
     <main className="coreMain" id="main-content">
