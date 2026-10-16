@@ -4,6 +4,13 @@
 
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
+## Central acceptance and publication loop (2026-10-16)
+
+- Before issuing a ready Task, attach `acceptanceChecks` for each `targetUrls` page: an exact intended text fragment (8–300 characters) and zero or more exact internal-link URLs. The checks are fixed before Worker claim. Confirm the source and current GitHub HEAD first; do not invent a fragment just to satisfy the form.
+- Count `ready`, `in_progress`, and `push_pending` separately. Target a small 3–6 Task buffer only when current demand, page/source evidence, Macro Policy and independent files support it. Recheck proposed Tasks against current HEAD and acceptance conditions. A 429 stops the run without resubmitting equivalent writes.
+- Central Actions validates the persisted checkpoint and builds the exact target SHA before merging. Missing build profile, generated target HTML, canonical, text or internal link is a blocked delivery requiring correction, not an accepted release.
+- The daily publication verifier considers at most four due completed Tasks from the existing pending/failed records. It requires a successful production GitHub deployment at the merge SHA or a descendant plus the live page checks. If the host does not create GitHub deployment evidence, the Task remains pending until a trustworthy provider-specific proof path exists. A unique proposed Optimization Event linked by article ID and commit starts its measurement window only after verified publication.
+
 ## System throughput / queue health (2026-10-16)
 
 - The Manager is responsible for a **useful executable backlog**, not an arbitrary number of Tasks. At the start of each run count actual `ready`, `in_progress`, and `push_pending`/delivery handoffs separately; exclude `proposed`, `cancelled`, expired/duplicate/safety-refused work from executable capacity. Keep the difference between queue starvation and delivery/CI stagnation visible in the run report.

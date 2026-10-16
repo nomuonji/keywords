@@ -74,7 +74,9 @@ export async function firestore(path: string, init?: RequestInit) {
       // one-second retry. Keep the generic retry path for burst throttling.
       const payload = await response.clone().json().catch(() => null) as any;
       const message = String(payload?.error?.message ?? payload?.message ?? '');
-      if (/quota exceeded|free.tier|daily (?:quota|limit)|document reads limit/i.test(message)) {
+      const daily = /quota exceeded|free.tier|daily (?:quota|limit)|document reads limit/i.test(message);
+      console.warn(`Firestore 429 kind=${daily ? 'daily_quota' : 'transient_or_unknown'} operation=${init?.method ?? 'GET'} collection=${path.split('?')[0].slice(0, 80)} attempt=${attempt + 1}`);
+      if (daily) {
         quotaUnavailableUntil = Date.now() + QUOTA_COOLDOWN_MS;
         throw new FirestoreError(429);
       }
