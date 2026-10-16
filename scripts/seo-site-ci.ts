@@ -44,6 +44,27 @@ function canonicalOf(html: string): string | null {
   return tag?.match(/\bhref=["']([^"']+)["']/i)?.[1] ?? null;
 }
 
+export function verifyGeneratedPage(
+  html: string, raw: string,
+  checks: readonly { url: string; containsText: string; internalLinks: readonly string[] }[]
+): void {
+  const url = new URL(raw);
+  if (!/<(?:main|article|body)\b/i.test(html)) throw Error(`Generated HTML body missing at ${url.pathname}`);
+  const canonical = canonicalOf(html);
+  if (!canonical || new URL(canonical, raw).href !== url.href) {
+    throw Error(`Canonical mismatch at ${url.pathname}: ${canonical ?? 'absent'}`);
+  }
+  if (!checks.length) throw Error(`No Manager-fixed content acceptance for ${url.pathname}`);
+  for (const check of checks) {
+    if (check.url !== raw || !html.includes(check.containsText)) throw Error(`Required page text missing at ${url.pathname}`);
+    for (const link of check.internalLinks) {
+      if (!html.includes(link) && !html.includes(new URL(link).pathname)) {
+        throw Error(`Required internal link missing at ${url.pathname}`);
+      }
+    }
+  }
+}
+
 export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Promise<string> {
   if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || task.targetUrls.length === 0 || !task.acceptanceChecks?.length) {
     throw Error('Central CI needs a valid repository, exact commit SHA, target URLs and Manager-fixed acceptance checks');
@@ -78,21 +99,7 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
       const file = (await Promise.all(candidates.map(exists))).findIndex(Boolean);
       if (file < 0) throw Error(`No generated HTML for target ${url.pathname}`);
       const html = await readFile(candidates[file], 'utf8');
-      if (!/<(?:main|article|body)\b/i.test(html)) throw Error(`Generated HTML body missing at ${url.pathname}`);
-      const canonical = canonicalOf(html);
-      if (!canonical || new URL(canonical, raw).href !== url.href) {
-        throw Error(`Canonical mismatch at ${url.pathname}: ${canonical ?? 'absent'}`);
-      }
-      const checks = task.acceptanceChecks.filter(check => check.url === raw);
-      if (!checks.length) throw Error(`No Manager-fixed content acceptance for ${url.pathname}`);
-      for (const check of checks) {
-        if (!html.includes(check.containsText)) throw Error(`Required page text missing at ${url.pathname}`);
-        for (const link of check.internalLinks) {
-          if (!html.includes(link) && !html.includes(new URL(link).pathname)) {
-            throw Error(`Required internal link missing at ${url.pathname}`);
-          }
-        }
-      }
+      verifyGeneratedPage(html, raw, task.acceptanceChecks.filter(check => check.url === raw));
     }
     return `Central CI passed at exact ${head}: approved ${astro ? 'Astro' : docusaurus ? 'Docusaurus' : 'Next'} build and ${task.targetUrls.length} generated target/canonical checks.`;
   } finally {
