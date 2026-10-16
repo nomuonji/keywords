@@ -36,11 +36,25 @@ globalThis.fetch = async (input:any, init?:RequestInit) => {
   reads++; const key=path.slice(1); const found=db.get(key); return found ? json(found) : json({error:'not found'},404);
 };
 const base = { audience:'廃校を訪ねる旅行者',userTask:'廃校の現在の使われ方を知る',entities:'学校跡地と新しい施設',informationMechanism:'閉校から再利用までの年表',interaction:'地図から場所を選び変遷を見る',maintenance:'年一回確認' };
-const ideas=Array.from({length:30},(_,i)=>({...base,id:`smoke-${i}`,title:`廃校のその後 ${i}`,entities:`学校跡地と新しい施設 ${i}`,presentedAt:'2026-10-14T00:00:00.000Z'}));
+const agentReview = {
+  rubricVersion:'idea-final-judge-v2' as const,assessedAt:'2026-10-14T00:00:00.000Z',
+  verdict:'pass' as const,axes:{appeal:5,dbValue:4,seo:3,revenue:2,upkeep:4},
+  requiredAxes:['dbValue','upkeep'],strongestObjection:'初期データが少ない',
+  passRationale:'具体的な廃校施設の変遷から発見が生まれる'
+};
+const ideas=Array.from({length:30},(_,i)=>({...base,id:`smoke-${i}`,title:`廃校のその後 ${i}`,entities:`学校跡地と新しい施設 ${i}`,presentedAt:'2026-10-14T00:00:00.000Z',
+  ...(i===0 ? {agentReview} : {})}));
 const first=await ideaMemoryBatchUpsert({ideas,runId:'smoke-run'});
 assert.equal(first.results.length,30); assert.equal(first.writeCount,30); assert.equal(commits,1);
 const second=await ideaMemoryBatchUpsert({ideas,runId:'smoke-run'});
 assert.equal(second.writeCount,0); assert.equal(writes,30); assert.equal(commits,1);
+// A passing agent assessment is frozen at first registration; a later rerating cannot launder it.
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],agentReview:{...agentReview,
+  passRationale:'後から書き換えた自己採点'}}],runId:'smoke-rerate'}),/frozen at initial idea creation/);
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-low-review',
+  agentReview:{...agentReview,axes:{...agentReview.axes,appeal:4}}}],runId:'smoke-low'}),/Only appeal 5\/5 may pass/);
+const initialReview = await ideaReviewDetail('smoke-0');
+assert.equal(initialReview?.agentReview?.axes.appeal,5);
 const renamed={...base,title:'閉校した学校は今どう使われるか'};
 assert.equal(compareIdeas(renamed,ideas[0]).relation,'near_duplicate');
 const different={...base,title:'廃校を使ったイベント予約',userTask:'廃校で開催されるイベントを予約する',informationMechanism:'イベントの日程表',interaction:'日付で空席を選び予約する'};
@@ -75,6 +89,7 @@ const noChange=await ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:revised.
 assert.equal(noChange.outcome,'unchanged');
 await assert.rejects(()=>ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:detail.revision,tags:[]}),/conflict/i);
 const after=await ideaReviewDetail('smoke-0');assert.equal(after?.status,'rejected');
+assert.deepEqual(after?.agentReview,agentReview,'human verdict and organization must not change the prior agent score');
 // Per-outlet verdicts are independent of the idea-wide judgement and of other outlets.
 const videoReview = await ideaFeedbackAppend({ideaId:'smoke-0',destination:'youtube_video',
   scope:'specific_idea',polarity:'positive',reason:'動画の企画としては使える',feedback:'動画ではGOOD',
@@ -96,6 +111,7 @@ await assert.rejects(()=>ideaFeedbackAppend({destination:'social_content',scope:
   source:'direct_user',sourceDate:'2026-10-16T00:00:00.000Z',idempotencyKey:'bad-broad'}),/Broad feedback/);
 const summaries=await ideaReviewList({limit:100,summary:true});
 assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.destinationVerdicts?.youtube_video,'liked');
+assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.agentReview?.axes.appeal,5);
 const feedbackProfile=await ideaMemoryFeedbackProfile({limit:10});
 assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3});
 assert.ok(reads < 110,'two extra outlet feedback writes and summary still require bounded reads'); assert.equal(writes,40);

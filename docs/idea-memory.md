@@ -16,6 +16,30 @@ Search uses automatically indexed two-character normalized tokens to find at mos
 
 Firestore 429 and transient 503 behavior follows the shared adapter's bounded retry policy. Do not retry quota exhaustion indefinitely or turn a failed write into a claimed saved result. Keep `market-idea-feedback` as the fallback for clients that have not refreshed their tool list.
 
+## Agent pre-submission score: strict filtering without user homework (2026-10-16)
+
+The My Portal canonical `idea-final-judge` Chat Skill owns the final pass/fail rubric. **Generate freely, judge before proposing, and present only passing ideas**. A failed idea is not quota-filling content and is not recorded as a presented idea. When no idea passes in a bounded run, persist continuation notes and report the exploration unfinished; never lower the quality threshold or mark zero qualified proposals as a success.
+
+To preserve accountability, `idea_memory_batch_upsert` accepts an optional `agentReview` object on a **newly presented** canonical idea:
+
+```json
+{
+  "rubricVersion": "idea-final-judge-v2",
+  "assessedAt": "2026-10-16T00:00:00.000Z",
+  "verdict": "pass",
+  "axes": {"appeal": 5, "dbValue": 4, "seo": 3, "revenue": 2, "upkeep": 4},
+  "requiredAxes": ["dbValue", "upkeep"],
+  "strongestObjection": "Short, concrete reason why this might fail",
+  "passRationale": "Why the actual first experience overcomes that objection"
+}
+```
+
+All five axes use the existing 1–5 scale; omit an unverified or inapplicable score rather than invent one. Appeal must be **5/5** and each explicitly required purpose-specific axis must be **4/5 or more**, or the structured self-score is rejected. Other noncompensatory criteria of the Judge Skill (specific first experience, real differentiation, feasible data/maintenance) still apply. The score is an **agent hypothesis**, not proof of demand, actual revenue, a human verdict, or an independent model review.
+
+At initial idea registration, the supplied `agentReview` snapshot is stored with the idea and shown read-only in the Idea Review detail drawer (with a discreet indication in the list). Subsequent `idea_memory_batch_upsert` re-presentations **cannot overwrite or backfill** that snapshot; human review, outlet-specific verdicts and organization patches do not modify it. Older ideas without this field remain visibly unscored; never retroactively label an evaluation as pre-submission. The API field is optional for backward compatibility with existing MCP clients; until clients expose the refreshed schema, the chat Skill's gate remains the primary filter. Missing agentReview does **not** imply that a proposal was approved by the Judge. No extra collection or per-row Firestore reads are introduced.
+
+**Human interaction stays minimal.** GOOD / ボツ / 保留 can be submitted directly from the list with one click. The existing optional human five-axis detail form remains available but is never required to evaluate ideas. Human rating events are separately append-only and are not silently treated as AI scores. Run-to-run calibration can use simple human verdicts; a detailed human grading chore is not a prerequisite.
+
 ## Tags, nonexclusive production destinations and derivative assets (v1.20)
 The authoritative idea remains one `ideaMemory/{ideaId}` record. New optional fields:
 - `tags: string[]` — freely chosen subject labels (up to 20, max 60 characters per tag)
