@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.19.0';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.20.0';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',
@@ -27,6 +27,7 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'idea_memory_context',
   'idea_feedback_append',
   'idea_memory_feedback_profile',
+  'idea_memory_patch',
   'seo_source_pool_context',
   'seo_source_get',
   'seo_source_save',

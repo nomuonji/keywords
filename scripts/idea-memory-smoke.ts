@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
-import { compareIdeas, ideaMemoryBatchUpsert, ideaMemorySearch, ideaMemoryContext, ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewList } from '../packages/commands/src/idea-memory.js';
+import { compareIdeas, ideaMemoryBatchUpsert, ideaMemorySearch, ideaMemoryContext, ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewList, ideaReviewDetail, ideaMemoryPatch } from '../packages/commands/src/idea-memory.js';
 import { value } from '../packages/db/src/firestore.js';
 
 const privateKey = generateKeyPairSync('rsa',{modulusLength:2048}).privateKey.export({type:'pkcs8',format:'pem'}).toString();
@@ -49,7 +49,7 @@ const matches=await ideaMemorySearch({candidate:renamed,limit:5,includeRejected:
 const page=await ideaMemoryContext({limit:10}); assert.equal(page.ideas.length,10); assert.ok(page.nextCursor);
 const next=await ideaMemoryContext({limit:10,cursor:page.nextCursor}); assert.equal(next.ideas.length,10);
 await ideaFeedbackAppend({ideaId:'smoke-0',scope:'specific_idea',polarity:'negative',reason:'対象が曖昧',feedback:'この案は不要',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'rejected',idempotencyKey:'negative-0'});
-await ideaFeedbackAppend({ideaId:'smoke-1',scope:'specific_idea',polarity:'positive',reason:'使える',feedback:'採用',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'positive-1'});
+await ideaFeedbackAppend({ideaId:'smoke-1',scope:'specific_idea',polarity:'positive',reason:'使える',feedback:'採用',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'positive-1',axes:{appeal:4,revenue:3}});
 await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});
 const retry=await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});
 assert.equal(retry.outcome,'unchanged');
@@ -58,10 +58,27 @@ const inbox = await ideaReviewList({limit:10}); assert.equal(inbox.items.length,
 assert.equal(value(db.get('ideaMemory/smoke-2').fields.status),'unreviewed');
 assert.equal(value(db.get('ideaMemory/smoke-0').fields.status),'rejected');
 assert.equal(value(db.get('ideaMemory/smoke-1').fields.status),'liked');
-assert.ok(reads < 90); assert.equal(writes,35);
+const detail=await ideaReviewDetail('smoke-0'); assert.ok(detail);
+const revised=await ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:detail.revision,
+  tags:['消費行動','ネット文化','消費行動'],
+  destinations:['social_content','youtube_video','social_content'],
+  assetRefs:[{id:'asset-script-1',destination:'youtube_video',kind:'youtube_script',
+    title:'廃校の謎・YouTube台本案',owner:'Idea Memory',stage:'proposed'}]});
+assert.equal(revised.idea.status,'rejected','organization cannot change the human verdict');
+assert.deepEqual(revised.idea.tags,['消費行動','ネット文化']);
+assert.deepEqual(revised.idea.destinations,['social_content','youtube_video']);
+assert.equal(revised.idea.assetCount,1);
+const noChange=await ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:revised.idea.revision,
+  tags:['消費行動','ネット文化'],destinations:['social_content','youtube_video'],assetRefs:revised.idea.assetRefs});
+assert.equal(noChange.outcome,'unchanged');
+await assert.rejects(()=>ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:detail.revision,tags:[]}),/conflict/i);
+const after=await ideaReviewDetail('smoke-0');assert.equal(after?.status,'rejected');
+const feedbackProfile=await ideaMemoryFeedbackProfile({limit:10});
+assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3});
+assert.ok(reads < 90); assert.equal(writes,36);
 const normalFetch = globalThis.fetch;
 globalThis.fetch = async (input:any,init?:RequestInit) => String(input).includes('/documents:runQuery') ? json({error:'quota'},429) : normalFetch(input,init);
 await assert.rejects(() => ideaMemorySearch({candidate:renamed,limit:5,includeRejected:true}),/Firestore request failed \(429\)/);
-assert.equal(writes,35);
+assert.equal(writes,36);
 globalThis.fetch = normalFetch;
 console.log('Idea Memory smoke passed', {reads,writes,commits});

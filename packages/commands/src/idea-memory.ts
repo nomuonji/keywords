@@ -5,6 +5,22 @@ import { field, firestore, firestoreDocumentName, FirestoreError, value } from '
 const id = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const txt = z.string().trim().min(1).max(2000);
 const list = z.array(txt).max(30);
+// Destination keys are extensible. The seven initial outlets are presentation defaults, not an enum.
+const tagsShape = z.array(z.string().trim().min(1).max(60)).max(20);
+const destinationKey = z.string().regex(/^[a-z][a-z0-9_-]{1,59}$/);
+const destinationsShape = z.array(destinationKey).max(20);
+const assetRefShape = z.object({
+  id, destination: destinationKey, kind: z.string().trim().min(1).max(80),
+  title: z.string().trim().min(1).max(200),
+  stage: z.enum(['proposed','draft','handed_off']).default('proposed'),
+  owner: z.string().trim().min(1).max(100),
+  targetRef: z.string().trim().max(1000).optional(),
+  contentRef: z.string().trim().max(1000).optional()
+}).strict().refine(v => v.stage !== 'handed_off' || !!v.targetRef,
+  'An externally handed-off asset needs a targetRef');
+const assetRefsShape = z.array(assetRefShape).max(40);
+const dedupe = <T>(values: T[]) => [...new Set(values)];
+
 const status = z.enum(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']);
 const scope = z.enum(['specific_idea', 'proposal_format', 'research_quality', 'discovery_process', 'whole_batch']);
 const polarity = z.enum(['positive', 'negative', 'mixed', 'neutral']);
@@ -13,6 +29,7 @@ const ideaShape = z.object({
   audience: txt, userTask: txt, entities: txt, informationMechanism: txt, interaction: txt,
   dataSources: list.optional(), maintenance: txt.optional(), marketCategory: txt.optional(),
   marketEvidenceRefs: list.optional(), unknowns: list.optional(), reconsiderWhen: txt.optional(),
+  tags: tagsShape.optional(), destinations: destinationsShape.optional(),
   presentedAt: z.string().datetime().optional(), sessionId: id.optional(),
   status: z.literal('unreviewed').optional(), legacySourceId: id.optional()
 }).strict();
@@ -22,12 +39,25 @@ export const ideaMemoryContextShape = { limit: z.number().int().min(1).max(100).
 export const ideaFeedbackAppendShape = {
   ideaId: id.optional(), runId: id.optional(), scope, polarity, reason: txt, feedback: txt,
   source: z.enum(['direct_user', 'agent_inference', 'market_evidence']), sourceDate: z.string().datetime(),
-  statusAfter: status.optional(), reconsiderWhen: txt.optional(), idempotencyKey: id
+  statusAfter: status.optional(), reconsiderWhen: txt.optional(), idempotencyKey: id,
+  axes: z.object({
+    appeal: z.number().int().min(1).max(5).optional(),
+    dbValue: z.number().int().min(1).max(5).optional(),
+    seo: z.number().int().min(1).max(5).optional(),
+    revenue: z.number().int().min(1).max(5).optional(),
+    upkeep: z.number().int().min(1).max(5).optional()
+  }).strict().optional()
+};
+export const ideaMemoryPatchShape = {
+  ideaId: id, expectedRevision: z.number().int().min(1),
+  tags: tagsShape.optional(), destinations: destinationsShape.optional(), assetRefs: assetRefsShape.optional()
 };
 export const ideaMemoryFeedbackProfileShape = { limit: z.number().int().min(1).max(100).default(50), cursor: z.string().max(4000).optional() };
 
 type IdeaInput = z.infer<typeof ideaShape>;
-type Idea = Omit<IdeaInput,'status'> & { id: string; status: z.infer<typeof status>; normalizedTitle: string; searchTokens: string[]; payloadHash: string; createdAt: string; updatedAt: string; presentationHistory: { runId: string; presentedAt: string; sessionId?: string }[]; revision: number };
+type Idea = Omit<IdeaInput,'status'> & { id: string; status: z.infer<typeof status>; normalizedTitle: string; searchTokens: string[]; payloadHash: string; createdAt: string; updatedAt: string; presentationHistory: { runId: string; presentedAt: string; sessionId?: string }[];
+  revision: number; tags?: string[]; destinations?: string[];
+  assetRefs?: z.infer<typeof assetRefShape>[]; assetCount?: number };
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 const norm = (s: string) => s.normalize('NFKC').toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, '');
 const tokens = (s: string) => { const n = norm(s); return [...new Set(n.length < 3 ? [n] : Array.from({ length: n.length - 1 }, (_, i) => n.slice(i, i + 2)))].filter(Boolean).slice(0, 80); };
@@ -66,7 +96,11 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
     const alreadyPresented = history.some(v => v.runId === args.runId);
     const next: Idea = {
       ...old, ...idea, id: key, aliases: idea.aliases ?? old?.aliases ?? [], normalizedTitle: norm(idea.title), searchTokens: searchTokens(idea),
-      status: old?.status ?? idea.status ?? 'unreviewed', payloadHash, createdAt: old?.createdAt ?? now, updatedAt: now,
+      status: old?.status ?? idea.status ?? 'unreviewed',
+      tags: old?.tags ?? dedupe(idea.tags ?? []),
+      destinations: old?.destinations ?? dedupe(idea.destinations ?? []),
+      assetRefs: old?.assetRefs ?? [], assetCount: old?.assetCount ?? 0,
+      payloadHash, createdAt: old?.createdAt ?? now, updatedAt: now,
       presentationHistory: alreadyPresented ? history : [...history.slice(-39), presentation], revision: (old?.revision ?? 0)+1
     };
     if (old && alreadyPresented && old.payloadHash === payloadHash) { results.push({ id:key,outcome:'unchanged' }); continue; }
@@ -75,6 +109,37 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
   }
   if (writes.length) await firestore(':commit', { method:'POST', body:JSON.stringify({ writes }) });
   return { runId:args.runId, idempotencyKey:args.idempotencyKey ?? null, results, writeCount:writes.length, readCount:unique.size };
+}
+
+// Update organization without changing the user's verdict or the presentation history.
+// Optimistic revision + Firestore preconditions protect concurrent UI/agent writes.
+export async function ideaMemoryPatch(input: unknown) {
+  const args = z.object(ideaMemoryPatchShape).strict().parse(input);
+  if (args.tags === undefined && args.destinations === undefined && args.assetRefs === undefined) {
+    throw new Error('Provide tags, destinations or assetRefs');
+  }
+  const document = await read(path(args.ideaId));
+  if (!document) { const error = new Error('Idea not found'); (error as any).status=404; throw error; }
+  const old = parse<Idea>(document);
+  if (old.revision !== args.expectedRevision) {
+    const error = new Error('Idea revision conflict'); (error as any).status=409; throw error;
+  }
+  const next = {
+    ...old,
+    ...(args.tags === undefined ? {} : {tags: dedupe(args.tags)}),
+    ...(args.destinations === undefined ? {} : {destinations: dedupe(args.destinations)}),
+    ...(args.assetRefs === undefined ? {} : {assetRefs: args.assetRefs, assetCount: args.assetRefs.length})
+  };
+  if (JSON.stringify([next.tags ?? [],next.destinations ?? [],next.assetRefs ?? []]) ===
+      JSON.stringify([old.tags ?? [],old.destinations ?? [],old.assetRefs ?? []])) {
+    return { outcome:'unchanged', idea:old };
+  }
+  const updated = {...next, revision:old.revision+1, updatedAt:new Date().toISOString()};
+  await firestore(':commit',{method:'POST',body:JSON.stringify({writes:[{
+    update:{name:firestoreDocumentName(path(args.ideaId)),fields:fields(updated)},
+    currentDocument:{updateTime:document.updateTime}
+  }]})});
+  return {outcome:'updated',idea:updated};
 }
 
 function queryTokens(x: IdeaInput) { return [...new Set([x.title,x.userTask,x.entities,x.informationMechanism,x.audience].flatMap(v => tokens(v).slice(0,2)))].slice(0,10); }
@@ -157,7 +222,8 @@ export async function ideaReviewList(input: unknown = {}) {
   if (args.summary) {
     // Firestore field mask: overview payload excludes long evidence arrays and history.
     for (const name of ['title', 'status', 'audience', 'userTask', 'entities',
-      'informationMechanism', 'marketCategory', 'updatedAt']) {
+      'informationMechanism', 'marketCategory', 'updatedAt',
+      'tags', 'destinations', 'assetCount', 'revision']) {
       params.append('mask.fieldPaths', name);
     }
   }

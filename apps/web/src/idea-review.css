@@ -164,3 +164,28 @@
  .ideaDetailDialogInner{padding:14px}
  .ideaDetailTop{top:-14px}
 }
+
+/* Multi-outlet Idea Memory: narrow, scannable destination filters. */
+.ideaOutletTabs{display:flex;gap:6px;align-items:center;overflow-x:auto;padding:3px 0 8px;scrollbar-width:thin}
+.ideaOutletTabs button{white-space:nowrap;border:1px solid #344d3e;background:#16231d;color:#d7e7d8;border-radius:9px;padding:9px 11px;cursor:pointer;font-size:12px}
+.ideaOutletTabs button[aria-pressed=true]{background:#2d4730;color:#ecffd5;border-color:#b0db94}
+.ideaOutletTabs small{margin-left:7px;color:#a2bbac;font-size:10px;font-variant-numeric:tabular-nums}
+.ideaMiniTags{grid-column:2;display:flex;gap:4px;flex-wrap:wrap;max-height:18px;overflow:hidden}
+.ideaMiniTags span{font-size:9px;color:#b0c6b7;background:#26362c;border-radius:4px;padding:2px 4px}
+.ideaOrganizeSection{display:grid;gap:12px;padding:18px;margin-top:24px;border:1px solid #354c40;border-radius:12px;background:#17241e}
+.ideaOrganizeSection h3{font-size:17px;margin:6px 0 0}
+.ideaOrganizeSection>p{font-size:12px;color:#aec1b3;line-height:1.7;margin:0}
+.ideaOrganizeLabel{display:grid;gap:6px;font-size:12px;color:#b9cdbb}
+.ideaOrganizeLabel input,.ideaAssetForm input,.ideaAssetForm select{width:100%;min-width:0;border:1px solid #46634c;background:#101c17;color:#eff8ec;border-radius:8px;padding:10px}
+.ideaDestinationChecks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.ideaDestinationChecks label{display:flex;gap:8px;align-items:center;min-width:0;font-size:12px;color:#d2e0d3}
+.ideaDestinationChecks input{accent-color:#b6e39a}
+.ideaOrganizeSave,.ideaAssetForm button{background:#314b33;color:#efffe5;border:1px solid #80ac74;border-radius:8px;padding:10px 12px;cursor:pointer}
+.ideaOrganizeSave:disabled,.ideaAssetForm button:disabled{opacity:.45;cursor:not-allowed}
+.ideaAssetList{list-style:none;display:grid;gap:7px;padding:0;margin:0}
+.ideaAssetList li{display:grid;gap:3px;border:1px solid #31483a;border-radius:9px;padding:10px}
+.ideaAssetList strong{font-size:12px}.ideaAssetList span,.ideaEmptyAssets{color:#8ca99a;font-size:11px}
+.ideaAssetList a{color:#b8ea9b;font-size:11px;overflow-wrap:anywhere}
+.ideaAssetForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.ideaAssetForm>input:first-child,.ideaAssetForm>input:nth-last-child(2){grid-column:1/-1}
+@media(max-width:600px){.ideaDestinationChecks{grid-template-columns:1fr}.ideaAssetForm{grid-template-columns:1fr}.ideaAssetForm>*{grid-column:1!important}}

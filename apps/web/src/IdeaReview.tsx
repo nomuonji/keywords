@@ -3,12 +3,25 @@ import { api } from './api';
 import './idea-review.css';
 
 type IdeaStatus = 'unreviewed' | 'liked' | 'rejected' | 'deferred' | 'exploring';
+type AssetRef = {id:string; destination:string; kind:string; title:string;
+  owner:string; stage:'proposed'|'draft'|'handed_off'; targetRef?:string; contentRef?:string};
+const outlets = [
+  {id:'new_site_db',label:'新規サイト・DB'},
+  {id:'existing_site_growth',label:'既存サイト改善'},
+  {id:'product_affiliate',label:'商品・アフィリエイト'},
+  {id:'traffic_distribution',label:'集客・販路'},
+  {id:'product_business',label:'新規プロダクト・事業'},
+  {id:'social_content',label:'SNSコンテンツ'},
+  {id:'youtube_video',label:'YouTube・動画'}
+];
+const outletName = (id:string) => outlets.find(v=>v.id===id)?.label ?? id;
 type Idea = {
   id: string; title: string; status: IdeaStatus; audience: string; userTask: string;
   entities?: string; informationMechanism: string; interaction?: string;
   marketCategory?: string; dataSources?: string[]; marketEvidenceRefs?: string[];
   unknowns?: string[]; maintenance?: string; reconsiderWhen?: string;
   sessionId?: string; createdAt?: string; updatedAt?: string;
+  tags?: string[]; destinations?: string[]; assetRefs?: AssetRef[]; assetCount?:number; revision?:number;
   presentationHistory?: Array<{ runId: string; presentedAt: string }>;
 };
 type ReviewEvent = {
@@ -53,6 +66,14 @@ export function IdeaReview() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all');
+  const [outletFilter, setOutletFilter] = useState('all');
+  const [tagInput, setTagInput] = useState('');
+  const [destInput, setDestInput] = useState<string[]>([]);
+  const [assetTitle, setAssetTitle] = useState('');
+  const [assetKind, setAssetKind] = useState('social_post');
+  const [assetDestination, setAssetDestination] = useState('social_content');
+  const [assetTarget, setAssetTarget] = useState('');
+  const [organizing, setOrganizing] = useState(false);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [mode, setMode] = useState<'rows' | 'cards'>('rows');
@@ -112,7 +133,12 @@ export function IdeaReview() {
     setDetailError('');
     setDetailLoading(true);
     void api<Idea>('/api/theme-research?resource=idea-detail&id=' + encodeURIComponent(selectedId))
-      .then(result => { if (alive) setDetail(result); })
+      .then(result => { if (alive) {
+        setDetail(result);
+        setTagInput((result.tags ?? []).join('、'));
+        setDestInput(result.destinations ?? []);
+        setAssetTitle(''); setAssetTarget('');
+      } })
       .catch(e => { if (alive) setDetailError(e instanceof Error ? e.message : '詳細の取得に失敗しました'); })
       .finally(() => { if (alive) setDetailLoading(false); });
     return () => { alive = false; };
@@ -129,11 +155,13 @@ export function IdeaReview() {
 
   const filtered = useMemo(() => ideas
     .filter(item => filter === 'all' || item.status === filter)
+    .filter(item => outletFilter === 'all' || (outletFilter === 'unassigned'
+      ? !(item.destinations?.length) : (item.destinations ?? []).includes(outletFilter)))
     .filter(item => !query.trim() || [
       item.title, item.audience, item.userTask, item.entities, item.informationMechanism,
-      item.marketCategory
+      item.marketCategory, ...(item.tags ?? []), ...(item.destinations ?? [])
     ].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()))
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, query]);
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, outletFilter, query]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -182,14 +210,57 @@ export function IdeaReview() {
         })
       });
       setIdeas(items => items.map(item => item.id === ideaId
-        ? { ...item, status: response.status, updatedAt: response.event.createdAt } : item));
-      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt } : current);
+        ? { ...item, status: response.status, updatedAt: response.event.createdAt,
+            revision: item.revision ? item.revision + 1 : undefined } : item));
+      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt,
+            revision: current.revision ? current.revision + 1 : undefined } : current);
       setEvents(old => [response.event, ...old]);
       if (fromDetail) { setComment(''); setScores({}); }
       setSavedId(ideaId);
       setMessage('「' + target.title + '」を' + names[response.status] + 'として保存しました。');
     } catch (e) { setError(e instanceof Error ? e.message : '評価を保存できませんでした'); }
     finally { setBusyId(null); }
+  }
+
+  async function organize(asset?: AssetRef) {
+    if (!detail || organizing || busyId) return;
+    const tags = [...new Set(tagInput.split(/[,、，\r\n]+/).map(v => v.trim()).filter(Boolean))];
+    if (tags.length > 20 || tags.some(v => v.length > 60)) {
+      setError('タグは20個まで、各60文字以内にしてください。'); return;
+    }
+    const nextDestinations = [...new Set([...destInput, ...(asset ? [asset.destination] : [])])];
+    const nextAssets = asset ? [...(detail.assetRefs ?? []),asset] : (detail.assetRefs ?? []);
+    setOrganizing(true); setError(''); setMessage('');
+    try {
+      const response = await api<{idea:Idea;outcome:string}>('/api/theme-research', {
+        method:'POST',body:JSON.stringify({
+          action:'organize', ideaId:detail.id, expectedRevision:detail.revision,
+          tags, destinations:nextDestinations, assetRefs:nextAssets
+        })
+      });
+      setDetail(response.idea); setDestInput(response.idea.destinations ?? []);
+      setIdeas(rows => rows.map(row => row.id === detail.id ? {
+        ...row, tags:response.idea.tags, destinations:response.idea.destinations,
+        assetCount:response.idea.assetCount, revision:response.idea.revision,
+        updatedAt:response.idea.updatedAt
+      } : row));
+      if (asset) {setAssetTitle('');setAssetTarget('');}
+      setMessage(response.outcome === 'unchanged' ? '変更はありません。' : 'タグ・展開先・制作物を保存しました。');
+    } catch (e) {setError(e instanceof Error ? e.message : '保存に失敗しました。再読込してください。');}
+    finally {setOrganizing(false);}
+  }
+
+  function attachAsset() {
+    const title = assetTitle.trim();
+    if (!title || title.length > 200 || !detail) return;
+    const targetRef=assetTarget.trim();
+    if (targetRef && (!/^https:\/\//.test(targetRef) || targetRef.length>1000)) {
+      setError('制作物の参照先はHTTPSのURLにしてください。'); return;
+    }
+    if ((detail.assetRefs?.length ?? 0) >= 40) {setError('派生成果物の参照は40件までです。');return;}
+    void organize({id:'asset-'+crypto.randomUUID().replaceAll('-',''),
+      destination:assetDestination,kind:assetKind,title,owner:'Idea Memory',
+      stage:'proposed',...(targetRef ? {targetRef} : {})});
   }
 
   const ratingButtons = (item: Idea, insideDetail = false) => <div className={'ideaQuickActions ' + (insideDetail ? 'ideaQuickActionsLarge' : '')}
@@ -221,7 +292,7 @@ export function IdeaReview() {
   return <section className="corePage ideaReviewPage">
     <div className="coreTitleRow ideaReviewHeader">
       <div><p className="coreEyebrow">IDEA MEMORY / REVIEW DESK</p><h1>アイデアを仕分ける</h1>
-        <p>一覧から直接GOOD・ボツ・保留。詳細では理由と5項目の評価も残せます。</p>
+        <p>GOOD・ボツの評価と、タグ・展開先・派生成果物を1つのIdea DBで管理します。</p>
       </div>
       <div className="ideaReviewTools"><button type="button" onClick={() => void load(true)} disabled={loading}>再読込</button>
         <button type="button" onClick={() => void logOut()}>ログアウト</button></div>
@@ -235,6 +306,16 @@ export function IdeaReview() {
           <strong>{stats[status]}</strong><span>{names[status]}</span>
         </button>)}
     </div>
+    <nav className="ideaOutletTabs" aria-label="アイデアの展開先">
+      {[{id:'all',label:'すべて'},{id:'unassigned',label:'未振り分け'},...outlets].map(outlet =>
+        <button key={outlet.id} type="button" aria-pressed={outletFilter === outlet.id}
+          onClick={() => {setOutletFilter(outlet.id);setPage(0);}}>
+          {outlet.label}
+          <small>{outlet.id === 'all' ? ideas.length : ideas.filter(item =>
+            outlet.id === 'unassigned' ? !(item.destinations?.length) :
+            (item.destinations ?? []).includes(outlet.id)).length}</small>
+        </button>)}
+    </nav>
     <div className="ideaReviewFilters">
       <label className="ideaSearchLabel" htmlFor="ideaSearch">検索
         <input id="ideaSearch" type="search" placeholder="テーマ・対象・DBの仕組み" value={query}
@@ -257,7 +338,11 @@ export function IdeaReview() {
             <button type="button" className="ideaOpenDetail" onClick={() => openDetail(item.id)} aria-label={item.title + 'の詳細・理由を開く'}>
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
-            <small>{dateLabel(item.updatedAt)}</small>
+            <small>{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
+             {(item.destinations?.length || item.tags?.length) ? <div className="ideaMiniTags">
+               {item.destinations?.slice(0,2).map(dest => <span key={dest}>{outletName(dest)}</span>)}
+               {item.tags?.slice(0,2).map(tag => <span key={tag}>#{tag}</span>)}
+             </div> : null}
           </div>
           <div className="ideaInboxContext"><span className="ideaCellHint">誰の・何のため</span>
             <p>{short(item.userTask, mode === 'cards' ? 110 : 90)}</p>
@@ -308,6 +393,46 @@ export function IdeaReview() {
           {Boolean(detail.dataSources?.length) && <details className="ideaEvidence"><summary>データの出典</summary>
             <ul>{detail.dataSources?.filter(source => /^https:\/\//.test(source)).map((link, i) =>
               <li key={i}><a href={link} target="_blank" rel="noopener noreferrer">{link}</a></li>)}</ul></details>}
+          <section className="ideaOrganizeSection" aria-label="タグ・展開先・派生成果物">
+            <h3>タグと展開先</h3>
+            <p>1つのアイデアから複数の制作企画へ展開できます。公開や投稿はここでは行いません。</p>
+            <label className="ideaOrganizeLabel" htmlFor="ideaTags">タグ（読点・カンマ区切り）
+              <input id="ideaTags" maxLength={1300} value={tagInput} onChange={e=>setTagInput(e.target.value)}
+                placeholder="消費行動、ネット文化、男性心理"/>
+            </label>
+            <div className="ideaDestinationChecks">{outlets.map(item=><label key={item.id}>
+              <input type="checkbox" checked={destInput.includes(item.id)}
+                onChange={e=>setDestInput(old=>e.target.checked?[...old,item.id]:old.filter(v=>v!==item.id))}/>
+              {item.label}
+            </label>)}</div>
+            <button type="button" className="ideaOrganizeSave" disabled={organizing||!!busyId||!detail.revision}
+              onClick={()=>void organize()}>{organizing?'保存中…':'タグ・展開先を保存'}</button>
+            <h3>派生成果物</h3>
+            <p>制作物の参照を保存します。原稿や投稿の正本はそれぞれの制作システムに残します。</p>
+            {(detail.assetRefs ?? []).length>0 ? <ul className="ideaAssetList">{detail.assetRefs?.map(a=><li key={a.id}>
+              <strong>{a.title}</strong><span>{outletName(a.destination)} · {a.kind} · {a.stage}</span>
+              {a.targetRef&&/^https:\/\//.test(a.targetRef)&&
+                <a href={a.targetRef} target="_blank" rel="noopener noreferrer">制作物を開く ↗</a>}
+            </li>)}</ul> : <p className="ideaEmptyAssets">まだ派生成果物はありません。</p>}
+            <div className="ideaAssetForm">
+              <input aria-label="制作物タイトル" placeholder="制作物のタイトル・企画名" maxLength={200}
+                value={assetTitle} onChange={e=>setAssetTitle(e.target.value)}/>
+              <select aria-label="展開先" value={assetDestination} onChange={e=>setAssetDestination(e.target.value)}>
+                {outlets.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+              <select aria-label="制作物の種類" value={assetKind} onChange={e=>setAssetKind(e.target.value)}>
+                {[['social_post','SNS投稿'],['social_series','SNS連載'],['youtube_script','YouTube台本'],
+                  ['youtube_shorts','Shorts構成'],['site_plan','サイト企画'],['article','記事案'],
+                  ['product_pitch','商品訴求'],['distribution_plan','集客施策'],
+                  ['app_spec','プロダクト企画'],['other','その他']].map(([key,label])=>
+                    <option key={key} value={key}>{label}</option>)}
+              </select>
+              <input aria-label="制作物URL" placeholder="制作物のURL（任意・https://）" maxLength={1000}
+                value={assetTarget} onChange={e=>setAssetTarget(e.target.value)}/>
+              <button type="button" disabled={!assetTitle.trim()||organizing||!!busyId||!detail.revision}
+                onClick={attachAsset}>派生成果物を追加</button>
+            </div>
+          </section>
           <section className="ideaRateSection" aria-label="アイデアの詳細評価">
             <h3>理由も残して評価</h3>
             <p>一覧でのワンクリック評価に加え、強み・弱点を次回の探索へ伝えられます。</p>
