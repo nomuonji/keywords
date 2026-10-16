@@ -20,7 +20,7 @@ export function MarketDiscovery(){
  }
  const rows=data?.observations.filter(r=>r.date===data.date)||[];
  return <section className="corePage">
-  <div className="coreTitleRow"><div><p className="coreEyebrow">MARKET DISCOVERY</p><h1>知らない市場を探す</h1><p>AIの関心で選ばず、公式ジャンルを巡回してランキングを観測する。</p></div></div>
+  <div className="coreTitleRow"><div><p className="coreEyebrow">MARKET DISCOVERY</p><h1>楽天カテゴリ別ランキング観測</h1><p>市場探索のための外部観測資料。ここで表示するランキングはIdea Memoryの新規アイデアや人間の評価とは別のデータです。</p></div></div>
   {error&&<p role="status">{error} <a href="https://github.com/nomuonji/keywords/actions/workflows/market-discovery.yml">実行状況</a></p>}
   {data&&<><p>最終観測 {data.date} ／ 本日 {rows.length}カテゴリ ／ 大分類 {data.coverage.rootGenreCount}種類 ／ 過去90日の記録 {data.observations.length}件</p>
    <p>順位は販売個数・成約実績ではありません。商品の名前・価格・画像は保存せず、閲覧時に最新情報を取得します。</p>
