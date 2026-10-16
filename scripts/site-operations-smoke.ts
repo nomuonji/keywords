@@ -144,6 +144,10 @@ try {
   assert.ok(readyFromStatusQuery.items.some(item => item.id === readyTask.id));
   assert.equal(seoTaskCollectionScans, scansBeforeReady, 'scheduler ready lookup must not list 500 unrelated task documents');
   assert.ok(seoTaskStatusQueries.includes('ready'));
+  const scansBeforeProposed = seoTaskCollectionScans;
+  await seoTaskList({ status: 'proposed', limit: 20 });
+  assert.equal(seoTaskCollectionScans, scansBeforeProposed, 'proposed/cooldown review must use an indexed status query');
+  assert.ok(seoTaskStatusQueries.includes('proposed'));
   const emptyProgress = await seoTaskList({ status: 'in_progress', limit: 20 });
   assert.equal(emptyProgress.items.length, 0);
   assert.ok(seoTaskStatusQueries.includes('in_progress'));
@@ -423,7 +427,10 @@ try {
   assert.equal(completedTask.deploymentVerification.status, 'pending');
   assert.equal(completedTask.executionClaim, null);
   assert.ok(completedTask.completedAt);
+  const scansBeforeCompleted = seoTaskCollectionScans;
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending' })).items.length, 1);
+  assert.equal(seoTaskCollectionScans, scansBeforeCompleted, 'completed+pending publication audit must not scan unrelated Tasks');
+  assert.ok(seoTaskStatusQueries.includes('completed'));
   const verifiedTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: completedTask.revision,
