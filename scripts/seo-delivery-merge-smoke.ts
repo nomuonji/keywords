@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { transientDeliveryError, retryMergeability, cleanupSweepLimit } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
@@ -202,3 +203,26 @@ assert.equal(verifiedBranchMainDriftIsNonInterfering(botBase, drift(['sns-bot/ce
 assert.match(controller, /compatibleFallbackMainDrift/);
 assert.match(controller, /freshPr\.mergeable !== true/);
 console.log('Stale-main branch fallback proof passed: disjoint, bounded bot-state change only; denial quarantine unchanged.');
+
+// Throughput regression: transient outages must not permanently poison a
+// write-ahead checkpoint. Unknown/authz/safety denials remain terminal.
+for (const msg of ['GitHub 500 Internal Server Error', 'GitHub 429 Too Many Requests', 'fetch failed', 'getaddrinfo EAI_AGAIN github.com', 'GitHub 403 rate limit exceeded']) {
+  assert.equal(transientDeliveryError(msg), true, msg);
+}
+for (const msg of ['GitHub 403 Resource not accessible by integration', 'GitHub 401 Bad credentials', 'OpenAI safety checks refused write', 'GitHub 422 Invalid ref']) {
+  assert.equal(transientDeliveryError(msg), false, msg);
+}
+assert.equal(retryMergeability(null, 0), true);
+assert.equal(retryMergeability(undefined, 2), true);
+assert.equal(retryMergeability(null, 3), false);
+assert.equal(retryMergeability(false, 0), false);
+assert.equal(retryMergeability(true, 0), false);
+assert.equal(cleanupSweepLimit(undefined), 0);
+assert.equal(cleanupSweepLimit('0'), 0);
+assert.equal(cleanupSweepLimit('5'), 5);
+assert.equal(cleanupSweepLimit('99'), 10);
+assert.equal(cleanupSweepLimit('NaN'), 0);
+assert.match(controller, /retryMergeability\(freshPr\.mergeable, attempt\)/);
+assert.match(controller, /delivery_controller_transient/);
+assert.match(controller, /if \(cleanupLimit > 0\)/);
+console.log('SEO throughput regression passed: bounded PR mergeability retry, no transient checkpoint latch, opt-in branch cleanup');

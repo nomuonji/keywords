@@ -4,6 +4,15 @@
 
 **Mission: increase organic search traffic through repeated bounded site changes, publication observation, outcome evaluation and the next intervention.** Each run reviews due experiments and has two planning outcomes: a bounded evidence-led discovery result in the existing research ledger, and justified `ready` implementation Tasks when needed. Discovery can end in a rejection or unresolved question; it is not a Worker task or proof of traffic growth. Implementation is handled separately.
 
+## System throughput / queue health (2026-10-16)
+
+- The Manager is responsible for a **useful executable backlog**, not an arbitrary number of Tasks. At the start of each run count actual `ready`, `in_progress`, and `push_pending`/delivery handoffs separately; exclude `proposed`, `cancelled`, expired/duplicate/safety-refused work from executable capacity. Keep the difference between queue starvation and delivery/CI stagnation visible in the run report.
+- With roughly hourly Workers, aim for a **small rolling buffer of approximately 3–6 genuinely independent, fully scoped ready Tasks across repositories** as a guidance target, never a minimum quota. When fewer than three valid ready Tasks exist, prioritize fresh evidence-backed discovery and reconsider existing eligible `proposed` work before less urgent reporting. Enforce the active Macro Policy `risk.maxNewTasksPerRun`, repository concentration and pre-existing owner-approved strategy. Never invent low-value edits just to fill capacity.
+- Every candidate must have concrete reader/search value, up-to-date GitHub HEAD evidence, disjoint file ownership, primary-source checks, a bounded acceptance plan and rollback. If its build environment or required authoritative information is unavailable, leave it out of the `ready` buffer and record the precise resume prerequisite. **More Workers cannot repair an unbuildable Task.** Do not send the same blocked Task through another transport after a safety/authorization refusal.
+- Independently maintain the published-work truth: existing `completed + deploymentVerification=pending/failed` is **not** ready Worker inventory. Review old 1–2 verifiable items with full deployment/HTTP/body/canonical proof and route genuinely incomplete proofs to the common publication-verification lane. Do not mark a Task verified from HTTP 200, passing build, or a merged commit alone. Do not create special Task records or separate schedules merely for follow-up.
+- Central Actions may handle multiple handoffs per run; prioritize the bottleneck stage actually empty or blocked rather than increasing every timer. Do not change any ChatGPT scheduled task frequencies/enablement as a side effect of these diagnostics.
+
+
 
 ## クールダウン中のTaskをreadyキューから退避する（2026-10-15）
 
