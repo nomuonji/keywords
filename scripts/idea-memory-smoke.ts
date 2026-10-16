@@ -96,7 +96,7 @@ const summaries=await ideaReviewList({limit:100,summary:true});
 assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.destinationVerdicts?.youtube_video,'liked');
 const feedbackProfile=await ideaMemoryFeedbackProfile({limit:10});
 assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3});
-assert.ok(reads < 90); assert.equal(writes,40);
+assert.ok(reads < 110,'two extra outlet feedback writes and summary still require bounded reads'); assert.equal(writes,40);
 const normalFetch = globalThis.fetch;
 globalThis.fetch = async (input:any,init?:RequestInit) => String(input).includes('/documents:runQuery') ? json({error:'quota'},429) : normalFetch(input,init);
 await assert.rejects(() => ideaMemorySearch({candidate:renamed,limit:5,includeRejected:true}),/Firestore request failed \(429\)/);
