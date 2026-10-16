@@ -6,6 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { transientDeliveryError, retryMergeability, cleanupSweepLimit } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
@@ -14,6 +15,7 @@ const isBranchFallback = (task: SeoTaskRecord) => task.deliveryHandoff?.validati
 const isPrepared = (task: SeoTaskRecord) => task.deliveryHandoff?.validationSummary.startsWith(ACTIONS_MARKER) === true;
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
+const cleanupLimit = cleanupSweepLimit(process.env.SEO_DELIVERY_CLEANUP_SWEEP_LIMIT);
 
 type GitHubRepo = {
   default_branch: string;
@@ -159,16 +161,47 @@ async function markFailed(task: SeoTaskRecord, message: string) {
 async function recordControllerError(task: SeoTaskRecord, message: string) {
   const current = await seoTaskGet({ id: task.id });
   if (!current.deliveryHandoff || current.deliveryHandoff.state === 'none' || current.deliveryHandoff.state === 'merged') return;
-  const handoff = nextHandoff(current.deliveryHandoff, { lastError: message });
+  const detail = message.slice(0, 2000);
+
+  // A transient GitHub/network outage must NOT poison lastError: the
+  // handoff preflight treats lastError as a terminal checkpoint failure.
+  // Log one incident per hour rather than writing the same error every run.
+  if (transientDeliveryError(message)) {
+    const seenRecently = (current.history ?? []).some(entry =>
+      entry.event === 'delivery_controller_transient'
+      && entry.detail === detail
+      && Number.isFinite(Date.parse(entry.at))
+      && Date.now() - Date.parse(entry.at) >= 0
+      && Date.now() - Date.parse(entry.at) < 60 * 60_000
+    );
+    if (seenRecently) {
+      console.log(`Transient delivery outage already recorded for ${task.id}; handoff remains retryable.`);
+      return;
+    }
+    if (dryRun) {
+      console.log(`[dry-run] transient controller error for ${task.id}: ${detail}`);
+      return;
+    }
+    await seoTaskUpdate({
+      id: task.id,
+      expectedRevision: current.revision,
+      appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_transient', detail }
+    });
+    return;
+  }
+
+  // Unknown and permission/safety/authorization failures remain fail-closed.
+  // Do not automatically retry a denied operation under another transport.
+  const handoff = nextHandoff(current.deliveryHandoff, { lastError: detail });
   if (dryRun) {
-    console.log(`[dry-run] controller error for ${task.id}: ${message}`);
+    console.log(`[dry-run] terminal controller error for ${task.id}: ${detail}`);
     return;
   }
   await seoTaskUpdate({
     id: task.id,
     expectedRevision: current.revision,
     deliveryHandoff: handoff,
-    appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_error', detail: message.slice(0, 2000) }
+    appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_error', detail }
   });
 }
 
@@ -568,7 +601,14 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
   // while this controller verified exact commit parent, scoped diff, ref and PR.
   // Production build/HTTP/canonical verification is a separate post-merge gate.
   // Never treat a preview check, failed satellite job or a missing check as proof.
-  const freshPr = await pullByNumber(task.repo, pr.number);
+  let freshPr = await pullByNumber(task.repo, pr.number);
+  // GitHub often returns mergeable=null immediately after PR creation.
+  // Recheck briefly within this cycle instead of waiting for the next
+  // 30-minute scheduled run. A true conflict (false) is never retried.
+  for (let attempt = 0; retryMergeability(freshPr.mergeable, attempt); attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 2_000));
+    freshPr = await pullByNumber(task.repo, pr.number);
+  }
   if (freshPr.head.sha !== handoff.headSha || freshPr.base.ref !== base) {
     await markFailed(task, `PR #${pr.number} changed HEAD/base during delivery; stop instead of merging an unvalidated change.`);
     return;
@@ -628,11 +668,12 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
   await markCompleted(task, mergeResult.sha, pr);
 }
 
-async function cleanupMergedSeoBranches(allowedRepos: Set<string>) {
+async function cleanupMergedSeoBranches(allowedRepos: Set<string>, limit: number) {
   const completed = (await seoTaskList({ status: 'completed', limit: 100 })).items
     .filter(task => allowedRepos.has(task.repo))
     .filter(task => task.deliveryHandoff?.state === 'merged')
-    .filter(task => task.deliveryHandoff?.branch?.startsWith('seo/'));
+    .filter(task => task.deliveryHandoff?.branch?.startsWith('seo/'))
+    .slice(0, limit);
 
   for (const task of completed) {
     await deleteMergedBranch(task.repo, task.deliveryHandoff.branch ?? '');
@@ -684,7 +725,10 @@ async function main() {
     }
   }
 
-  await cleanupMergedSeoBranches(allowedRepos);
+  // Already cleaned at markCompleted(). A broad completed-task sweep on
+  // every run wastes GitHub API calls and slows down real deliveries.
+  // Explicit maintenance runs can opt into a small bounded cleanup sweep.
+  if (cleanupLimit > 0) await cleanupMergedSeoBranches(allowedRepos, cleanupLimit);
 }
 
 await main();
