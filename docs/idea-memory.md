@@ -15,3 +15,18 @@ The earlier `market-idea-feedback` research session is read alongside the new co
 Search uses automatically indexed two-character normalized tokens to find at most 100 candidate documents, then compares titles, audience, task, data unit, structure and interaction. The token index adds no external service or paid embedding cost. Search responses expose the number examined and mark the query as bounded. Very large histories may require narrowing the candidate or paging context; the result is a review aid, not a proof that no similar idea exists.
 
 Firestore 429 and transient 503 behavior follows the shared adapter's bounded retry policy. Do not retry quota exhaustion indefinitely or turn a failed write into a claimed saved result. Keep `market-idea-feedback` as the fallback for clients that have not refreshed their tool list.
+
+## Tags, nonexclusive production destinations and derivative assets (v1.20)
+The authoritative idea remains one `ideaMemory/{ideaId}` record. New optional fields:
+- `tags: string[]` — freely chosen subject labels (up to 20, max 60 characters per tag)
+- `destinations: string[]` — nonexclusive production/application outlet keys. Initial UI choices are `new_site_db`, `existing_site_growth`, `product_affiliate`, `traffic_distribution`, `product_business`, `social_content`, `youtube_video`. The service accepts extensible keys; the UI labels are defaults, not a permanent taxonomy.
+- `assetRefs: {id,destination,kind,title,stage,owner,targetRef?,contentRef?}[]` — metadata/pointers for up to 40 derivative deliverables. `assetCount` is a cheap list-view projection. No scripts, videos or source code live inside this idea document. `proposed` does not mean created or published; `handed_off` requires targetRef, and actual delivery confirmation belongs to the destination owner.
+- `revision` — optimistic-write version, already present in the idea model. Update organization with the `idea_memory_patch` MCP tool or authenticated Web `action=organize` POST. It accepts `ideaId`, `expectedRevision` and replacement `tags`, `destinations`, `assetRefs` arrays. Omitted fields remain unchanged. A rejected or liked verdict, initial presentation history, and external market observation are never mutated by this action.
+
+Agent batch saves may provide initial tags/destinations, but existing manually curated tags and destinations take precedence on repeats. A derived asset may point to the originating idea while being implemented and evaluated in a specific production system. No route assignment creates an external post, file, video, A8 affiliation, or site publication.
+
+The owner-only Ideas screen provides outlet filtering, tagging, multi-outlet assignment and pointer addition in the existing lazy-loaded detail dialog. Existing records without these fields render as unassigned and require no mass backfill. The summary API masks long `assetRefs` and includes only `assetCount`. Authentication, same-origin enforcement, field validation, revision checks and Firestore document preconditions apply to organization writes as to feedback.
+
+Feedback `ideaFeedback` remains append-only. Newly captured optional UI score axes `{appeal,dbValue,seo,revenue,upkeep}` are saved as numeric 1–5 fields within the feedback event. Pre-existing text-only score histories remain unmodified and readable. These subjective idea ratings are distinct from market verification, content-quality judgements and subsequent SNS/YouTube analytics.
+
+The outlet registry can gain future types without changing older idea IDs or creating destination-specific idea databases. The first phase implements typed reference links, **not** content production orchestration or automatic cross-operator writes. See GitHub Issue #208.
