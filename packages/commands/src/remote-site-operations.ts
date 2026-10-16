@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { dispatchSeoDelivery } from './seo-delivery-dispatch.js';
 import { z } from 'zod';
 import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, SeoRecoverySiteRecord, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
@@ -1361,6 +1362,10 @@ export async function seoTaskUpdate(input: unknown) {
   if (record.deploymentVerification.status === 'verified' && !record.deploymentVerification.checkedAt) throw new Error('verified deployment requires checkedAt');
   if (record.deploymentVerification.status === 'failed' && !record.deploymentVerification.detail.trim()) throw new Error('failed deployment verification requires detail');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
+  // Wake central Actions only after the durable write. Delivery remains recoverable by cron.
+  if (deliveryPatch?.state === 'push_pending' && current.deliveryHandoff.state !== 'push_pending') {
+    await dispatchSeoDelivery(record.id, record.revision);
+  }
   return { ...record, runId };
 }
 
