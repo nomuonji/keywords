@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 
 const SAFE_REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -97,16 +97,32 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
     if (!astro && !docusaurus && !next) throw Error('No approved site build profile for this repository');
     if (!pkg.scripts?.build) throw Error('Approved site profile lacks a build script');
     if (!(await exists(join(root, 'package-lock.json')))) throw Error('Central CI requires a committed package-lock.json');
-    // The checked-out site may contain executable build scripts. Keep it in a
-    // container with only its own source mounted; central Firebase/GitHub
-    // credentials and the controller checkout are not mounted or forwarded.
-    await command('docker', [
-      'run', '--rm', '--security-opt=no-new-privileges', '--cap-drop=ALL',
-      '--pids-limit=256', '--memory=4g', '--cpus=2',
-      '-v', `${root}:/work`, '-w', '/work', 'node:22-bookworm',
-      'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
-    ], root, 780_000);
-    const output = astro ? join(root, 'dist') : docusaurus ? join(root, 'build') : join(root, '.next', 'server', 'app');
+    // Build untrusted site source without forwarding controller credentials.
+    // Docker daemons behind hosted Actions runners may not share the runner's
+    // filesystem: docker cp streams the checkout instead of relying on a bind
+    // mount that silently exposes an empty /work.
+    const generated = astro ? 'dist' : docusaurus ? 'build' : '.next/server/app';
+    const output = join(root, generated);
+    let containerId = '';
+    try {
+      containerId = (await command('docker', [
+        'create', '--security-opt=no-new-privileges', '--cap-drop=ALL',
+        '--pids-limit=256', '--memory=4g', '--cpus=2',
+        '-w', '/work', 'node:22-bookworm',
+        'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
+      ], root, 120_000)).trim();
+      await command('docker', ['cp', root, `${containerId}:/work`], root, 120_000);
+      const buildLog = await command('docker', ['start', '-a', containerId], root, 780_000);
+      const exitCode = (await command('docker', ['inspect', '-f', '{{.State.ExitCode}}', containerId], root, 20_000)).trim();
+      if (exitCode !== '0') throw Error(`Isolated site build failed (${exitCode}): ${buildLog.slice(-3000)}`);
+      await mkdir(dirname(output), { recursive: true });
+      await command('docker', ['cp', `${containerId}:/work/${generated}`, output], root, 120_000);
+    } finally {
+      if (containerId) {
+        try { await command('docker', ['rm', '-f', containerId], root, 20_000); }
+        catch (error) { console.warn(`Docker container cleanup failed: ${String(error)}`); }
+      }
+    }
     if (!(await exists(output))) throw Error('Build succeeded without the expected generated HTML directory');
 
     for (const raw of task.targetUrls) {
