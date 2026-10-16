@@ -87,8 +87,15 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
     if (!astro && !docusaurus && !next) throw Error('No approved site build profile for this repository');
     if (!pkg.scripts?.build) throw Error('Approved site profile lacks a build script');
     if (!(await exists(join(root, 'package-lock.json')))) throw Error('Central CI requires a committed package-lock.json');
-    await command('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], root, 300_000);
-    await command('npm', ['run', 'build'], root, 480_000);
+    // The checked-out site may contain executable build scripts. Keep it in a
+    // container with only its own source mounted; central Firebase/GitHub
+    // credentials and the controller checkout are not mounted or forwarded.
+    await command('docker', [
+      'run', '--rm', '--security-opt=no-new-privileges', '--cap-drop=ALL',
+      '--pids-limit=256', '--memory=4g', '--cpus=2',
+      '-v', `${root}:/work`, '-w', '/work', 'node:22-bookworm',
+      'sh', '-lc', 'npm ci --ignore-scripts --no-audit --no-fund && npm run build'
+    ], root, 780_000);
     const output = astro ? join(root, 'dist') : docusaurus ? join(root, 'build') : join(root, '.next', 'server', 'app');
     if (!(await exists(output))) throw Error('Build succeeded without the expected generated HTML directory');
 
