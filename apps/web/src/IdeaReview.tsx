@@ -224,7 +224,7 @@ export function IdeaReview() {
 
   async function organize(asset?: AssetRef) {
     if (!detail || organizing || busyId) return;
-    const tags = [...new Set(tagInput.split(/[,、，\\n]+/).map(v => v.trim()).filter(Boolean))];
+    const tags = [...new Set(tagInput.split(/[,、，\r\n]+/).map(v => v.trim()).filter(Boolean))];
     if (tags.length > 20 || tags.some(v => v.length > 60)) {
       setError('タグは20個まで、各60文字以内にしてください。'); return;
     }
