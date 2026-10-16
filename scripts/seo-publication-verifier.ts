@@ -128,12 +128,29 @@ if (token) {
         || Date.now() - Date.parse(task.deploymentVerification.checkedAt) >= 86_400_000)
       .sort((a, b) => String(a.completedAt).localeCompare(String(b.completedAt)))
       .slice(0, 4);
+    let quotaStopped = false;
     for (const task of due) {
       try { await verify(task); }
       catch (error) {
-        if (firestoreRateLimited(error)) { console.warn('Firestore 429: publication batch stopped.'); break; }
+        if (firestoreRateLimited(error)) { console.warn('Firestore 429: publication batch stopped.'); quotaStopped = true; break; }
         console.error(`${task.id}: publication evidence unavailable: ${String(error)}`);
       }
+    }
+    // A Task verification and its Optimization Event update are separate
+    // documents. Reconcile recent verified Tasks after a transient event write
+    // failure; connectEvent itself only advances a unique proposed match.
+    if (!quotaStopped) {
+    const verified = await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'verified', limit: 100 });
+    for (const task of verified.items
+      .filter(item => item.articleIds.length && item.deploymentVerification.checkedAt
+        && Date.now() - Date.parse(item.deploymentVerification.checkedAt) < 30 * 86_400_000)
+      .slice(0, 4)) {
+      try { await connectEvent(task, task.deploymentVerification.checkedAt!); }
+      catch (error) {
+        if (firestoreRateLimited(error)) { console.warn('Firestore 429: event reconciliation stopped.'); break; }
+        console.error(`${task.id}: event reconciliation unavailable: ${String(error)}`);
+      }
+    }
     }
     console.log(`Publication verifier considered ${due.length} due Task(s).`);
   } catch (error) {

@@ -94,7 +94,7 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
       'run', '--rm', '--security-opt=no-new-privileges', '--cap-drop=ALL',
       '--pids-limit=256', '--memory=4g', '--cpus=2',
       '-v', `${root}:/work`, '-w', '/work', 'node:22-bookworm',
-      'sh', '-lc', 'npm ci --ignore-scripts --no-audit --no-fund && npm run build'
+      'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
     ], root, 780_000);
     const output = astro ? join(root, 'dist') : docusaurus ? join(root, 'build') : join(root, '.next', 'server', 'app');
     if (!(await exists(output))) throw Error('Build succeeded without the expected generated HTML directory');

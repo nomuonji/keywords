@@ -39,7 +39,7 @@ jobs:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
-      SEO_DELIVERY_MAX_TASKS: '20'
+      SEO_DELIVERY_MAX_TASKS: '2'
       SEO_DELIVERY_TASK_ID: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.task_id || '' }}
       # Normal delivery never rescans and deletes up to 100 historical refs.
       # A manual workflow_dispatch may opt in to at most ten legacy deletions.
