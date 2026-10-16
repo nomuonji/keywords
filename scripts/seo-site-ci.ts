@@ -68,7 +68,9 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
   if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || task.targetUrls.length === 0) {
     throw Error('Central CI needs a valid repository, exact commit SHA and target URLs');
   }
-  const root = await mkdtemp(join(tmpdir(), 'seo-site-ci-'));
+  // Hosted Actions may run the Docker daemon outside the runner's /tmp mount.
+  // Place the isolated source below GITHUB_WORKSPACE so its bind mount is visible.
+  const root = await mkdtemp(join(process.env.GITHUB_WORKSPACE ?? tmpdir(), '.seo-site-ci-'));
   try {
     await command('git', ['init', '--quiet'], root, 20_000);
     await command('git', ['remote', 'add', 'origin', `https://github.com/${task.repo}.git`], root, 20_000);
