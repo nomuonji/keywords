@@ -166,6 +166,11 @@ console.log('Shared prepared-ref gate passed: cutover, durable refusal events, s
 // builds on default-branch push and separate publication verification follows.
 const controller = readFileSync(new URL('./seo-delivery-controller.ts', import.meta.url), 'utf8');
 const gateSource = readFileSync(new URL('./seo-prepared-ref-handoff-gate.ts', import.meta.url), 'utf8');
+const deliveryWorkflow = readFileSync(new URL('../.github/workflows/seo-delivery-controller.yml', import.meta.url), 'utf8');
+for (const sourcePath of ['scripts/seo-delivery-controller.ts', 'scripts/seo-prepared-ref-handoff-gate.ts', 'packages/commands/src/seo-delivery-merge.ts']) {
+  assert.ok(deliveryWorkflow.includes(`      - '${sourcePath}'`), `Central delivery must run on production changes to ${sourcePath}`);
+}
+
 assert.doesNotMatch(gateSource, /HISTORICALLY_REFUSED_TASK_IDS/);
 assert.doesNotMatch(controller, /checkSummary\s*\(|passedPullRequestActions|NO_CHECK_GRACE_MS/);
 assert.doesNotMatch(controller, /api\(repo, `\/actions\/runs/);
