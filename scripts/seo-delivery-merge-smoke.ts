@@ -85,20 +85,20 @@ for (const event of ['safety_rejected','safety_write_rejected_task_cancelled','a
     history: [{event,actor:'seo_worker',detail:'Explicit denial',at:'2026-10-15T00:00:00Z'}]
   })!, /refusal/);
 }
-// Two known prior tool-level safety refusals were not persisted in Task history.
-// Fixing a text false positive must never release their prepared commits.
+// The two historical incidents were migrated to a typed, durable event in
+// Sites Operator and cancelled. No hidden ID-only release/deny list remains.
 for (const id of [
   'seo-book-night-circus-canonical-slug-20261015',
   'seo-book-swanns-way-seven-parts-editions-20261015'
 ]) {
+  const historical = { ...task, id, deliveryHandoff: { ...task.deliveryHandoff, branch: `seo/${id}` } } as SeoTaskRecord;
+  assert.equal(preflight(historical), null); // ID alone is never a policy decision.
   assert.match(preflight({
-    ...task, id,
-    deliveryHandoff: {...task.deliveryHandoff, branch: `seo/${id}`},
-    history: [{event:'preflight_git_objects_unavailable',actor:'grok_seo_worker',detail:'No safety refusal; capability gap only.',at:'2026-10-15T00:00:00Z'}]
-  })!, /refusal/);
+    ...historical,
+    history: [{event:'safety_write_rejected_task_cancelled',actor:'seo_delivery_incident_migration',detail:'2026-10-15 seo_task_update refused; exact code unknown',at:'2026-10-16T00:04:00Z'}]
+  })!, /independent review/);
 }
 
-// Any authorized SEO Worker may use the same verified fallback on a NEW unrefused Task.
 const branchTask = {
   ...task,
   executionClaim: { ...task.executionClaim!, actor: 'seo_worker' },
@@ -122,8 +122,14 @@ assert.match(branchCheck({...branchTask, deliveryHandoff: {...branchTask.deliver
 assert.match(branchCheck({...branchTask, deliveryHandoff: {...branchTask.deliveryHandoff, lastError: 'permission denied'}})!, /unresolved/);
 assert.match(branchCheck({...branchTask, history: [...branchTask.history, { event: 'authorization_denied', actor: 'seo_worker', at: '2026-10-15T00:00:01Z', detail: 'do not replay' }]})!, /refusal/);
 for (const id of ['seo-book-night-circus-canonical-slug-20261015','seo-book-swanns-way-seven-parts-editions-20261015']) {
-  assert.match(branchCheck({...branchTask, id, deliveryHandoff: {...branchTask.deliveryHandoff, branch: `seo/${id}`}})!, /refusal/);
+  const historical = {...branchTask, id, deliveryHandoff: {...branchTask.deliveryHandoff, branch: `seo/${id}`}};
+  assert.equal(branchCheck(historical), null);
+  assert.match(branchCheck({...historical, history: [...historical.history, {
+    event: 'safety_write_rejected_task_cancelled', actor: 'seo_delivery_incident_migration',
+    detail: 'Reported tool-level refusal, scope recorded for independent review', at: '2026-10-16T00:04:00Z'
+  }]})!, /independent review/);
 }
+
 assert.equal(branchCheck({...branchTask, executionClaim: null, deliveryHandoff: {...branchTask.deliveryHandoff, state: 'branch_ready'}}), null);
 assert.equal(branchCheck({...branchTask, executionClaim: null, deliveryHandoff: {...branchTask.deliveryHandoff, state: 'pr_open'}}), null);
 console.log('Worker-independent branch fallback gate passed: exact marker, claim/receipt match, refusal quarantine and branch binding');
@@ -153,12 +159,14 @@ for (const unsafe of ['.github/workflows/ci.yml','docs/sites-operator-worker-man
 }
 assert.match(preparedRefHandoffScopeError([])!, /no files/);
 assert.match(preparedRefHandoffScopeError(['a.md','a.md'])!, /duplicate/);
-console.log('Shared prepared-ref gate passed: cutover, historic refusal, site/task/branch binding, safe corrective fast-forward, restricted paths');
+console.log('Shared prepared-ref gate passed: cutover, durable refusal events, site/task/branch binding, safe corrective fast-forward, restricted paths');
 
 // Satellite GitHub Actions are not a delivery dependency. All PR delivery
 // is driven by the public keywords controller; the target hosting platform
 // builds on default-branch push and separate publication verification follows.
 const controller = readFileSync(new URL('./seo-delivery-controller.ts', import.meta.url), 'utf8');
+const gateSource = readFileSync(new URL('./seo-prepared-ref-handoff-gate.ts', import.meta.url), 'utf8');
+assert.doesNotMatch(gateSource, /HISTORICALLY_REFUSED_TASK_IDS/);
 assert.doesNotMatch(controller, /checkSummary\s*\(|passedPullRequestActions|NO_CHECK_GRACE_MS/);
 assert.doesNotMatch(controller, /api\(repo, `\/actions\/runs/);
 assert.match(controller, /freshPr\.mergeable !== true/);
