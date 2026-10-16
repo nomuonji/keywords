@@ -73,9 +73,30 @@ const noChange=await ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:revised.
 assert.equal(noChange.outcome,'unchanged');
 await assert.rejects(()=>ideaMemoryPatch({ideaId:'smoke-0',expectedRevision:detail.revision,tags:[]}),/conflict/i);
 const after=await ideaReviewDetail('smoke-0');assert.equal(after?.status,'rejected');
+// Per-outlet verdicts are independent of the idea-wide judgement and of other outlets.
+const videoReview = await ideaFeedbackAppend({ideaId:'smoke-0',destination:'youtube_video',
+  scope:'specific_idea',polarity:'positive',reason:'動画の企画としては使える',feedback:'動画ではGOOD',
+  source:'direct_user',sourceDate:'2026-10-16T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'video-good-0'});
+assert.equal(videoReview.event.destination,'youtube_video');
+const snsReview = await ideaFeedbackAppend({ideaId:'smoke-0',destination:'social_content',
+  scope:'specific_idea',polarity:'negative',reason:'投稿には不向き',feedback:'SNSはボツ',
+  source:'direct_user',sourceDate:'2026-10-16T00:00:00.000Z',statusAfter:'rejected',idempotencyKey:'social-reject-0'});
+assert.equal(snsReview.event.destination,'social_content');
+const scoped = await ideaReviewDetail('smoke-0');
+assert.equal(scoped?.status,'rejected','destination decisions must not overwrite overall judgement');
+assert.equal(scoped?.destinationVerdicts?.youtube_video,'liked');
+assert.equal(scoped?.destinationVerdicts?.social_content,'rejected');
+await assert.rejects(()=>ideaFeedbackAppend({ideaId:'smoke-0',destination:'product_affiliate',
+  scope:'specific_idea',polarity:'positive',reason:'未振り分け',feedback:'未振り分け',
+  source:'direct_user',sourceDate:'2026-10-16T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'bad-route-0'}),/not assigned/);
+await assert.rejects(()=>ideaFeedbackAppend({destination:'social_content',scope:'whole_batch',
+  polarity:'positive',reason:'広い評価',feedback:'全体',
+  source:'direct_user',sourceDate:'2026-10-16T00:00:00.000Z',idempotencyKey:'bad-broad'}),/Broad feedback/);
+const summaries=await ideaReviewList({limit:10,summary:true});
+assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.destinationVerdicts?.youtube_video,'liked');
 const feedbackProfile=await ideaMemoryFeedbackProfile({limit:10});
 assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3});
-assert.ok(reads < 90); assert.equal(writes,36);
+assert.ok(reads < 90); assert.equal(writes,40);
 const normalFetch = globalThis.fetch;
 globalThis.fetch = async (input:any,init?:RequestInit) => String(input).includes('/documents:runQuery') ? json({error:'quota'},429) : normalFetch(input,init);
 await assert.rejects(() => ideaMemorySearch({candidate:renamed,limit:5,includeRejected:true}),/Firestore request failed \(429\)/);
