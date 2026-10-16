@@ -103,6 +103,14 @@
 .ideaInboxItem.justSaved,.ideaInboxItem:hover{background:#1a2c21}
 .ideaInboxIdentity{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 8px}
 .ideaInboxIdentity>small{grid-column:2;color:#77928a;font-size:10px}
+.ideaInboxIdentity>.ideaAgentReviewHint{color:#accda6;font-size:10px}
+.ideaAgentReviewPanel{margin:18px 0;padding:15px;border:1px solid #35473c;background:#14221b;border-radius:10px}
+.ideaAgentReviewPanel h3{margin:0 0 10px;font-size:14px;color:#d7e7d5;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ideaAgentReviewPanel h3 small,.ideaAgentReviewPanel>small{font-size:10px;color:#91aa98}
+.ideaAgentAxes{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px}
+.ideaAgentAxes span{border:1px solid #365342;background:#1b3025;padding:6px 8px;border-radius:7px;font-size:11px}
+.ideaAgentReviewPanel p{color:#b9ccbe;font-size:12px;line-height:1.6;margin:5px 0}
+
 .ideaOpenDetail{border:0;background:none;color:#e6f1e8;padding:0;cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center;min-width:0;gap:5px}
 .ideaOpenDetail strong{font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .ideaOpenDetail span{color:#b1d985}
