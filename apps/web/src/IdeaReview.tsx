@@ -340,7 +340,7 @@ export function IdeaReview() {
     <nav className="ideaOutletTabs" aria-label="アイデアの展開先">
       {[{id:'all',label:'すべて'},{id:'unassigned',label:'未振り分け'},...outlets].map(outlet =>
         <button key={outlet.id} type="button" aria-pressed={outletFilter === outlet.id}
-          onClick={() => {setOutletFilter(outlet.id);setPage(0);}}>
+          onClick={() => {setOutletFilter(outlet.id);setFilter('all');setPage(0);}}>
           {outlet.label}
           <small>{outlet.id === 'all' ? ideas.length : ideas.filter(item =>
             outlet.id === 'unassigned' ? !(item.destinations?.length) :
@@ -384,7 +384,7 @@ export function IdeaReview() {
               {item.destinations?.length ? item.destinations.map(dest =>
                 <button type="button" key={dest} className={outletFilter===dest?'selected':''}
                   title={outletName(dest)+'について評価する'}
-                  onClick={()=>{setOutletFilter(dest);setPage(0);}}>
+                  onClick={()=>{setOutletFilter(dest);setFilter('all');setPage(0);}}>
                   {outletName(dest)}
                   {item.destinationVerdicts?.[dest] && item.destinationVerdicts[dest]!=='unreviewed' &&
                     <em>{names[item.destinationVerdicts[dest]]}</em>}
@@ -510,7 +510,10 @@ export function IdeaReview() {
             <button type="button" className="ideaReset" disabled={!!busyId} onClick={() => void rate(detail.id, 'reset', true)}>未評価に戻す</button>
           </section>
           {reviews.length > 0 && <div className="ideaHistory"><h3>最近の評価履歴</h3>
-            {reviews.slice(0, 8).map(review => <p key={review.id}><small>{dateLabel(review.createdAt)} — {names[review.statusAfter ?? 'unreviewed']}</small>{review.feedback}</p>)}
+            {reviews.slice(0, 8).map(review => <p key={review.id}>
+              <small>{dateLabel(review.createdAt)} — {review.destination ? outletName(review.destination) : 'アイデア全体'} ／ {names[review.statusAfter ?? 'unreviewed']}</small>
+              {review.feedback}
+            </p>)}
           </div>}
         </article>}
       </div>
