@@ -6,7 +6,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { transientDeliveryError, retryMergeability, cleanupSweepLimit } from './seo-delivery-throughput.js';
+import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
@@ -159,6 +159,12 @@ async function markFailed(task: SeoTaskRecord, message: string) {
 }
 
 async function recordControllerError(task: SeoTaskRecord, message: string) {
+  // An exhausted Firestore quota cannot persist its own incident. Avoid an
+  // additional read+write storm; the Actions log is the truthful blocker.
+  if (firestoreRateLimited(message)) {
+    console.log(`Firestore quota exhausted for ${task.id}; no redundant history update.`);
+    return;
+  }
   const current = await seoTaskGet({ id: task.id });
   if (!current.deliveryHandoff || current.deliveryHandoff.state === 'none' || current.deliveryHandoff.state === 'merged') return;
   const detail = message.slice(0, 2000);
@@ -695,30 +701,53 @@ async function main() {
   const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
     .filter(task => allowedRepos.has(task.repo));
 
-  for (const pending of initialInProgress.filter(task => task.deliveryHandoff?.state === 'push_pending')) {
+  // Keep the exact Task records returned by the initial read. Reusing the
+  // reconciliation return value avoids another global Firestore status scan.
+  // A point read immediately before each PR operation still revalidates the
+  // Task state, refusal history and exact Worker checkpoint.
+  const candidates: SeoTaskRecord[] = [];
+  for (const pending of initialInProgress) {
+    if (pending.deliveryHandoff?.state !== 'push_pending') {
+      if (['branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) candidates.push(pending);
+      continue;
+    }
     try {
-      await reconcilePushPending(pending, activeSites.items);
+      const reconciled = await reconcilePushPending(pending, activeSites.items);
+      if (['branch_ready', 'pr_open'].includes(reconciled.deliveryHandoff?.state ?? 'none')) candidates.push(reconciled);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Push reconciliation error for ${pending.id}: ${message}`);
+      if (firestoreRateLimited(error)) {
+        console.warn('Firestore 429: stop this delivery cycle without more Firestore requests; task and schedule remain intact.');
+        return;
+      }
       try { await recordControllerError(pending, message); } catch (recordError) {
         console.error(`Could not persist push reconciliation error for ${pending.id}: ${String(recordError)}`);
       }
     }
   }
 
-  const tasks = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
-    .filter(task => allowedRepos.has(task.repo))
-    .filter(task => ['branch_ready', 'pr_open'].includes(task.deliveryHandoff?.state ?? 'none'))
-    .slice(0, maxTasks);
-
+  const tasks = candidates.slice(0, maxTasks);
   console.log(`SEO delivery controller found ${tasks.length} eligible task(s) after push reconciliation.`);
   for (const task of tasks) {
     try {
-      await processTask(task, activeSites.items);
+      // A Task could be cancelled or otherwise changed since the initial
+      // list; never create a PR from a stale in-memory snapshot.
+      const current = await seoTaskGet({ id: task.id });
+      if (current.status !== 'in_progress'
+          || !['branch_ready', 'pr_open'].includes(current.deliveryHandoff?.state ?? 'none')
+          || current.deliveryHandoff?.headSha !== task.deliveryHandoff?.headSha) {
+        console.log(`Delivery Task ${task.id} changed before PR processing; skipping.`);
+        continue;
+      }
+      await processTask(current, activeSites.items);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Task ${task.id} controller error: ${message}`);
+      if (firestoreRateLimited(error)) {
+        console.warn('Firestore 429: stop this delivery cycle without additional persistence attempts.');
+        return;
+      }
       try { await recordControllerError(task, message); } catch (recordError) {
         console.error(`Could not persist controller error for ${task.id}: ${String(recordError)}`);
       }
