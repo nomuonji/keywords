@@ -8,6 +8,8 @@ on:
     paths:
       - '.github/workflows/seo-delivery-controller.yml'
       - 'scripts/seo-delivery-controller.ts'
+      - 'scripts/seo-prepared-ref-handoff-gate.ts'
+      - 'packages/commands/src/seo-delivery-merge.ts'
   schedule:
     # Offset from the top of the hour to reduce GitHub scheduled-run congestion.
     - cron: '7,37 * * * *'
