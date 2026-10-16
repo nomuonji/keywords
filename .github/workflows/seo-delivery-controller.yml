@@ -1,6 +1,8 @@
 name: seo-delivery-controller
 
 on:
+  repository_dispatch:
+    types: [seo_push_pending]
   workflow_dispatch:
     inputs:
       cleanup_limit:
@@ -37,6 +39,7 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
       SEO_DELIVERY_MAX_TASKS: '20'
+      SEO_DELIVERY_TASK_ID: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.task_id || '' }}
       # Normal delivery never rescans and deletes up to 100 historical refs.
       # A manual workflow_dispatch may opt in to at most ten legacy deletions.
       SEO_DELIVERY_CLEANUP_SWEEP_LIMIT: ${{ github.event.inputs.cleanup_limit || '0' }}
