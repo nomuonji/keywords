@@ -20,8 +20,8 @@ on:
       - 'scripts/seo-prepared-ref-handoff-gate.ts'
       - 'packages/commands/src/seo-delivery-merge.ts'
   schedule:
-    # Offset from the top of the hour to reduce GitHub scheduled-run congestion.
-    - cron: '7,37 * * * *'
+    # Recovery sweep every two hours; push_pending normally wakes delivery via dispatch.
+    - cron: '17 */2 * * *'
     - cron: '13 4 * * *'
 
 permissions:
