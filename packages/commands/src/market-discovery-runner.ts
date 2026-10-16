@@ -29,6 +29,9 @@ export const marketDiscoveryRunShape = {
   rotation: z.number().int().min(0).max(50).default(0),
   maxObservations: z.number().int().min(1).max(60).default(32),
   withDemand: z.boolean().default(false),
+  // Locale is explicit: existing callers still default to Japan.
+  country: z.string().regex(/^[A-Z]{2}$/).default('JP'),
+  language: z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/).optional(),
   candidates: z.array(candidateShape).max(3).default([])
 };
 const inputShape = z.object(marketDiscoveryRunShape).strict();
@@ -45,11 +48,15 @@ type SourceObservation = {
   observedAt: string | null;
   fact: string;
   measures: Record<string, unknown>;
+  marketCountry: string | null;
+  marketLanguage: string | null;
+  geographicScope: 'country_targeted' | 'japan_only' | 'international_unlocalized';
 };
 
 const domain = (url: string) => {
   try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
 };
+const defaultLanguages: Record<string, string> = { JP:'ja', US:'en', GB:'en', CA:'en', AU:'en', NZ:'en', DE:'de', FR:'fr', ES:'es', IT:'it', KR:'ko', TW:'zh', BR:'pt', MX:'es', IN:'en' };
 const errorLabel = (e: unknown) =>
   e instanceof Error ? e.message.replace(/https?:\/\/\S+/g, '[url]').slice(0, 160) : 'source_unavailable';
 
@@ -102,22 +109,27 @@ type Dependencies = {
 export async function marketDiscoveryRun(input: unknown, dependencies: Dependencies = {}) {
   const args: Input = inputShape.parse(input);
   const fetchedAt = new Date(dependencies.clock?.() ?? Date.now()).toISOString();
+  const language = args.language ?? defaultLanguages[args.country] ?? 'en';
+  const market = { country: args.country, language };
   if (args.phase === 'observe') {
     if (args.candidates.length) throw Error('Observe accepts no candidates. Use validate directly for a selected or previously known candidate.');
     if (args.withDemand) throw Error('withDemand applies only to validate.');
-    const selected: SourceId[] = args.sources ?? (args.mode === 'commerce'
-      ? ['curated_links', 'open_signals', 'commerce_rankings']
+    const selected: SourceId[] = args.sources ?? (args.country !== 'JP' ? ['open_signals']
+      : args.mode === 'commerce' ? ['curated_links', 'open_signals', 'commerce_rankings']
       : ['curated_links', 'open_signals']);
-    const tasks = selected.map(id => ({
+    // Hatena curation and Rakuten rankings are Japan-specific. Never label them as overseas evidence.
+    const unavailable = selected.filter(id => args.country !== 'JP' && id !== 'open_signals');
+    const allowed = selected.filter(id => !unavailable.includes(id));
+    const tasks = allowed.map(id => ({
       id,
       call: id === 'curated_links'
         ? (dependencies.distribution ?? distributionCaseDiscovery)({ maxCases: Math.min(24, args.maxObservations), rotation: args.rotation, includeGlobalTech: true })
         : id === 'open_signals'
-          ? (dependencies.signals ?? marketSignalScan)({ sources: ['google_trends', 'hacker_news'], geo: 'JP', limit: Math.min(20, args.maxObservations), hackerNewsFeed: 'new' })
+          ? (dependencies.signals ?? marketSignalScan)({ sources: ['google_trends', 'hacker_news'], geo: args.country, limit: Math.min(20, args.maxObservations), hackerNewsFeed: 'new' })
           : (dependencies.products ?? marketProductDiscovery)({ mode: 'discover', maxCategories: 4, productsPerCategory: 2, rotation: args.rotation })
     }));
     const finished = await Promise.allSettled(tasks.map(task => task.call));
-    const failures: { source: SourceId; detail: string }[] = [];
+    const failures: { source: SourceId; detail: string }[] = unavailable.map(source => ({source, detail:'japan_only_source_not_applicable_to_'+args.country}));
     const raw: Record<string, unknown> = {};
     finished.forEach((entry, i) => {
       if (entry.status === 'fulfilled') raw[tasks[i].id] = entry.value;
@@ -137,7 +149,10 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       sourceUrl: item.sourcePostUrl ?? item.discoverySourceUrl,
       label: item.title, url: item.destinationUrl, observedAt: item.publishedAt,
       fact: 'A dated public curation entry linked to this destination; visits and sales are unknown.',
-      measures: { engagement: item.engagement, providerTags: item.observedTags }
+      measures: { engagement: item.engagement, providerTags: item.observedTags },
+      marketCountry: item.sourcePlatform === 'hacker_news' ? null : 'JP',
+      marketLanguage: item.sourcePlatform === 'hacker_news' ? null : 'ja',
+      geographicScope: item.sourcePlatform === 'hacker_news' ? 'international_unlocalized' : 'japan_only'
     }, item.destinationUrl);
     const sig = raw.open_signals as Awaited<ReturnType<typeof marketSignalScan>> | undefined;
     for (const group of sig?.results ?? []) for (const item of group.observations) {
@@ -147,7 +162,10 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
         source: item.source, sourcePlatform: item.source, sourceUrl: group.url,
         label: item.label, url: item.url, observedAt: item.observedAt,
         fact: 'A public attention signal or community post was observed; purchases and site viability are unknown.',
-        measures: item.metrics
+        measures: item.metrics,
+        marketCountry: item.source === 'google_trends' ? args.country : null,
+        marketLanguage: item.source === 'google_trends' ? language : null,
+        geographicScope: item.source === 'google_trends' ? 'country_targeted' : 'international_unlocalized'
       }, item.source + ':' + item.label + ':' + item.url);
     }
     const prod = raw.commerce_rankings as Awaited<ReturnType<typeof marketProductDiscovery>> | undefined;
@@ -160,18 +178,20 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
         sourceUrl: item.rankSourceUrl ?? null,
         label: item.name, url: item.sellerUrl, observedAt: category.observationDate,
         fact: 'A ranked item was observed; disclosed purchases are unknown.',
-        measures: { rank: item.rank, genre: category.genreName }
+        measures: { rank: item.rank, genre: category.genreName },
+        marketCountry: 'JP', marketLanguage: 'ja', geographicScope: 'japan_only'
       }, item.sellerUrl);
     }
     const returned = observed.slice(0, args.maxObservations);
     const platforms = [...new Set(returned.map(v => v.sourcePlatform))];
     return {
-      phase: 'observe' as const, objective: args.objective ?? null, mode: args.mode, fetchedAt,
+      phase: 'observe' as const, objective: args.objective ?? null, mode: args.mode, fetchedAt, market,
       coverage: {
         requestedSources: selected, observedPlatforms: platforms,
         observedRecords: returned.length, totalBeforeLimit: observed.length,
         unavailableSources: failures,
         sourceWarnings: sig?.warnings ?? [],
+        marketScopeWarning: 'Hacker News is international, not country-specific; trends use the requested country. A missing country-specific source is not negative demand.',
         interpretation: 'Source/platform breadth describes this sample. It does not certify sufficient research or independent claims.'
       },
       observations: returned,
@@ -190,7 +210,7 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
     const question = candidate.question ?? ('For "' + candidate.name + '", what does existing content already answer? What remains uncertain about the proposed need: ' + (candidate.userNeed ?? 'not specified').slice(0, 250));
     const [search, demand] = await Promise.allSettled([
       gap({ query: candidate.query, question, maxPages: 3, maxCharsPerPage: 4500,
-        evidenceUrls: candidate.evidenceUrls, num: 6, country: 'JP', language: 'ja' }),
+        evidenceUrls: candidate.evidenceUrls, num: 6, country: args.country, language }),
       args.withDemand && dependencies.demand ? dependencies.demand([candidate.query]) : Promise.resolve(null)
     ]);
     const warnings: string[] = [];
@@ -206,6 +226,7 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
       demandAvailable: demand.status === 'fulfilled' && demand.value !== null
     });
     results.push({
+      market,
       candidate: { name: candidate.name, audience: candidate.audience ?? null, userNeed: candidate.userNeed ?? null,
         databaseUnit: candidate.databaseUnit ?? null, interaction: candidate.interaction ?? null,
         question, query: candidate.query },
@@ -225,7 +246,7 @@ export async function marketDiscoveryRun(input: unknown, dependencies: Dependenc
     }
   }
   return {
-    phase: 'validate' as const, objective: args.objective ?? null, mode: args.mode, fetchedAt, results,
+    phase: 'validate' as const, objective: args.objective ?? null, mode: args.mode, fetchedAt, market, results,
     skippedCandidates: quotaStopped ? args.candidates.slice(results.length).map(v => v.name) : [],
     interpretation: 'This targeted read does not establish search opportunity, source rights, user demand, distribution or revenue. The agent must assess evidence and contrary facts against the requested decision.',
     writes: 0

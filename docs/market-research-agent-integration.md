@@ -54,3 +54,12 @@ For an open-ended market request, begin with observed public records before desc
 5. Review/follow-up: actual dated outcomes can overturn previous hypothesis; no inferred automatic training from inaccessible analytics.
 
 **Success criterion:** a research hypothesis can travel across relevant specialists while keeping proof/unknown/owner boundaries intact, with explicit soft failures for missing capabilities.
+
+
+## Country-aware international discovery (2026-10-16)
+- `market_discovery_run` accepts `country` (ISO 3166 alpha-2, default `JP`) and `language` (optional BCP-47-style two-letter language, inferred for common target countries). Both `observe` and `validate` report the effective `market`.
+- For non-JP observe, the default is `open_signals` only. Google Trends is requested for the selected country. Hacker News is explicitly `international_unlocalized` and **must not be interpreted as an American/British/etc. sample**. `curated_links` (Japanese Hatena) and `commerce_rankings` (Japanese Rakuten) are reported as unavailable for non-JP regions even if explicitly requested; they are never relabeled as local proof.
+- For focused validation, SERP query, locale and competitor page reads use the selected country/language. Do not infer a country from the language of an English-language article.
+- To compare markets, make equivalent, bounded country-scoped calls, retain each region's source and observation date, and compare only genuinely comparable measures; never aggregate unrelated rankings, engagement and estimated search traffic into a global demand figure.
+- Canonical Idea Memory now supports `marketCountries` and `contentLanguages` as optional metadata in upsert/patch, with region labels in the inbox. One creative idea can target multiple locales while preserving **one** canonical idea ID, user verdict, history and nonexclusive output destinations. A translated variant is not automatically a new independent idea. New regions with distinct user tasks/data structures may deserve a separately researched idea, not assumed duplicate.
+- `market_signal_scan`, `market_intelligence_research`, `serp_research` and `keyword_research_pipeline` remain available for targeted regional depth. The live international entry is not yet an automatic multilingual daily research scheduler. Overseas marketplaces, local Reddit communities and country-specific TikTok trends require separate source evaluation; unavailable sources are missing evidence, not proof of no opportunity.

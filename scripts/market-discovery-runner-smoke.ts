@@ -142,3 +142,34 @@ assert.ok(gate.missing.includes('no_competitor_body_read'));
 await assert.rejects(marketDiscoveryRun({ phase: 'validate', candidates: [] }));
 await assert.rejects(marketDiscoveryRun({ phase: 'observe', candidates: [candidate] }));
 console.log('adaptive market discovery: selective observation, direct focus, provenance, cost and partial failures passed');
+
+
+// International scope must not disguise Japan-only discovery as US/UK demand.
+let overseasDistCalls = 0;
+let overseasProductsCalls = 0;
+let overseasGeo = '';
+const overseas = await marketDiscoveryRun({phase:'observe', country:'US',
+  sources:['curated_links','open_signals','commerce_rankings']}, {
+  distribution: (async()=>{overseasDistCalls++;throw Error('JP source called for US');}) as any,
+  products: (async()=>{overseasProductsCalls++;throw Error('JP source called for US');}) as any,
+  signals: (async(args:any)=>{overseasGeo=args.geo;return {
+    warnings:[],results:[{source:'google_trends',url:'https://trends.google.com/trending/rss?geo=US',
+      observations:[{source:'google_trends',label:'US trend',url:'https://example.org/us',
+        observedAt:'2026-10-16T00:00:00.000Z',metrics:{approxTraffic:1000}}]}]
+  };}) as any
+});
+assert.equal(overseasGeo,'US');
+assert.equal(overseas.market.language,'en');
+assert.equal(overseasDistCalls,0);
+assert.equal(overseasProductsCalls,0);
+assert.equal(overseas.observations[0].marketCountry,'US');
+assert.equal(overseas.observations[0].geographicScope,'country_targeted');
+assert.equal(overseas.coverage.unavailableSources.length,2);
+let localePassed:{country?:string;language?:string}={};
+const localized = await marketDiscoveryRun({phase:'validate',country:'FR',
+  candidates:[{name:'Local history site',query:'histoire locale'}]}, {
+    gap:(async(args:any)=>{localePassed={country:args.country,language:args.language};
+      return {serp:{results:[]},pages:[],observations:[]};}) as any
+  });
+assert.deepEqual(localePassed,{country:'FR',language:'fr'});
+assert.equal(localized.results[0].market.country,'FR');

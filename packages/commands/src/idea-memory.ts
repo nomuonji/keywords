@@ -9,6 +9,8 @@ const list = z.array(txt).max(30);
 const tagsShape = z.array(z.string().trim().min(1).max(60)).max(20);
 const destinationKey = z.string().regex(/^[a-z][a-z0-9_-]{1,59}$/);
 const destinationsShape = z.array(destinationKey).max(20);
+const marketCountriesShape = z.array(z.string().regex(/^[A-Z]{2}$/)).max(20);
+const contentLanguagesShape = z.array(z.string().regex(/^[a-z]{2}(?:-[A-Z]{2})?$/)).max(20);
 const assetRefShape = z.object({
   id, destination: destinationKey, kind: z.string().trim().min(1).max(80),
   title: z.string().trim().min(1).max(200),
@@ -28,6 +30,7 @@ const ideaShape = z.object({
   id: id.optional(), title: z.string().trim().min(1).max(200), aliases: list.optional(),
   audience: txt, userTask: txt, entities: txt, informationMechanism: txt, interaction: txt,
   dataSources: list.optional(), maintenance: txt.optional(), marketCategory: txt.optional(),
+  marketCountries: marketCountriesShape.optional(), contentLanguages: contentLanguagesShape.optional(),
   marketEvidenceRefs: list.optional(), unknowns: list.optional(), reconsiderWhen: txt.optional(),
   tags: tagsShape.optional(), destinations: destinationsShape.optional(),
   presentedAt: z.string().datetime().optional(), sessionId: id.optional(),
@@ -51,7 +54,8 @@ export const ideaFeedbackAppendShape = {
 };
 export const ideaMemoryPatchShape = {
   ideaId: id, expectedRevision: z.number().int().min(1),
-  tags: tagsShape.optional(), destinations: destinationsShape.optional(), assetRefs: assetRefsShape.optional()
+  tags: tagsShape.optional(), destinations: destinationsShape.optional(), assetRefs: assetRefsShape.optional(),
+  marketCountries: marketCountriesShape.optional(), contentLanguages: contentLanguagesShape.optional()
 };
 export const ideaMemoryFeedbackProfileShape = { limit: z.number().int().min(1).max(100).default(50), cursor: z.string().max(4000).optional() };
 
@@ -99,6 +103,9 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
     const next: Idea = {
       ...old, ...idea, id: key, aliases: idea.aliases ?? old?.aliases ?? [], normalizedTitle: norm(idea.title), searchTokens: searchTokens(idea),
       status: old?.status ?? idea.status ?? 'unreviewed',
+      // One canonical idea can travel across regions; do not fragment user verdict/history.
+      marketCountries: dedupe([...(old?.marketCountries ?? []), ...(idea.marketCountries ?? [])]),
+      contentLanguages: dedupe([...(old?.contentLanguages ?? []), ...(idea.contentLanguages ?? [])]),
       tags: old?.tags ?? dedupe(idea.tags ?? []),
       destinations: old?.destinations ?? dedupe(idea.destinations ?? []),
       assetRefs: old?.assetRefs ?? [], assetCount: old?.assetCount ?? 0,
@@ -117,8 +124,8 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
 // Optimistic revision + Firestore preconditions protect concurrent UI/agent writes.
 export async function ideaMemoryPatch(input: unknown) {
   const args = z.object(ideaMemoryPatchShape).strict().parse(input);
-  if (args.tags === undefined && args.destinations === undefined && args.assetRefs === undefined) {
-    throw new Error('Provide tags, destinations or assetRefs');
+  if (args.tags === undefined && args.destinations === undefined && args.assetRefs === undefined && args.marketCountries === undefined && args.contentLanguages === undefined) {
+    throw new Error('Provide tags, destinations, assetRefs or market scope');
   }
   const document = await read(path(args.ideaId));
   if (!document) { const error = new Error('Idea not found'); (error as any).status=404; throw error; }
@@ -129,11 +136,13 @@ export async function ideaMemoryPatch(input: unknown) {
   const next = {
     ...old,
     ...(args.tags === undefined ? {} : {tags: dedupe(args.tags)}),
+    ...(args.marketCountries === undefined ? {} : {marketCountries: dedupe(args.marketCountries)}),
+    ...(args.contentLanguages === undefined ? {} : {contentLanguages: dedupe(args.contentLanguages)}),
     ...(args.destinations === undefined ? {} : {destinations: dedupe(args.destinations)}),
     ...(args.assetRefs === undefined ? {} : {assetRefs: args.assetRefs, assetCount: args.assetRefs.length})
   };
-  if (JSON.stringify([next.tags ?? [],next.destinations ?? [],next.assetRefs ?? []]) ===
-      JSON.stringify([old.tags ?? [],old.destinations ?? [],old.assetRefs ?? []])) {
+  if (JSON.stringify([next.tags ?? [],next.destinations ?? [],next.assetRefs ?? [],next.marketCountries ?? [],next.contentLanguages ?? []]) ===
+      JSON.stringify([old.tags ?? [],old.destinations ?? [],old.assetRefs ?? [],old.marketCountries ?? [],old.contentLanguages ?? []])) {
     return { outcome:'unchanged', idea:old };
   }
   const updated = {...next, revision:old.revision+1, updatedAt:new Date().toISOString()};
@@ -244,7 +253,7 @@ export async function ideaReviewList(input: unknown = {}) {
   if (args.summary) {
     // Firestore field mask: overview payload excludes long evidence arrays and history.
     for (const name of ['title', 'status', 'audience', 'userTask', 'entities',
-      'informationMechanism', 'marketCategory', 'updatedAt',
+      'informationMechanism', 'marketCategory', 'marketCountries', 'contentLanguages', 'updatedAt',
       'tags', 'destinations', 'destinationVerdicts', 'assetCount', 'revision']) {
       params.append('mask.fieldPaths', name);
     }
