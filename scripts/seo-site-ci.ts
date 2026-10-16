@@ -51,7 +51,14 @@ export function verifyGeneratedPage(
   const url = new URL(raw);
   if (!/<(?:main|article|body)\b/i.test(html)) throw Error(`Generated HTML body missing at ${url.pathname}`);
   const canonical = canonicalOf(html);
-  if (!canonical || new URL(canonical, raw).href !== url.href) {
+  // Static site generators routinely canonicalize the same page to a final
+  // slash. Preserve origin, path segments, query and scheme verification.
+  const normalized = (value: string) => {
+    const parsed = new URL(value, raw);
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return parsed.href;
+  };
+  if (!canonical || normalized(canonical) !== normalized(raw)) {
     throw Error(`Canonical mismatch at ${url.pathname}: ${canonical ?? 'absent'}`);
   }
   for (const check of checks) {
