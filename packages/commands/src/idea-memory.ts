@@ -19,7 +19,7 @@ const assetRefShape = z.object({
 }).strict().refine(v => v.stage !== 'handed_off' || !!v.targetRef,
   'An externally handed-off asset needs a targetRef');
 const assetRefsShape = z.array(assetRefShape).max(40);
-const unique = <T>(values: T[]) => [...new Set(values)];
+const dedupe = <T>(values: T[]) => [...new Set(values)];
 
 const status = z.enum(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']);
 const scope = z.enum(['specific_idea', 'proposal_format', 'research_quality', 'discovery_process', 'whole_batch']);
@@ -97,8 +97,8 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
     const next: Idea = {
       ...old, ...idea, id: key, aliases: idea.aliases ?? old?.aliases ?? [], normalizedTitle: norm(idea.title), searchTokens: searchTokens(idea),
       status: old?.status ?? idea.status ?? 'unreviewed',
-      tags: old?.tags ?? unique(idea.tags ?? []),
-      destinations: old?.destinations ?? unique(idea.destinations ?? []),
+      tags: old?.tags ?? dedupe(idea.tags ?? []),
+      destinations: old?.destinations ?? dedupe(idea.destinations ?? []),
       assetRefs: old?.assetRefs ?? [], assetCount: old?.assetCount ?? 0,
       payloadHash, createdAt: old?.createdAt ?? now, updatedAt: now,
       presentationHistory: alreadyPresented ? history : [...history.slice(-39), presentation], revision: (old?.revision ?? 0)+1
@@ -126,8 +126,8 @@ export async function ideaMemoryPatch(input: unknown) {
   }
   const next = {
     ...old,
-    ...(args.tags === undefined ? {} : {tags: unique(args.tags)}),
-    ...(args.destinations === undefined ? {} : {destinations: unique(args.destinations)}),
+    ...(args.tags === undefined ? {} : {tags: dedupe(args.tags)}),
+    ...(args.destinations === undefined ? {} : {destinations: dedupe(args.destinations)}),
     ...(args.assetRefs === undefined ? {} : {assetRefs: args.assetRefs, assetCount: args.assetRefs.length})
   };
   if (JSON.stringify([next.tags ?? [],next.destinations ?? [],next.assetRefs ?? []]) ===
