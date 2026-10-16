@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-16",
-  "generatedAt": "2026-10-15T22:42:45.001Z",
+  "date": "2026-10-17",
+  "generatedAt": "2026-10-16T22:14:37.998Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,15 +14,23 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 25
+    "historicObservations": 32
   },
   "warnings": [
     {
-      "genreId": "304564",
+      "genreId": "112919",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "101114",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "101736",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
     },
     {
@@ -31,14 +39,6 @@
     },
     {
       "genreId": "111427",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "100004",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -1606,6 +1606,477 @@
         "previousDate": "2026-10-15",
         "sameItemCount": 5,
         "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "100005",
+      "rootName": "花・ガーデン・DIY",
+      "genreId": "113084",
+      "genreName": "花・観葉植物",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "flowerkitchen:10000532",
+          "rank": 1
+        },
+        {
+          "itemCode": "hanayoshi:10000511",
+          "rank": 2
+        },
+        {
+          "itemCode": "brimtokyo:10000022",
+          "rank": 3
+        },
+        {
+          "itemCode": "bunbunbee:10003160",
+          "rank": 4
+        },
+        {
+          "itemCode": "flowerkitchen:10000437",
+          "rank": 5
+        },
+        {
+          "itemCode": "brimtokyo:10000013",
+          "rank": 6
+        },
+        {
+          "itemCode": "auc-tropical-garden:10009127",
+          "rank": 7
+        },
+        {
+          "itemCode": "bunbunbee:10002788",
+          "rank": 8
+        },
+        {
+          "itemCode": "eehana:10001244",
+          "rank": 9
+        },
+        {
+          "itemCode": "hanayaka:10000309",
+          "rank": 10
+        },
+        {
+          "itemCode": "hanayoshi:10000737",
+          "rank": 11
+        },
+        {
+          "itemCode": "miipas:10001010",
+          "rank": 12
+        },
+        {
+          "itemCode": "brimtokyo:10000032",
+          "rank": 13
+        },
+        {
+          "itemCode": "brimtokyo:10000026",
+          "rank": 14
+        },
+        {
+          "itemCode": "flowerkitchen:10000424",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "503190",
+      "rootName": "車用品・バイク用品",
+      "genreId": "101126",
+      "genreName": "車用品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "tire-zero:10042399",
+          "rank": 1
+        },
+        {
+          "itemCode": "garagezero:10001601",
+          "rank": 2
+        },
+        {
+          "itemCode": "syatihoko:10004482",
+          "rank": 3
+        },
+        {
+          "itemCode": "syatihoko:10004444",
+          "rank": 4
+        },
+        {
+          "itemCode": "syatihoko:10004481",
+          "rank": 5
+        },
+        {
+          "itemCode": "tire-worldkan-best:11824904",
+          "rank": 6
+        },
+        {
+          "itemCode": "jc-group:10000025",
+          "rank": 7
+        },
+        {
+          "itemCode": "az-oil:10002797",
+          "rank": 8
+        },
+        {
+          "itemCode": "sangyo-leisure:10000136",
+          "rank": 9
+        },
+        {
+          "itemCode": "creaswing:10000383",
+          "rank": 10
+        },
+        {
+          "itemCode": "syatihoko:10004480",
+          "rank": 11
+        },
+        {
+          "itemCode": "garagezero:10001602",
+          "rank": 12
+        },
+        {
+          "itemCode": "ark-tire:11327762",
+          "rank": 13
+        },
+        {
+          "itemCode": "autoway:10380914",
+          "rank": 14
+        },
+        {
+          "itemCode": "lifla:10000003",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "510915",
+      "rootName": "ビール・洋酒",
+      "genreId": "510915",
+      "genreName": "ビール・洋酒",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "likaman:10020874",
+          "rank": 1
+        },
+        {
+          "itemCode": "soukaidrink:10005932",
+          "rank": 2
+        },
+        {
+          "itemCode": "kbwine:10027838",
+          "rank": 3
+        },
+        {
+          "itemCode": "soukaidrink:10009211",
+          "rank": 4
+        },
+        {
+          "itemCode": "liquor-boss:10003265",
+          "rank": 5
+        },
+        {
+          "itemCode": "kbwine:10028244",
+          "rank": 6
+        },
+        {
+          "itemCode": "soukaidrink:10006624",
+          "rank": 7
+        },
+        {
+          "itemCode": "soukaidrink:10016787",
+          "rank": 8
+        },
+        {
+          "itemCode": "soukaidrink:10008509",
+          "rank": 9
+        },
+        {
+          "itemCode": "likaman:10006562",
+          "rank": 10
+        },
+        {
+          "itemCode": "mywineclub:10013980",
+          "rank": 11
+        },
+        {
+          "itemCode": "soukaidrink:10007381",
+          "rank": 12
+        },
+        {
+          "itemCode": "soukaidrink:10008511",
+          "rank": 13
+        },
+        {
+          "itemCode": "soukaidrink:10005933",
+          "rank": 14
+        },
+        {
+          "itemCode": "beer-the-world:10000114",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "100227",
+      "rootName": "食品",
+      "genreId": "100256",
+      "genreName": "麺類",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "ringerhut:10000074",
+          "rank": 1
+        },
+        {
+          "itemCode": "qgift:10000004",
+          "rank": 2
+        },
+        {
+          "itemCode": "ringerhut:10000407",
+          "rank": 3
+        },
+        {
+          "itemCode": "qgift:10000008",
+          "rank": 4
+        },
+        {
+          "itemCode": "ippudo-os:10000043",
+          "rank": 5
+        },
+        {
+          "itemCode": "zenbofficial:10000004",
+          "rank": 6
+        },
+        {
+          "itemCode": "konpirayahanbai:10000340",
+          "rank": 7
+        },
+        {
+          "itemCode": "shizennoyakata:10000720",
+          "rank": 8
+        },
+        {
+          "itemCode": "ringerhut:10000390",
+          "rank": 9
+        },
+        {
+          "itemCode": "buono-buono:10001968",
+          "rank": 10
+        },
+        {
+          "itemCode": "buono-buono:10001094",
+          "rank": 11
+        },
+        {
+          "itemCode": "kitauroko:10001658",
+          "rank": 12
+        },
+        {
+          "itemCode": "senkyakumenrai:10000237",
+          "rank": 13
+        },
+        {
+          "itemCode": "ringerhut:10000329",
+          "rank": 14
+        },
+        {
+          "itemCode": "rakuten24:11056780",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "101381",
+      "rootName": "カタログギフト・チケット",
+      "genreId": "568914",
+      "genreName": "eカタログギフト",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "ringbell-socialgift:10000003",
+          "rank": 1
+        },
+        {
+          "itemCode": "ringbell-socialgift:10000002",
+          "rank": 2
+        },
+        {
+          "itemCode": "i-pre:10051776",
+          "rank": 3
+        },
+        {
+          "itemCode": "i-pre:10051556",
+          "rank": 4
+        },
+        {
+          "itemCode": "ringbell-socialgift:10000020",
+          "rank": 5
+        },
+        {
+          "itemCode": "i-pre:10051573",
+          "rank": 6
+        },
+        {
+          "itemCode": "rambbit:10196255",
+          "rank": 7
+        },
+        {
+          "itemCode": "antinaex:10001690",
+          "rank": 8
+        },
+        {
+          "itemCode": "antinaex:10001340",
+          "rank": 9
+        },
+        {
+          "itemCode": "geeva:10000746",
+          "rank": 10
+        },
+        {
+          "itemCode": "bellevie-harima:10161094",
+          "rank": 11
+        },
+        {
+          "itemCode": "i-pre:10058220",
+          "rank": 12
+        },
+        {
+          "itemCode": "harmonick:10000401",
+          "rank": 13
+        },
+        {
+          "itemCode": "ringbell-socialgift:10000031",
+          "rank": 14
+        },
+        {
+          "itemCode": "bellevie-harima:10161098",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 16 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 1
+        },
+        {
+          "itemCode": "farson:10007690",
+          "rank": 2
+        },
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 3
+        },
+        {
+          "itemCode": "pcbox78:10049154",
+          "rank": 4
+        },
+        {
+          "itemCode": "e-kurashi:10047330",
+          "rank": 5
+        },
+        {
+          "itemCode": "superdeal:10005737",
+          "rank": 6
+        },
+        {
+          "itemCode": "biccamera:14106732",
+          "rank": 7
+        },
+        {
+          "itemCode": "apmarket:10004624",
+          "rank": 8
+        },
+        {
+          "itemCode": "trmt-1:10793986",
+          "rank": 9
+        },
+        {
+          "itemCode": "biccamera:13635082",
+          "rank": 10
+        },
+        {
+          "itemCode": "ksdenki:10533568",
+          "rank": 11
+        },
+        {
+          "itemCode": "rcmdse:16734980",
+          "rank": 12
+        },
+        {
+          "itemCode": "e-kurashi:10052400",
+          "rank": 13
+        },
+        {
+          "itemCode": "rcmdse:16200354",
+          "rank": 14
+        },
+        {
+          "itemCode": "rcmdse:17012232",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-16",
+        "sameItemCount": 5,
+        "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-17",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-16",
+        "sameItemCount": 3,
+        "denominator": 3
       }
     }
   ]
