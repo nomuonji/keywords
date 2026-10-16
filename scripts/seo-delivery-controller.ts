@@ -748,7 +748,6 @@ async function main() {
   // Query the small delivery queue before reading the site registry. A routine
   // idle cron now performs one status query rather than scanning every site.
   const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items;
-  const allowedRepos = new Set<string>();
 
   // Keep the exact Task records returned by the initial read. Reusing the
   // reconciliation return value avoids another global Firestore status scan.
@@ -766,7 +765,6 @@ async function main() {
       continue;
     }
     if (site.status !== 'active' || site.repository !== pending.repo) continue;
-    allowedRepos.add(site.repository);
     if (pending.deliveryHandoff?.state !== 'push_pending') {
       if (['branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) candidates.push(pending);
       continue;
