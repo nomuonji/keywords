@@ -18,7 +18,8 @@ const outletName = (id:string) => outlets.find(v=>v.id===id)?.label ?? id;
 type Idea = {
   id: string; title: string; status: IdeaStatus; audience: string; userTask: string;
   entities?: string; informationMechanism: string; interaction?: string;
-  marketCategory?: string; dataSources?: string[]; marketEvidenceRefs?: string[];
+  marketCategory?: string; marketCountries?: string[]; contentLanguages?: string[];
+  dataSources?: string[]; marketEvidenceRefs?: string[];
   unknowns?: string[]; maintenance?: string; reconsiderWhen?: string;
   sessionId?: string; createdAt?: string; updatedAt?: string;
   tags?: string[]; destinations?: string[]; assetRefs?: AssetRef[]; assetCount?:number; revision?:number;
@@ -68,6 +69,7 @@ export function IdeaReview() {
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all');
   const [outletFilter, setOutletFilter] = useState('all');
+  const [marketFilter, setMarketFilter] = useState('all');
   const [reviewTarget,setReviewTarget]=useState('overall');
   const isOutlet=(value:string)=>outlets.some(outlet=>outlet.id===value);
   const targetFor=(item:Idea,detailView=false)=>{
@@ -166,13 +168,16 @@ export function IdeaReview() {
 
   const filtered = useMemo(() => ideas
     .filter(item => filter === 'all' || verdictFor(item) === filter)
+    .filter(item => marketFilter === 'all' || (marketFilter === 'unassigned'
+      ? !(item.marketCountries?.length) : (item.marketCountries ?? []).includes(marketFilter)))
     .filter(item => outletFilter === 'all' || (outletFilter === 'unassigned'
       ? !(item.destinations?.length) : (item.destinations ?? []).includes(outletFilter)))
     .filter(item => !query.trim() || [
       item.title, item.audience, item.userTask, item.entities, item.informationMechanism,
-      item.marketCategory, ...(item.tags ?? []), ...(item.destinations ?? [])
+      item.marketCategory, ...(item.marketCountries ?? []), ...(item.contentLanguages ?? []),
+      ...(item.tags ?? []), ...(item.destinations ?? [])
     ].join(' ').toLocaleLowerCase().includes(query.toLocaleLowerCase().trim()))
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, outletFilter, query]);
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')), [ideas, filter, outletFilter, marketFilter, query]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
@@ -356,6 +361,14 @@ export function IdeaReview() {
         : '用途ごとの評価をするには上の出口を選択してください。'}</small></div>
     </div>
     <div className="ideaReviewFilters">
+      <label>対象市場
+        <select value={marketFilter} onChange={e=>{setMarketFilter(e.target.value);setPage(0);}}>
+          <option value="all">すべて</option>
+          <option value="unassigned">未設定</option>
+          {[...new Set(ideas.flatMap(item=>item.marketCountries ?? []))].sort().map(country=>
+            <option key={country} value={country}>{country}</option>)}
+        </select>
+      </label>
       <label className="ideaSearchLabel" htmlFor="ideaSearch">検索
         <input id="ideaSearch" type="search" placeholder="タイトル・対象・テーマタグ・出口" value={query}
           onChange={e => {setQuery(e.target.value);setPage(0);}} />
@@ -377,7 +390,7 @@ export function IdeaReview() {
             <button type="button" className="ideaOpenDetail" onClick={() => openDetail(item.id)} aria-label={item.title + 'の詳細・理由を開く'}>
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
-            <small>{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
+            <small>{item.marketCountries?.length ? item.marketCountries.join(' / ')+' · ' : '市場未設定 · '}{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
           </div>
           <div className="ideaInboxRoutes">
             <span className="ideaCellHint">利用先・制作媒体</span>
