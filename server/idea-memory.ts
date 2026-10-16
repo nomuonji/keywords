@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewDetail, ideaReviewList } from '../packages/commands/src/idea-memory.js';
+import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewDetail, ideaReviewList, ideaMemoryPatch } from '../packages/commands/src/idea-memory.js';
 
 const app = new Hono();
 const cookieName = 'keywords_idea_review';
@@ -35,6 +35,7 @@ function cookieHeader(request: Request, value: string, seconds: number): string 
 }
 function safeError(error: unknown): { error: string; status: 400 | 409 | 503 } {
   const status = Number((error as { status?: number })?.status);
+  if (status === 404) return { error: 'アイデアが見つかりません。', status: 400 };
   if (status === 409 || (error instanceof Error && /precondition/i.test(error.message))) {
     return { error: 'ほかの更新と競合しました。再読み込みして再評価してください。', status: 409 };
   }
@@ -106,6 +107,21 @@ app.post('/api/theme-research', async c => {
     return c.json({ authenticated: false }, 200, { 'cache-control': 'no-store' });
   }
   if (!authenticated(c.req.raw)) return c.json({ error: '認証が必要です。' }, 401);
+  if (input.action === 'organize') {
+    try {
+      // Same auth / same-origin boundary as feedback; no public metadata mutation.
+      const result = await ideaMemoryPatch({
+        ideaId: input.ideaId, expectedRevision: input.expectedRevision,
+        ...(input.tags === undefined ? {} : {tags: input.tags}),
+        ...(input.destinations === undefined ? {} : {destinations: input.destinations}),
+        ...(input.assetRefs === undefined ? {} : {assetRefs: input.assetRefs})
+      });
+      return c.json(result, 200, {'cache-control':'no-store'});
+    } catch (error) {
+      const reason = safeError(error);
+      return c.json({error: reason.error}, reason.status);
+    }
+  }
   if (input.action !== 'review') return c.json({ error: '不明な操作です。' }, 400);
 
   const statusByRating = {
@@ -131,12 +147,17 @@ app.post('/api/theme-research', async c => {
     if (Number.isInteger(n) && n >= 1 && n <= 5) scores.push(label + ':' + n + '/5');
   }
   const feedback = ['Web管理画面評価=' + rating.label, scores.join('、'), comment].filter(Boolean).join(' | ');
+  const axesForStorage = Object.fromEntries(Object.keys(names).filter(key => axes[key] !== undefined).map(key => [key, Number(axes[key])]));
+  if (Object.values(axesForStorage).some(n => !Number.isInteger(n) || n < 1 || n > 5)) {
+    return c.json({error:'採点は1〜5の整数で指定してください。'},400);
+  }
   const sourceDate = new Date().toISOString();
   try {
     const result = await ideaFeedbackAppend({
       ideaId, scope: 'specific_idea', statusAfter: rating.status,
       polarity: rating.polarity, reason: comment || rating.label,
       feedback, source: 'direct_user', sourceDate, idempotencyKey,
+      ...(Object.keys(axesForStorage).length ? {axes: axesForStorage} : {}),
       reconsiderWhen: rating.status === 'rejected' ? 'ユーザーの明示的な再検討希望、または根本的に異なる実証が出るまで再提示しない' : undefined
     });
     return c.json({ outcome: result.outcome, event: result.event, status: rating.status }, 200, { 'cache-control': 'no-store' });
