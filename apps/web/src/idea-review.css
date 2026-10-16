@@ -189,3 +189,33 @@
 .ideaAssetForm{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
 .ideaAssetForm>input:first-child,.ideaAssetForm>input:nth-last-child(2){grid-column:1/-1}
 @media(max-width:600px){.ideaDestinationChecks{grid-template-columns:1fr}.ideaAssetForm{grid-template-columns:1fr}.ideaAssetForm>*{grid-column:1!important}}
+
+/* Generic market ideation: the outlet is the primary organizing facet, not an implicit DB-only assumption. */
+.ideaReviewScope{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid #37533d;border-radius:10px;background:#17271d;padding:11px 15px}
+.ideaReviewScope div{display:grid;gap:4px}
+.ideaReviewScope strong{font-size:12px;color:#e5f7d4}
+.ideaReviewScope small{font-size:10px;color:#9cbaaa;line-height:1.5}
+.ideaInbox-rows .ideaInboxRoutes{display:grid;align-content:center;gap:5px;min-width:0}
+.ideaRouteBadges{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.ideaRouteBadges button,.ideaUnassigned{display:inline-flex;align-items:center;gap:5px;padding:4px 6px;font-size:10px;line-height:1.3;border:1px solid #395543;border-radius:6px;background:#203627;color:#d7edcf;cursor:pointer;text-align:left}
+.ideaRouteBadges button:hover,.ideaRouteBadges button.selected{border-color:#b6e095;background:#375238}
+.ideaRouteBadges button em{font-style:normal;font-size:9px;color:#f9edc7;border-left:1px solid #759079;padding-left:5px}
+.ideaUnassigned{color:#b7a58a;border-style:dashed;background:#2a281f;cursor:default}
+.ideaSubjectTags{display:flex;gap:4px;flex-wrap:wrap;max-height:33px;overflow:hidden}
+.ideaSubjectTags span{font-size:10px;color:#a4b9a7;padding:2px 0}
+.ideaInboxMechanism small{display:block;color:#849d90;margin-top:4px;font-size:10px;line-height:1.4;overflow:hidden;max-height:30px}
+.ideaReviewTargetChoices{display:flex;gap:6px;flex-wrap:wrap}
+.ideaReviewTargetChoices button{border-radius:8px;border:1px solid #405b45;background:#15241d;color:#d9ebd9;padding:9px 11px;cursor:pointer;display:grid;gap:4px;text-align:left;min-width:118px}
+.ideaReviewTargetChoices button[aria-pressed=true]{border-color:#b9e994;background:#2d4630;color:#f2ffe6}
+.ideaReviewTargetChoices button span{font-size:12px;font-weight:700}
+.ideaReviewTargetChoices button small{font-size:10px;color:#a3bba5}
+.ideaReviewActiveTarget{display:inline-flex;align-items:center;gap:6px;color:#b1cbb6;font-size:11px}
+.ideaReviewActiveTarget strong{border-radius:6px;padding:4px 8px;background:#2d4531;color:#d7f4c7}
+.ideaInbox-cards .ideaInboxRoutes{border-top:1px solid #263b31;padding-top:7px;display:grid;gap:6px}
+@media(max-width:1150px){.ideaInboxHead,.ideaInbox-rows .ideaInboxItem{grid-template-columns:minmax(185px,1.1fr) minmax(190px,1fr) 184px}
+.ideaInboxHead span:nth-child(3),.ideaInbox-rows .ideaInboxMechanism{display:none}}
+@media(max-width:650px){.ideaInbox-rows .ideaInboxItem{grid-template-columns:minmax(0,1fr) auto;align-items:start}
+.ideaInbox-rows .ideaInboxRoutes{grid-column:1/-1;grid-row:2;border-top:1px solid #263b31;padding-top:7px}
+.ideaInbox-rows .ideaInboxMechanism{display:none}
+.ideaInbox-rows .ideaQuickActions{grid-column:2;grid-row:1}
+.ideaReviewScope{padding:9px 11px}}
