@@ -659,6 +659,9 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
         if (current.status !== 'in_progress' || current.deliveryHandoff.headSha !== handoff.headSha) return;
         await seoTaskUpdate({
           id: task.id, expectedRevision: current.revision,
+          // Delivery retains ownership after Worker claim release. Carry the
+          // unchanged checkpoint so this remains a delivery-lane update.
+          deliveryHandoff: current.deliveryHandoff,
           appendHistory: { actor: 'seo_delivery_controller', event: 'central_ci_passed', detail: receipt + ';' + summary }
         });
       }
