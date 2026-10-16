@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
-import { transientDeliveryError, retryMergeability, cleanupSweepLimit } from './seo-delivery-throughput.js';
+import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
@@ -226,3 +226,15 @@ assert.match(controller, /retryMergeability\(freshPr\.mergeable, attempt\)/);
 assert.match(controller, /delivery_controller_transient/);
 assert.match(controller, /if \(cleanupLimit > 0\)/);
 console.log('SEO throughput regression passed: bounded PR mergeability retry, no transient checkpoint latch, opt-in branch cleanup');
+
+assert.equal(firestoreRateLimited(new Error('Firestore request failed (429)')), true);
+assert.equal(firestoreRateLimited({ status: 429 }), true);
+assert.equal(firestoreRateLimited(new Error('GitHub 429 Too Many Requests')), false);
+assert.equal(firestoreRateLimited({ status: 403 }), false);
+assert.equal((controller.match(/seoTaskList\\(\\{ status: 'in_progress', limit: 100 \\}\\)/g) ?? []).length, 1,
+  'Only one global in_progress Task query is allowed per delivery cycle');
+assert.match(controller, /const candidates: SeoTaskRecord\[\] = \[\]/);
+assert.match(controller, /const current = await seoTaskGet\(\{ id: task\.id \}\)/);
+assert.match(controller, /if \(firestoreRateLimited\(error\)\)/);
+assert.match(controller, /Firestore quota exhausted/);
+console.log('SEO Firestore quota guard passed: one active-list read, revalidation by point reads, rate-limit circuit breaker');
