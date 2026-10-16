@@ -1079,8 +1079,9 @@ export async function seoTaskCreate(input: unknown) {
     throw new Error('articleIds or targetUrls is required unless taskType is data_expansion or schema_expansion');
   }
   // A dedupe-key equality avoids reading the entire site's Task history for each new candidate.
-  const existing = (await queryByField('seoTasks', 'dedupeKey', args.dedupeKey, 30))
-    .map((doc: any) => decoded(doc) as SeoTaskRecord)
+  const matchingDocs = await queryByField('seoTasks', 'dedupeKey', args.dedupeKey, 30);
+  if (matchingDocs.length >= 30) throw new Error('Dedupe-key lookup is incomplete; review historical duplicates before creating a Task');
+  const existing = matchingDocs.map((doc: any) => decoded(doc) as SeoTaskRecord)
     .filter(task => task.siteId === args.siteId);
   // A safety-denied implementation is not ordinary cancelled work: changing
   // task ID or allowing a new active record with the same dedupe key would
@@ -1380,7 +1381,8 @@ export async function seoTaskUpdate(input: unknown) {
   if (record.deploymentVerification.status === 'failed' && !record.deploymentVerification.detail.trim()) throw new Error('failed deployment verification requires detail');
   const runId = await auditWrite('seo_task_update', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
   // Wake central Actions only after the durable write. Delivery remains recoverable by cron.
-  if (deliveryPatch?.state === 'push_pending' && current.deliveryHandoff.state !== 'push_pending') {
+  if (deliveryPatch?.state === 'push_pending'
+      && (current.deliveryHandoff.state !== 'push_pending' || current.deliveryHandoff.headSha !== deliveryPatch.headSha)) {
     await dispatchSeoDelivery(record.id, record.revision);
   }
   return { ...record, runId };

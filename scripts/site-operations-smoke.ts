@@ -53,7 +53,7 @@ globalThis.fetch = async (input, init) => {
   const body = init?.body ? JSON.parse(String(init.body)) : null;
   if (path.endsWith('/seoTasks') && (init?.method ?? 'GET') === 'GET') seoTaskCollectionScans++;
   if (url.endsWith(':runQuery') && body?.structuredQuery?.from?.[0]?.collectionId === 'seoTasks'
-      && body?.structuredQuery?.where?.fieldFilter?.field?.fieldPath === 'status') {
+      && ['status', 'deploymentVerification.status'].includes(body?.structuredQuery?.where?.fieldFilter?.field?.fieldPath)) {
     seoTaskStatusQueries.push(String(decodeField(body.structuredQuery.where.fieldFilter.value)));
   }
 
@@ -72,8 +72,9 @@ globalThis.fetch = async (input, init) => {
     const collection = query.from[0].collectionId;
     const filter = query.where.fieldFilter;
     const expected = decodeField(filter.value);
+    const queryField = (fields: any, fieldPath: string) => fieldPath.split('.').reduce((node, key) => node?.mapValue?.fields?.[key] ?? node?.[key], fields);
     const rows = [...docs.values()]
-      .filter(doc => doc.name.startsWith(`${root}${collection}/`) && decodeField(doc.fields?.[filter.field.fieldPath]) === expected)
+      .filter(doc => doc.name.startsWith(`${root}${collection}/`) && decodeField(queryField(doc.fields, filter.field.fieldPath)) === expected)
       .slice(0, Number(query.limit ?? 500))
       .map(document => ({ document }));
     return Response.json(rows);
@@ -430,7 +431,7 @@ try {
   const scansBeforeCompleted = seoTaskCollectionScans;
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending' })).items.length, 1);
   assert.equal(seoTaskCollectionScans, scansBeforeCompleted, 'completed+pending publication audit must not scan unrelated Tasks');
-  assert.ok(seoTaskStatusQueries.includes('completed'));
+  assert.ok(seoTaskStatusQueries.includes('pending'));
   const verifiedTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: completedTask.revision,
