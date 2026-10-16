@@ -393,6 +393,46 @@ export function IdeaReview() {
           {Boolean(detail.dataSources?.length) && <details className="ideaEvidence"><summary>データの出典</summary>
             <ul>{detail.dataSources?.filter(source => /^https:\/\//.test(source)).map((link, i) =>
               <li key={i}><a href={link} target="_blank" rel="noopener noreferrer">{link}</a></li>)}</ul></details>}
+          <section className="ideaOrganizeSection" aria-label="タグ・展開先・派生成果物">
+            <h3>タグと展開先</h3>
+            <p>1つのアイデアから複数の制作企画へ展開できます。公開や投稿はここでは行いません。</p>
+            <label className="ideaOrganizeLabel" htmlFor="ideaTags">タグ（読点・カンマ区切り）
+              <input id="ideaTags" maxLength={1300} value={tagInput} onChange={e=>setTagInput(e.target.value)}
+                placeholder="消費行動、ネット文化、男性心理"/>
+            </label>
+            <div className="ideaDestinationChecks">{outlets.map(item=><label key={item.id}>
+              <input type="checkbox" checked={destInput.includes(item.id)}
+                onChange={e=>setDestInput(old=>e.target.checked?[...old,item.id]:old.filter(v=>v!==item.id))}/>
+              {item.label}
+            </label>)}</div>
+            <button type="button" className="ideaOrganizeSave" disabled={organizing||!!busyId||!detail.revision}
+              onClick={()=>void organize()}>{organizing?'保存中…':'タグ・展開先を保存'}</button>
+            <h3>派生成果物</h3>
+            <p>制作物の参照を保存します。原稿や投稿の正本はそれぞれの制作システムに残します。</p>
+            {(detail.assetRefs ?? []).length>0 ? <ul className="ideaAssetList">{detail.assetRefs?.map(a=><li key={a.id}>
+              <strong>{a.title}</strong><span>{outletName(a.destination)} · {a.kind} · {a.stage}</span>
+              {a.targetRef&&/^https:\/\//.test(a.targetRef)&&
+                <a href={a.targetRef} target="_blank" rel="noopener noreferrer">制作物を開く ↗</a>}
+            </li>)}</ul> : <p className="ideaEmptyAssets">まだ派生成果物はありません。</p>}
+            <div className="ideaAssetForm">
+              <input aria-label="制作物タイトル" placeholder="制作物のタイトル・企画名" maxLength={200}
+                value={assetTitle} onChange={e=>setAssetTitle(e.target.value)}/>
+              <select aria-label="展開先" value={assetDestination} onChange={e=>setAssetDestination(e.target.value)}>
+                {outlets.map(item=><option key={item.id} value={item.id}>{item.label}</option>)}
+              </select>
+              <select aria-label="制作物の種類" value={assetKind} onChange={e=>setAssetKind(e.target.value)}>
+                {[['social_post','SNS投稿'],['social_series','SNS連載'],['youtube_script','YouTube台本'],
+                  ['youtube_shorts','Shorts構成'],['site_plan','サイト企画'],['article','記事案'],
+                  ['product_pitch','商品訴求'],['distribution_plan','集客施策'],
+                  ['app_spec','プロダクト企画'],['other','その他']].map(([key,label])=>
+                    <option key={key} value={key}>{label}</option>)}
+              </select>
+              <input aria-label="制作物URL" placeholder="制作物のURL（任意・https://）" maxLength={1000}
+                value={assetTarget} onChange={e=>setAssetTarget(e.target.value)}/>
+              <button type="button" disabled={!assetTitle.trim()||organizing||!!busyId||!detail.revision}
+                onClick={attachAsset}>派生成果物を追加</button>
+            </div>
+          </section>
           <section className="ideaRateSection" aria-label="アイデアの詳細評価">
             <h3>理由も残して評価</h3>
             <p>一覧でのワンクリック評価に加え、強み・弱点を次回の探索へ伝えられます。</p>
