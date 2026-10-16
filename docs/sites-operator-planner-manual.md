@@ -6,9 +6,9 @@
 
 ## Central acceptance and publication loop (2026-10-16)
 
-- Before issuing a ready Task, attach `acceptanceChecks` for each `targetUrls` page: an exact intended text fragment (8–300 characters) and zero or more exact internal-link URLs. The checks are fixed before Worker claim. Confirm the source and current GitHub HEAD first; do not invent a fragment just to satisfy the form.
+- Before issuing a ready Task, define the material outcome in the Task rationale and confirm current GitHub HEAD/source. `acceptanceChecks` exact-text/internal-link assertions are optional and should only be supplied when they catch a real regression. Never block a useful Task just to manufacture an exact string.
 - Count `ready`, `in_progress`, and `push_pending` separately. Target a small 3–6 Task buffer only when current demand, page/source evidence, Macro Policy and independent files support it. Recheck proposed Tasks against current HEAD and acceptance conditions. A 429 stops the run without resubmitting equivalent writes.
-- Central Actions validates the persisted checkpoint and builds the exact target SHA before merging. Missing build profile, generated target HTML, canonical, text or internal link is a blocked delivery requiring correction, not an accepted release.
+- Central Actions validates the persisted checkpoint and builds the exact target SHA before merging. Missing build profile, generated target HTML or canonical is a blocked delivery requiring correction; explicit optional content/link assertions must pass when supplied.
 - The daily publication verifier considers at most four due completed Tasks from the existing pending/failed records. It requires a successful production GitHub deployment at the merge SHA or a descendant plus the live page checks. If the host does not create GitHub deployment evidence, the Task remains pending until a trustworthy provider-specific proof path exists. A unique proposed Optimization Event linked by article ID and commit starts its measurement window only after verified publication.
 
 ## System throughput / queue health (2026-10-16)
