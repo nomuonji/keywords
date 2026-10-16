@@ -296,6 +296,7 @@ export function IdeaReview() {
   const ratingButtons = (item: Idea, insideDetail = false) => <div className={'ideaQuickActions ' + (insideDetail ? 'ideaQuickActionsLarge' : '')}
     role="group" aria-label={item.title + 'の' + (targetFor(item,insideDetail)==='overall'
       ? 'アイデア全体' : outletName(targetFor(item,insideDetail))) + 'の評価'}>
+    <span className="ideaActionScope">{targetFor(item,insideDetail)==='overall' ? 'アイデア全体' : outletName(targetFor(item,insideDetail))} を評価</span>
     <button type="button" className="good" aria-pressed={verdictFor(item,insideDetail) === 'liked'} title="GOODとして保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'good', insideDetail)}>GOOD</button>
     <button type="button" className="reject" aria-pressed={verdictFor(item,insideDetail) === 'rejected'} title="ボツとして保存"
