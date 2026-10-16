@@ -749,16 +749,26 @@ button:active:not(:disabled), summary:active { transform: translateY(1px); }
 .discoveryHubTitle p{color:#b6cbbd;font-size:12px;line-height:1.7;max-width:740px;margin:0}
 .discoveryHubSource{flex-shrink:0;display:inline-flex;align-items:center;gap:8px;border:1px solid #425a43;border-radius:9px;padding:9px 12px;background:#1f3324;color:#d8f4cd;font-weight:700;font-size:11px;letter-spacing:.08em}
 .discoveryHubSource b{color:#8ecf9b}
-.discoveryHubTabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
-.discoveryHubTabs button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;text-align:left;border:1px solid #2d4136;border-radius:12px;padding:11px 14px;background:#111d19;color:#e1eee3;min-width:0;cursor:pointer}
-.discoveryHubTabs button:hover{background:#1b3023;border-color:#658566}
-.discoveryHubTabs button.active{border-color:#abe283;background:#203527}
-.discoveryHubStep{font-size:9px;font-weight:700;color:#8bb49a;letter-spacing:.12em}
-.discoveryHubTabs strong{font-size:14px}
-.discoveryHubTabs small{font-size:10px;color:#98b7a3;line-height:1.5}
+
+/* Idea-first discover hub. Specialist datasets are progressive-disclosure tools. */
+.discoveryEvidenceTools{border:1px solid #2e4237;border-radius:11px;background:#111d18;overflow:hidden}
+.discoveryEvidenceTools summary{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;cursor:pointer;list-style:none;font-weight:700;font-size:12px;color:#d2e3d6}
+.discoveryEvidenceTools summary::-webkit-details-marker{display:none}
+.discoveryEvidenceTools summary::before{content:'▸';font-size:12px;color:#9abfa6;transition:transform .15s}
+.discoveryEvidenceTools[open] summary::before{transform:rotate(90deg)}
+.discoveryEvidenceTools summary small{font-weight:400;font-size:11px;color:#91aea1}
+.discoveryEvidenceOptions{border-top:1px solid #283c31;padding:11px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.discoveryEvidenceOptions button{min-width:0;display:grid;grid-template-columns:1fr auto;gap:4px;text-align:left;border:1px solid #355242;border-radius:9px;padding:11px 13px;background:#1b2c22;color:#dfefdf;cursor:pointer}
+.discoveryEvidenceOptions button:hover{background:#25402d;border-color:#93be83}
+.discoveryEvidenceOptions button strong{grid-column:1;line-height:1.4;font-size:12px}
+.discoveryEvidenceOptions button small{grid-column:1;color:#a3b9ab;line-height:1.45;font-size:10px}
+.discoveryEvidenceOptions button span{grid-column:2;grid-row:1/3;align-self:center;color:#a8d89a}
+.discoveryToolReturn{display:flex;align-items:center;gap:15px;padding:11px 14px;border:1px solid #3a513f;border-radius:11px;background:#17271d}
+.discoveryToolReturn button{padding:9px 12px;white-space:nowrap;background:#293e2e;color:#e3fadd;border:1px solid #7c9e73;border-radius:8px;cursor:pointer}
+.discoveryToolReturn div{display:grid;gap:5px}
+.discoveryToolReturn strong{font-size:14px;color:#e5f4e8}
+.discoveryToolReturn small{font-size:11px;color:#abc1ae}
 .discoveryHubContent{min-width:0}
 .discoveryHubContent>.corePage,.discoveryHubContent>.treasuryView{max-width:none}
-.discoveryHubNext{display:flex;align-items:center;justify-content:space-between;gap:14px;border:1px solid #314139;padding:11px 15px;border-radius:11px;background:#13211a;color:#a6b9aa;font-size:11px;line-height:1.7}
-.discoveryHubNext button{border:1px solid #66865b;background:#263c2b;color:#e9ffdc;border-radius:8px;padding:9px 12px;white-space:nowrap;cursor:pointer}
-@media(max-width:1050px){.discoveryHubTabs{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.coreMain:has(.discoveryWorkspace){padding-top:10px}.discoveryHubIntro{padding:14px}.discoveryHubTitle{display:block}.discoveryHubSource{margin-top:12px}.discoveryHubTabs{gap:5px}.discoveryHubTabs button{padding:10px}.discoveryHubTabs strong{font-size:12px}.discoveryHubTabs small{font-size:9px}.discoveryHubNext{display:grid}.discoveryHubNext button{width:100%}}
+@media(max-width:800px){.discoveryEvidenceOptions{grid-template-columns:1fr}}
+@media(max-width:640px){.coreMain:has(.discoveryWorkspace){padding-top:10px}.discoveryHubIntro{padding:14px}.discoveryHubTitle{display:block}.discoveryHubSource{margin-top:12px}.discoveryEvidenceTools summary{align-items:flex-start}.discoveryToolReturn{flex-wrap:wrap;gap:8px}.discoveryToolReturn button{width:100%}}
