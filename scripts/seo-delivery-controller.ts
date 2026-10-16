@@ -7,6 +7,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
+import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
 import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
 
@@ -646,8 +647,31 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
     console.log(`Verified unrelated SNS bot-state-only main drift for ${task.id}; PR mergeability and exact SHA checks still required.`);
   }
 
+  // GitHub mergeability only proves that git can merge. Build the exact
+  // immutable PR head and inspect generated target HTML before merge.
+  const receipt = `head=${handoff.headSha};urls=${task.targetUrls.join('|')}`;
+  if (!(task.history ?? []).some(entry => entry.event === 'central_ci_passed' && entry.detail.startsWith(receipt + ';'))) {
+    try {
+      const summary = await verifySeoSiteBuild(task, handoff.headSha);
+      console.log(summary);
+      if (!dryRun) {
+        const current = await seoTaskGet({ id: task.id });
+        if (current.status !== 'in_progress' || current.deliveryHandoff.headSha !== handoff.headSha) return;
+        await seoTaskUpdate({
+          id: task.id, expectedRevision: current.revision,
+          appendHistory: { actor: 'seo_delivery_controller', event: 'central_ci_passed', detail: receipt + ';' + summary }
+        });
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`Central site CI failed for ${task.id}: ${reason}`);
+      if (!dryRun) await markFailed(task, `Central site CI: ${reason.slice(0, 1400)}`);
+      return;
+    }
+  }
+
   if (dryRun) {
-    console.log(`[dry-run] would merge ${task.id} PR #${pr.number}; exact HEAD/base and GitHub mergeability verified; peripheral GitHub Actions not consulted.`);
+    console.log(`[dry-run] would merge ${task.id} after exact HEAD, mergeability and central site CI.`);
     return;
   }
 
