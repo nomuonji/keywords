@@ -1133,11 +1133,12 @@ export async function seoTaskList(input: unknown) {
   if (args.siteId) {
     await ensureSite(args.siteId);
     items = ((await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[]).map(normalizeSeoTask);
-  } else if (args.status && ['ready', 'issued', 'in_progress'].includes(args.status)) {
-    // Hot scheduler path: server-side status equality, not a 500-document
-    // collection scan followed by a JavaScript filter.
+  } else if (args.status) {
+    // All status-scoped queries (including completed/pending publication
+    // verification and proposed/cooldown review) must use Firestore's indexed
+    // status equality. Avoid reading 500 unrelated Task records per query.
     const docs = await queryByField('seoTasks', 'status', args.status, 1000);
-    if (docs.length >= 1000) throw new Error('Active task list exceeds 999 matches; paginate before returning an incomplete queue');
+    if (docs.length >= 1000) throw new Error('Status-scoped SEO Task list exceeds 999 matches; paginate before returning an incomplete queue');
     items = docs.map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   } else {
     const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
