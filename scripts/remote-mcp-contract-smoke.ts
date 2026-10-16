@@ -37,6 +37,7 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'idea_memory_context',
   'idea_feedback_append',
   'idea_memory_feedback_profile',
+  'idea_memory_patch',
   'seo_source_pool_context',
   'seo_source_get',
   'seo_source_save',
