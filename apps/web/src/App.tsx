@@ -10,14 +10,14 @@ const SeoSourcePool = lazy(() => import('./SeoSourcePool').then(module => ({ def
 const MarketDiscovery = lazy(() => import('./MarketDiscovery').then(module => ({ default: module.MarketDiscovery })));
 const IdeaReview = lazy(() => import('./IdeaReview').then(module => ({ default: module.IdeaReview })));
 
-type DiscoveryTab='ideas'|'market'|'research'|'structures';
+type DiscoveryTool='market'|'research'|'structures';
 type View='operations'|'articles'|'sites'|'treasury'|'sources'|'discover';
 const legacyDiscoveryViews=['ideas','market','research','structures'];
-const discoveryTabs:Array<{id:DiscoveryTab;name:string;desc:string;step:string}>=[
-  {id:'ideas',name:'アイデアストック',desc:'7つの出口・タグ・評価・派生成果物',step:'01 / SORT'},
-  {id:'market',name:'市場を観測',desc:'外部実データから着想を得る',step:'02 / OBSERVE'},
-  {id:'research',name:'仮説を検証',desc:'反証・リスク・次の調査',step:'03 / CHALLENGE'},
-  {id:'structures',name:'サイトを設計',desc:'選んだサイト案のページ構造',step:'04 / PLAN'}
+// Three specialist ledgers remain accessible as supporting evidence, not parallel idea stores.
+const discoveryTools:Array<{id:DiscoveryTool;label:string;description:string}>=[
+  {id:'market',label:'楽天ランキング観測',description:'商品ジャンル別の外部観測データ'},
+  {id:'research',label:'仮説・反証の履歴',description:'市場仮説を疑い、未解決の論点を確認'},
+  {id:'structures',label:'サイトのページ設計',description:'採用したサイト案の構造・キーワード'}
 ];
 const views:Array<{id:View;label:string;hint:string}>=[
   {id:'operations',label:'運用',hint:'Issue・実行履歴'},
@@ -35,10 +35,10 @@ function readLocation(){
   const fallback = 'operations' as View;
   const legacy=legacyDiscoveryViews.includes(requested??'');
   const tab=params.get('tab');
-  const selectedTab=legacy ? requested : tab;
+  const selectedTool=legacy ? (requested==='ideas' ? null : requested) : tab;
   return {
     view:legacy ? 'discover' as View : views.some(item=>item.id===requested) ? requested as View : fallback,
-    tab:discoveryTabs.some(item=>item.id===selectedTab) ? selectedTab as DiscoveryTab : 'ideas' as DiscoveryTab,
+    tool:discoveryTools.some(item=>item.id===selectedTool) ? selectedTool as DiscoveryTool : null,
     projectId:params.get('project')??''
   };
 }
@@ -46,18 +46,18 @@ function readLocation(){
 export function App(){
   const initial=readLocation();
   const [view,setView]=useState<View>(initial.view);
-  const [discoveryTab,setDiscoveryTab]=useState<DiscoveryTab>(initial.tab);
+  const [discoveryTool,setDiscoveryTool]=useState<DiscoveryTool|null>(initial.tool);
   const [projectId,setProjectId]=useState(initial.projectId);
-  const navigate=(next:View,nextProjectId=projectId,replace=false,nextTab=discoveryTab)=>{
+  const navigate=(next:View,nextProjectId=projectId,replace=false,nextTool=discoveryTool)=>{
     const params=new URLSearchParams();
     if(next!=='operations')params.set('view',next);
-    if(next==='discover' && nextTab!=='ideas')params.set('tab',nextTab);
+    if(next==='discover' && nextTool)params.set('tab',nextTool);
     if(nextProjectId)params.set('project',nextProjectId);
     const url=`${window.location.pathname}${params.size?`?${params}`:''}`;
     window.history[replace?'replaceState':'pushState']({},'',url);
-    setView(next);setProjectId(nextProjectId);setDiscoveryTab(nextTab);
+    setView(next);setProjectId(nextProjectId);setDiscoveryTool(nextTool);
   };
-  useEffect(()=>{const onPop=()=>{const next=readLocation();setView(next.view);setProjectId(next.projectId);setDiscoveryTab(next.tab)};window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop)},[]);
+  useEffect(()=>{const onPop=()=>{const next=readLocation();setView(next.view);setProjectId(next.projectId);setDiscoveryTool(next.tool)};window.addEventListener('popstate',onPop);return()=>window.removeEventListener('popstate',onPop)},[]);
   return <div className="coreShell">
     <a className="skipLink" href="#main-content">本文へ移動</a>
     <header className="coreTopbar">
@@ -74,30 +74,38 @@ export function App(){
       {view==='sources'&&<SeoSourcePool/>}
       {view==='discover'&&<div className="discoveryWorkspace">
         <div className="discoveryHubIntro">
-          <p className="coreEyebrow">DISCOVERY / IDEA MEMORY</p>
-          <div className="discoveryHubTitle"><div><h1>発見から、使える企画へ。</h1>
-            <p>市場の観測や研究は専門機能のまま残し、提案の正本・評価・展開先は共通Idea Memoryで管理します。</p>
+          <p className="coreEyebrow">DISCOVERY / SINGLE IDEA MEMORY</p>
+          <div className="discoveryHubTitle"><div>
+            <h1>発見・企画</h1>
+            <p>市場で見つけた着想を1つのアイデアストックに集め、用途ごとに振り分けて評価します。</p>
           </div><span className="discoveryHubSource">1 IDEA DB <b>→</b> 7+ OUTLETS</span></div>
         </div>
-        <nav className="discoveryHubTabs" aria-label="発見・企画ワークスペース">
-          {discoveryTabs.map(item=><button key={item.id} type="button"
-            className={discoveryTab===item.id?'active':''}
-            aria-current={discoveryTab===item.id?'page':undefined}
-            onClick={()=>navigate('discover','',false,item.id)}>
-            <span className="discoveryHubStep">{item.step}</span>
-            <strong>{item.name}</strong><small>{item.desc}</small>
-          </button>)}
-        </nav>
-        <div className="discoveryHubContent">
-          {discoveryTab==='ideas'&&<IdeaReview/>}
-          {discoveryTab==='market'&&<MarketDiscovery/>}
-          {discoveryTab==='research'&&<ThemeResearch/>}
-          {discoveryTab==='structures'&&<SiteStructures/>}
-        </div>
-        {discoveryTab!=='ideas'&&<div className="discoveryHubNext">
-          <span>調査・設計の記録は既存の専門台帳に保持されます。採用する企画の評価・振り分けは共通Idea Memoryへ。</span>
-          <button type="button" onClick={()=>navigate('discover','',false,'ideas')}>アイデアストックへ戻る →</button>
-        </div>}
+        {discoveryTool ? <>
+          <div className="discoveryToolReturn">
+            <button type="button" onClick={()=>navigate('discover','',false,null)}>← アイデア一覧に戻る</button>
+            <div><strong>{discoveryTools.find(item=>item.id===discoveryTool)?.label}</strong>
+              <small>専門台帳の原データを参照中。企画の採否・出口別評価はアイデア一覧で管理します。</small>
+            </div>
+          </div>
+          <div className="discoveryHubContent">
+            {discoveryTool==='market'&&<MarketDiscovery/>}
+            {discoveryTool==='research'&&<ThemeResearch/>}
+            {discoveryTool==='structures'&&<SiteStructures/>}
+          </div>
+        </> : <>
+          <details className="discoveryEvidenceTools">
+            <summary><span>必要に応じて調査資料・詳細設計を開く</span>
+              <small>市場データ・仮説の反証・サイト構造は別のアイデア一覧ではありません</small>
+            </summary>
+            <div className="discoveryEvidenceOptions">
+              {discoveryTools.map(item=><button key={item.id} type="button"
+                onClick={()=>navigate('discover','',false,item.id)}>
+                <strong>{item.label}</strong><small>{item.description}</small><span aria-hidden="true">↗</span>
+              </button>)}
+            </div>
+          </details>
+          <div className="discoveryHubContent"><IdeaReview/></div>
+        </>}
       </div>}
       </Suspense>
     </main>
