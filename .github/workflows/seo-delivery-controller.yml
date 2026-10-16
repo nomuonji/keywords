@@ -2,12 +2,19 @@ name: seo-delivery-controller
 
 on:
   workflow_dispatch:
+    inputs:
+      cleanup_limit:
+        description: 'Maximum legacy merged branches to clean (0 means no sweep)'
+        type: number
+        required: false
+        default: 0
   push:
     branches:
       - main
     paths:
       - '.github/workflows/seo-delivery-controller.yml'
       - 'scripts/seo-delivery-controller.ts'
+      - 'scripts/seo-delivery-throughput.ts'
       - 'scripts/seo-prepared-ref-handoff-gate.ts'
       - 'packages/commands/src/seo-delivery-merge.ts'
   schedule:
@@ -30,6 +37,9 @@ jobs:
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
       SEO_DELIVERY_GITHUB_TOKEN: ${{ secrets.SEO_DELIVERY_GITHUB_TOKEN }}
       SEO_DELIVERY_MAX_TASKS: '20'
+      # Normal delivery never rescans and deletes up to 100 historical refs.
+      # A manual workflow_dispatch may opt in to at most ten legacy deletions.
+      SEO_DELIVERY_CLEANUP_SWEEP_LIMIT: ${{ github.event.inputs.cleanup_limit || '0' }}
       # Unified post-cutover transport for both ChatGPT and Groq Workers.
       # Existing pre-cutover PRs drain through the legacy controller path.
       # Set repo variable ENABLED=0 only to halt new prepared-ref delivery.
