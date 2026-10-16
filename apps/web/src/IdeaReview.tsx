@@ -222,6 +222,47 @@ export function IdeaReview() {
     finally { setBusyId(null); }
   }
 
+  async function organize(asset?: AssetRef) {
+    if (!detail || organizing || busyId) return;
+    const tags = [...new Set(tagInput.split(/[,、，\\n]+/).map(v => v.trim()).filter(Boolean))];
+    if (tags.length > 20 || tags.some(v => v.length > 60)) {
+      setError('タグは20個まで、各60文字以内にしてください。'); return;
+    }
+    const nextDestinations = [...new Set([...destInput, ...(asset ? [asset.destination] : [])])];
+    const nextAssets = asset ? [...(detail.assetRefs ?? []),asset] : (detail.assetRefs ?? []);
+    setOrganizing(true); setError(''); setMessage('');
+    try {
+      const response = await api<{idea:Idea;outcome:string}>('/api/theme-research', {
+        method:'POST',body:JSON.stringify({
+          action:'organize', ideaId:detail.id, expectedRevision:detail.revision,
+          tags, destinations:nextDestinations, assetRefs:nextAssets
+        })
+      });
+      setDetail(response.idea); setDestInput(response.idea.destinations ?? []);
+      setIdeas(rows => rows.map(row => row.id === detail.id ? {
+        ...row, tags:response.idea.tags, destinations:response.idea.destinations,
+        assetCount:response.idea.assetCount, revision:response.idea.revision,
+        updatedAt:response.idea.updatedAt
+      } : row));
+      if (asset) {setAssetTitle('');setAssetTarget('');}
+      setMessage(response.outcome === 'unchanged' ? '変更はありません。' : 'タグ・展開先・制作物を保存しました。');
+    } catch (e) {setError(e instanceof Error ? e.message : '保存に失敗しました。再読込してください。');}
+    finally {setOrganizing(false);}
+  }
+
+  function attachAsset() {
+    const title = assetTitle.trim();
+    if (!title || title.length > 200 || !detail) return;
+    const targetRef=assetTarget.trim();
+    if (targetRef && (!/^https:\/\//.test(targetRef) || targetRef.length>1000)) {
+      setError('制作物の参照先はHTTPSのURLにしてください。'); return;
+    }
+    if ((detail.assetRefs?.length ?? 0) >= 40) {setError('派生成果物の参照は40件までです。');return;}
+    void organize({id:'asset-'+crypto.randomUUID().replaceAll('-',''),
+      destination:assetDestination,kind:assetKind,title,owner:'Idea Memory',
+      stage:'proposed',...(targetRef ? {targetRef} : {})});
+  }
+
   const ratingButtons = (item: Idea, insideDetail = false) => <div className={'ideaQuickActions ' + (insideDetail ? 'ideaQuickActionsLarge' : '')}
     role="group" aria-label={item.title + 'の評価'}>
     <button type="button" className="good" aria-pressed={item.status === 'liked'} title="GOODとして保存"
