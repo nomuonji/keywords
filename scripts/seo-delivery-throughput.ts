@@ -17,3 +17,10 @@ export function cleanupSweepLimit(value: string | undefined): number {
   const n = Number(value ?? '0');
   return Number.isFinite(n) ? Math.max(0, Math.min(10, Math.trunc(n))) : 0;
 }
+
+/** Rate-limit circuit breaker: do not amplify a 429 with error-history writes. */
+export function firestoreRateLimited(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'status' in error
+      && (error as { status?: number }).status === 429) return true;
+  return /Firestore request failed \(429\)/.test(String(error));
+}
