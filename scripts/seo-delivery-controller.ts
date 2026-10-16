@@ -545,6 +545,16 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
     return;
   }
 
+  // Do not open a PR for a Task whose Manager-fixed rendered-page checks
+  // are missing. These checks are required before any build/merge attempt;
+  // a source-only Worker receipt cannot substitute for them.
+  if (!task.acceptanceChecks?.length || task.targetUrls.some(url =>
+    !task.acceptanceChecks.some(check => check.url === url))) {
+    if (!dryRun) await markFailed(task, 'Missing Manager-fixed acceptanceChecks for one or more target URLs; correct the Task through an authorized planning/review process before delivery.');
+    else console.log(`[dry-run] would block PR creation for ${task.id}: missing acceptanceChecks`);
+    return;
+  }
+
   const info = await repoInfo(task.repo);
   const base = info.default_branch || 'main';
   let actualBranchSha: string;
