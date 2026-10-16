@@ -16,6 +16,8 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
 let serpProxyCalls = 0;
+let firestoreReads = 0;
+const sessionListPageSizes: number[] = [];
 let forceUsageRaceToHardLimit = false;
 const originalFetch = globalThis.fetch;
 
@@ -49,6 +51,7 @@ globalThis.fetch = async (input, init) => {
   assert.ok(urlString.startsWith('https://firestore.googleapis.com/'), `Unexpected network: ${urlString}`);
   const url = new URL(urlString);
   const path = docPath(url);
+  if (!init?.method || init.method === 'GET') firestoreReads++;
   const body = init?.body ? JSON.parse(String(init.body)) : null;
 
   if (urlString.endsWith(':commit')) {
@@ -77,6 +80,7 @@ globalThis.fetch = async (input, init) => {
   }
 
   if (path.endsWith('/researchSessions')) {
+    sessionListPageSizes.push(Number(url.searchParams.get('pageSize') ?? 100));
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}researchSessions/`)).sort((a, b) => b.fields.updatedAt.stringValue.localeCompare(a.fields.updatedAt.stringValue));
     return Response.json({ documents: all });
   }
@@ -85,15 +89,19 @@ globalThis.fetch = async (input, init) => {
 };
 
 try {
+  const beforeFirstReads = firestoreReads;
   const first = await serpResearchCached({ query: '勤怠管理 SaaS 比較', country: 'JP', language: 'ja' });
   assert.equal(first.cache.hit, false);
   assert.equal(serpProxyCalls, 1);
   assert.equal(first.usage.actualApiRequests, 1);
+  assert.equal(firestoreReads - beforeFirstReads, 2, 'fresh SERP must reuse reserved counter without a third read');
 
+  const beforeCacheReads = firestoreReads;
   const cached = await serpResearchCached({ query: '  勤怠管理   SaaS 比較 ', country: 'jp', language: 'JA' });
   assert.equal(cached.cache.hit, true);
   assert.equal(serpProxyCalls, 1, 'fresh cache must avoid a second SERP API request');
   assert.equal(cached.usage.cacheHits, 1);
+  assert.equal(firestoreReads - beforeCacheReads, 2, 'cached SERP must reuse the updated cache-hit counter');
 
   const forced = await serpResearchCached({ query: '勤怠管理 SaaS 比較', country: 'JP', language: 'ja', forceRefresh: true });
   assert.equal(forced.cache.hit, false);
@@ -125,6 +133,9 @@ try {
   });
   assert.equal(session.revision, 1);
   assert.ok(session.runId);
+  const latestActive = await researchSessionGet({});
+  assert.equal(latestActive.id, session.id);
+  assert.deepEqual(sessionListPageSizes, [20], 'finding latest active session must not fetch a 100-document page');
 
   const keywordId = 'a'.repeat(32);
   const updated = await researchSessionUpdate({

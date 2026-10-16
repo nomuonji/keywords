@@ -64,7 +64,16 @@ try {
   const elapsed = Date.now() - slowStart;
   assert.ok(elapsed >= 300 && elapsed < 5000, `default delay should wait ~400ms (waited ${elapsed}ms)`);
 
-  console.log('firestore retry smoke passed: 429/503 backoff with Retry-After, immediate failure for other statuses, exhausted budget, opt-out, and bulk write pacing');
+  // Daily quota exhaustion is terminal for this invocation and short-circuits
+  // further calls in the same warm worker; generic 429 retry remains tested above.
+  script = [{ status: 429, body: {error: {status:'RESOURCE_EXHAUSTED',message:'Quota exceeded for daily free-tier reads'}}}, {status:200,body:{ok:true}}];
+  calls = [];
+  await assert.rejects(firestore('/sites?pageSize=1'), (error: unknown) => error instanceof FirestoreError && error.status === 429);
+  assert.equal(calls.length, 1, 'known daily quota exhaustion must not retry');
+  await assert.rejects(firestore('/sites?pageSize=1'), (error: unknown) => error instanceof FirestoreError && error.status === 429);
+  assert.equal(calls.length, 1, 'quota cooldown must reject before issuing another request');
+
+  console.log('firestore retry smoke passed: transient retries, daily quota fail-fast/circuit, and bulk write pacing');
 } finally {
   globalThis.fetch = originalFetch;
 }

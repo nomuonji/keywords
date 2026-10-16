@@ -168,10 +168,15 @@ export async function ideaMemoryContext(input: unknown = {}) {
   const params = new URLSearchParams({pageSize:String(args.limit),orderBy:'__name__'}); if (args.cursor) params.set('pageToken',args.cursor);
   const result = await firestore(`/ideaMemory?${params}`);
   const ideas = (result.documents ?? []).map((d:any) => parse<Idea>(d));
-  // Legacy records remain visible without copying or changing their user-rating semantics.
-  const legacy = await Promise.all([read('researchSessions/market-idea-feedback'),firestore('/researchSessions/market-idea-feedback/themeCandidates?pageSize=20')]);
-  const source = legacy[0] ? parse<any>(legacy[0]) : null;
-  const legacyIdeas = (legacy[1].documents ?? []).map((d:any) => parse<any>(d)).filter((v:any) => !ideas.some((x:Idea) => x.id === v.id || x.legacySourceId === v.id)).map((v:any) => ({ ...v, kind:v.id.startsWith('anti-pattern-') ? 'proposal_pattern' : 'idea', originalUserRating:v.id.startsWith('anti-pattern-') ? 'negative_pattern' : 'unreviewed' }));
+  // Legacy source records are stable and only needed on the first page.
+  // Reading them on every cursor page caused two extra billed document calls
+  // and duplicated legacy candidates in repeated preflight scans.
+  const legacy = args.cursor ? null : await Promise.all([
+    read('researchSessions/market-idea-feedback'),
+    firestore('/researchSessions/market-idea-feedback/themeCandidates?pageSize=20')
+  ]);
+  const source = legacy?.[0] ? parse<any>(legacy[0]) : null;
+  const legacyIdeas = (legacy?.[1]?.documents ?? []).map((d:any) => parse<any>(d)).filter((v:any) => !ideas.some((x:Idea) => x.id === v.id || x.legacySourceId === v.id)).map((v:any) => ({ ...v, kind:v.id.startsWith('anti-pattern-') ? 'proposal_pattern' : 'idea', originalUserRating:v.id.startsWith('anti-pattern-') ? 'negative_pattern' : 'unreviewed' }));
   return { ideas:args.status ? ideas.filter((v:Idea) => v.status === args.status) : ideas, nextCursor:result.nextPageToken ?? null, legacyIdeas, legacyFindings:source?.findings ?? [], guidance:'Legacy original rating is a historical snapshot; check feedback_profile for later events. Unreviewed is not liked or rejected. Broad presentation criticism is not a verdict on every idea. Search before proposing.' };
 }
 

@@ -139,14 +139,18 @@ async function mutateUsage(mutate: (usage: SerpUsage) => SerpUsage) {
   throw new Error('SERP usage counter contention: retry the request');
 }
 
-export async function serpUsageStatus() {
-  const { usage } = await getUsageDocument();
+function summarizeSerpUsage(usage: SerpUsage) {
   const config = serpQuotaConfiguration();
   const used = Number(usage.actualApiRequests ?? 0);
   const remaining = Math.max(0, config.monthlyLimit - used);
   const normalRemaining = Math.max(0, Math.min(config.normalCutoff - used, remaining));
   const state = used >= config.monthlyLimit ? 'hard_limited' : used >= config.normalCutoff ? 'soft_limited' : 'normal';
   return { ...usage, ...config, remaining, normalRemaining, state, normalRequestsAllowed: state === 'normal', forcedRequestsAllowed: used < config.monthlyLimit };
+}
+
+export async function serpUsageStatus() {
+  const { usage } = await getUsageDocument();
+  return summarizeSerpUsage(usage);
 }
 
 async function reserveApiRequest(forceRefresh: boolean) {
@@ -181,7 +185,7 @@ async function reserveApiRequest(forceRefresh: boolean) {
   throw new Error('SERP usage counter contention: retry the request');
 }
 async function recordCacheHit() {
-  await mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
+  return mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
 }
 
 function freeProxyProviderForRequest(requestNumber: number): 'reserp' | 'brightdata' {
@@ -218,8 +222,10 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   const cacheAgeHours = Math.min(config.cacheTtlDays * 24, args.maxCacheAgeHours ?? config.cacheTtlDays * 24);
   const cutoff = Date.now() - cacheAgeHours * 60 * 60 * 1000;
   if (!args.forceRefresh && cached && Date.parse(String(cached.fetchedAt)) >= cutoff) {
-    await recordCacheHit();
-    return { ...(cached.snapshot as SerpSnapshot), analysis: cached.analysis as SerpAnalysis, cache: { hit: true, cacheId, fetchedAt: cached.fetchedAt, expiresAt: cached.expiresAt }, usage: await serpUsageStatus() };
+    // The successful, revision-protected cache-hit counter update already returns
+    // the quota state. Avoid reading the same document a second time.
+    const usage = await recordCacheHit();
+    return { ...(cached.snapshot as SerpSnapshot), analysis: cached.analysis as SerpAnalysis, cache: { hit: true, cacheId, fetchedAt: cached.fetchedAt, expiresAt: cached.expiresAt }, usage: summarizeSerpUsage(usage) };
   }
 
   const reservedUsage = await reserveApiRequest(Boolean(args.forceRefresh));
@@ -241,7 +247,9 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   const expiresAt = new Date(Date.now() + config.cacheTtlDays * 24 * 60 * 60 * 1000).toISOString();
   const createdAt = cached?.createdAt ?? now;
   await firestore(`/serpCache/${cacheId}`, { method: 'PATCH', body: JSON.stringify({ fields: fields({ id: cacheId, cacheKey, query: args.query, country: args.country ?? null, language: args.language ?? null, location: args.location ?? null, provider, num, fetchedAt: snapshot.fetchedAt, expiresAt, snapshot, analysis, createdAt, updatedAt: now }) }) });
-  return { ...snapshot, analysis, cache: { hit: false, cacheId, fetchedAt: snapshot.fetchedAt, expiresAt }, usage: await serpUsageStatus() };
+  // The atomic reservation returned the quota state; another point read
+  // here would amplify Firestore reads without changing request admission.
+  return { ...snapshot, analysis, cache: { hit: false, cacheId, fetchedAt: snapshot.fetchedAt, expiresAt }, usage: summarizeSerpUsage(reservedUsage) };
 }
 
 function sessionId() { return `rs-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`; }
@@ -287,7 +295,10 @@ export async function researchSessionCreate(input: unknown) {
 
 export async function researchSessionList(input: unknown = {}) {
   const args = z.object(researchSessionListShape).strict().parse(input);
-  const params = new URLSearchParams({ pageSize: '100', orderBy: 'updatedAt desc' });
+  // For unfiltered lists, fetch only the requested number of Firestore docs.
+  // Filtering remains page-local, so allow bounded overfetch plus page tokens.
+  const pageSize = args.status || args.query ? Math.min(100, Math.max(20, args.limit * 4)) : args.limit;
+  const params = new URLSearchParams({ pageSize: String(pageSize), orderBy: 'updatedAt desc' });
   if (args.pageToken) params.set('pageToken', args.pageToken);
   const result = await firestore(`/researchSessions?${params}`);
   const q = args.query?.trim().toLowerCase();
@@ -302,8 +313,16 @@ export async function researchSessionGet(input: unknown = {}) {
     if (!found) throw new Error('Research session not found');
     return found.session;
   }
-  const active = await researchSessionList({ status: 'active', limit: 1 });
-  if (active.items[0]) return active.items[0];
+  // The prior implementation billed up to 100 document reads to locate one
+  // active session on every invocation. Scan small ordered pages and only
+  // continue when no active session was found; preserve the 100-doc bound.
+  let cursor: string | undefined;
+  for (let page = 0; page < 5; page++) {
+    const active = await researchSessionList({ status: 'active', limit: 1, ...(cursor ? { pageToken: cursor } : {}) });
+    if (active.items[0]) return active.items[0];
+    if (!active.nextPageToken) break;
+    cursor = active.nextPageToken;
+  }
   const latest = await researchSessionList({ limit: 1 });
   if (!latest.items[0]) throw new Error('No research session exists');
   return latest.items[0];

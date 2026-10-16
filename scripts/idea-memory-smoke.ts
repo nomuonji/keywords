@@ -47,7 +47,9 @@ const different={...base,title:'廃校を使ったイベント予約',userTask:'
 assert.equal(compareIdeas(different,ideas[0]).relation,'related_not_duplicate');
 const matches=await ideaMemorySearch({candidate:renamed,limit:5,includeRejected:true}); assert.ok(matches.matches.some((v:any)=>v.relation==='near_duplicate'));
 const page=await ideaMemoryContext({limit:10}); assert.equal(page.ideas.length,10); assert.ok(page.nextCursor);
+const readsBeforeNextPage = reads;
 const next=await ideaMemoryContext({limit:10,cursor:page.nextCursor}); assert.equal(next.ideas.length,10);
+assert.equal(reads - readsBeforeNextPage, 1, 'cursor pages must not refetch legacy idea history');
 await ideaFeedbackAppend({ideaId:'smoke-0',scope:'specific_idea',polarity:'negative',reason:'対象が曖昧',feedback:'この案は不要',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'rejected',idempotencyKey:'negative-0'});
 await ideaFeedbackAppend({ideaId:'smoke-1',scope:'specific_idea',polarity:'positive',reason:'使える',feedback:'採用',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'positive-1',axes:{appeal:4,revenue:3}});
 await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});

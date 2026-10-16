@@ -40,6 +40,10 @@ function baseUrl() { return `https://firestore.googleapis.com/v1/projects/${enco
 const RETRYABLE_STATUS = new Set([429, 503]);
 const RETRY_BASE_DELAY_MS = 1000;
 const RETRY_MAX_DELAY_MS = 30_000;
+// Avoid repeated paid/quota-rejected calls within a warm serverless worker.
+// Ordinary transient 429s and 503s still use the existing retry policy.
+const QUOTA_COOLDOWN_MS = 30_000;
+let quotaUnavailableUntil = 0;
 
 function retryAttempts() {
   const configured = Number(process.env.KEYWORDS_FIRESTORE_RETRY_ATTEMPTS ?? 3);
@@ -60,10 +64,21 @@ function retryDelayMs(attempt: number, retryAfter: string | null) {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export async function firestore(path: string, init?: RequestInit) {
+  if (Date.now() < quotaUnavailableUntil) throw new FirestoreError(429);
   const attempts = retryAttempts();
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(`${baseUrl()}${path}`, { ...init, headers: { authorization: `Bearer ${await accessToken()}`, 'content-type': 'application/json', ...(init?.headers ?? {}) } });
     if (response.ok) return response.json() as Promise<any>;
+    if (response.status === 429) {
+      // A daily/free-tier quota exhaustion cannot recover after another
+      // one-second retry. Keep the generic retry path for burst throttling.
+      const payload = await response.clone().json().catch(() => null) as any;
+      const message = String(payload?.error?.message ?? payload?.message ?? '');
+      if (/quota exceeded|free.tier|daily (?:quota|limit)|document reads limit/i.test(message)) {
+        quotaUnavailableUntil = Date.now() + QUOTA_COOLDOWN_MS;
+        throw new FirestoreError(429);
+      }
+    }
     // Throttling and transient unavailability are retried with backoff so bulk
     // onboarding/projection bursts survive quota bursts; local evidence never
     // depends on a single cloud attempt succeeding.
