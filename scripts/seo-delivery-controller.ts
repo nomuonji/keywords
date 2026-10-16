@@ -745,14 +745,10 @@ async function main() {
     return;
   }
 
-  const activeSites = await siteRegistryList({ status: 'active', limit: 100 });
-  const allowedRepos = new Set<string>(
-    activeSites.items
-      .map(site => site.repository)
-      .filter((repo): repo is string => typeof repo === 'string' && repo.length > 0)
-  );
-  const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items
-    .filter(task => allowedRepos.has(task.repo));
+  // Query the small delivery queue before reading the site registry. A routine
+  // idle cron now performs one status query rather than scanning every site.
+  const initialInProgress = (await seoTaskList({ status: 'in_progress', limit: 100 })).items;
+  const allowedRepos = new Set<string>();
 
   // Keep the exact Task records returned by the initial read. Reusing the
   // reconciliation return value avoids another global Firestore status scan.
@@ -760,12 +756,23 @@ async function main() {
   // Task state, refusal history and exact Worker checkpoint.
   const candidates: SeoTaskRecord[] = [];
   for (const pending of initialInProgress) {
+    if (!['push_pending', 'branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) continue;
+    let site;
+    try {
+      site = await siteRegistryGet({ id: pending.siteId });
+    } catch (error) {
+      if (firestoreRateLimited(error)) throw error;
+      console.warn(`Site lookup failed for ${pending.id}: ${String(error)}`);
+      continue;
+    }
+    if (site.status !== 'active' || site.repository !== pending.repo) continue;
+    allowedRepos.add(site.repository);
     if (pending.deliveryHandoff?.state !== 'push_pending') {
       if (['branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) candidates.push(pending);
       continue;
     }
     try {
-      const reconciled = await reconcilePushPending(pending, activeSites.items);
+      const reconciled = await reconcilePushPending(pending, [site]);
       if (['branch_ready', 'pr_open'].includes(reconciled.deliveryHandoff?.state ?? 'none')) candidates.push(reconciled);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -793,7 +800,9 @@ async function main() {
         console.log(`Delivery Task ${task.id} changed before PR processing; skipping.`);
         continue;
       }
-      await processTask(current, activeSites.items);
+      const site = await siteRegistryGet({ id: current.siteId });
+      if (site.status !== 'active' || site.repository !== current.repo) continue;
+      await processTask(current, [site]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error(`Task ${task.id} controller error: ${message}`);
@@ -810,7 +819,10 @@ async function main() {
   // Already cleaned at markCompleted(). A broad completed-task sweep on
   // every run wastes GitHub API calls and slows down real deliveries.
   // Explicit maintenance runs can opt into a small bounded cleanup sweep.
-  if (cleanupLimit > 0) await cleanupMergedSeoBranches(allowedRepos, cleanupLimit);
+  if (cleanupLimit > 0) {
+    const sites = await siteRegistryList({ status: 'active', limit: 100 });
+    await cleanupMergedSeoBranches(new Set(sites.items.map(site => site.repository)), cleanupLimit);
+  }
 }
 
 await main();
