@@ -22,10 +22,11 @@ type Idea = {
   unknowns?: string[]; maintenance?: string; reconsiderWhen?: string;
   sessionId?: string; createdAt?: string; updatedAt?: string;
   tags?: string[]; destinations?: string[]; assetRefs?: AssetRef[]; assetCount?:number; revision?:number;
+  destinationVerdicts?: Record<string,IdeaStatus>;
   presentationHistory?: Array<{ runId: string; presentedAt: string }>;
 };
 type ReviewEvent = {
-  id: string; ideaId?: string; scope: string; source: string;
+  id: string; ideaId?: string; scope: string; source: string; destination?:string;
   feedback: string; reason: string; statusAfter?: IdeaStatus; createdAt: string;
 };
 type IdeaPage = { items: Idea[]; nextCursor: string | null };
@@ -35,10 +36,10 @@ type Axis = 'appeal' | 'dbValue' | 'seo' | 'revenue' | 'upkeep';
 const PAGE_SIZE = 9;
 const axes: Array<{ id: Axis; label: string }> = [
   { id: 'appeal', label: '面白さ・興味' },
-  { id: 'dbValue', label: 'DBの必然性' },
-  { id: 'seo', label: 'SEOでの強さ' },
+  { id: 'dbValue', label: '形式・用途との相性' },
+  { id: 'seo', label: '見つけられやすさ・集客' },
   { id: 'revenue', label: '収益性' },
-  { id: 'upkeep', label: '維持のしやすさ' }
+  { id: 'upkeep', label: '制作・維持のしやすさ' }
 ];
 const names: Record<IdeaStatus, string> = {
   unreviewed: '未評価', liked: 'GOOD', rejected: 'ボツ', deferred: '保留', exploring: '探索中'
@@ -67,6 +68,16 @@ export function IdeaReview() {
   const [detailError, setDetailError] = useState('');
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all');
   const [outletFilter, setOutletFilter] = useState('all');
+  const [reviewTarget,setReviewTarget]=useState('overall');
+  const isOutlet=(value:string)=>outlets.some(outlet=>outlet.id===value);
+  const targetFor=(item:Idea,detailView=false)=>{
+    const choice=detailView ? reviewTarget : outletFilter;
+    return isOutlet(choice) && (item.destinations??[]).includes(choice) ? choice : 'overall';
+  };
+  const verdictFor=(item:Idea,detailView=false)=>{
+    const target=targetFor(item,detailView);
+    return target==='overall' ? item.status : item.destinationVerdicts?.[target] ?? 'unreviewed';
+  };
   const [tagInput, setTagInput] = useState('');
   const [destInput, setDestInput] = useState<string[]>([]);
   const [assetTitle, setAssetTitle] = useState('');
@@ -154,7 +165,7 @@ export function IdeaReview() {
   }, [detailOpen, historyLoaded, selectedId]);
 
   const filtered = useMemo(() => ideas
-    .filter(item => filter === 'all' || item.status === filter)
+    .filter(item => filter === 'all' || verdictFor(item) === filter)
     .filter(item => outletFilter === 'all' || (outletFilter === 'unassigned'
       ? !(item.destinations?.length) : (item.destinations ?? []).includes(outletFilter)))
     .filter(item => !query.trim() || [
@@ -167,12 +178,17 @@ export function IdeaReview() {
   const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
   const reviews = events.filter(e => e.ideaId === selectedId && e.scope === 'specific_idea' && e.source === 'direct_user');
   const stats = useMemo(() => Object.fromEntries(['unreviewed', 'liked', 'rejected', 'deferred', 'exploring']
-    .map(status => [status, ideas.filter(item => item.status === status).length])) as Record<IdeaStatus, number>, [ideas]);
+    .map(status => [status, ideas.filter(item =>
+      (outletFilter==='all' || (outletFilter==='unassigned' ? !(item.destinations?.length) :
+        (item.destinations??[]).includes(outletFilter))) && verdictFor(item)===status).length]))
+    as Record<IdeaStatus, number>, [ideas, outletFilter]);
 
   function openDetail(id: string) {
     setSelectedId(id);
     setComment('');
     setScores({});
+    const idea=ideas.find(item=>item.id===id);
+    setReviewTarget(idea && isOutlet(outletFilter) && (idea.destinations??[]).includes(outletFilter) ? outletFilter : 'overall');
     setDetailOpen(true);
   }
   async function logIn(event: FormEvent<HTMLFormElement>) {
@@ -198,26 +214,36 @@ export function IdeaReview() {
     if (busyId || submitting) return;
     const target = ideas.find(item => item.id === ideaId);
     if (!target) return;
+    const selectedTarget=targetFor(target,fromDetail);
+    const destination=selectedTarget==='overall' ? undefined : selectedTarget;
     setBusyId(ideaId); setError(''); setMessage(''); setSavedId('');
     try {
       const response = await api<{ status: IdeaStatus; event: ReviewEvent }>('/api/theme-research', {
         method: 'POST',
         body: JSON.stringify({
           action: 'review', ideaId, rating,
+          ...(destination ? {destination} : {}),
           comment: fromDetail ? comment : '',
           axes: fromDetail ? scores : {},
           idempotencyKey: 'ui_' + crypto.randomUUID().replaceAll('-', '')
         })
       });
       setIdeas(items => items.map(item => item.id === ideaId
-        ? { ...item, status: response.status, updatedAt: response.event.createdAt,
+        ? { ...item,
+            ...(destination ? {destinationVerdicts:{...(item.destinationVerdicts??{}),[destination]:response.status}} :
+              {status:response.status}),
+            updatedAt: response.event.createdAt,
             revision: item.revision ? item.revision + 1 : undefined } : item));
-      setDetail(current => current?.id === ideaId ? { ...current, status: response.status, updatedAt: response.event.createdAt,
+      setDetail(current => current?.id === ideaId ? { ...current,
+            ...(destination ? {destinationVerdicts:{...(current.destinationVerdicts??{}),[destination]:response.status}} :
+              {status:response.status}),
+            updatedAt: response.event.createdAt,
             revision: current.revision ? current.revision + 1 : undefined } : current);
       setEvents(old => [response.event, ...old]);
       if (fromDetail) { setComment(''); setScores({}); }
       setSavedId(ideaId);
-      setMessage('「' + target.title + '」を' + names[response.status] + 'として保存しました。');
+      setMessage('「' + target.title + '」の' + (destination ? outletName(destination) : 'アイデア全体') +
+        'を' + names[response.status] + 'として保存しました。');
     } catch (e) { setError(e instanceof Error ? e.message : '評価を保存できませんでした'); }
     finally { setBusyId(null); }
   }
@@ -264,12 +290,13 @@ export function IdeaReview() {
   }
 
   const ratingButtons = (item: Idea, insideDetail = false) => <div className={'ideaQuickActions ' + (insideDetail ? 'ideaQuickActionsLarge' : '')}
-    role="group" aria-label={item.title + 'の評価'}>
-    <button type="button" className="good" aria-pressed={item.status === 'liked'} title="GOODとして保存"
+    role="group" aria-label={item.title + 'の' + (targetFor(item,insideDetail)==='overall'
+      ? 'アイデア全体' : outletName(targetFor(item,insideDetail))) + 'の評価'}>
+    <button type="button" className="good" aria-pressed={verdictFor(item,insideDetail) === 'liked'} title="GOODとして保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'good', insideDetail)}>GOOD</button>
-    <button type="button" className="reject" aria-pressed={item.status === 'rejected'} title="ボツとして保存"
+    <button type="button" className="reject" aria-pressed={verdictFor(item,insideDetail) === 'rejected'} title="ボツとして保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'reject', insideDetail)}>ボツ</button>
-    <button type="button" className="hold" aria-pressed={item.status === 'deferred'} title="保留として保存"
+    <button type="button" className="hold" aria-pressed={verdictFor(item,insideDetail) === 'deferred'} title="保留として保存"
       disabled={!!busyId} onClick={() => void rate(item.id, 'hold', insideDetail)}>保留</button>
     {busyId === item.id && <span className="ideaSaving" role="status">保存中…</span>}
   </div>;
