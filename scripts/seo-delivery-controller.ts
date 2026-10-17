@@ -9,7 +9,7 @@ import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/s
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -632,24 +632,46 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
   }
   const currentMainSha = await branchSha(task.repo, base);
   if (handoff.baseSha !== currentMainSha) {
-    // The only exception to exact-main matching is a previously verified
-    // branch fallback plus disjoint, non-content SNS bot state changes.
-    const workerDelta = isBranchFallback(task)
+    // Standard fallback accepts only unrelated SNS bot-state main drift.
+    // Corrective prepared commits are different: they must fast-forward an
+    // EXACT existing task branch after an independently recorded failure.
+    // Inspect the final net diff against live main and the full parent chain
+    // instead of trusting a previously broken multi-commit branch.
+    const fallbackDelta = isBranchFallback(task)
       ? await gh<{ status: string; ahead_by: number; behind_by: number; files: { filename: string }[] }>(
           api(task.repo, `/compare/${handoff.baseSha}...${handoff.headSha}`)
         )
       : null;
-    const stillCompatible = workerDelta?.status === 'ahead' && workerDelta.ahead_by === 1
-      && workerDelta.behind_by === 0 && workerDelta.files?.length > 0
+    const fallbackCompatible = fallbackDelta?.status === 'ahead'
+      && fallbackDelta.ahead_by === 1 && fallbackDelta.behind_by === 0
+      && fallbackDelta.files?.length > 0
       && await compatibleFallbackMainDrift(
         task.repo, handoff.baseSha, currentMainSha,
-        workerDelta.files.map(file => file.filename)
+        fallbackDelta.files.map(file => file.filename)
       );
-    if (!stillCompatible) {
-      console.log(`Waiting: ${task.id} main advanced beyond the exact or narrowly compatible branch base; revalidation required.`);
+
+    let correctiveCompatible = false;
+    if (!fallbackCompatible && isPrepared(task)) {
+      const commit = await gh<{ message: string; parents: { sha: string }[] }>(
+        api(task.repo, `/git/commits/${handoff.headSha}`)
+      );
+      const exactCorrectiveParent = commit.message?.startsWith('[CF-Pages-Skip]')
+        && commit.parents?.length === 1
+        && commit.parents[0].sha === handoff.baseSha;
+      if (exactCorrectiveParent) {
+        const net = await gh<{
+          status: string; ahead_by: number; behind_by: number;
+          merge_base_commit: { sha: string };
+          files: { filename: string }[];
+        }>(api(task.repo, `/compare/${currentMainSha}...${handoff.headSha}`));
+        correctiveCompatible = verifiedCorrectiveMainNetDiff(task, currentMainSha, net);
+      }
+    }
+    if (!fallbackCompatible && !correctiveCompatible) {
+      console.log(`Waiting: ${task.id} current-main ancestry or bounded corrective provenance cannot be proved.`);
       return;
     }
-    console.log(`Verified unrelated SNS bot-state-only main drift for ${task.id}; PR mergeability and exact SHA checks still required.`);
+    console.log(`Verified ${correctiveCompatible ? 'bounded corrective net diff' : 'SNS bot-state-only drift'} for ${task.id}; exact PR HEAD, mergeability and central build remain mandatory.`);
   }
 
   // GitHub mergeability only proves that git can merge. Build the exact
