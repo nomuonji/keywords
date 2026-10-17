@@ -59,6 +59,12 @@ const repairTask = {...task,history:[incident,correction],deliveryHandoff:{...ta
 const mainSha='a'.repeat(40);
 const net={status:'ahead',ahead_by:4,behind_by:0,merge_base_commit:{sha:mainSha},files:[{filename:'src/data/tools.json'}]};
 assert.equal(verifiedCorrectiveMainNetDiff(repairTask, mainSha, net),true);
+const runnerFailure = {event:'delivery_failed',actor:'seo_delivery_controller',detail:'Central site CI: docker failed EACCES',at:'2026-10-13T07:20:00Z'};
+const runnerRetry = {event:'central_ci_checkout_permission_retry',actor:'seo_delivery_controller',detail:'same PR/head only',at:'2026-10-13T07:30:00Z'};
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure]},mainSha,net),false);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure,runnerRetry]},mainSha,net),true);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerRetry,runnerFailure]},mainSha,net),false);
+
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[correction,incident]},mainSha,net),false);
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident]},mainSha,net),false);
 assert.equal(verifiedCorrectiveMainNetDiff(repairTask,mainSha,{...net,behind_by:1}),false);
