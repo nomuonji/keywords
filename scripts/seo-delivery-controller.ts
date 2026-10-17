@@ -9,7 +9,7 @@ import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/s
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, preparedHandoffHasRecordedRefusal } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -213,6 +213,52 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
     claimRunId: current.executionClaim?.runId,
     deliveryHandoff: handoff,
     appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_error', detail }
+  });
+}
+
+/**
+ * A controller-side isolated Docker copy may be read-only even though source
+ * validation succeeded. After the runner permission fix, retry a single
+ * existing PR at its EXACT head without asking a Worker to rewrite content.
+ * All other CI failures remain ci_failed for corrective Worker inspection.
+ */
+function retryableOgAssetPermissionFailure(task: SeoTaskRecord): boolean {
+  const h = task.deliveryHandoff;
+  return task.status === 'in_progress'
+    && task.executionClaim === null
+    && h?.state === 'ci_failed'
+    && Boolean(h.prNumber && h.prUrl && h.headSha && h.branch)
+    && h.lastError.startsWith('Central site CI: docker failed')
+    && h.lastError.includes("EACCES: permission denied, open '/work/public/og/")
+    && !preparedHandoffHasRecordedRefusal(task)
+    && !(task.history ?? []).some(entry => entry.event === 'central_ci_og_permission_retry');
+}
+
+async function resumeOgPermissionFailure(task: SeoTaskRecord): Promise<SeoTaskRecord | null> {
+  const current = await seoTaskGet({ id: task.id });
+  if (!retryableOgAssetPermissionFailure(current)) return null;
+  const site = await siteRegistryGet({ id: current.siteId });
+  if (site.status !== 'active' || site.repository !== current.repo) return null;
+  const info = await repoInfo(current.repo);
+  const h = current.deliveryHandoff;
+  const pr = await pullByNumber(current.repo, h.prNumber!);
+  if (pr.state !== 'open' || pr.merged || pr.head.sha !== h.headSha
+      || pr.head.ref !== h.branch || pr.base.ref !== info.default_branch
+      || pr.html_url !== h.prUrl) return null;
+  if (await branchSha(current.repo, h.branch!) !== h.headSha) return null;
+  if (dryRun) {
+    console.log(`[dry-run] would resume exact-HEAD isolated OG permission retry for ${current.id}`);
+    return null;
+  }
+  return seoTaskUpdate({
+    id: current.id,
+    expectedRevision: current.revision,
+    deliveryHandoff: nextHandoff(h, { state: 'pr_open', lastError: '' }),
+    appendHistory: {
+      actor: 'seo_delivery_controller',
+      event: 'central_ci_og_permission_retry',
+      detail: `Retrying PR #${pr.number} at exact ${h.headSha} once after central disposable Docker checkout permissions were fixed; no Worker ref/source write.`
+    }
   });
 }
 
@@ -786,6 +832,19 @@ async function main() {
   // Task state, refusal history and exact Worker checkpoint.
   const candidates: SeoTaskRecord[] = [];
   for (const pending of initialInProgress) {
+    if (retryableOgAssetPermissionFailure(pending)) {
+      try {
+        const resumed = await resumeOgPermissionFailure(pending);
+        if (resumed) candidates.push(resumed);
+      } catch (error) {
+        if (firestoreRateLimited(error)) {
+          console.warn('Firestore 429: stop bounded isolated-build retry without changing schedules.');
+          return;
+        }
+        console.error(`Isolated OG permission retry not completed for ${pending.id}: ${String(error)}`);
+      }
+      continue;
+    }
     if (!['push_pending', 'branch_ready', 'pr_open'].includes(pending.deliveryHandoff?.state ?? 'none')) continue;
     let site;
     try {
