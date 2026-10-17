@@ -4,7 +4,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { firestoreRateLimited } from './seo-delivery-throughput.js';
-import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
+import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch, publicationTargetIds, publicationWaitBudget, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const proofToken = process.env.SEO_PUBLICATION_GITHUB_TOKEN?.trim() || token;
@@ -143,11 +143,13 @@ async function connectEvent(task: SeoTaskRecord, publishedAt: string) {
   }
 }
 
-async function verify(task: SeoTaskRecord) {
+type PublicationResult = 'verified' | 'pending' | 'failed' | 'skipped';
+async function verify(task: SeoTaskRecord, immediate = false): Promise<PublicationResult> {
+  if (task.status !== 'completed' || task.deploymentVerification.status === 'verified') return 'skipped';
   const site = await siteRegistryGet({ id: task.siteId });
   if (site.status !== 'active' || site.repository !== task.repo) {
     console.log(`${task.id}: inactive site or repository mismatch; pending.`);
-    return;
+    return 'pending';
   }
   let deployed: { sha: string; at: string } | null = null;
   if (site.deploymentProvider === 'cloudflare_pages') {
@@ -161,7 +163,7 @@ async function verify(task: SeoTaskRecord) {
   deployed ??= await successfulDeployment(task);
   if (!deployed) {
     console.log(`${task.id}: no successful production deployment with matching/descendant SHA; pending.`);
-    return;
+    return 'pending';
   }
   let detail: string;
   try {
@@ -171,6 +173,13 @@ async function verify(task: SeoTaskRecord) {
     const current = await seoTaskGet({ id: task.id });
     const unverifiable = /^(?:missing_|target_outside_registered_site|public_http_(?:429|5\d\d)|fetch failed|this operation was aborted|timeout)/i.test(detail);
     const nextStatus = unverifiable ? 'pending' : 'failed';
+    if (immediate) {
+      // Pages can report deploy success before the custom-domain body catches
+      // up. Don't persist a false failure during the immediate poll window.
+      // Scheduled recovery will record a persistent mismatch if it remains.
+      console.log(`${task.id}: immediate page evidence not ready (${detail}); keeping pending.`);
+      return 'pending';
+    }
     if (current.status === 'completed'
         && (current.deploymentVerification.status !== nextStatus || current.deploymentVerification.detail !== detail)) {
       await seoTaskUpdate({ id: task.id, expectedRevision: current.revision,
@@ -178,17 +187,57 @@ async function verify(task: SeoTaskRecord) {
       });
     }
     console.log(`${task.id}: deployment exists but publication check failed: ${detail}`);
-    return;
+    return nextStatus;
   }
   const current = await seoTaskGet({ id: task.id });
   if (current.status !== 'completed' || current.resultCommitSha !== task.resultCommitSha
-      || current.deploymentVerification.status === 'verified') return;
+      || current.deploymentVerification.status === 'verified') return 'skipped';
   await seoTaskUpdate({ id: task.id, expectedRevision: current.revision,
     deploymentVerification: { status: 'verified', checkedAt: new Date().toISOString(),
       productionUrl: site.productionUrl, deployedCommitSha: deployed.sha, detail: `${detail}; deployment=${deployed.sha}` }
   });
   await connectEvent(task, deployed.at);
   console.log(`${task.id}: verified ${deployed.sha}; optimization window linked where uniquely matched.`);
+  return 'verified';
+}
+
+
+async function verifyNewlyCompletedTasks(ids: string[]) {
+  const deadline = Date.now() + publicationWaitBudget(process.env.SEO_PUBLICATION_WAIT_MS);
+  const outstanding = new Set(ids);
+  const pollInterval = 20_000;
+  console.log(`Immediate publication verification for ${outstanding.size} newly merged Task(s).`);
+  do {
+    for (const id of [...outstanding]) {
+      try {
+        const task = await seoTaskGet({ id });
+        if (task.status !== 'completed' || task.deploymentVerification.status === 'verified') {
+          outstanding.delete(id);
+          continue;
+        }
+        const result = await verify(task, true);
+        if (result === 'verified' || result === 'skipped' || result === 'failed') outstanding.delete(id);
+      } catch (error) {
+        if (firestoreRateLimited(error)) {
+          console.warn('Firestore 429: defer immediate publication checks to scheduled recovery.');
+          return;
+        }
+        console.warn(`${id}: immediate publication evidence unavailable: ${String(error)}`);
+        // Missing repository deployment records do not appear by retrying
+        // with the same credentials; let scheduled recovery handle this case.
+        if (/GitHub deployment evidence HTTP (?:403|404)/.test(String(error))) outstanding.delete(id);
+      }
+    }
+    if (!outstanding.size || Date.now() >= deadline) break;
+    const wait = Math.min(pollInterval, Math.max(0, deadline - Date.now()));
+    if (!wait) break;
+    await new Promise(resolve => setTimeout(resolve, wait));
+  } while (outstanding.size);
+  if (outstanding.size) {
+    console.log(`Immediate publication timeout: ${[...outstanding].join(',')}; left pending for scheduled recovery.`);
+  } else {
+    console.log('Immediate publication checks complete; no pending poll targets.');
+  }
 }
 
 if (token) {
@@ -199,6 +248,10 @@ if (token) {
     process.exitCode = 1;
   }
   try {
+    const immediateIds = publicationTargetIds(process.env.SEO_PUBLICATION_TARGET_TASK_IDS);
+    if (immediateIds.length) {
+      await verifyNewlyCompletedTasks(immediateIds);
+    } else {
     const [pending, failed] = await Promise.all([
       seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending', limit: 100 }),
       seoTaskList({ status: 'completed', deploymentVerificationStatus: 'failed', limit: 100 })
@@ -231,6 +284,7 @@ if (token) {
     }
     }
     console.log(`Publication verifier considered ${due.length} due Task(s).`);
+    }
   } catch (error) {
     if (firestoreRateLimited(error)) console.warn('Firestore 429: publication batch skipped.');
     else throw error;
