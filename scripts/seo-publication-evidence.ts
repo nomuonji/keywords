@@ -31,3 +31,19 @@ export function completedProductionPagesDeployment(deploy: PagesDeployment): str
   const sha = deploy.deployment_trigger?.metadata?.commit_hash ?? '';
   return /^[a-f0-9]{40}$/.test(sha) ? sha : null;
 }
+
+// Rotate across the same durable pending/failed queue rather than repeatedly
+// retrying the oldest failed proofs. No extra Firestore cursor/write is needed.
+export function duePublicationBatch<T extends { id: string; completedAt?: string | null; deploymentVerification: { checkedAt?: string | null } }>(
+  tasks: T[], now: number, limit: number, intervalMs = 2 * 60 * 60 * 1000
+): T[] {
+  const due = tasks.filter(task => {
+    const checkedAt = task.deploymentVerification.checkedAt;
+    return !checkedAt || !Number.isFinite(Date.parse(checkedAt))
+      || now - Date.parse(checkedAt) >= 86_400_000;
+  }).sort((a, b) => String(a.completedAt ?? '').localeCompare(String(b.completedAt ?? '')) || a.id.localeCompare(b.id));
+  const count = Math.min(due.length, Math.max(0, Math.floor(limit)));
+  if (!count) return [];
+  const offset = (Math.floor(now / intervalMs) * count) % due.length;
+  return Array.from({ length: count }, (_, i) => due[(offset + i) % due.length]);
+}
