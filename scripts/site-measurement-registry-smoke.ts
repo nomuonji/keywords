@@ -39,6 +39,5 @@ assert.equal(prefix.job?.gscProperty, 'https://manner.antonbase.com/');
 
 assert.equal(measurementCandidate(site('no-gsc', { searchConsoleProperty: null })).reason, 'gsc_property_not_registered');
 assert.equal(measurementCandidate(site('draft', { status: 'building' })).reason, 'not_active');
-assert.equal(measurementCandidate(site('unsafe', { productionUrl: 'http://localhost/' })).job?.domain, 'localhost');
-// The sitemap downloader independently protects against local/private hosts.
+assert.equal(measurementCandidate(site('unsafe', { productionUrl: 'http://localhost/' })).reason, 'invalid_production_url');
 console.log('site measurement registry smoke passed: dynamic sites, preserved bindings, stable IDs, GSC eligibility');
