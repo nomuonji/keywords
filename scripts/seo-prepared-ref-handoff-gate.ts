@@ -43,7 +43,7 @@ export function preparedRefBaseError(
  * are never accepted as new clean handoffs.
  */
 export function verifiedCorrectiveMainNetDiff(
-  task: Pick<SeoTaskRecord, 'history' | 'deliveryHandoff'>,
+  task: Pick<SeoTaskRecord, 'id' | 'history' | 'deliveryHandoff'>,
   currentMainSha: string,
   comparison: {
     status: string; ahead_by: number; behind_by: number;
@@ -52,12 +52,12 @@ export function verifiedCorrectiveMainNetDiff(
   }
 ): boolean {
   const events = task.history ?? [];
-  const lastFailure = events.findLastIndex(event =>
-    event.event === 'delivery_failed' || event.event === 'implementation_blocked'
+  const lastFailure = events.reduce((index, event, i) =>
+    event.event === 'delivery_failed' || event.event === 'implementation_blocked' ? i : index, -1
   );
-  const lastCorrection = events.findLastIndex(event =>
+  const lastCorrection = events.reduce((index, event, i) =>
     event.event === 'delivery_push_pending'
-    && (event.actor === 'seo_worker' || event.actor === 'chatgpt_seo_worker')
+    && (event.actor === 'seo_worker' || event.actor === 'chatgpt_seo_worker') ? i : index, -1
   );
   const files = comparison.files ?? [];
   return task.deliveryHandoff?.validationSummary.startsWith('Action-Ref-Handoff: v1\n') === true
