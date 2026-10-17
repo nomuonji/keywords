@@ -11,6 +11,9 @@
 - Central Actions validates the persisted checkpoint and builds the exact target SHA before merging. Missing build profile, generated target HTML or canonical is a blocked delivery requiring correction; explicit optional content/link assertions must pass when supplied.
 - The existing central SEO Actions publication verifier runs after the two-hourly delivery recovery sweep (and on verifier changes or manual dispatch), selecting up to twelve due completed Tasks per run with fair rotation so blocked old records cannot starve the rest. It requires a successful production GitHub deployment at the merge SHA or a descendant plus the live page checks. If the host does not create GitHub deployment evidence, the Task remains pending until a trustworthy provider-specific proof path exists. A unique proposed Optimization Event linked by article ID and commit starts its measurement window only after verified publication.
 
+
+- GitHub Actions publication prerequisites: repository variable `CLOUDFLARE_ACCOUNT_ID` and repository secret `CLOUDFLARE_API_TOKEN` (read-only Pages scope) must be configured for Cloudflare Pages projects. The Vercel/Sites Operator environment having these credentials **does not** propagate them to GitHub Actions. A missing provider credential is a failed verifier job, not a verified publication or a silently successful sweep. For GitHub Deployment fallback, use the workflow's `deployments: read` GitHub Actions token, independently of the delivery PAT.
+
 ## System throughput / queue health (2026-10-16)
 
 - The Manager is responsible for a **useful executable backlog**, not an arbitrary number of Tasks. At the start of each run count actual `ready`, `in_progress`, and `push_pending`/delivery handoffs separately; exclude `proposed`, `cancelled`, expired/duplicate/safety-refused work from executable capacity. Keep the difference between queue starvation and delivery/CI stagnation visible in the run report.
