@@ -154,7 +154,7 @@ async function verify(task: SeoTaskRecord) {
   } catch (error) {
     detail = error instanceof Error ? error.message : String(error);
     const current = await seoTaskGet({ id: task.id });
-    const unverifiable = /^(?:missing_|target_outside_registered_site)/.test(detail);
+    const unverifiable = /^(?:missing_|target_outside_registered_site|public_http_(?:429|5\d\d)|fetch failed|this operation was aborted|timeout)/i.test(detail);
     const nextStatus = unverifiable ? 'pending' : 'failed';
     if (current.status === 'completed'
         && (current.deploymentVerification.status !== nextStatus || current.deploymentVerification.detail !== detail)) {
@@ -185,8 +185,10 @@ if (token) {
     const due = [...pending.items, ...failed.items]
       .filter(task => !task.deploymentVerification.checkedAt
         || Date.now() - Date.parse(task.deploymentVerification.checkedAt) >= 86_400_000)
+      // Drain the oldest publication backlog first; continue from the same
+      // recorded states next run without adding another database or task queue.
       .sort((a, b) => String(a.completedAt).localeCompare(String(b.completedAt)))
-      .slice(0, 4);
+      .slice(0, 12);
     let quotaStopped = false;
     for (const task of due) {
       try { await verify(task); }
