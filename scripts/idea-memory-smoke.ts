@@ -37,9 +37,9 @@ globalThis.fetch = async (input:any, init?:RequestInit) => {
 };
 const base = { audience:'廃校を訪ねる旅行者',userTask:'廃校の現在の使われ方を知る',entities:'学校跡地と新しい施設',informationMechanism:'閉校から再利用までの年表',interaction:'地図から場所を選び変遷を見る',maintenance:'年一回確認' };
 const agentReview = {
-  rubricVersion:'idea-final-judge-v2' as const,assessedAt:'2026-10-14T00:00:00.000Z',
-  verdict:'pass' as const,axes:{appeal:5,dbValue:4,seo:3,revenue:2,upkeep:4},
-  requiredAxes:['dbValue','upkeep'],strongestObjection:'初期データが少ない',
+  rubricVersion:'idea-final-judge-v3' as const,assessedAt:'2026-10-14T00:00:00.000Z',
+  verdict:'pass' as const,axes:{appeal:5,dbValue:4,seo:3,revenue:2,contentFeasibility:5,upkeep:4},
+  requiredAxes:['dbValue','contentFeasibility','upkeep'],strongestObjection:'初期データが少ない',
   passRationale:'具体的な廃校施設の変遷から発見が生まれる'
 };
 const ideas=Array.from({length:30},(_,i)=>({...base,id:`smoke-${i}`,title:`廃校のその後 ${i}`,entities:`学校跡地と新しい施設 ${i}`,presentedAt:'2026-10-14T00:00:00.000Z',
@@ -55,6 +55,7 @@ await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-lo
   agentReview:{...agentReview,axes:{...agentReview.axes,appeal:4}}}],runId:'smoke-low'}),/Only appeal 5\/5 may pass/);
 const initialReview = await ideaReviewDetail('smoke-0');
 assert.equal(initialReview?.agentReview?.axes.appeal,5);
+assert.equal(initialReview?.agentReview?.axes.contentFeasibility,5);
 const renamed={...base,title:'閉校した学校は今どう使われるか'};
 assert.equal(compareIdeas(renamed,ideas[0]).relation,'near_duplicate');
 const different={...base,title:'廃校を使ったイベント予約',userTask:'廃校で開催されるイベントを予約する',informationMechanism:'イベントの日程表',interaction:'日付で空席を選び予約する'};
@@ -65,7 +66,7 @@ const readsBeforeNextPage = reads;
 const next=await ideaMemoryContext({limit:10,cursor:page.nextCursor}); assert.equal(next.ideas.length,10);
 assert.equal(reads - readsBeforeNextPage, 1, 'cursor pages must not refetch legacy idea history');
 await ideaFeedbackAppend({ideaId:'smoke-0',scope:'specific_idea',polarity:'negative',reason:'対象が曖昧',feedback:'この案は不要',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'rejected',idempotencyKey:'negative-0'});
-await ideaFeedbackAppend({ideaId:'smoke-1',scope:'specific_idea',polarity:'positive',reason:'使える',feedback:'採用',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'positive-1',axes:{appeal:4,revenue:3}});
+await ideaFeedbackAppend({ideaId:'smoke-1',scope:'specific_idea',polarity:'positive',reason:'使える',feedback:'採用',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',statusAfter:'liked',idempotencyKey:'positive-1',axes:{appeal:4,revenue:3,contentFeasibility:2}});
 await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});
 const retry=await ideaFeedbackAppend({scope:'whole_batch',polarity:'negative',reason:'根拠が薄い',feedback:'提案品質が悪い',source:'direct_user',sourceDate:'2026-10-14T00:00:00.000Z',idempotencyKey:'broad'});
 assert.equal(retry.outcome,'unchanged');
@@ -113,7 +114,7 @@ const summaries=await ideaReviewList({limit:100,summary:true});
 assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.destinationVerdicts?.youtube_video,'liked');
 assert.equal(summaries.items.find((item:any)=>item.id==='smoke-0')?.agentReview?.axes.appeal,5);
 const feedbackProfile=await ideaMemoryFeedbackProfile({limit:10});
-assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3});
+assert.deepEqual(feedbackProfile.events.find((e:any)=>e.ideaId==='smoke-1')?.axes,{appeal:4,revenue:3,contentFeasibility:2});
 assert.ok(reads < 110,'two extra outlet feedback writes and summary still require bounded reads'); assert.equal(writes,40);
 const normalFetch = globalThis.fetch;
 globalThis.fetch = async (input:any,init?:RequestInit) => String(input).includes('/documents:runQuery') ? json({error:'quota'},429) : normalFetch(input,init);

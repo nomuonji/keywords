@@ -28,9 +28,9 @@ const scope = z.enum(['specific_idea', 'proposal_format', 'research_quality', 'd
 const polarity = z.enum(['positive', 'negative', 'mixed', 'neutral']);
 
 const reviewAxis = z.number().int().min(1).max(5);
-const reviewAxisName = z.enum(['dbValue','seo','revenue','upkeep']);
+const reviewAxisName = z.enum(['dbValue','seo','revenue','contentFeasibility','upkeep']);
 const agentReviewShape = z.object({
-  rubricVersion: z.literal('idea-final-judge-v2'),
+  rubricVersion: z.enum(['idea-final-judge-v2','idea-final-judge-v3']),
   assessedAt: z.string().datetime(),
   verdict: z.literal('pass'),
   axes: z.object({
@@ -38,9 +38,10 @@ const agentReviewShape = z.object({
     dbValue: reviewAxis.optional(),
     seo: reviewAxis.optional(),
     revenue: reviewAxis.optional(),
+    contentFeasibility: reviewAxis.optional(),
     upkeep: reviewAxis.optional()
   }).strict(),
-  requiredAxes: z.array(reviewAxisName).max(4),
+  requiredAxes: z.array(reviewAxisName).max(5),
   strongestObjection: txt,
   passRationale: txt
 }).strict().superRefine((review, context) => {
@@ -76,6 +77,7 @@ export const ideaFeedbackAppendShape = {
     dbValue: z.number().int().min(1).max(5).optional(),
     seo: z.number().int().min(1).max(5).optional(),
     revenue: z.number().int().min(1).max(5).optional(),
+    contentFeasibility: z.number().int().min(1).max(5).optional(),
     upkeep: z.number().int().min(1).max(5).optional()
   }).strict().optional()
 };

@@ -40,14 +40,15 @@ type ReviewEvent = {
 type IdeaPage = { items: Idea[]; nextCursor: string | null };
 type EventPage = { events: ReviewEvent[]; nextCursor: string | null };
 type Rating = 'good' | 'reject' | 'hold' | 'reset';
-type Axis = 'appeal' | 'dbValue' | 'seo' | 'revenue' | 'upkeep';
+type Axis = 'appeal' | 'dbValue' | 'seo' | 'revenue' | 'contentFeasibility' | 'upkeep';
 const PAGE_SIZE = 9;
-const axes: Array<{ id: Axis; label: string }> = [
+const axes: Array<{ id: Axis; label: string; description?: string }> = [
   { id: 'appeal', label: '面白さ・興味' },
   { id: 'dbValue', label: '形式・用途との相性' },
   { id: 'seo', label: '見つけられやすさ・集客' },
   { id: 'revenue', label: '収益性' },
-  { id: 'upkeep', label: '制作・維持のしやすさ' }
+  { id: 'contentFeasibility', label: 'コンテンツ制作の容易さ', description: '著作権・肖像権・利用許諾、素材の入手、独自制作の工数、自動化適性。5＝容易／1＝困難' },
+  { id: 'upkeep', label: '更新・維持の容易さ' }
 ];
 const names: Record<IdeaStatus, string> = {
   unreviewed: '未評価', liked: 'GOOD', rejected: 'ボツ', deferred: '保留', exploring: '探索中'
@@ -532,6 +533,7 @@ export function IdeaReview() {
                 <select value={scores[axis.id] || ''} onChange={event => setScores(old => ({
                   ...old, [axis.id]: Number(event.target.value) || undefined
                 }))}><option value="">採点しない</option>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} / 5</option>)}</select>
+                {axis.description && <small>{axis.description}</small>}
               </label>)}
             </div>
             <label className="ideaComment" htmlFor="ideaReviewComment">評価した理由・改善条件（任意）</label>
