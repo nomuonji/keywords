@@ -79,7 +79,7 @@ globalThis.fetch = async (input, init) => {
   if (path === 'projects/test/databases/(default)/documents:batchGet') {
     assert.equal(init?.method, 'POST');
     const body = JSON.parse(String(init?.body)) as { documents: string[] };
-    assert.equal(body.documents.length, 16, 'history is a bounded 16-week batch');
+    assert.ok(body.documents.length === 16 || body.documents.length === 1, 'only the selected history or one site bundle is read');
     return Response.json(body.documents.map(name => docs.has(name) ? { found: docs.get(name) } : { missing: name }));
   }
   return docs.has(path) ? Response.json(docs.get(path)) : Response.json({}, { status: 404 });
@@ -97,6 +97,13 @@ try {
   assert.equal(site.name, 'Site R');
   assert.equal((site.planningDigest as { inventoryCount: number }).inventoryCount, 7);
   assert.equal((site.planningDigest as { selectedCount: number }).selectedCount, 5);
+  assert.deepEqual(
+    Object.fromEntries(['status', 'indexableCount', 'inspectedCount', 'indexedObservedCount', 'notIndexedObservedCount']
+      .map(key => [key, (site.indexation as Record<string, unknown>)[key]])),
+    { status: 'ready', indexableCount: 2, inspectedCount: 2, indexedObservedCount: 1, notIndexedObservedCount: 1 }
+  );
+  assert.equal((body as { indexationUnavailable?: boolean }).indexationUnavailable, false);
+
   assert.ok(!JSON.stringify(body).includes('test-access-token'), 'no credentials in response');
 
   const historyResponse = await app.request('/api/remote-sites?__view=indexation&siteId=site-r');
@@ -144,7 +151,7 @@ try {
   assert.ok(worker.instructions.some((s: string) => s.includes('Managers specific user-job')));
   assert.equal(worker.contentQualityAudit, undefined, 'Worker cannot run portfolio audits');
 
-  console.log('remote sites smoke passed: registry plus compact planning digest in bounded reads, read-only, no secrets');
+  console.log('remote sites smoke passed: registry, digests, batched current indexation, scheduled snapshots, read-only and no secrets');
 } finally {
   globalThis.fetch = originalFetch;
 }

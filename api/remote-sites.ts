@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { siteRegistryList, siteArticleList } from '../packages/commands/src/remote-site-operations.js';
 import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-digest.js';
 import { siteIndexationHistory } from '../packages/commands/src/site-indexation.js';
+import { siteIndexationPortfolioOverview } from '../packages/commands/src/site-indexation-overview.js';
 
 // Public read-only browser endpoint for agent-managed Sites Operator sites.
 // Keep this view cheap: one registry read + one compact planning-digest list.
@@ -37,6 +38,15 @@ app.get('/api/remote-sites', async c => {
     if (Number(error?.status) !== 404) throw error;
   }
   const digestBySite = new Map(planning.items.map(item => [String(item.siteId), item]));
+  let indexation: Awaited<ReturnType<typeof siteIndexationPortfolioOverview>> = {};
+  let indexationUnavailable = false;
+  try {
+    indexation = await siteIndexationPortfolioOverview(registry.items.map(item => String(item.id)));
+  } catch (error) {
+    // Keep the site list usable if Firestore throttles this optional projection.
+    console.warn('Site indexation overview temporarily unavailable', error instanceof Error ? error.message : 'unknown');
+    indexationUnavailable = true;
+  }
   const sites = (registry.items as Array<Record<string, unknown>>).map(site => ({
     id: site.id,
     name: site.name,
@@ -47,14 +57,17 @@ app.get('/api/remote-sites', async c => {
     ga4PropertyId: site.ga4PropertyId ?? null,
     searchConsoleProperty: site.searchConsoleProperty ?? null,
     localProjectId: site.localProjectId ?? null,
-    planningDigest: digestBySite.get(String(site.id)) ?? null
+    planningDigest: digestBySite.get(String(site.id)) ?? null,
+    indexation: indexation[String(site.id)] ?? null
   }));
   return c.json({
     generatedAt: new Date().toISOString(),
+    indexationUnavailable,
     semantics: {
       scope: 'Sites Operator registry = agent-managed production sites',
       siteMonitor: 'Human-only portfolio dashboard; not an agent planning source',
-      analytics: 'Planning digests are externally refreshed; this endpoint never calls Google'
+      analytics: 'Planning digests are externally refreshed; this endpoint never calls Google',
+      indexation: 'Latest inspected URL counts from the scheduled indexation cache; not Search Console total indexable pages'
     },
     sites
   }, 200, { 'cache-control': 'no-store' });
