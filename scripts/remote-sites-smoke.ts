@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
+import { gzipSync } from 'node:zlib';
 import { field } from '../packages/db/src/firestore.js';
 
 // Deterministic Firestore double. Never loads .env or touches production data.
@@ -30,6 +31,40 @@ docs.set(`${root}seoPlanningDigests/site-r`, {
   updateTime: 'seed-2',
 });
 
+
+const urlRows = [
+  { id: 'one', siteId: 'site-r', url: 'https://example.com/a', inventoryState: 'current', indexable: true, lastInspectedAt: '2026-10-01T00:00:00Z', observedIndexState: 'indexed', pageFamily: '/articles/*', nextInspectionAt: null },
+  { id: 'two', siteId: 'site-r', url: 'https://example.com/b', inventoryState: 'current', indexable: true, lastInspectedAt: '2026-10-01T00:00:00Z', observedIndexState: 'not_indexed', pageFamily: '/articles/*', nextInspectionAt: null }
+];
+docs.set(`${root}sites/site-r/indexationBundle/current`, {
+  name: `${root}sites/site-r/indexationBundle/current`,
+  fields: { format: field('single'), data: field(gzipSync(Buffer.from(JSON.stringify(urlRows)), { level: 6 }).toString('base64')) },
+  updateTime: 'seed-indexation'
+});
+const thisMonday = new Date();
+thisMonday.setUTCHours(0, 0, 0, 0);
+thisMonday.setUTCDate(thisMonday.getUTCDate() - (thisMonday.getUTCDay() + 6) % 7);
+for (let offset = 1; offset >= 0; offset--) {
+  const week = new Date(thisMonday);
+  week.setUTCDate(week.getUTCDate() - offset * 7);
+  const weekStart = week.toISOString().slice(0, 10);
+  const id = createHash('sha256').update(JSON.stringify({ siteId: 'site-r', weekStart })).digest('hex').slice(0, 40);
+  docs.set(`${root}indexationSnapshots/${id}`, {
+    name: `${root}indexationSnapshots/${id}`,
+    fields: {
+      id: field(id), siteId: field('site-r'), weekStart: field(weekStart),
+      capturedAt: field(week.toISOString()),
+      summary: field({
+        indexedObservedCount: offset ? 0 : 1,
+        notIndexedObservedCount: offset ? 2 : 1,
+        inspectedCount: 2, indexableCount: 2,
+        observedIndexationRate: offset ? 0 : .5,
+        byPageFamily: {}
+      })
+    }
+  });
+}
+
 globalThis.fetch = async (input, init) => {
   const url = String(input);
   if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'test-access-token', expires_in: 3600 });
@@ -38,8 +73,14 @@ globalThis.fetch = async (input, init) => {
   const path = parsed.pathname.replace('/v1/', '');
   if (path === 'projects/test/databases/(default)/documents/sites' || path === 'projects/test/databases/(default)/documents/seoPlanningDigests') {
     const collection = path.split('/').at(-1)!;
-    const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
+    const all = [...docs.values()].filter(doc => { const prefix = `${root}${collection}/`; return doc.name.startsWith(prefix) && !doc.name.slice(prefix.length).includes('/'); });
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
+  }
+  if (path === 'projects/test/databases/(default)/documents:batchGet') {
+    assert.equal(init?.method, 'POST');
+    const body = JSON.parse(String(init?.body)) as { documents: string[] };
+    assert.equal(body.documents.length, 16, 'history is a bounded 16-week batch');
+    return Response.json(body.documents.map(name => docs.has(name) ? { found: docs.get(name) } : { missing: name }));
   }
   return docs.has(path) ? Response.json(docs.get(path)) : Response.json({}, { status: 404 });
 };
@@ -57,6 +98,22 @@ try {
   assert.equal((site.planningDigest as { inventoryCount: number }).inventoryCount, 7);
   assert.equal((site.planningDigest as { selectedCount: number }).selectedCount, 5);
   assert.ok(!JSON.stringify(body).includes('test-access-token'), 'no credentials in response');
+
+  const historyResponse = await app.request('/api/remote-sites?__view=indexation&siteId=site-r');
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json() as {
+    current: { indexedObservedCount: number; notIndexedObservedCount: number };
+    snapshots: Array<{ weekStart: string; summary: { indexedObservedCount: number } }>;
+    requestedWeeks: number;
+  };
+  assert.equal(history.requestedWeeks, 16);
+  assert.equal(history.current.indexedObservedCount, 1);
+  assert.equal(history.current.notIndexedObservedCount, 1);
+  assert.equal(history.snapshots.length, 2);
+  assert.ok(history.snapshots[0].weekStart < history.snapshots[1].weekStart);
+  assert.deepEqual(history.snapshots.map(item => item.summary.indexedObservedCount), [0, 1]);
+  assert.equal((await app.request('/api/remote-sites?__view=indexation&siteId=bad.site')).status, 400);
+
   // SEO Manager context regression: acquisition choices must not be reduced to edit throughput.
   const { seoAgentContext } = await import('../packages/commands/src/seo-agent-policy.js');
   const manager = seoAgentContext({ role: 'planner' }) as any;

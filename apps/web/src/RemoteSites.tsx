@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import { IndexationTrends } from './IndexationTrends';
 
 type PlanningDigest = {
   siteId: string;
@@ -106,6 +107,8 @@ export function RemoteSitesOverview() {
       <div><small>データ取得</small><strong>外部化</strong><span>UI / ChatGPTはGoogleを叩かない</span></div>
       <div><small>DB read</small><strong>bounded</strong><span>registry + digest list</span></div>
     </section>
+
+    <IndexationTrends sites={sites.map(site => ({ id: site.id, name: site.name, status: site.status }))} />
 
     {error && <div className="coreError">{error}<div><button onClick={() => void load()}>再試行</button></div></div>}
 

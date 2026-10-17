@@ -563,6 +563,48 @@ function weekStartDate(input = new Date()) {
   return copy.toISOString().slice(0, 10);
 }
 
+
+/**
+ * Read weekly snapshots created by the scheduled site-indexation sweep.
+ * Deterministic snapshot IDs let us batch-get a fixed number of weeks
+ * without collection scans, composite indexes or new Google API requests.
+ */
+export const siteIndexationHistoryShape = {
+  siteId: entityId,
+  weeks: z.number().int().min(1).max(26).default(16)
+};
+
+export async function siteIndexationHistory(input: unknown) {
+  const args = z.object(siteIndexationHistoryShape).strict().parse(input);
+  // Also verifies the site exists. The mutable URL cache provides today's
+  // observed state; weekly snapshots remain immutable-by-week observations.
+  const current = await siteIndexationSummary({ siteId: args.siteId });
+  const monday = new Date(`${weekStartDate()}T00:00:00.000Z`);
+  const weekStarts = Array.from({ length: args.weeks }, (_, index) => {
+    const date = new Date(monday);
+    date.setUTCDate(date.getUTCDate() - (args.weeks - index - 1) * 7);
+    return date.toISOString().slice(0, 10);
+  });
+  const names = weekStarts.map(weekStart =>
+    firestoreDocumentName(`indexationSnapshots/${hash({ siteId: args.siteId, weekStart }).slice(0, 40)}`)
+  );
+  const results = await firestore(':batchGet', {
+    method: 'POST',
+    body: JSON.stringify({ documents: names })
+  }) as Array<{ found?: any }>;
+  const allowedWeeks = new Set(weekStarts);
+  const snapshots = results
+    .flatMap(result => result.found ? [decoded(result.found) as Record<string, any>] : [])
+    .filter(row => row.siteId === args.siteId && allowedWeeks.has(String(row.weekStart)))
+    .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)))
+    .map(row => ({
+      weekStart: row.weekStart,
+      capturedAt: row.capturedAt,
+      summary: row.summary
+    }));
+  return { siteId: args.siteId, current, snapshots, requestedWeeks: args.weeks };
+}
+
 export async function siteIndexationSnapshotSave(input: unknown) {
   const args = z.object(siteIndexationSnapshotSaveShape).strict().parse(input);
   const summary = await siteIndexationSummary(args) as any;
