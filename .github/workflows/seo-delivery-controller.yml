@@ -10,6 +10,11 @@ on:
         type: string
         required: false
         default: ''
+      verification_only:
+        description: 'Only verify published SEO Tasks; do not run delivery'
+        type: boolean
+        required: false
+        default: false
       verify_publications:
         description: 'Run the existing production publication verifier (no extra workflow)'
         type: boolean
@@ -96,12 +101,12 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Deliver SEO branches
-        if: steps.config.outputs.enabled == 'true' && github.event.schedule != '13 4 * * *'
+        if: steps.config.outputs.enabled == 'true' && github.event.schedule != '13 4 * * *' && !(github.event_name == 'workflow_dispatch' && inputs.verification_only)
         run: npx tsx scripts/seo-delivery-controller.ts
 
       - name: Verify published SEO Tasks
         # The old daily-only condition missed normal two-hourly sweeps. Run on
         # scheduled sweeps and on edits to this verifier, not on each dispatch.
         # Keep publication independent if delivery itself fails.
-        if: ${{ !cancelled() && steps.config.outputs.enabled == 'true' && (github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verify_publications)) }}
+        if: ${{ !cancelled() && steps.config.outputs.enabled == 'true' && (github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.verify_publications || inputs.verification_only))) }}
         run: npx tsx scripts/seo-publication-verifier.ts
