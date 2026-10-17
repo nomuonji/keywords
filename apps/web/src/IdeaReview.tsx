@@ -18,7 +18,7 @@ const outletName = (id:string) => outlets.find(v=>v.id===id)?.label ?? id;
 type AgentReview = {
   rubricVersion: string; assessedAt: string; verdict: 'pass';
   axes: Partial<Record<Axis, number>> & { appeal: number };
-  requiredAxes: Array<Exclude<Axis, 'appeal'>>;
+  requiredAxes?: Array<Exclude<Axis, 'appeal'>>; // historical v2/v3 only
   strongestObjection: string; passRationale: string;
 };
 type Idea = {
@@ -399,7 +399,12 @@ export function IdeaReview() {
               <strong>{item.title}</strong><span aria-hidden="true">↗</span>
             </button>
             <small>{item.marketCountries?.length ? item.marketCountries.join(' / ')+' · ' : '市場未設定 · '}{dateLabel(item.updatedAt)}{item.assetCount ? ` · 制作物${item.assetCount}件` : ''}</small>
-            {item.agentReview && <small className="ideaAgentReviewHint">AI事前審査済み · 興味 {item.agentReview.axes.appeal}/5</small>}
+            {item.agentReview ? <div className="ideaAgentScoreStrip" aria-label="AI初回自己採点（ユーザー評価とは別）">
+                {axes.map(axis => <span key={axis.id} className={(item.agentReview?.axes[axis.id] ?? 0) >= 4 ? 'pass' : 'low'}
+                  title={axis.label + '・AI自己採点（初回固定）'}>
+                  {axis.label.split('・')[0]} <strong>{item.agentReview?.axes[axis.id] ?? '—'}</strong>
+                </span>)}
+              </div> : <small className="ideaAgentReviewLegacy">AI自己採点：記録なし（旧アイデア）</small>}
           </div>
           <div className="ideaInboxRoutes">
             <span className="ideaCellHint">利用先・制作媒体</span>
@@ -457,15 +462,15 @@ export function IdeaReview() {
             <div><dt>使い方</dt><dd>{detail.interaction}</dd></div>
             {detail.maintenance && <div><dt>更新・運用</dt><dd>{detail.maintenance}</dd></div>}
           </dl>
-          {detail.agentReview && <section className="ideaAgentReviewPanel" aria-label="AIの提案前自己採点">
+          {detail.agentReview ? <section className="ideaAgentReviewPanel" aria-label="AIの提案前自己採点">
             <h3>AIの提案前自己採点 <small>初回保存時に固定</small></h3>
             <div className="ideaAgentAxes">{axes.map(axis => <span key={axis.id}>
               {axis.label}：<strong>{detail.agentReview?.axes[axis.id] ?? '未検証'}</strong>{detail.agentReview?.axes[axis.id] ? '/5' : ''}
             </span>)}</div>
             <p><strong>最大の懸念：</strong>{detail.agentReview.strongestObjection}</p>
             <p><strong>それでも合格とした理由：</strong>{detail.agentReview.passRationale}</p>
-            <small>判定 {dateLabel(detail.agentReview.assessedAt)} · AIによる暫定判断。あなたのGOODとは別です。</small>
-          </section>}
+            <small>判定 {dateLabel(detail.agentReview.assessedAt)} · {detail.agentReview.rubricVersion} · AI自己採点（ユーザーのGOODとは別）。v4以降は全6項目4点以上・面白さ5点が必須です。</small>
+           </section> : <p className="ideaAgentReviewLegacy">この旧アイデアには初回提出時のAI自己採点がありません。後付け採点は行いません。</p>}
           {Boolean(detail.marketEvidenceRefs?.length) && <details className="ideaEvidence"><summary>市場の証拠・調査メモ</summary>
             <ul>{detail.marketEvidenceRefs?.map((fact, i) => <li key={i}>{fact}</li>)}</ul></details>}
           {Boolean(detail.unknowns?.length) && <details className="ideaEvidence"><summary>未解決の疑問・弱点</summary>
