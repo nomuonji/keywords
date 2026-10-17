@@ -10,6 +10,11 @@ on:
         type: string
         required: false
         default: ''
+      verify_publications:
+        description: 'Run the existing production publication verifier (no extra workflow)'
+        type: boolean
+        required: false
+        default: true
       cleanup_limit:
         description: 'Maximum legacy merged branches to clean (0 means no sweep)'
         type: number
@@ -21,12 +26,15 @@ on:
     paths:
       - '.github/workflows/seo-delivery-controller.yml'
       - 'scripts/seo-delivery-controller.ts'
+      - 'scripts/seo-publication-verifier.ts'
+      - 'scripts/seo-publication-evidence.ts'
       - 'scripts/seo-site-ci.ts'
       - 'scripts/seo-delivery-throughput.ts'
       - 'scripts/seo-prepared-ref-handoff-gate.ts'
       - 'packages/commands/src/seo-delivery-merge.ts'
   schedule:
-    # Recovery sweep every two hours; push_pending normally wakes delivery via dispatch.
+    # Recovery sweep every two hours; also drain pending publication proofs.
+    # push_pending normally wakes delivery via dispatch without extra publication reads.
     - cron: '17 */2 * * *'
     - cron: '13 4 * * *'
 
@@ -88,5 +96,8 @@ jobs:
         run: npx tsx scripts/seo-delivery-controller.ts
 
       - name: Verify published SEO Tasks
-        if: steps.config.outputs.enabled == 'true' && github.event.schedule == '13 4 * * *'
+        # The old daily-only condition missed normal two-hourly sweeps. Run on
+        # scheduled sweeps and on edits to this verifier, not on each dispatch.
+        # Keep publication independent if delivery itself fails.
+        if: ${{ !cancelled() && steps.config.outputs.enabled == 'true' && (github.event_name == 'schedule' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verify_publications)) }}
         run: npx tsx scripts/seo-publication-verifier.ts

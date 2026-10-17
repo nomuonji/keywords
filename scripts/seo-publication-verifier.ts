@@ -4,7 +4,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { firestoreRateLimited } from './seo-delivery-throughput.js';
-import { matchingPagesProject, completedProductionPagesDeployment, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
+import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const api = (repo: string, path: string) => `https://api.github.com/repos/${repo}${path}`;
@@ -106,11 +106,14 @@ async function publicEvidence(task: SeoTaskRecord, productionUrl: string): Promi
     // and canonical anyway; optional text/link assertions run when provided.
     const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(10_000) });
     if (!response.ok || !response.headers.get('content-type')?.includes('text/html')) throw Error(`public_http_${response.status}`);
-    if (new URL(response.url).origin !== origin) throw Error('public_redirect_outside_site');
+    const finalUrl = new URL(response.url);
+    if (finalUrl.origin !== origin) throw Error('public_redirect_outside_site');
     const html = (await response.text()).slice(0, 2_000_000);
     if (html.length < 300 || !/<(?:main|article|body)\b/i.test(html)) throw Error('public_body_missing');
     const actual = canonical(html);
-    if (!actual || new URL(actual, url).href !== url.href) throw Error('public_canonical_mismatch');
+    // A slashless URL may legitimately redirect to its trailing-slash canonical.
+    // Validate the actual served route, not the pre-redirect request URL.
+    if (!actual || new URL(actual, finalUrl).href !== finalUrl.href) throw Error('public_canonical_mismatch');
     for (const check of accepted) {
       if (!html.includes(check.containsText)) throw Error('public_acceptance_text_missing');
       for (const link of check.internalLinks) {
@@ -138,10 +141,18 @@ async function connectEvent(task: SeoTaskRecord, publishedAt: string) {
 
 async function verify(task: SeoTaskRecord) {
   const site = await siteRegistryGet({ id: task.siteId });
-  if (site.status !== 'active' || site.repository !== task.repo) return;
+  if (site.status !== 'active' || site.repository !== task.repo) {
+    console.log(`${task.id}: inactive site or repository mismatch; pending.`);
+    return;
+  }
   let deployed: { sha: string; at: string } | null = null;
   if (site.deploymentProvider === 'cloudflare_pages') {
-    deployed = await successfulPagesDeployment(task, site.productionUrl);
+    try {
+      deployed = await successfulPagesDeployment(task, site.productionUrl);
+    } catch (error) {
+      // A broken Pages API must not hide existing successful GitHub evidence.
+      console.warn(`${task.id}: Cloudflare evidence unavailable: ${String(error)}; trying GitHub deployments.`);
+    }
   }
   deployed ??= await successfulDeployment(task);
   if (!deployed) {
@@ -185,13 +196,9 @@ if (token) {
       seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending', limit: 100 }),
       seoTaskList({ status: 'completed', deploymentVerificationStatus: 'failed', limit: 100 })
     ]);
-    const due = [...pending.items, ...failed.items]
-      .filter(task => !task.deploymentVerification.checkedAt
-        || Date.now() - Date.parse(task.deploymentVerification.checkedAt) >= 86_400_000)
-      // Drain the oldest publication backlog first; continue from the same
-      // recorded states next run without adding another database or task queue.
-      .sort((a, b) => String(a.completedAt).localeCompare(String(b.completedAt)))
-      .slice(0, 12);
+    // Sweep different due Tasks every 2h even when a blocked Task cannot
+    // produce fresh evidence (and therefore must not be rewritten to Firestore).
+    const due = duePublicationBatch([...pending.items, ...failed.items], Date.now(), 12);
     let quotaStopped = false;
     for (const task of due) {
       try { await verify(task); }
