@@ -47,7 +47,7 @@ assert.match(preflight({ ...task, createdAt: '2026-10-13T05:49:59.999Z' }, '1', 
 const base='b'.repeat(40), advancedMain='d'.repeat(40);
 assert.equal(preparedRefBaseError(task,null,base,base),null);
 assert.match(preparedRefBaseError(task,null,advancedMain,base)!,/advanced/);
-assert.match(preparedRefBaseError(task,base,advancedMain,base)!,/CI-failed/);
+assert.match(preparedRefBaseError(task,base,advancedMain,base)!,/recorded failed implementation or delivery/);
 assert.equal(preparedRefBaseError({...task,history:[{event:'delivery_failed',actor:'seo_delivery_controller',detail:'PR CI failed',at:'2026-10-13T07:00:00Z'}]},base,advancedMain,base),null);
 assert.equal(preparedRefBaseError({...task,history:[{event:'implementation_blocked',actor:'seo_worker',detail:'truncated legacy branch',at:'2026-10-13T07:00:00Z'}]},base,advancedMain,base),null);
 
