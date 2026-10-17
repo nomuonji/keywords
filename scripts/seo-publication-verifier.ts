@@ -7,8 +7,9 @@ import { firestoreRateLimited } from './seo-delivery-throughput.js';
 import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
+const proofToken = process.env.SEO_PUBLICATION_GITHUB_TOKEN?.trim() || token;
 const api = (repo: string, path: string) => `https://api.github.com/repos/${repo}${path}`;
-const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`, 'x-github-api-version': '2022-11-28' };
+const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${proofToken}`, 'x-github-api-version': '2022-11-28' };
 
 async function gh<T>(url: string): Promise<T> {
   const response = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) });
@@ -189,7 +190,10 @@ async function verify(task: SeoTaskRecord) {
 
 if (token) {
   if (!cloudflareAccountId || !cloudflareApiToken) {
-    console.warn('Cloudflare Pages read credentials are not configured in this Actions runner; production checks will use GitHub deployments only.');
+    console.error('::error::Publication verifier is missing CLOUDFLARE_ACCOUNT_ID and/or CLOUDFLARE_API_TOKEN in the keywords Actions environment. Most sites publish via Cloudflare Pages; configure the repository variable and read-only repository secret to enable provider-specific production proof. GitHub deployments alone are not sufficient for these sites.');
+    // Do not report a healthy green publication run when its provider cannot
+    // be queried. Continue bounded GitHub fallback work, but surface the blocker.
+    process.exitCode = 1;
   }
   try {
     const [pending, failed] = await Promise.all([
