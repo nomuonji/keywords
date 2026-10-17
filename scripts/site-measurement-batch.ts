@@ -10,6 +10,7 @@ import { captureProjectGa4Metrics } from '../packages/commands/src/ga4-metrics.j
 import { refreshSeoPlanningDigest } from '../packages/commands/src/seo-planning-digest-refresh.js';
 import { recoveryContext, recoveryDate, dateOffset } from '../packages/commands/src/recovery-context.js';
 import { siteRegistryResolve } from '../packages/commands/src/remote-site-operations.js';
+import { discoverMeasurementJobs, type MeasurementJob } from './site-measurement-registry.js';
 import { siteIndexationInventorySave, siteIndexationInventorySyncGet, siteIndexationInventorySyncSave, siteIndexationList } from '../packages/commands/src/site-indexation.js';
 
 /**
@@ -17,7 +18,8 @@ import { siteIndexationInventorySave, siteIndexationInventorySyncGet, siteIndexa
  * credentials are available: the local PC, an agent session, or a
  * (github-hosted or self-hosted) Actions runner. No resident daemon.
  *
- * SITE_JOBS_JSON: [{ projectId, name?, domain?, snapshotFile?, sitemapUrl?, gscProperty? }]
+ * Automatically loads active GSC-connected sites from Sites Operator registry.
+ * SITE_JOBS_JSON is an optional explicit override for manual debugging.
  *   projectId is the stable local identity linked from the Sites registry.
  *   name/domain are used only when the project row does not exist yet
  *   (ephemeral runners start from an empty database).
@@ -31,7 +33,7 @@ import { siteIndexationInventorySave, siteIndexationInventorySyncGet, siteIndexa
  * planning digest overwrite. Raw rows remain ephemeral and are not mirrored
  * as one Firestore record per page/period.
  */
-const jobs = JSON.parse(process.env.SITE_JOBS_JSON ?? '[]') as Array<{ projectId: string; name?: string; domain?: string; snapshotFile?: string; sitemapUrl?: string; gscProperty?: string }>;
+const manualJobs = process.env.SITE_JOBS_JSON ? JSON.parse(process.env.SITE_JOBS_JSON) as Array<MeasurementJob & { name?: string; domain?: string; gscProperty?: string }> : null;
 const ctx = { actor: 'system' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'site-measurement-batch' };
 const { sqlite } = getDatabase();
 
@@ -203,6 +205,17 @@ async function reconcileIndexationInventory(projectId: string, sitemapUrls: stri
 }
 
 async function main() {
+  const discovery = manualJobs
+    ? { jobs: manualJobs, linked: [] as string[], skipped: [] as Array<{siteId: string;reason: string}>, errors: [] as Array<{siteId: string;error: string}> }
+    : await discoverMeasurementJobs();
+  const jobs = discovery.jobs;
+  console.log(JSON.stringify({
+    event: 'site_measurement_selection',
+    eligible: jobs.length,
+    linked: discovery.linked,
+    skipped: discovery.skipped,
+    errors: discovery.errors
+  }));
   const summary: Array<Record<string, unknown>> = [];
   for (const job of jobs) {
     const label = job.projectId;
@@ -229,8 +242,29 @@ async function main() {
         const snapshot = JSON.parse(readFileSync(job.snapshotFile, 'utf8'));
         imported = await blogCommands.importContext(sctx, { projectId: job.projectId, snapshot });
       }
-      const sync = await siteCommands.syncSitemap(sctx, { projectId: job.projectId, sitemapUrl: job.sitemapUrl });
-      const sitemapInventoryUrls = sitemapUrlsObservedAt(job.projectId, sync.syncedAt);
+      let sync: Awaited<ReturnType<typeof siteCommands.syncSitemap>> | null = null;
+      let sitemapError: string | null = null;
+      try {
+        sync = await siteCommands.syncSitemap(sctx, { projectId: job.projectId, sitemapUrl: job.sitemapUrl });
+      } catch (error) {
+        const primaryError = error instanceof Error ? error.message : String(error);
+        if (!job.sitemapUrl) {
+          // Some valid sites publish /sitemap-index.xml while the generic
+          // /sitemap.xml route returns a site-shell HTML with HTTP 200.
+          try {
+            sync = await siteCommands.syncSitemap(sctx, {
+              projectId: job.projectId,
+              sitemapUrl: new URL('/sitemap-index.xml', job.productionUrl).toString()
+            });
+          } catch (fallbackError) {
+            sitemapError = `${primaryError}; sitemap-index fallback: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`;
+          }
+        } else {
+          sitemapError = primaryError;
+        }
+      }
+      if (sync && sync.discovered === 0) sitemapError = 'Sitemap returned no URL entries';
+      const sitemapInventoryUrls = sync ? sitemapUrlsObservedAt(job.projectId, sync.syncedAt) : [];
       const endDate = recoveryDate();
       const context = recoveryContext(job.projectId);
       const siteUrl = job.gscProperty ?? context.latest?.property;
@@ -246,6 +280,7 @@ async function main() {
         const capture = await metricsCommands.capture(sctx, {
           projectId: job.projectId,
           siteUrl,
+          targetOrigin: job.productionUrl,
           startDate: period.startDate,
           endDate: period.endDate,
           timezone: 'America/Los_Angeles'
@@ -260,24 +295,34 @@ async function main() {
       }
       const capturedRows = capturedGscRowCounts(job.projectId, String(siteUrl ?? ''), periods);
       const digest = await refreshSeoPlanningDigest(job.projectId, endDate);
-      let indexationInventory: any;
-      try {
-        indexationInventory = await reconcileIndexationInventory(job.projectId, sitemapInventoryUrls, sync.complete);
-      } catch (error) {
-        indexationInventory = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      let indexationInventory: any = { status: 'skipped', reason: 'sitemap_unavailable' };
+      if (sync) {
+        try {
+          indexationInventory = await reconcileIndexationInventory(job.projectId, sitemapInventoryUrls, sync.complete);
+        } catch (error) {
+          indexationInventory = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+        }
       }
-      const indexationOk = !['failed', 'partial'].includes(String(indexationInventory.status));
+      const indexationOk = !sitemapError && !['failed', 'partial'].includes(String(indexationInventory.status));
       await operationCommands.complete({ ...sctx, workSessionId: undefined }, {
         operationId: started.operation.id,
-        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 160)}; sitemap=${sync.discovered}; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4=${(ga4 as any)?.status}; compact digest selected=${digest.selectedCount}/inventory=${digest.inventoryCount}; local rows queries=${capturedRows.queries}, pages=${capturedRows.pages}, queryPages=${capturedRows.queryPages}; indexation inventory=${indexationInventory.status}, changes=${indexationInventory.changes ?? 'n/a'}. Firestore analytics remain one overwrite-only digest per site; URL indexation state is reconciled only when sitemap inventory changes.`,
+        summary: `SEO planning measurement for ${label}: import=${JSON.stringify(imported)?.slice(0, 160)}; sitemap=${sync?.discovered ?? 'failed'}; sitemapError=${sitemapError ?? 'none'}; windows=7d/28d/90d; GSC captures=${gscCaptures.length}; GA4=${(ga4 as any)?.status}; compact digest selected=${digest.selectedCount}/inventory=${digest.inventoryCount}; local rows queries=${capturedRows.queries}, pages=${capturedRows.pages}, queryPages=${capturedRows.queryPages}; indexation inventory=${indexationInventory.status}, changes=${indexationInventory.changes ?? 'n/a'}. Firestore analytics remain one overwrite-only digest per site; URL indexation state is reconciled only when sitemap inventory changes.`,
       });
-      summary.push({ projectId: label, ok: indexationOk, operationId: started.operation.id, projectReused: ensured.reused, sitemapUrls: sync.discovered, ga4: (ga4 as any)?.status, digest, localRows: capturedRows, indexationInventory });
+      summary.push({
+        siteId: job.siteId ?? null, projectId: label, ok: indexationOk,
+        operationId: started.operation.id, projectReused: ensured.reused,
+        sitemapUrls: sync?.discovered ?? null, sitemapError,
+        ga4: (ga4 as any)?.status, digest, localRows: capturedRows, indexationInventory
+      });
     } catch (error) {
-      summary.push({ projectId: label, ok: false, error: error instanceof Error ? error.message : String(error) });
+      summary.push({ siteId: job.siteId ?? null, projectId: label, ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
-  console.log(JSON.stringify({ ok: summary.every(item => item.ok), sites: summary }, null, 2));
-  if (!summary.every(item => item.ok)) process.exit(1);
+  const ok = !discovery.errors.length && summary.every(item => item.ok);
+  console.log(JSON.stringify({ ok, discovery: {
+    selected: jobs.length, linked: discovery.linked, skipped: discovery.skipped, errors: discovery.errors
+  }, sites: summary }, null, 2));
+  if (!ok) process.exit(1);
 }
 
 main().catch(error => {
