@@ -71,8 +71,8 @@ export function verifyGeneratedPage(
   }
 }
 
-export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Promise<string> {
-  if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || task.targetUrls.length === 0) {
+export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string, combineMainSha?: string): Promise<string> {
+  if (!SAFE_REPO.test(task.repo) || !SHA.test(sha) || (combineMainSha !== undefined && !SHA.test(combineMainSha)) || task.targetUrls.length === 0) {
     throw Error('Central CI needs a valid repository, exact commit SHA and target URLs');
   }
   // Hosted Actions may run the Docker daemon outside the runner's /tmp mount.
@@ -90,10 +90,23 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
       GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
       GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${gitToken}`).toString('base64')}`
     } : {};
-    await command('git', ['fetch', '--quiet', '--depth=1', 'origin', sha], root, 120_000, fetchEnv);
+    await command('git', ['fetch', '--quiet', combineMainSha ? '--depth=50' : '--depth=1', 'origin', sha], root, 120_000, fetchEnv);
     await command('git', ['checkout', '--quiet', '--detach', 'FETCH_HEAD'], root, 20_000);
     const head = (await command('git', ['rev-parse', 'HEAD'], root, 20_000)).trim();
     if (head !== sha) throw Error('Central CI checked out a different commit');
+    if (combineMainSha) {
+      // Reconstruct the would-be PR merge as a temporary, uncommitted checkout.
+      // Never write to GitHub here. Build this combined tree, not a stale branch
+      // in isolation, when independently checked main changes are disjoint.
+      await command('git', ['fetch', '--quiet', '--depth=50', 'origin', combineMainSha], root, 120_000, fetchEnv);
+      const fetched = (await command('git', ['rev-parse', 'FETCH_HEAD'], root, 20_000)).trim();
+      if (fetched !== combineMainSha) throw Error('Central CI fetched an unexpected default branch commit');
+      await command('git', ['-c', 'user.email=seo-ci@invalid.example', '-c', 'user.name=SEO CI', 'merge', '--no-commit', '--no-ff', 'FETCH_HEAD'], root, 120_000);
+      const unmerged = (await command('git', ['ls-files', '-u'], root, 20_000)).trim();
+      if (unmerged) throw Error('Central CI detected an unresolved temporary main+PR merge');
+      const retained = (await command('git', ['rev-parse', 'HEAD'], root, 20_000)).trim();
+      if (retained !== sha) throw Error('Temporary preview unexpectedly changed source HEAD');
+    }
 
     const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>; scripts?: Record<string, string>;
@@ -152,7 +165,7 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
       // Optional text/link assertions supplement real build, route and canonical checks.
       verifyGeneratedPage(html, raw, (task.acceptanceChecks ?? []).filter(check => check.url === raw));
     }
-    return `Central CI passed at exact ${head}: approved ${astro ? 'Astro' : docusaurus ? 'Docusaurus' : 'Next'} build and ${task.targetUrls.length} generated target/canonical checks.`;
+    return `Central CI passed at exact ${head}${combineMainSha ? ` combined with disjoint current main ${combineMainSha}` : ''}: approved ${astro ? 'Astro' : docusaurus ? 'Docusaurus' : 'Next'} build and ${task.targetUrls.length} generated target/canonical checks.`;
   } finally {
     await rm(root, { recursive: true, force: true });
   }
