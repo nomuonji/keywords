@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import {
   seoTaskGet,
   seoTaskList,
@@ -18,6 +19,8 @@ const isPrepared = (task: SeoTaskRecord) => task.deliveryHandoff?.validationSumm
 const dryRun = process.env.SEO_DELIVERY_DRY_RUN === '1';
 const maxTasks = Math.max(1, Math.min(Number(process.env.SEO_DELIVERY_MAX_TASKS ?? 20), 100));
 const cleanupLimit = cleanupSweepLimit(process.env.SEO_DELIVERY_CLEANUP_SWEEP_LIMIT);
+// IDs are emitted only after the completed/merge SHA is durably saved.
+const completedThisRun = new Set<string>();
 
 type GitHubRepo = {
   default_branch: string;
@@ -315,6 +318,7 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
       detail: `PR #${pr.number} merged; default-branch resultCommitSha=${mergeSha}. Task completed automatically by central delivery controller.`
     }
   });
+  completedThisRun.add(task.id);
   await deleteMergedBranch(task.repo, current.deliveryHandoff.branch ?? '');
 }
 
@@ -964,3 +968,8 @@ async function main() {
 }
 
 await main();
+if (completedThisRun.size && process.env.GITHUB_OUTPUT) {
+  // This single, exact-ID handoff avoids rescanning unrelated completed Tasks.
+  // The workflow invokes publication checks only when a merge happened here.
+  appendFileSync(process.env.GITHUB_OUTPUT, `completed_task_ids=${[...completedThisRun].join(',')}\n`);
+}
