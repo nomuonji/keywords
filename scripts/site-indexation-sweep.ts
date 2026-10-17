@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { inspectionSlice } from './site-indexation-policy.js';
+import { classifyGoogleInspectionFailures, isTemporaryGoogleInspectionFailure } from './site-indexation-transient.js';
 import { siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
 import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
@@ -47,6 +48,9 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
   let reserved = 0;
   let inspected = 0;
   let failed = 0;
+  let transientFailed = 0;
+  let blockingFailed = 0;
+  let unreportedFailures = 0;
   let skipped = 0;
   let calls = 0;
   let firestoreQuotaExhausted = false;
@@ -69,7 +73,14 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
         reserved += thisReserved;
         remaining -= thisReserved;
         inspected += Number(result.inspected ?? 0);
-        failed += Number(result.failed ?? 0);
+        const failedInCall = Number(result.failed ?? 0);
+        failed += failedInCall;
+        const classification = classifyGoogleInspectionFailures(
+          failedInCall, (result.failures ?? []).map((item: any) => ({ error: String(item.error ?? 'inspection_failed') }))
+        );
+        transientFailed += classification.transient;
+        blockingFailed += classification.other;
+        unreportedFailures += classification.unreported;
         skipped += Number(result.skipped ?? 0);
         if (thisReserved > 0) madeProgress = true;
 
@@ -88,6 +99,8 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
         failed++;
         const message = error instanceof Error ? error.message : String(error);
         failures.push({ siteId: site.id, error: message });
+        if (isTemporaryGoogleInspectionFailure(message, 'site-operation')) transientFailed++;
+        else blockingFailed++;
         // Stop the whole sweep when Firestore is exhausted. Continuing to
         // probe other sites only burns retry attempts and harms SEO operations.
         if (/firestore/i.test(message) && /429|RESOURCE_EXHAUSTED/i.test(message)) {
@@ -109,6 +122,9 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
     reserved,
     inspected,
     failed,
+    transientFailed,
+    blockingFailed,
+    unreportedFailures,
     skipped,
     unusedRunBudget: remaining,
     failures: failures.slice(0, 20)
@@ -129,6 +145,7 @@ async function main() {
   const slot = runSlot(at);
   const properties = [];
   let totalFailures = 0;
+  let transientFailures = 0;
   let globalRemaining = globalRunBudget;
   let firestoreQuotaExhausted = false;
   // Rotate property priority each run: a global budget must not consistently
@@ -138,7 +155,8 @@ async function main() {
     if (globalRemaining <= 0) break;
     const result = await sweepProperty(property, group, slot, Math.min(propertyRunBudget, globalRemaining));
     properties.push(result);
-    totalFailures += result.failed;
+    totalFailures += result.blockingFailed;
+    transientFailures += result.transientFailed;
     globalRemaining -= result.reserved;
     if (result.firestoreQuotaExhausted) {
       firestoreQuotaExhausted = true;
@@ -162,6 +180,10 @@ async function main() {
 
   console.log(JSON.stringify({
     ok: totalFailures === 0,
+    // Temporary Google API failures stay eligible for the next scheduled
+    // inspection; existing code persists all successful URL observations.
+    transientFailures,
+    blockingFailures: totalFailures,
     firestoreQuotaExhausted,
     generatedAt: at.toISOString(),
     policy: {
