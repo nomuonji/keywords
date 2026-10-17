@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-17",
-  "generatedAt": "2026-10-16T22:14:37.998Z",
+  "date": "2026-10-18",
+  "generatedAt": "2026-10-17T21:47:45.091Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -13,32 +13,16 @@
   "interpretation": "Category rank is not sales units or evidence of an affiliate conversion. No buyer motivations are inferred from rank alone.",
   "coverage": {
     "rootGenreCount": 39,
-    "sampledToday": 7,
-    "historicObservations": 32
+    "sampledToday": 9,
+    "historicObservations": 41
   },
   "warnings": [
     {
-      "genreId": "112919",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "101114",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "101736",
+      "genreId": "100002",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "100000",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "210900",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "111427",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -2077,6 +2061,547 @@
         "previousDate": "2026-10-16",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "101213",
+      "rootName": "ペット・ペットグッズ",
+      "genreId": "206213",
+      "genreName": "室内ペット用家電",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "dog-kan:10202174",
+          "rank": 1
+        },
+        {
+          "itemCode": "apricot-r:10022047",
+          "rank": 2
+        },
+        {
+          "itemCode": "leo-momo:10005548",
+          "rank": 3
+        },
+        {
+          "itemCode": "ezlife:10000185",
+          "rank": 4
+        },
+        {
+          "itemCode": "gyouretu-pet:10028980",
+          "rank": 5
+        },
+        {
+          "itemCode": "leo-momo:10005547",
+          "rank": 6
+        },
+        {
+          "itemCode": "pheek:10000662",
+          "rank": 7
+        },
+        {
+          "itemCode": "pheek:10000149",
+          "rank": 8
+        },
+        {
+          "itemCode": "pheek:10000150",
+          "rank": 9
+        },
+        {
+          "itemCode": "oobikiyaking:10058048",
+          "rank": 10
+        },
+        {
+          "itemCode": "rcmdbe:10933498",
+          "rank": 11
+        },
+        {
+          "itemCode": "kaitekinetshop:10013351",
+          "rank": 12
+        },
+        {
+          "itemCode": "qucover:10000595",
+          "rank": 13
+        },
+        {
+          "itemCode": "lic-amigo:10024507",
+          "rank": 14
+        },
+        {
+          "itemCode": "leo-momo:10005549",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "100316",
+      "rootName": "水・ソフトドリンク",
+      "genreId": "565598",
+      "genreName": "お茶・紅茶",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "wakuwakuen:10000494",
+          "rank": 1
+        },
+        {
+          "itemCode": "lifedrinkcompany:10000012",
+          "rank": 2
+        },
+        {
+          "itemCode": "kurashikenkou:10225574",
+          "rank": 3
+        },
+        {
+          "itemCode": "wakuwakuen:10000394",
+          "rank": 4
+        },
+        {
+          "itemCode": "irisplaza-r:10163799",
+          "rank": 5
+        },
+        {
+          "itemCode": "ochamura:10001037",
+          "rank": 6
+        },
+        {
+          "itemCode": "tea-life:10000925",
+          "rank": 7
+        },
+        {
+          "itemCode": "kenkocom:11818898",
+          "rank": 8
+        },
+        {
+          "itemCode": "ministop-netshop-bev:10001659",
+          "rank": 9
+        },
+        {
+          "itemCode": "lifedrinkcompany:10000027",
+          "rank": 10
+        },
+        {
+          "itemCode": "ochamura:10001041",
+          "rank": 11
+        },
+        {
+          "itemCode": "d-rink-hokkaido:10000032",
+          "rank": 12
+        },
+        {
+          "itemCode": "soukaidrink:10010816",
+          "rank": 13
+        },
+        {
+          "itemCode": "kurashikenkou:10245343",
+          "rank": 14
+        },
+        {
+          "itemCode": "hanwha:10001756",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "562637",
+      "rootName": "家電",
+      "genreId": "502823",
+      "genreName": "季節・空調家電",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "wide02:10022807",
+          "rank": 1
+        },
+        {
+          "itemCode": "delishop:10000271",
+          "rank": 2
+        },
+        {
+          "itemCode": "seikatsukukan:10015962",
+          "rank": 3
+        },
+        {
+          "itemCode": "hitidear:10000173",
+          "rank": 4
+        },
+        {
+          "itemCode": "liberesta:10000108",
+          "rank": 5
+        },
+        {
+          "itemCode": "irisplaza-r:10091313",
+          "rank": 6
+        },
+        {
+          "itemCode": "e-kurashi:10039909",
+          "rank": 7
+        },
+        {
+          "itemCode": "tansu:10046368",
+          "rank": 8
+        },
+        {
+          "itemCode": "mecu:10003264",
+          "rank": 9
+        },
+        {
+          "itemCode": "denkimono:10000020",
+          "rank": 10
+        },
+        {
+          "itemCode": "protoolshop:10228229",
+          "rank": 11
+        },
+        {
+          "itemCode": "mpowjapan:10000823",
+          "rank": 12
+        },
+        {
+          "itemCode": "bellevie-harima:10172324",
+          "rank": 13
+        },
+        {
+          "itemCode": "baikyakulabo:10000154",
+          "rank": 14
+        },
+        {
+          "itemCode": "enetroom:10129383",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "100804",
+      "rootName": "インテリア・寝具・収納",
+      "genreId": "111355",
+      "genreName": "カーペット・マット・畳",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "futon-colors:10000194",
+          "rank": 1
+        },
+        {
+          "itemCode": "t-interior:10000338",
+          "rank": 2
+        },
+        {
+          "itemCode": "apoloce:10000016",
+          "rank": 3
+        },
+        {
+          "itemCode": "tansu:10057010",
+          "rank": 4
+        },
+        {
+          "itemCode": "auc-kaei-trading:10000243",
+          "rank": 5
+        },
+        {
+          "itemCode": "tansu:10049866",
+          "rank": 6
+        },
+        {
+          "itemCode": "homfine:10000118",
+          "rank": 7
+        },
+        {
+          "itemCode": "rugly:10004030",
+          "rank": 8
+        },
+        {
+          "itemCode": "asia-kobo:10025520",
+          "rank": 9
+        },
+        {
+          "itemCode": "tansu:10055432",
+          "rank": 10
+        },
+        {
+          "itemCode": "tansu:10043718",
+          "rank": 11
+        },
+        {
+          "itemCode": "weiwei:10020389",
+          "rank": 12
+        },
+        {
+          "itemCode": "zakka-elements:10010953",
+          "rank": 13
+        },
+        {
+          "itemCode": "kaguin:10102179",
+          "rank": 14
+        },
+        {
+          "itemCode": "zakka-elements:10008702",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "551177",
+      "rootName": "メンズファッション",
+      "genreId": "110765",
+      "genreName": "トップス",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "stylife:15937201",
+          "rank": 1
+        },
+        {
+          "itemCode": "pegasus-store:10000093",
+          "rank": 2
+        },
+        {
+          "itemCode": "red-jpn:10000076",
+          "rank": 3
+        },
+        {
+          "itemCode": "shirtshouse:10000321",
+          "rank": 4
+        },
+        {
+          "itemCode": "shirtshouse:10008329",
+          "rank": 5
+        },
+        {
+          "itemCode": "haruyama:10111436",
+          "rank": 6
+        },
+        {
+          "itemCode": "r-aoki:10000565",
+          "rank": 7
+        },
+        {
+          "itemCode": "stylife:14717319",
+          "rank": 8
+        },
+        {
+          "itemCode": "elephant-sports:10016630",
+          "rank": 9
+        },
+        {
+          "itemCode": "kahoo-shop:10005300",
+          "rank": 10
+        },
+        {
+          "itemCode": "tshirt-st:10015786",
+          "rank": 11
+        },
+        {
+          "itemCode": "tshirt-st:10019636",
+          "rank": 12
+        },
+        {
+          "itemCode": "t-shrtjapan:10000435",
+          "rank": 13
+        },
+        {
+          "itemCode": "e-monoutteru:10173617",
+          "rank": 14
+        },
+        {
+          "itemCode": "tanakaseni-e-shop:10000680",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "564500",
+      "rootName": "スマートフォン・タブレット",
+      "genreId": "560312",
+      "genreName": "電子書籍リーダーアクセサリー",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "sktn:10000107",
+          "rank": 1
+        },
+        {
+          "itemCode": "sktn:10000060",
+          "rank": 2
+        },
+        {
+          "itemCode": "book:21767047",
+          "rank": 3
+        },
+        {
+          "itemCode": "sktn:10000078",
+          "rank": 4
+        },
+        {
+          "itemCode": "gr-online:10059818",
+          "rank": 5
+        },
+        {
+          "itemCode": "viviancase18:10241939",
+          "rank": 6
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "101164",
+      "rootName": "ホビー",
+      "genreId": "568195",
+      "genreName": "標本・化石",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "shop-uchihonmachi:10046455",
+          "rank": 1
+        },
+        {
+          "itemCode": "gostar:10009091",
+          "rank": 2
+        },
+        {
+          "itemCode": "hirosaka:10000087",
+          "rank": 3
+        },
+        {
+          "itemCode": "kurashisaidohonpo:10007186",
+          "rank": 4
+        },
+        {
+          "itemCode": "upstone:10020743",
+          "rank": 5
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-17",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-18",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 17 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "kaden-bbx:10013160",
+          "rank": 1
+        },
+        {
+          "itemCode": "farson:10007690",
+          "rank": 2
+        },
+        {
+          "itemCode": "diomart:10152368",
+          "rank": 3
+        },
+        {
+          "itemCode": "forma-ra:10003197",
+          "rank": 4
+        },
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 5
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 6
+        },
+        {
+          "itemCode": "rcmdse:16734980",
+          "rank": 7
+        },
+        {
+          "itemCode": "pcbox78:10049531",
+          "rank": 8
+        },
+        {
+          "itemCode": "ksdenki:10537849",
+          "rank": 9
+        },
+        {
+          "itemCode": "e-kurashi:10047330",
+          "rank": 10
+        },
+        {
+          "itemCode": "r-kojima:11437880",
+          "rank": 11
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 12
+        },
+        {
+          "itemCode": "e-kurashi:10052401",
+          "rank": 13
+        },
+        {
+          "itemCode": "yamazenkaden:10006467",
+          "rank": 14
+        },
+        {
+          "itemCode": "to-rulease:10011464",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-17",
+        "sameItemCount": 4,
+        "denominator": 15
       }
     }
   ]
