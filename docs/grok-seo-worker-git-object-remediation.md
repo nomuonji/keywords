@@ -13,6 +13,12 @@ The repository originally documented a missing Git-object writer capability in o
 
 This is discovery **before claim**, not an automatic catch-and-retry mechanism after a failed `create_commit`. If tools were advertised but a write was denied, do not silently switch to B. Lack of an A tool in the actual runner is a capability gap, not itself an authorization refusal.
 
+## Large structured data: avoid broken transport, not arbitrary extra gates
+
+The Render Free and occupation-dataset attempts demonstrated that some `push_files` runners truncate long JSON argument content. For large complete-file replacements, an A-capable Worker uses `create_blob` -> `create_tree` -> `create_commit` with blob readback. The B fallback is still available for source patches that fit and can be read back exactly; do not use it for a payload size already known to fail in that runner.
+
+If a previously claimed Worker cannot transmit the complete data, persist one `implementation_blocked` note with `deliveryHandoff.state=ci_failed` and release that Worker claim. Another Worker with an actually working A transport can take the Task without waiting for lease expiry. This is a capability-driven routing fix, not a new editorial approval or model-specific restriction.
+
 ## Shared hard constraints
 
 - Verify the active site registry, exact Task ID, execution claim, no cooldown, latest main HEAD, task-bound branch `seo/<task-id>` and no prior safety/authorization rejection. Never resurrect the previously refused Book Discovery Task deliveries or the cancelled Task `21531a6b-6f80-4801-ae3a-6b4c671cc13d`.
