@@ -772,3 +772,70 @@ button:active:not(:disabled), summary:active { transform: translateY(1px); }
 .discoveryHubContent>.corePage,.discoveryHubContent>.treasuryView{max-width:none}
 @media(max-width:800px){.discoveryEvidenceOptions{grid-template-columns:1fr}}
 @media(max-width:640px){.coreMain:has(.discoveryWorkspace){padding-top:10px}.discoveryHubIntro{padding:14px}.discoveryHubTitle{display:block}.discoveryHubSource{margin-top:12px}.discoveryEvidenceTools summary{align-items:flex-start}.discoveryToolReturn{flex-wrap:wrap;gap:8px}.discoveryToolReturn button{width:100%}}
+
+
+/* Scheduled Search Console indexation snapshots (read-only, per-site). */
+.indexationPanel {
+  margin: 16px 0 20px;
+  padding: 20px;
+  border: 1px solid #344b3d;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #19291f 0%, #121d1a 65%, #111917 100%);
+}
+.indexationPanelHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+.indexationPanelHeader .coreEyebrow { color: #a7d895; margin: 0 0 7px; }
+.indexationPanelHeader h2 { color: #e5f4e6; margin: 0 0 7px; font-size: 21px; letter-spacing: -.035em; }
+.indexationPanelHeader p:not(.coreEyebrow) { margin: 0; max-width: 650px; color: #8fa99b; font-size: 12px; line-height: 1.6; }
+.indexationControls { display: flex; gap: 9px; align-items: end; flex-wrap: wrap; }
+.indexationControls label { display: grid; gap: 5px; color: #a4b9a9; font-size: 11px; }
+.indexationControls select, .indexationControls button {
+  border: 1px solid #47624d;
+  border-radius: 9px;
+  min-height: 37px;
+  padding: 8px 11px;
+  background: #1e3225;
+  color: #ecf9e5;
+  font-size: 12px;
+}
+.indexationControls select { max-width: 240px; }
+.indexationControls button { cursor: pointer; }
+.indexationControls button:hover { background: #2a4631; }
+.indexationControls button:disabled { opacity: .6; cursor: default; }
+.indexationStats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; margin: 20px 0 22px; }
+.indexationStats > div { display: grid; min-width: 0; gap: 6px; align-content: start; padding: 14px; border: 1px solid #34473e; background: #14221d; border-radius: 11px; }
+.indexationStats small { color: #9db2a7; font-size: 11px; }
+.indexationStats strong { font-variant-numeric: tabular-nums; color: #e8f6e9; font-size: clamp(21px, 2.6vw, 29px); line-height: 1.2; letter-spacing: -.04em; }
+.indexationStats span { font-size: 10px; color: #7d9689; line-height: 1.4; }
+.indexationChartHeader { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.indexationChartHeader strong { display: block; color: #e2ede4; font-size: 13px; }
+.indexationChartHeader small { display: block; margin-top: 3px; color: #899f90; font-size: 10px; }
+.indexationLegend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 11px; color: #adbfaf; }
+.indexationLegend span { display: inline-flex; align-items: center; gap: 6px; }
+.indexationLegend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.indexationLegend .indexedDot { background: #b6ef84; }
+.indexationLegend .notIndexedDot { background: #e9af79; }
+.indexationChartWrap { width: 100%; padding: 8px 0 0; overflow: hidden; }
+.indexationChartWrap svg { display: block; width: 100%; min-height: 180px; }
+.indexationEmpty { padding: 28px 10px; text-align: center; color: #9caf9f; font-size: 12px; }
+.indexationDataDetails { border-top: 1px solid #2b4134; padding-top: 10px; }
+.indexationDataDetails summary { font-size: 11px; font-weight: 700; color: #bfe8aa; cursor: pointer; }
+.indexationTableScroll { max-height: 300px; overflow: auto; margin-top: 11px; }
+.indexationTableScroll table { border-collapse: collapse; width: 100%; color: #d3e6d8; font-size: 11px; font-variant-numeric: tabular-nums; }
+.indexationTableScroll th, .indexationTableScroll td { padding: 9px; border-bottom: 1px solid #2b4034; text-align: right; }
+.indexationTableScroll th:first-child, .indexationTableScroll td:first-child { text-align: left; }
+.indexationTableScroll th { color: #819d8b; font-weight: 600; white-space: nowrap; }
+.indexationCaveat { color: #809489; font-size: 10px; line-height: 1.65; margin: 13px 0 0; }
+@media (max-width: 900px) {
+  .indexationStats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .indexationPanel { padding: 13px; border-radius: 12px; }
+  .indexationControls { width: 100%; }
+  .indexationControls label { flex: 1 1 44%; min-width: 0; }
+  .indexationControls select { width: 100%; max-width: 100%; }
+  .indexationStats { gap: 7px; margin: 15px 0; }
+  .indexationStats > div { padding: 11px; }
+  .indexationStats strong { font-size: 23px; }
+  .indexationChartHeader { align-items: flex-start; }
+  .indexationLegend { gap: 8px; }
+}
