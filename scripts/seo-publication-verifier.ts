@@ -177,6 +177,9 @@ async function verify(task: SeoTaskRecord) {
 }
 
 if (token) {
+  if (!cloudflareAccountId || !cloudflareApiToken) {
+    console.warn('Cloudflare Pages read credentials are not configured in this Actions runner; production checks will use GitHub deployments only.');
+  }
   try {
     const [pending, failed] = await Promise.all([
       seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending', limit: 100 }),
