@@ -79,6 +79,42 @@ export function verifiedCorrectiveMainNetDiff(
 }
 
 /**
+ * Previously verified corrective PRs may become stale when ANOTHER SEO PR
+ * lands first. Such a PR can only proceed if the current default branch and
+ * task HEAD have a shared, proven main ancestor and the changed paths are
+ * strictly disjoint. This does NOT replace testing the combined working tree
+ * before merge; the controller must build that exact preview separately.
+ */
+export function verifiedDisjointCorrectiveDrift(
+  task: Pick<SeoTaskRecord, 'id' | 'history' | 'deliveryHandoff'>,
+  forkSha: string,
+  taskDelta: {
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit?: { sha: string } | null;
+    files?: readonly { filename: string }[];
+  },
+  mainDelta: {
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit?: { sha: string } | null;
+    files?: readonly { filename: string }[];
+  }
+): boolean {
+  const sourcePaths = (taskDelta.files ?? []).map(f => f.filename);
+  const mainPaths = (mainDelta.files ?? []).map(f => f.filename);
+  const sourceSet = new Set(sourcePaths);
+  return verifiedCorrectiveMainNetDiff(task, forkSha, taskDelta)
+    && /^[a-f0-9]{40}$/.test(forkSha)
+    && mainDelta.status === 'ahead'
+    && mainDelta.ahead_by >= 1 && mainDelta.ahead_by <= 10
+    && mainDelta.behind_by === 0
+    && mainDelta.merge_base_commit?.sha === forkSha
+    && mainPaths.length > 0 && mainPaths.length <= 10
+    && new Set(mainPaths).size === mainPaths.length
+    && preparedRefHandoffScopeError(mainPaths) === null
+    && mainPaths.every(path => !sourceSet.has(path));
+}
+
+/**
  * Historical refusals belong to structured Sites Operator Task history.
  * The two 2026-10-15 Book Discovery incidents were migrated on 2026-10-16
  * to safety_write_rejected_task_cancelled and the Tasks were cancelled.
