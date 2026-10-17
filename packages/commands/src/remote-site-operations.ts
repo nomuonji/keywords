@@ -1316,7 +1316,11 @@ export async function seoTaskUpdate(input: unknown) {
   const deliveryHandoff: SeoTaskRecord['deliveryHandoff'] = deliveryPatch === undefined
     ? current.deliveryHandoff
     : { ...defaultDeliveryHandoff(), ...deliveryPatch, updatedAt: t };
-  const releasingToDelivery = current.status === 'in_progress' && deliveryPatch?.state === 'branch_ready';
+  // The controller may reject an invalid handoff after the Worker lease expires.
+  // Release on ci_failed as well as branch_ready so corrective work can be
+  // claimed promptly instead of holding a renewed stale Worker lease.
+  const releasingToDelivery = current.status === 'in_progress'
+    && (deliveryPatch?.state === 'branch_ready' || deliveryPatch?.state === 'ci_failed');
 
   if (deliveryPatch?.state === 'push_pending') {
     if (!deliveryPatch.branch || !deliveryPatch.headSha || !deliveryPatch.baseSha) {
