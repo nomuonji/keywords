@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { siteRegistryList, siteArticleList } from '../packages/commands/src/remote-site-operations.js';
 import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-digest.js';
+import { siteIndexationHistory } from '../packages/commands/src/site-indexation.js';
 
 // Public read-only browser endpoint for agent-managed Sites Operator sites.
 // Keep this view cheap: one registry read + one compact planning-digest list.
@@ -21,6 +22,12 @@ const articleListHandler = async (c: any) => {
 app.get('/api/remote-articles', articleListHandler);
 app.get('/api/remote-sites', async c => {
   if (c.req.query('__view') === 'articles') return articleListHandler(c);
+  if (c.req.query('__view') === 'indexation') {
+    const siteId = c.req.query('siteId') ?? '';
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(siteId)) return c.json({ error: 'Valid siteId is required' }, 400);
+    const history = await siteIndexationHistory({ siteId, weeks: 16 });
+    return c.json(history, 200, { 'cache-control': 'no-store' });
+  }
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
   const registry = await siteRegistryList({ limit });
   let planning: { items: Array<Record<string, unknown>> } = { items: [] };
