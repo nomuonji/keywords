@@ -73,7 +73,7 @@ globalThis.fetch = async (input, init) => {
   const path = parsed.pathname.replace('/v1/', '');
   if (path === 'projects/test/databases/(default)/documents/sites' || path === 'projects/test/databases/(default)/documents/seoPlanningDigests') {
     const collection = path.split('/').at(-1)!;
-    const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
+    const all = [...docs.values()].filter(doc => { const prefix = `${root}${collection}/`; return doc.name.startsWith(prefix) && !doc.name.slice(prefix.length).includes('/'); });
     return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
   }
   if (path === 'projects/test/databases/(default)/documents:batchGet') {
