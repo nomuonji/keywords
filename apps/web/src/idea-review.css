@@ -104,6 +104,13 @@
 .ideaInboxIdentity{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 8px}
 .ideaInboxIdentity>small{grid-column:2;color:#77928a;font-size:10px}
 .ideaInboxIdentity>.ideaAgentReviewHint{color:#accda6;font-size:10px}
+.ideaAgentScoreStrip{grid-column:1/-1;display:flex;gap:4px;flex-wrap:wrap;align-items:center;min-width:0;padding-top:3px}
+.ideaAgentScoreStrip span{font-size:10px;display:inline-flex;align-items:center;gap:3px;padding:2px 5px;border:1px solid #39463a;border-radius:4px;color:#b7ccbb;background:#18251e}
+.ideaAgentScoreStrip span.pass strong{color:#c0e39c}
+.ideaAgentScoreStrip span.low strong{color:#f1b4a0}
+.ideaAgentReviewLegacy{grid-column:1/-1;color:#889b93;font-size:10px;font-weight:normal}
+.ideaDetail>.ideaAgentReviewLegacy{display:block;padding:8px;border:1px dashed #4a5a52;border-radius:6px;margin:12px 0}
+
 .ideaAgentReviewPanel{margin:18px 0;padding:15px;border:1px solid #35473c;background:#14221b;border-radius:10px}
 .ideaAgentReviewPanel h3{margin:0 0 10px;font-size:14px;color:#d7e7d5;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .ideaAgentReviewPanel h3 small,.ideaAgentReviewPanel>small{font-size:10px;color:#91aa98}

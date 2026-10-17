@@ -37,13 +37,12 @@ globalThis.fetch = async (input:any, init?:RequestInit) => {
 };
 const base = { audience:'廃校を訪ねる旅行者',userTask:'廃校の現在の使われ方を知る',entities:'学校跡地と新しい施設',informationMechanism:'閉校から再利用までの年表',interaction:'地図から場所を選び変遷を見る',maintenance:'年一回確認' };
 const agentReview = {
-  rubricVersion:'idea-final-judge-v3' as const,assessedAt:'2026-10-14T00:00:00.000Z',
-  verdict:'pass' as const,axes:{appeal:5,dbValue:4,seo:3,revenue:2,contentFeasibility:5,upkeep:4},
-  requiredAxes:['dbValue','contentFeasibility','upkeep'],strongestObjection:'初期データが少ない',
+  rubricVersion:'idea-final-judge-v4' as const,assessedAt:'2026-10-14T00:00:00.000Z',
+  verdict:'pass' as const,axes:{appeal:5,dbValue:4,seo:4,revenue:4,contentFeasibility:5,upkeep:4},strongestObjection:'初期データが少ない',
   passRationale:'具体的な廃校施設の変遷から発見が生まれる'
 };
 const ideas=Array.from({length:30},(_,i)=>({...base,id:`smoke-${i}`,title:`廃校のその後 ${i}`,entities:`学校跡地と新しい施設 ${i}`,presentedAt:'2026-10-14T00:00:00.000Z',
-  ...(i===0 ? {agentReview} : {})}));
+  agentReview}));
 const first=await ideaMemoryBatchUpsert({ideas,runId:'smoke-run'});
 assert.equal(first.results.length,30); assert.equal(first.writeCount,30); assert.equal(commits,1);
 const second=await ideaMemoryBatchUpsert({ideas,runId:'smoke-run'});
@@ -53,6 +52,11 @@ await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],agentReview:
   passRationale:'後から書き換えた自己採点'}}],runId:'smoke-rerate'}),/frozen at initial idea creation/);
 await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-low-review',
   agentReview:{...agentReview,axes:{...agentReview.axes,appeal:4}}}],runId:'smoke-low'}),/Only appeal 5\/5 may pass/);
+// New records require a frozen pre-submission review, including otherwise optional market axes.
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-missing',agentReview:undefined}],runId:'smoke-missing-run'}),/require agentReview/);
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-poor-seo',agentReview:{...agentReview,axes:{...agentReview.axes,seo:3}}}],runId:'smoke-poor'}),/All six axes must score at least 4\/5/);
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-poor-revenue',agentReview:{...agentReview,axes:{...agentReview.axes,revenue:2}}}],runId:'smoke-poor-revenue'}),/All six axes must score at least 4\/5/);
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-missing-upkeep',agentReview:{...agentReview,axes:{appeal:5,dbValue:4,seo:4,revenue:4,contentFeasibility:5}}}],runId:'smoke-incomplete'}),/expected number, received undefined/);
 const initialReview = await ideaReviewDetail('smoke-0');
 assert.equal(initialReview?.agentReview?.axes.appeal,5);
 assert.equal(initialReview?.agentReview?.axes.contentFeasibility,5);
