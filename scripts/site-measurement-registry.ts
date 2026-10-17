@@ -39,7 +39,7 @@ export function measurementCandidate(site: SiteRecord) {
   try {
     const url = new URL(site.productionUrl);
     if (url.protocol !== 'https:' && url.protocol !== 'http:') return { reason: 'invalid_production_url' as const };
-    if (url.username || url.password) return { reason: 'invalid_production_url' as const };
+    if (url.username || url.password || url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname.endsWith('.local')) return { reason: 'invalid_production_url' as const };
     domain = url.hostname;
     productionUrl = url.toString();
   } catch {
