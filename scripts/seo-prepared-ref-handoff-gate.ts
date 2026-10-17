@@ -29,10 +29,48 @@ export function preparedRefBaseError(
 ): string | null {
   if (existingSha === null && defaultHead !== baseSha) return 'default branch has advanced; Worker rebase required';
   if (existingSha === baseSha && defaultHead !== baseSha
-      && !task.history?.some(event => event.event === 'delivery_failed')) {
-    return 'non-default base is allowed only for an existing CI-failed branch';
+      && !task.history?.some(event => event.event === 'delivery_failed' || event.event === 'implementation_blocked')) {
+    return 'non-default base is allowed only for a recorded failed implementation or delivery';
   }
   return null;
+}
+
+/**
+ * Existing broken task branches can only be corrected by a single-parent,
+ * non-force fast-forward from their exact current HEAD. After reconciliation,
+ * compare the FINAL tree against live main and require a new corrective Worker
+ * handoff after the recorded failure. Old multi-commit branch histories alone
+ * are never accepted as new clean handoffs.
+ */
+export function verifiedCorrectiveMainNetDiff(
+  task: Pick<SeoTaskRecord, 'history' | 'deliveryHandoff'>,
+  currentMainSha: string,
+  comparison: {
+    status: string; ahead_by: number; behind_by: number;
+    merge_base_commit?: { sha: string } | null;
+    files?: readonly { filename: string }[];
+  }
+): boolean {
+  const events = task.history ?? [];
+  const lastFailure = events.findLastIndex(event =>
+    event.event === 'delivery_failed' || event.event === 'implementation_blocked'
+  );
+  const lastCorrection = events.findLastIndex(event =>
+    event.event === 'delivery_push_pending'
+    && (event.actor === 'seo_worker' || event.actor === 'chatgpt_seo_worker')
+  );
+  const files = comparison.files ?? [];
+  return task.deliveryHandoff?.validationSummary.startsWith('Action-Ref-Handoff: v1\n') === true
+    && !preparedHandoffHasRecordedRefusal(task)
+    && lastFailure >= 0
+    && lastCorrection > lastFailure
+    && /^[a-f0-9]{40}$/.test(currentMainSha)
+    && comparison.status === 'ahead'
+    && comparison.ahead_by >= 1 && comparison.ahead_by <= 10
+    && comparison.behind_by === 0
+    && comparison.merge_base_commit?.sha === currentMainSha
+    && files.length > 0 && files.length <= 50
+    && preparedRefHandoffScopeError(files.map(file => file.filename)) === null;
 }
 
 /**
