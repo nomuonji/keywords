@@ -56,7 +56,7 @@ await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-lo
 await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-missing',agentReview:undefined}],runId:'smoke-missing-run'}),/require agentReview/);
 await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-poor-seo',agentReview:{...agentReview,axes:{...agentReview.axes,seo:3}}}],runId:'smoke-poor'}),/All six axes must score at least 4\/5/);
 await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-poor-revenue',agentReview:{...agentReview,axes:{...agentReview.axes,revenue:2}}}],runId:'smoke-poor-revenue'}),/All six axes must score at least 4\/5/);
-await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-missing-upkeep',agentReview:{...agentReview,axes:{appeal:5,dbValue:4,seo:4,revenue:4,contentFeasibility:5}}}],runId:'smoke-incomplete'}),/Required/);
+await assert.rejects(()=>ideaMemoryBatchUpsert({ideas:[{...ideas[0],id:'smoke-missing-upkeep',agentReview:{...agentReview,axes:{appeal:5,dbValue:4,seo:4,revenue:4,contentFeasibility:5}}}],runId:'smoke-incomplete'}),/expected number, received undefined/);
 const initialReview = await ideaReviewDetail('smoke-0');
 assert.equal(initialReview?.agentReview?.axes.appeal,5);
 assert.equal(initialReview?.agentReview?.axes.contentFeasibility,5);
