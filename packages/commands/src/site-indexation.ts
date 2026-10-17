@@ -594,7 +594,7 @@ export async function siteIndexationHistory(input: unknown) {
   }) as Array<{ found?: any }>;
   const allowedWeeks = new Set(weekStarts);
   const snapshots = results
-    .flatMap(result => result.found ? [decoded(result.found)] : [])
+    .flatMap(result => result.found ? [decoded(result.found) as Record<string, any>] : [])
     .filter(row => row.siteId === args.siteId && allowedWeeks.has(String(row.weekStart)))
     .sort((a, b) => String(a.weekStart).localeCompare(String(b.weekStart)))
     .map(row => ({
