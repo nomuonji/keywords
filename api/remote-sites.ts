@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
+import { siteRegistryList, siteArticleList } from '../packages/commands/src/remote-site-operations.js';
 import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-digest.js';
 
 // Public read-only browser endpoint for agent-managed Sites Operator sites.
@@ -7,7 +7,20 @@ import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-dig
 // Full analytics detail stays behind the authenticated MCP and no per-site N+1
 // Firestore reads are performed here.
 const app = new Hono();
+
+// Consolidated read-only route to stay within Vercel Hobby's function limit.
+// The public /api/remote-articles URL is preserved by vercel.json rewrite;
+// handle both the original path and the rewritten request shape.
+const articleListHandler = async (c: any) => {
+  const siteId = c.req.query('siteId') ?? '';
+  if (!siteId) return c.json({ error: 'siteId is required' }, 400);
+  const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
+  const items = await siteArticleList({ siteId, status: c.req.query('status') || undefined, limit });
+  return c.json({ siteId, items: items.items }, 200, { 'cache-control': 'no-store' });
+};
+app.get('/api/remote-articles', articleListHandler);
 app.get('/api/remote-sites', async c => {
+  if (c.req.query('__view') === 'articles') return articleListHandler(c);
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
   const registry = await siteRegistryList({ limit });
   let planning: { items: Array<Record<string, unknown>> } = { items: [] };
