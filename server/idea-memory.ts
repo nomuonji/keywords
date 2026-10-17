@@ -144,7 +144,7 @@ app.post('/api/theme-research', async c => {
   }
   const axes = input.axes && typeof input.axes === 'object' && !Array.isArray(input.axes)
     ? input.axes as Record<string, unknown> : {};
-  const names: Record<string, string> = { appeal: '面白さ', dbValue: 'DBの必然性', seo: 'SEO', revenue: '収益性', upkeep: '運用の容易さ' };
+  const names: Record<string, string> = { appeal: '面白さ', dbValue: 'DBの必然性', seo: 'SEO', revenue: '収益性', contentFeasibility: 'コンテンツ制作の容易さ', upkeep: '更新・維持の容易さ' };
   const scores: string[] = [];
   for (const [key, label] of Object.entries(names)) {
     const n = Number(axes[key]);
