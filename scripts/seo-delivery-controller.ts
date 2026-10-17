@@ -222,7 +222,7 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
  * existing PR at its EXACT head without asking a Worker to rewrite content.
  * All other CI failures remain ci_failed for corrective Worker inspection.
  */
-function retryableOgAssetPermissionFailure(task: SeoTaskRecord): boolean {
+function retryableSiteBuildEnvironmentFailure(task: SeoTaskRecord): boolean {
   const h = task.deliveryHandoff;
   const history = task.history ?? [];
   const ogError = h?.lastError?.startsWith('Central site CI: docker failed')
@@ -232,17 +232,19 @@ function retryableOgAssetPermissionFailure(task: SeoTaskRecord): boolean {
     && h.lastError.includes("chmod: changing permissions of '/work/")
     && h.lastError.includes('Operation not permitted')
     && !history.some(entry => entry.event === 'central_ci_checkout_permission_retry');
+  const locklessBuildError = h?.lastError === 'Central site CI: Central CI requires a committed package-lock.json'
+    && !history.some(entry => entry.event === 'central_ci_lockless_npm_retry');
   return task.status === 'in_progress'
     && task.executionClaim === null
     && h?.state === 'ci_failed'
     && Boolean(h.prNumber && h.prUrl && h.headSha && h.branch)
-    && Boolean(ogError || chmodError)
+    && Boolean(ogError || chmodError || locklessBuildError)
     && !preparedHandoffHasRecordedRefusal(task);
 }
 
-async function resumeOgPermissionFailure(task: SeoTaskRecord): Promise<SeoTaskRecord | null> {
+async function resumeSiteBuildEnvironmentFailure(task: SeoTaskRecord): Promise<SeoTaskRecord | null> {
   const current = await seoTaskGet({ id: task.id });
-  if (!retryableOgAssetPermissionFailure(current)) return null;
+  if (!retryableSiteBuildEnvironmentFailure(current)) return null;
   const site = await siteRegistryGet({ id: current.siteId });
   if (site.status !== 'active' || site.repository !== current.repo) return null;
   const info = await repoInfo(current.repo);
@@ -262,9 +264,11 @@ async function resumeOgPermissionFailure(task: SeoTaskRecord): Promise<SeoTaskRe
     deliveryHandoff: nextHandoff(h, { state: 'pr_open', lastError: '' }),
     appendHistory: {
       actor: 'seo_delivery_controller',
-      event: h.lastError.includes('chmod: changing permissions of')
-        ? 'central_ci_checkout_permission_retry' : 'central_ci_og_permission_retry',
-      detail: `Retrying PR #${pr.number} at exact ${h.headSha} once after central disposable checkout permissions were fixed; no Worker ref/source write.`
+      event: h.lastError === 'Central site CI: Central CI requires a committed package-lock.json'
+        ? 'central_ci_lockless_npm_retry'
+        : h.lastError.includes('chmod: changing permissions of')
+          ? 'central_ci_checkout_permission_retry' : 'central_ci_og_permission_retry',
+      detail: `Retrying PR #${pr.number} at exact ${h.headSha} once after central isolated build handling was corrected; no Worker ref/source write.`
     }
   });
 }
@@ -870,9 +874,9 @@ async function main() {
   // Task state, refusal history and exact Worker checkpoint.
   const candidates: SeoTaskRecord[] = [];
   for (const pending of initialInProgress) {
-    if (retryableOgAssetPermissionFailure(pending)) {
+    if (retryableSiteBuildEnvironmentFailure(pending)) {
       try {
-        const resumed = await resumeOgPermissionFailure(pending);
+        const resumed = await resumeSiteBuildEnvironmentFailure(pending);
         if (resumed) candidates.push(resumed);
       } catch (error) {
         if (firestoreRateLimited(error)) {
