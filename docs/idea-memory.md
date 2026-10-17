@@ -24,21 +24,21 @@ To preserve accountability, `idea_memory_batch_upsert` accepts an optional `agen
 
 ```json
 {
-  "rubricVersion": "idea-final-judge-v2",
+  "rubricVersion": "idea-final-judge-v3",
   "assessedAt": "2026-10-16T00:00:00.000Z",
   "verdict": "pass",
-  "axes": {"appeal": 5, "dbValue": 4, "seo": 3, "revenue": 2, "upkeep": 4},
-  "requiredAxes": ["dbValue", "upkeep"],
+  "axes": {"appeal": 5, "dbValue": 4, "seo": 3, "revenue": 2, "contentFeasibility": 5, "upkeep": 4},
+  "requiredAxes": ["dbValue", "contentFeasibility", "upkeep"],
   "strongestObjection": "Short, concrete reason why this might fail",
   "passRationale": "Why the actual first experience overcomes that objection"
 }
 ```
 
-All five axes use the existing 1–5 scale; omit an unverified or inapplicable score rather than invent one. Appeal must be **5/5** and each explicitly required purpose-specific axis must be **4/5 or more**, or the structured self-score is rejected. Other noncompensatory criteria of the Judge Skill (specific first experience, real differentiation, feasible data/maintenance) still apply. The score is an **agent hypothesis**, not proof of demand, actual revenue, a human verdict, or an independent model review.
+All six axes use the existing 1–5 scale; omit an unverified or inapplicable score rather than invent one. Appeal must be **5/5** and each explicitly required purpose-specific axis must be **4/5 or more**, or the structured self-score is rejected. Other noncompensatory criteria of the Judge Skill (specific first experience, real differentiation, feasible data/maintenance) still apply. `contentFeasibility` is distinct from ongoing `upkeep`: it measures copyright, image/video licenses, portrait/trademark and reuse permissions, access to primary material, work to create original content, and suitability for lawful automation (5=easy; 1=very difficult). Consider rights that cannot be secured a release blocker, not a low score to offset with traffic/revenue. Prior `idea-final-judge-v2` snapshots and historical five-axis feedback remain valid and unmodified; new submissions use rubric v3. The score is an **agent hypothesis**, not proof of demand, actual revenue, a human verdict, or an independent model review.
 
 At initial idea registration, the supplied `agentReview` snapshot is stored with the idea and shown read-only in the Idea Review detail drawer (with a discreet indication in the list). Subsequent `idea_memory_batch_upsert` re-presentations **cannot overwrite or backfill** that snapshot; human review, outlet-specific verdicts and organization patches do not modify it. Older ideas without this field remain visibly unscored; never retroactively label an evaluation as pre-submission. The API field is optional for backward compatibility with existing MCP clients; until clients expose the refreshed schema, the chat Skill's gate remains the primary filter. Missing agentReview does **not** imply that a proposal was approved by the Judge. No extra collection or per-row Firestore reads are introduced.
 
-**Human interaction stays minimal.** GOOD / ボツ / 保留 can be submitted directly from the list with one click. The existing optional human five-axis detail form remains available but is never required to evaluate ideas. Human rating events are separately append-only and are not silently treated as AI scores. Run-to-run calibration can use simple human verdicts; a detailed human grading chore is not a prerequisite.
+**Human interaction stays minimal.** GOOD / ボツ / 保留 can be submitted directly from the list with one click. The existing optional human six-axis detail form remains available but is never required to evaluate ideas. Human rating events are separately append-only and are not silently treated as AI scores. Run-to-run calibration can use simple human verdicts; a detailed human grading chore is not a prerequisite.
 
 ## Tags, nonexclusive production destinations and derivative assets (v1.20)
 The authoritative idea remains one `ideaMemory/{ideaId}` record. New optional fields:
@@ -51,7 +51,7 @@ Agent batch saves may provide initial tags/destinations, but existing manually c
 
 The owner-only Ideas screen provides outlet filtering, tagging, multi-outlet assignment and pointer addition in the existing lazy-loaded detail dialog. Existing records without these fields render as unassigned and require no mass backfill. The summary API masks long `assetRefs` and includes only `assetCount`. Authentication, same-origin enforcement, field validation, revision checks and Firestore document preconditions apply to organization writes as to feedback.
 
-Feedback `ideaFeedback` remains append-only. Newly captured optional UI score axes `{appeal,dbValue,seo,revenue,upkeep}` are saved as numeric 1–5 fields within the feedback event. Pre-existing text-only score histories remain unmodified and readable. These subjective idea ratings are distinct from market verification, content-quality judgements and subsequent SNS/YouTube analytics.
+Feedback `ideaFeedback` remains append-only. Newly captured optional UI score axes `{appeal,dbValue,seo,revenue,contentFeasibility,upkeep}` are saved as numeric 1–5 fields within the feedback event. Pre-existing text-only score histories remain unmodified and readable. These subjective idea ratings are distinct from market verification, content-quality judgements and subsequent SNS/YouTube analytics.
 
 The outlet registry can gain future types without changing older idea IDs or creating destination-specific idea databases. The first phase implements typed reference links, **not** content production orchestration or automatic cross-operator writes. See GitHub Issue #208.
 
