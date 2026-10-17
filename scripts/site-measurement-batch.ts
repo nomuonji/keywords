@@ -247,10 +247,23 @@ async function main() {
       try {
         sync = await siteCommands.syncSitemap(sctx, { projectId: job.projectId, sitemapUrl: job.sitemapUrl });
       } catch (error) {
-        // A missing or broken sitemap must not block GSC search analytics,
-        // although indexation inventory remains incomplete and is reported.
-        sitemapError = error instanceof Error ? error.message : String(error);
+        const primaryError = error instanceof Error ? error.message : String(error);
+        if (!job.sitemapUrl) {
+          // Some valid sites publish /sitemap-index.xml while the generic
+          // /sitemap.xml route returns a site-shell HTML with HTTP 200.
+          try {
+            sync = await siteCommands.syncSitemap(sctx, {
+              projectId: job.projectId,
+              sitemapUrl: new URL('/sitemap-index.xml', job.productionUrl).toString()
+            });
+          } catch (fallbackError) {
+            sitemapError = `${primaryError}; sitemap-index fallback: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`;
+          }
+        } else {
+          sitemapError = primaryError;
+        }
       }
+      if (sync && sync.discovered === 0) sitemapError = 'Sitemap returned no URL entries';
       const sitemapInventoryUrls = sync ? sitemapUrlsObservedAt(job.projectId, sync.syncedAt) : [];
       const endDate = recoveryDate();
       const context = recoveryContext(job.projectId);
