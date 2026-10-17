@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -49,6 +49,24 @@ assert.equal(preparedRefBaseError(task,null,base,base),null);
 assert.match(preparedRefBaseError(task,null,advancedMain,base)!,/advanced/);
 assert.match(preparedRefBaseError(task,base,advancedMain,base)!,/CI-failed/);
 assert.equal(preparedRefBaseError({...task,history:[{event:'delivery_failed',actor:'seo_delivery_controller',detail:'PR CI failed',at:'2026-10-13T07:00:00Z'}]},base,advancedMain,base),null);
+assert.equal(preparedRefBaseError({...task,history:[{event:'implementation_blocked',actor:'seo_worker',detail:'truncated legacy branch',at:'2026-10-13T07:00:00Z'}]},base,advancedMain,base),null);
+
+// Recovery is permitted only for a new corrective prepared-commit receipt
+// AFTER a failure, with final net diff from live main and no refusal.
+const incident = {event:'delivery_failed',actor:'seo_delivery_controller',detail:'Invalid provenance',at:'2026-10-13T07:00:00Z'};
+const correction = {event:'delivery_push_pending',actor:'seo_worker',detail:'Verified corrective one-parent commit',at:'2026-10-13T07:10:00Z'};
+const repairTask = {...task,history:[incident,correction],deliveryHandoff:{...task.deliveryHandoff,state:'pr_open'}} as SeoTaskRecord;
+const mainSha='a'.repeat(40);
+const net={status:'ahead',ahead_by:4,behind_by:0,merge_base_commit:{sha:mainSha},files:[{filename:'src/data/tools.json'}]};
+assert.equal(verifiedCorrectiveMainNetDiff(repairTask, mainSha, net),true);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[correction,incident]},mainSha,net),false);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident]},mainSha,net),false);
+assert.equal(verifiedCorrectiveMainNetDiff(repairTask,mainSha,{...net,behind_by:1}),false);
+assert.equal(verifiedCorrectiveMainNetDiff(repairTask,mainSha,{...net,merge_base_commit:{sha:base}}),false);
+assert.equal(verifiedCorrectiveMainNetDiff(repairTask,mainSha,{...net,files:[{filename:'.github/workflows/ci.yml'}]}),false);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,{event:'safety_write_rejected_task_cancelled',actor:'seo_worker',detail:'denied',at:'2026-10-13T08:00:00Z'}]},mainSha,net),false);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,deliveryHandoff:{...repairTask.deliveryHandoff,validationSummary:'Action-Branch-Handoff: v1\\nwrong transport'}},mainSha,net),false);
+
 assert.equal(preflight({ ...task, executionClaim: { ...task.executionClaim!, actor: 'seo_worker' } }), null);
 assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'branch_ready' } }), null);
 assert.equal(preflight({ ...task, executionClaim: null, deliveryHandoff: { ...task.deliveryHandoff, state: 'pr_open' } }), null);
