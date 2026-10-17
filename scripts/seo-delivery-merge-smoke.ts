@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -59,6 +59,16 @@ const repairTask = {...task,history:[incident,correction],deliveryHandoff:{...ta
 const mainSha='a'.repeat(40);
 const net={status:'ahead',ahead_by:4,behind_by:0,merge_base_commit:{sha:mainSha},files:[{filename:'src/data/tools.json'}]};
 assert.equal(verifiedCorrectiveMainNetDiff(repairTask, mainSha, net),true);
+const natureDelta = {...net, ahead_by:7, files:[{filename:'src/data/jobs/nature.json'}]};
+const flightDelta = {...net, ahead_by:1, files:[{filename:'src/data/jobs/aerospace.json'}]};
+assert.equal(verifiedDisjointCorrectiveDrift(repairTask,mainSha,natureDelta,flightDelta),true);
+assert.equal(verifiedDisjointCorrectiveDrift(repairTask,mainSha,natureDelta,{...flightDelta,files:[{filename:'src/data/jobs/nature.json'}]}),false);
+assert.equal(verifiedDisjointCorrectiveDrift(repairTask,mainSha,natureDelta,{...flightDelta,files:[{filename:'package.json'}]}),false);
+assert.equal(verifiedDisjointCorrectiveDrift(repairTask,mainSha,natureDelta,{...flightDelta,behind_by:1}),false);
+assert.equal(verifiedDisjointCorrectiveDrift(repairTask,mainSha,natureDelta,{...flightDelta,merge_base_commit:{sha:base}}),false);
+assert.equal(verifiedDisjointCorrectiveDrift({...repairTask,history:[incident]} as SeoTaskRecord,mainSha,natureDelta,flightDelta),false);
+assert.equal(verifiedDisjointCorrectiveDrift({...repairTask,history:[incident,correction,{event:'authorization_denied',actor:'seo_worker',detail:'denied',at:'2026-10-13T08:00:00Z'}]} as SeoTaskRecord,mainSha,natureDelta,flightDelta),false);
+
 const runnerFailure = {event:'delivery_failed',actor:'seo_delivery_controller',detail:'Central site CI: docker failed EACCES',at:'2026-10-13T07:20:00Z'};
 const runnerRetry = {event:'central_ci_checkout_permission_retry',actor:'seo_delivery_controller',detail:'same PR/head only',at:'2026-10-13T07:30:00Z'};
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure]},mainSha,net),false);
