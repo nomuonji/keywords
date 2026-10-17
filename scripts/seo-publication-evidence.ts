@@ -47,3 +47,20 @@ export function duePublicationBatch<T extends { id: string; completedAt?: string
   const offset = (Math.floor(now / intervalMs) * count) % due.length;
   return Array.from({ length: count }, (_, i) => due[(offset + i) % due.length]);
 }
+
+/** Restrict immediate checks to exact Task IDs emitted by the merge controller. */
+export function publicationTargetIds(input: string | undefined, limit = 10): string[] {
+  if (!input?.trim()) return [];
+  const values = input.split(',').map(value => value.trim());
+  if (values.length > limit || values.some(value => !/^[a-zA-Z0-9_-]{1,100}$/.test(value))) {
+    throw Error('Invalid immediate publication Task IDs');
+  }
+  return [...new Set(values)];
+}
+
+/** A bounded wait; even an accidentally huge configuration cannot hold Actions indefinitely. */
+export function publicationWaitBudget(value: string | undefined): number {
+  const duration = Number(value ?? '240000');
+  if (!Number.isFinite(duration) || duration < 0) throw Error('Invalid publication wait budget');
+  return Math.min(240_000, Math.trunc(duration));
+}

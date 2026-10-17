@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch } from './seo-publication-evidence.js';
+import { matchingPagesProject, completedProductionPagesDeployment, duePublicationBatch, publicationTargetIds, publicationWaitBudget } from './seo-publication-evidence.js';
 
 const repo = {name:'job-world',source:{config:{owner:'nomuonji',repo_name:'job-world'}},domains:['job.antonbase.com']};
 const whisky = {name:'whisky-en',source:{config:{owner:'nomuonji',repo_name:'whisky-media-en'}},domains:['whisky-en.antonbase.com']};
@@ -27,3 +27,13 @@ assert.deepEqual(duePublicationBatch(backlog,clock,0),[]);
 assert.deepEqual(duePublicationBatch([{...backlog[0],deploymentVerification:{checkedAt:new Date(clock-60_000).toISOString()}}],clock,12),[]);
 assert.equal(duePublicationBatch([{...backlog[0],deploymentVerification:{checkedAt:new Date(clock-86_400_000).toISOString()}}],clock,12).length,1);
 console.log('Publication evidence filters production deployments and rotates due backlog without extra database writes.');
+
+assert.deepEqual(publicationTargetIds(undefined), []);
+assert.deepEqual(publicationTargetIds('task_1,task-2,task_1'), ['task_1', 'task-2']);
+assert.throws(() => publicationTargetIds('task_1,../main'), /Invalid immediate publication/);
+assert.throws(() => publicationTargetIds(Array.from({length:11}, (_, i) => 'task_'+i).join(',')), /Invalid immediate publication/);
+assert.equal(publicationWaitBudget(undefined), 240_000);
+assert.equal(publicationWaitBudget('0'), 0);
+assert.equal(publicationWaitBudget('9999999'), 240_000);
+assert.throws(() => publicationWaitBudget('-1'), /Invalid publication wait/);
+console.log('Immediate publication handoff accepts exact deduped IDs and bounds polling.');
