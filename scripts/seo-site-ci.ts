@@ -108,6 +108,9 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
     // Docker daemons behind hosted Actions runners may not share the runner's
     // filesystem: docker cp streams the checkout instead of relying on a bind
     // mount that silently exposes an empty /work.
+    // Docker cp may preserve read-only ownership/modes from the Actions checkout.
+    // Grant the container owner write access inside this disposable, credential-free
+    // source copy so site OG/sitemap generators can overwrite generated assets.
     const generated = astro ? 'dist' : docusaurus ? 'build' : '.next/server/app';
     const output = join(root, generated);
     let containerId = '';
@@ -116,7 +119,7 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string): Prom
         'create', '--security-opt=no-new-privileges', '--cap-drop=ALL',
         '--pids-limit=256', '--memory=4g', '--cpus=2',
         '-w', '/work', 'node:22-bookworm',
-        'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
+        'sh', '-lc', 'chmod -R u+rwX /work && npm ci --no-audit --no-fund && npm run build'
       ], root, 120_000);
       // docker create may emit image-pull logs before its 64-hex container ID.
       containerId = createOutput.split(/\r?\n/).map(line => line.trim()).filter(line => /^[a-f0-9]{64}$/.test(line)).pop() ?? '';
