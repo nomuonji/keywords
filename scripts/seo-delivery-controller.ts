@@ -9,7 +9,7 @@ import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/s
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, preparedHandoffHasRecordedRefusal } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift, preparedHandoffHasRecordedRefusal } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -684,6 +684,7 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
     return;
   }
   const currentMainSha = await branchSha(task.repo, base);
+  let combinedMainSha: string | undefined;
   if (handoff.baseSha !== currentMainSha) {
     // Standard fallback accepts only unrelated SNS bot-state main drift.
     // Corrective prepared commits are different: they must fast-forward an
@@ -718,21 +719,44 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
           files: { filename: string }[];
         }>(api(task.repo, `/compare/${currentMainSha}...${handoff.headSha}`));
         correctiveCompatible = verifiedCorrectiveMainNetDiff(task, currentMainSha, net);
+        if (!correctiveCompatible && net.status === 'diverged'
+            && net.ahead_by >= 1 && net.ahead_by <= 10
+            && net.behind_by >= 1 && net.behind_by <= 10) {
+          const fork = net.merge_base_commit?.sha;
+          if (fork && /^[a-f0-9]{40}$/.test(fork)) {
+            const [sourceDelta, mainDelta] = await Promise.all([
+              gh<{
+                status: string; ahead_by: number; behind_by: number;
+                merge_base_commit: { sha: string };
+                files: { filename: string }[];
+              }>(api(task.repo, `/compare/${fork}...${handoff.headSha}`)),
+              gh<{
+                status: string; ahead_by: number; behind_by: number;
+                merge_base_commit: { sha: string };
+                files: { filename: string }[];
+              }>(api(task.repo, `/compare/${fork}...${currentMainSha}`))
+            ]);
+            if (verifiedDisjointCorrectiveDrift(task, fork, sourceDelta, mainDelta)) {
+              correctiveCompatible = true;
+              combinedMainSha = currentMainSha;
+            }
+          }
+        }
       }
     }
     if (!fallbackCompatible && !correctiveCompatible) {
       console.log(`Waiting: ${task.id} current-main ancestry or bounded corrective provenance cannot be proved.`);
       return;
     }
-    console.log(`Verified ${correctiveCompatible ? 'bounded corrective net diff' : 'SNS bot-state-only drift'} for ${task.id}; exact PR HEAD, mergeability and central build remain mandatory.`);
+    console.log(`Verified ${combinedMainSha ? 'strictly disjoint corrective main drift' : correctiveCompatible ? 'bounded corrective net diff' : 'SNS bot-state-only drift'} for ${task.id}; exact PR HEAD, mergeability and central build remain mandatory.`);
   }
 
   // GitHub mergeability only proves that git can merge. Build the exact
   // immutable PR head and inspect generated target HTML before merge.
-  const receipt = `head=${handoff.headSha};urls=${task.targetUrls.join('|')}`;
+  const receipt = `head=${handoff.headSha};${combinedMainSha ? `combinedMain=${combinedMainSha};` : ''}urls=${task.targetUrls.join('|')}`;
   if (!(task.history ?? []).some(entry => entry.event === 'central_ci_passed' && entry.detail.startsWith(receipt + ';'))) {
     try {
-      const summary = await verifySeoSiteBuild(task, handoff.headSha);
+      const summary = await verifySeoSiteBuild(task, handoff.headSha, combinedMainSha);
       console.log(summary);
       if (!dryRun) {
         const current = await seoTaskGet({ id: task.id });
@@ -756,6 +780,13 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
 
   if (dryRun) {
     console.log(`[dry-run] would merge ${task.id} after exact HEAD, mergeability and central site CI.`);
+    return;
+  }
+
+  // This build attests to one exact, combined source tree. If main changed
+  // while CI was running, never merge under a different, unvalidated base.
+  if (await branchSha(task.repo, base) !== currentMainSha) {
+    console.log(`Waiting: ${task.id} default branch changed after exact combined build; revalidate before merging.`);
     return;
   }
 
