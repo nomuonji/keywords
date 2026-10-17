@@ -224,14 +224,20 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
  */
 function retryableOgAssetPermissionFailure(task: SeoTaskRecord): boolean {
   const h = task.deliveryHandoff;
+  const history = task.history ?? [];
+  const ogError = h?.lastError?.startsWith('Central site CI: docker failed')
+    && h.lastError.includes("EACCES: permission denied, open '/work/public/og/")
+    && !history.some(entry => entry.event === 'central_ci_og_permission_retry');
+  const chmodError = h?.lastError?.startsWith('Central site CI: docker failed')
+    && h.lastError.includes("chmod: changing permissions of '/work/")
+    && h.lastError.includes('Operation not permitted')
+    && !history.some(entry => entry.event === 'central_ci_checkout_permission_retry');
   return task.status === 'in_progress'
     && task.executionClaim === null
     && h?.state === 'ci_failed'
     && Boolean(h.prNumber && h.prUrl && h.headSha && h.branch)
-    && h.lastError.startsWith('Central site CI: docker failed')
-    && h.lastError.includes("EACCES: permission denied, open '/work/public/og/")
-    && !preparedHandoffHasRecordedRefusal(task)
-    && !(task.history ?? []).some(entry => entry.event === 'central_ci_og_permission_retry');
+    && Boolean(ogError || chmodError)
+    && !preparedHandoffHasRecordedRefusal(task);
 }
 
 async function resumeOgPermissionFailure(task: SeoTaskRecord): Promise<SeoTaskRecord | null> {
@@ -256,8 +262,9 @@ async function resumeOgPermissionFailure(task: SeoTaskRecord): Promise<SeoTaskRe
     deliveryHandoff: nextHandoff(h, { state: 'pr_open', lastError: '' }),
     appendHistory: {
       actor: 'seo_delivery_controller',
-      event: 'central_ci_og_permission_retry',
-      detail: `Retrying PR #${pr.number} at exact ${h.headSha} once after central disposable Docker checkout permissions were fixed; no Worker ref/source write.`
+      event: h.lastError.includes('chmod: changing permissions of')
+        ? 'central_ci_checkout_permission_retry' : 'central_ci_og_permission_retry',
+      detail: `Retrying PR #${pr.number} at exact ${h.headSha} once after central disposable checkout permissions were fixed; no Worker ref/source write.`
     }
   });
 }
