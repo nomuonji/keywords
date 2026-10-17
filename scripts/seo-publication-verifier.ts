@@ -4,6 +4,7 @@ import {
 } from '../packages/commands/src/remote-site-operations.js';
 import type { SeoTaskRecord } from '../packages/db/src/site-operations-schema.js';
 import { firestoreRateLimited } from './seo-delivery-throughput.js';
+import { matchingPagesProject, completedProductionPagesDeployment, type PagesProject, type PagesDeployment } from './seo-publication-evidence.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const api = (repo: string, path: string) => `https://api.github.com/repos/${repo}${path}`;
@@ -29,6 +30,59 @@ async function successfulDeployment(task: SeoTaskRecord): Promise<{ sha: string;
       api(task.repo, `/deployments/${item.id}/statuses?per_page=1`)
     );
     if (statuses[0]?.state === 'success') return { sha: item.sha, at: statuses[0].created_at };
+  }
+  return null;
+}
+
+
+// Cloudflare Pages is the actual deployment provider for most managed sites.
+// GitHub Deployments is not populated by every Pages integration, so checking
+// only GitHub leaves otherwise published Tasks pending indefinitely.
+const cloudflareAccountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+const cloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+const pagesApi = (path: string) => `https://api.cloudflare.com/client/v4/accounts/${cloudflareAccountId}/pages${path}`;
+
+async function cloudflare<T>(path: string): Promise<T> {
+  const response = await fetch(pagesApi(path), {
+    headers: { authorization: `Bearer ${cloudflareApiToken}`, accept: 'application/json' },
+    signal: AbortSignal.timeout(12_000)
+  });
+  if (!response.ok) throw Error(`Cloudflare Pages HTTP ${response.status}`);
+  const data = await response.json() as { success: boolean; errors?: unknown; result?: T };
+  if (!data.success || data.result === undefined) throw Error('Cloudflare Pages reported an unsuccessful response');
+  return data.result;
+}
+
+let pagesProjects: Promise<PagesProject[]> | null = null;
+async function listPagesProjects(): Promise<PagesProject[]> {
+  if (!pagesProjects) {
+    pagesProjects = (async () => {
+      const all: PagesProject[] = [];
+      for (let page = 1; page <= 5; page++) {
+        const batch = await cloudflare<PagesProject[]>(`/projects?per_page=100&page=${page}`);
+        all.push(...batch);
+        if (batch.length < 100) break;
+      }
+      return all;
+    })();
+  }
+  return pagesProjects;
+}
+
+async function successfulPagesDeployment(task: SeoTaskRecord, productionUrl: string): Promise<{ sha: string; at: string } | null> {
+  if (!cloudflareAccountId || !cloudflareApiToken || !task.resultCommitSha) return null;
+  const project = matchingPagesProject(await listPagesProjects(), task.repo, new URL(productionUrl).hostname);
+  if (!project) return null;
+  const deployments = await cloudflare<PagesDeployment[]>(
+    `/projects/${encodeURIComponent(project.name)}/deployments?env=production&per_page=20`);
+  for (const deployment of deployments) {
+    const sha = completedProductionPagesDeployment(deployment);
+    if (!sha) continue;
+    const relation = sha === task.resultCommitSha ? 'identical'
+      : (await gh<{ status: string }>(api(task.repo, `/compare/${task.resultCommitSha}...${sha}`))).status;
+    if (relation === 'identical' || relation === 'ahead') {
+      return { sha, at: deployment.created_on ?? new Date().toISOString() };
+    }
   }
   return null;
 }
@@ -85,7 +139,11 @@ async function connectEvent(task: SeoTaskRecord, publishedAt: string) {
 async function verify(task: SeoTaskRecord) {
   const site = await siteRegistryGet({ id: task.siteId });
   if (site.status !== 'active' || site.repository !== task.repo) return;
-  const deployed = await successfulDeployment(task);
+  let deployed: { sha: string; at: string } | null = null;
+  if (site.deploymentProvider === 'cloudflare_pages') {
+    deployed = await successfulPagesDeployment(task, site.productionUrl);
+  }
+  deployed ??= await successfulDeployment(task);
   if (!deployed) {
     console.log(`${task.id}: no successful production deployment with matching/descendant SHA; pending.`);
     return;
