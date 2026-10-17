@@ -116,7 +116,12 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string, combi
     const next = Boolean(pkg.dependencies?.next);
     if (!astro && !docusaurus && !next) throw Error('No approved site build profile for this repository');
     if (!pkg.scripts?.build) throw Error('Approved site profile lacks a build script');
-    if (!(await exists(join(root, 'package-lock.json')))) throw Error('Central CI requires a committed package-lock.json');
+    // A committed npm lockfile gets reproducible npm ci. Several existing
+    // Astro repos legitimately use npm without a committed lockfile; run the
+    // real build with npm install instead of rejecting them before testing.
+    const installCommand = await exists(join(root, 'package-lock.json'))
+      ? 'npm ci --no-audit --no-fund'
+      : 'npm install --no-audit --no-fund --package-lock=false';
     // Build untrusted site source without forwarding controller credentials.
     // Docker daemons behind hosted Actions runners may not share the runner's
     // filesystem: docker cp streams the checkout instead of relying on a bind
@@ -135,7 +140,7 @@ export async function verifySeoSiteBuild(task: SeoTaskRecord, sha: string, combi
         'create', '--security-opt=no-new-privileges', '--cap-drop=ALL',
         '--pids-limit=256', '--memory=4g', '--cpus=2',
         '-w', '/work', 'node:22-bookworm',
-        'sh', '-lc', 'npm ci --no-audit --no-fund && npm run build'
+        'sh', '-lc', `${installCommand} && npm run build`
       ], root, 120_000);
       // docker create may emit image-pull logs before its 64-hex container ID.
       containerId = createOutput.split(/\r?\n/).map(line => line.trim()).filter(line => /^[a-f0-9]{64}$/.test(line)).pop() ?? '';
