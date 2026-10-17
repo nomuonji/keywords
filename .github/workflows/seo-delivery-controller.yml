@@ -102,10 +102,23 @@ jobs:
         run: npm install --ignore-scripts
 
       - name: Deliver SEO branches
+        id: delivery
         if: steps.config.outputs.enabled == 'true' && github.event.schedule != '13 4 * * *' && !(github.event_name == 'workflow_dispatch' && inputs.verification_only)
         run: npx tsx scripts/seo-delivery-controller.ts
 
+      - name: Verify newly merged SEO Tasks
+        # Worker dispatch wakes delivery exactly once. After its merge, keep
+        # this same Actions run alive briefly for Cloudflare Pages publication.
+        # No merge -> no polling; timeout -> pending for routine recovery.
+        if: ${{ !cancelled() && steps.config.outputs.enabled == 'true' && steps.delivery.outputs.completed_task_ids != '' }}
+        env:
+          SEO_PUBLICATION_TARGET_TASK_IDS: ${{ steps.delivery.outputs.completed_task_ids }}
+          SEO_PUBLICATION_WAIT_MS: '240000'
+        run: npx tsx scripts/seo-publication-verifier.ts
+
       - name: Verify published SEO Tasks
+        # Recovery-only: sweep historical pending/failed Tasks on schedule.
+        # The newly merged exact Task IDs are handled in the step above.
         # The old daily-only condition missed normal two-hourly sweeps. Run on
         # scheduled sweeps and on edits to this verifier, not on each dispatch.
         # Keep publication independent if delivery itself fails.
