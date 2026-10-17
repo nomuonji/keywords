@@ -921,7 +921,7 @@ try {
   assert.ok(firestorePointReads.some(p => p.includes('seoPortfolioPolicies/')));
   assert.equal(agentPolicy.structuredContent.recovery.sitesOmitted, true);
   assert.equal(agentPolicy.structuredContent.recovery.macroPolicyRevision, 1);
-  assert.equal(agentPolicy.structuredContent.policyVersion, '1.33.0');
+  assert.equal(agentPolicy.structuredContent.policyVersion, '1.33.1');
   assert.match(agentPolicy.structuredContent.acquisitionReview.requiredDiagnosis, /previous 28d/);
   assert.match(agentPolicy.structuredContent.acquisitionReview.scopeBoundary, /cannot own social/);
   assert.match(agentPolicy.structuredContent.runContract.acquisitionReview.launchGate, /Deployment verification/);
