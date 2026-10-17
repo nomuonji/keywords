@@ -64,14 +64,10 @@ let pagesProjects: Promise<PagesProject[]> | null = null;
 async function listPagesProjects(): Promise<PagesProject[]> {
   if (!pagesProjects) {
     pagesProjects = (async () => {
-      const all: PagesProject[] = [];
-      // Cloudflare's standard 20-per-page is sufficient for the 100-project cap.
-      for (let page = 1; page <= 5; page++) {
-        const batch = await cloudflare<PagesProject[]>(`/projects?per_page=20&page=${page}`);
-        all.push(...batch);
-        if (batch.length < 20) break;
-      }
-      return all;
+      // Reuse the proven unpaged endpoint used by Sites Operator's
+      // cloudflare_pages_site_status. This Pages endpoint rejects our custom
+      // page/per_page options with API code 8000024.
+      return cloudflare<PagesProject[]>('/projects');
     })();
   }
   return pagesProjects;
