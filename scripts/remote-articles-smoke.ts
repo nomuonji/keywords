@@ -52,7 +52,7 @@ globalThis.fetch = async (input, init) => {
 };
 
 try {
-  const { default: app } = await import('../api/remote-articles.ts');
+  const { default: app } = await import('../api/remote-sites.ts');
   assert.equal((await app.request('/api/remote-articles')).status, 400);
   const response = await app.request('/api/remote-articles?siteId=site-r&limit=50');
   assert.equal(response.status, 200);
@@ -61,6 +61,9 @@ try {
   assert.equal(body.siteId, 'site-r');
   assert.equal(body.items.length, 1);
   assert.equal(body.items[0].canonicalUrl, 'https://example.com/r');
+  const forwarded = await app.request('/api/remote-sites?__view=articles&siteId=site-r');
+  assert.equal(forwarded.status, 200, 'Vercel rewritten article endpoint must preserve its response');
+  assert.equal((await forwarded.json() as { items: unknown[] }).items.length, 1);
   assert.ok(!JSON.stringify(body).includes('test-access-token'), 'no credentials in response');
   console.log('remote articles smoke passed: bounded per-site registry list, read-only, no secrets');
 } finally {
