@@ -59,11 +59,16 @@ export function verifiedCorrectiveMainNetDiff(
     event.event === 'delivery_push_pending'
     && (event.actor === 'seo_worker' || event.actor === 'chatgpt_seo_worker') ? i : index, -1
   );
+  const lastRunnerRetry = events.reduce((index, event, i) =>
+    event.event === 'central_ci_og_permission_retry'
+    || event.event === 'central_ci_checkout_permission_retry' ? i : index, -1
+  );
   const files = comparison.files ?? [];
   return task.deliveryHandoff?.validationSummary.startsWith('Action-Ref-Handoff: v1\n') === true
     && !preparedHandoffHasRecordedRefusal(task)
     && lastFailure >= 0
-    && lastCorrection > lastFailure
+    && (lastCorrection > lastFailure
+      || (lastCorrection >= 0 && lastRunnerRetry > lastFailure))
     && /^[a-f0-9]{40}$/.test(currentMainSha)
     && comparison.status === 'ahead'
     && comparison.ahead_by >= 1 && comparison.ahead_by <= 10
