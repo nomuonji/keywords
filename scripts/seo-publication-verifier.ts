@@ -48,7 +48,13 @@ async function cloudflare<T>(path: string): Promise<T> {
     headers: { authorization: `Bearer ${cloudflareApiToken}`, accept: 'application/json' },
     signal: AbortSignal.timeout(12_000)
   });
-  if (!response.ok) throw Error(`Cloudflare Pages HTTP ${response.status}`);
+  if (!response.ok) {
+    // Include only Cloudflare numeric error codes in Actions logs, never
+    // request headers, credentials, account IDs or arbitrary API error text.
+    const failure = await response.json().catch(() => null) as { errors?: Array<{ code?: number }> } | null;
+    const codes = (failure?.errors ?? []).map(error => error.code).filter(code => typeof code === 'number');
+    throw Error(`Cloudflare Pages HTTP ${response.status}${codes.length ? ` codes=${codes.join(',')}` : ''}`);
+  }
   const data = await response.json() as { success: boolean; errors?: unknown; result?: T };
   if (!data.success || data.result === undefined) throw Error('Cloudflare Pages reported an unsuccessful response');
   return data.result;
@@ -59,10 +65,11 @@ async function listPagesProjects(): Promise<PagesProject[]> {
   if (!pagesProjects) {
     pagesProjects = (async () => {
       const all: PagesProject[] = [];
+      // Cloudflare's standard 20-per-page is sufficient for the 100-project cap.
       for (let page = 1; page <= 5; page++) {
-        const batch = await cloudflare<PagesProject[]>(`/projects?per_page=100&page=${page}`);
+        const batch = await cloudflare<PagesProject[]>(`/projects?per_page=20&page=${page}`);
         all.push(...batch);
-        if (batch.length < 100) break;
+        if (batch.length < 20) break;
       }
       return all;
     })();
