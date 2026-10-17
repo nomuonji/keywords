@@ -138,6 +138,7 @@ async function updateDelivery(taskId: string, handoff: SeoTaskDeliveryHandoff, e
   return seoTaskUpdate({
     id: taskId,
     expectedRevision: current.revision,
+    claimRunId: current.executionClaim?.runId,
     deliveryHandoff: handoff,
     executionSummary: executionSummary ?? current.executionSummary,
     appendHistory: { actor: 'seo_delivery_controller', event, detail }
@@ -154,6 +155,7 @@ async function markFailed(task: SeoTaskRecord, message: string) {
   await seoTaskUpdate({
     id: task.id,
     expectedRevision: current.revision,
+    claimRunId: current.executionClaim?.runId,
     deliveryHandoff: handoff,
     appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_failed', detail: message.slice(0, 2000) }
   });
@@ -192,6 +194,7 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
     await seoTaskUpdate({
       id: task.id,
       expectedRevision: current.revision,
+      claimRunId: current.executionClaim?.runId,
       appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_transient', detail }
     });
     return;
@@ -207,6 +210,7 @@ async function recordControllerError(task: SeoTaskRecord, message: string) {
   await seoTaskUpdate({
     id: task.id,
     expectedRevision: current.revision,
+    claimRunId: current.executionClaim?.runId,
     deliveryHandoff: handoff,
     appendHistory: { actor: 'seo_delivery_controller', event: 'delivery_controller_error', detail }
   });
@@ -243,6 +247,7 @@ async function markCompleted(task: SeoTaskRecord, mergeSha: string, pr: GitHubPu
   await seoTaskUpdate({
     id: task.id,
     expectedRevision: current.revision,
+    claimRunId: current.executionClaim?.runId,
     status: 'completed',
     resultCommitSha: mergeSha,
     deliveryHandoff: handoff,
@@ -379,8 +384,8 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
   const unsafe = preparedRefHandoffScopeError(workerPaths);
   if (unsafe) throw Error(`Worker branch has prohibited paths: ${unsafe}`);
   if (!(await compatibleFallbackMainDrift(task.repo, h.baseSha, defaultSha, workerPaths))) {
-    console.log(`Waiting: ${task.id} main advanced by non-state or overlapping changes; fresh Worker validation required`);
-    return null;
+    console.log(`Worker branch ${task.id} cannot be delivered because main advanced by non-state or overlapping changes`);
+    throw new Error(`Worker branch base is stale against current main; fresh validation and a new exact-main-based handoff are required for ${task.id}`);
   }
   const reread = await branchSha(task.repo, h.branch);
   if (reread !== h.headSha) throw Error(`Worker branch changed during verification ${task.id}`);
@@ -659,6 +664,7 @@ async function processTask(task: SeoTaskRecord, activeSites: Awaited<ReturnType<
         if (current.status !== 'in_progress' || current.deliveryHandoff.headSha !== handoff.headSha) return;
         await seoTaskUpdate({
           id: task.id, expectedRevision: current.revision,
+          claimRunId: current.executionClaim?.runId,
           // Delivery retains ownership after Worker claim release. Carry the
           // unchanged checkpoint so this remains a delivery-lane update.
           deliveryHandoff: current.deliveryHandoff,
@@ -782,7 +788,15 @@ async function main() {
         console.warn('Firestore 429: stop this delivery cycle without more Firestore requests; task and schedule remain intact.');
         return;
       }
-      try { await recordControllerError(pending, message); } catch (recordError) {
+      try {
+        // A malformed or stale immutable handoff cannot recover by waiting. Mark
+        // the task for corrective Worker execution, without touching its ref.
+        if (/^(?:Invalid Worker branch commit provenance|Invalid\/non-fast-forward Worker branch|Worker branch base is stale against current main)/.test(message)) {
+          await markFailed(pending, message);
+        } else {
+          await recordControllerError(pending, message);
+        }
+      } catch (recordError) {
         console.error(`Could not persist push reconciliation error for ${pending.id}: ${String(recordError)}`);
       }
     }
