@@ -28,27 +28,27 @@ const scope = z.enum(['specific_idea', 'proposal_format', 'research_quality', 'd
 const polarity = z.enum(['positive', 'negative', 'mixed', 'neutral']);
 
 const reviewAxis = z.number().int().min(1).max(5);
-const reviewAxisName = z.enum(['dbValue','seo','revenue','contentFeasibility','upkeep']);
+// The old v2 reviews remain readable as historical Firestore records; all NEW
+// submissions use the non-bypassable v4 rubric.
 const agentReviewShape = z.object({
-  rubricVersion: z.enum(['idea-final-judge-v2','idea-final-judge-v3']),
+  rubricVersion: z.literal('idea-final-judge-v4'),
   assessedAt: z.string().datetime(),
   verdict: z.literal('pass'),
   axes: z.object({
     appeal: reviewAxis,
-    dbValue: reviewAxis.optional(),
-    seo: reviewAxis.optional(),
-    revenue: reviewAxis.optional(),
-    contentFeasibility: reviewAxis.optional(),
-    upkeep: reviewAxis.optional()
+    dbValue: reviewAxis,
+    seo: reviewAxis,
+    revenue: reviewAxis,
+    contentFeasibility: reviewAxis,
+    upkeep: reviewAxis
   }).strict(),
-  requiredAxes: z.array(reviewAxisName).max(5),
   strongestObjection: txt,
   passRationale: txt
 }).strict().superRefine((review, context) => {
   if (review.axes.appeal !== 5) context.addIssue({ code:'custom',message:'Only appeal 5/5 may pass',path:['axes','appeal'] });
-  for (const axis of review.requiredAxes) {
-    if (review.axes[axis] === undefined || review.axes[axis]! < 4) {
-      context.addIssue({ code:'custom',message:'Required axis must score at least 4/5',path:['axes',axis] });
+  for (const axis of ['dbValue','seo','revenue','contentFeasibility','upkeep'] as const) {
+    if (review.axes[axis] < 4) {
+      context.addIssue({ code:'custom',message:'All six axes must score at least 4/5',path:['axes',axis] });
     }
   }
 });
@@ -125,6 +125,9 @@ export async function ideaMemoryBatchUpsert(input: unknown) {
   let i = 0;
   for (const [key, idea] of unique) {
     const doc = previous[i++]; const old = doc ? parse<Idea>(doc) : null;
+    // New ideas are never created without a fully scored, immutable self-review.
+    // Existing legacy documents may be re-presented without backfilling a fake initial score.
+    if (!old && !idea.agentReview) throw new Error('New Idea Memory records require agentReview with all six axes >= 4/5 and appeal = 5/5');
     if (old && idea.agentReview && JSON.stringify(old.agentReview ?? null) !== JSON.stringify(idea.agentReview)) {
       throw new Error('Agent self-review is frozen at initial idea creation and cannot be backfilled or overwritten');
     }
