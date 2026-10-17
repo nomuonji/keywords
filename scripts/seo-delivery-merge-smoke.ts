@@ -74,6 +74,10 @@ const runnerRetry = {event:'central_ci_checkout_permission_retry',actor:'seo_del
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure]},mainSha,net),false);
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure,runnerRetry]},mainSha,net),true);
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerRetry,runnerFailure]},mainSha,net),false);
+const locklessRetry = {event:'central_ci_lockless_npm_retry',actor:'seo_delivery_controller',detail:'same exact HEAD after npm install runner support',at:'2026-10-13T08:10:00Z'};
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,runnerFailure,locklessRetry]},mainSha,net),true);
+assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident,correction,locklessRetry,runnerFailure]},mainSha,net),false);
+
 
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[correction,incident]},mainSha,net),false);
 assert.equal(verifiedCorrectiveMainNetDiff({...repairTask,history:[incident]},mainSha,net),false);

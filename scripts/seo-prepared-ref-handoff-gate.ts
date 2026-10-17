@@ -61,7 +61,8 @@ export function verifiedCorrectiveMainNetDiff(
   );
   const lastRunnerRetry = events.reduce((index, event, i) =>
     event.event === 'central_ci_og_permission_retry'
-    || event.event === 'central_ci_checkout_permission_retry' ? i : index, -1
+    || event.event === 'central_ci_checkout_permission_retry'
+    || event.event === 'central_ci_lockless_npm_retry' ? i : index, -1
   );
   const files = comparison.files ?? [];
   return task.deliveryHandoff?.validationSummary.startsWith('Action-Ref-Handoff: v1\n') === true
