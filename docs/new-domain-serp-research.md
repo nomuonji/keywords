@@ -41,3 +41,9 @@ Use \`young_domain_serp_research\` (Keywords Operator MCP, introduced with v1.21
 There is no domain-age database or bulk historical index yet. RDAP can be unavailable, and up to eight lookups may yield mostly established domains. Use narrower queries or skip known competitors through \`excludeDomains\`, and perform additional bounded calls when necessary. At present the tool runs **on demand only**; historical rank tracking, automatic Wayback/first-seen corroboration, cross-domain backlinks, UI presentation and time-based monitoring are out of scope of this initial MCP release.
 
 Check with \`npm run test:mcp\`, \`npm run typecheck\`; the new smoke test isolates multi-query aggregation, registered-domain grouping, recent vs older vs unknown dates, body retrieval, and quota stop. Production capability must be confirmed by \`remote_keyword_status\` showing v1.21.0 and 43 tools after deployment.
+
+## RDAP reliability (1.22.2)
+
+Domain registration verification is now attempted first at the **authoritative TLD registry**: direct Verisign for .com and .net, and HTTPS services from the official IANA `https://data.iana.org/rdap/dns.json` bootstrap for other supported TLDs. `rdap.org` remains a last-resort public redirector, not the sole source. The IANA bootstrap is cached in-process for 24 hours; registry lookups retain the existing SSRF/redirect/body-size restrictions. Failure messages contain sanitized classes (e.g. rate_limited/network_error/not_found), never credentials or raw HTTP bodies. Domains with no usable registration event remain **unknown** and cannot pass the SEO corpus gate. This cannot manufacture registration dates for registries without publicly accessible RDAP (including some country-code TLDs); do not relax the gate to compensate.
+
+Collection remains bounded to 8 checked domains per request, with no repeated background ranking verification.
