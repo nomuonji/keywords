@@ -285,9 +285,13 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
   const searchForms = new Map<string, number>();
   let recentRegistration = 0;
   let ageUnknown = 0;
+  let gatePassedCount = 0;
+  let ungatedLegacyCount = 0;
   for (const item of listing.items) {
     if (item.registrationStatus === 'recent_registration') recentRegistration++;
     if (item.registrationStatus === 'unknown') ageUnknown++;
+    if (item.qualityGate?.passed === true) gatePassedCount++;
+    else ungatedLegacyCount++;
     for (const topic of item.topics ?? []) {
       const current = topics.get(topic) ?? { domainCount: 0, examples: [] };
       current.domainCount++;
@@ -306,7 +310,7 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
   return {
     analyzedCases: listing.items.length, scope: 'one fetched page only',
     nextPageToken: listing.nextPageToken,
-    recentRegistration, ageUnknown,
+    recentRegistration, ageUnknown, gatePassedCount, ungatedLegacyCount,
     topicCoverage: [...topics].map(([topic, value]) => ({ topic, ...value })).sort((a, b) => b.domainCount - a.domainCount),
     observedQueryForms: [...searchForms].map(([form, count]) => ({ form, count })),
     caveat: 'Keyword-form buckets are lexical, overlap across observations and do not establish ranking factors. Themes are collection tags, not verified site categories.'
