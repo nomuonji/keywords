@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { field, value, FirestoreError } from '../packages/db/src/firestore.js';
-import { evaluateSeoCaseGate, seoCaseCollect, seoCaseGet, seoCaseId, seoCaseList, seoCaseSummary, SEO_CASE_GATE_VERSION } from '../packages/commands/src/seo-case-corpus.js';
+import { deriveSeoCaseMarket, inferSeoCaseSiteLanguage, evaluateSeoCaseGate, seoCaseCollect, seoCaseGet, seoCaseId, seoCaseList, seoCaseSummary, SEO_CASE_GATE_VERSION } from '../packages/commands/src/seo-case-corpus.js';
 
 process.env.FIREBASE_PROJECT_ID = 'test';
 const docs = new Map<string, any>();
@@ -61,6 +61,21 @@ assert.ok(evaluateSeoCaseGate({ ...recent, appearances: [appearance(recent.domai
 // A descriptive domain word matching the general topic is not navigation.
 assert.equal(evaluateSeoCaseGate({ ...recent, domain: 'piano.example', appearances: [appearance('piano.example','best piano lessons for adults',4)] },[page('piano.example')],now).passed,true);
 assert.equal(SEO_CASE_GATE_VERSION,'2026-10-18-v1');
+// Site language and SERP geographic target are independent; the latter must
+// never be forged for older records that did not save search configurations.
+const japanesePage = 'この小さな専門サイトでは日本の読者が調べる特殊な計算方法や注意点を、原典と一緒に詳しく紹介しています。'.repeat(4);
+assert.equal(inferSeoCaseSiteLanguage(japanesePage), 'ja');
+assert.equal(inferSeoCaseSiteLanguage(text), 'en');
+assert.equal(inferSeoCaseSiteLanguage('abc'), 'unknown');
+const legacyMarket = deriveSeoCaseMarket({ pageEvidence: [{ title: 'Aquarium Tool', excerpt: text }] });
+assert.equal(legacyMarket.audienceRegion, 'overseas_likely');
+assert.equal(legacyMarket.searchCountry, null);
+assert.equal(legacyMarket.searchLanguage, null);
+assert.equal(legacyMarket.provenance, 'derived_from_legacy_excerpt');
+const japaneseMarket = deriveSeoCaseMarket({ pageEvidence: [{ title: '日本の専門サイト', excerpt: japanesePage }] });
+assert.equal(japaneseMarket.audienceRegion, 'japan_likely');
+assert.equal(japaneseMarket.searchCountry, null);
+
 
 const request: any = async (path: string, init?: RequestInit) => {
   if (path === ':commit') {
@@ -95,6 +110,11 @@ assert.equal(stored.qualityGate.evidenceStrength,'strong_observation');
 assert.equal(stored.pageEvidence[0].excerpt,text.slice(0,1000));
 assert.equal(stored.observations[0].upstreamProvider,'reserp');
 assert.equal(stored.topics[0],'piano learning');
+assert.equal(stored.market.searchCountry,'jp', 'default SERP country must be recorded');
+assert.equal(stored.market.searchLanguage,'ja', 'default SERP language must be recorded');
+assert.equal(stored.market.siteLanguage,'en');
+assert.equal(stored.market.audienceRegion,'overseas_likely', 'English page is not converted into Japan-audience simply because search was in JP');
+assert.equal(stored.market.provenance,'recorded_at_collection');
 assert.equal(stored.interpretationStatus,'unreviewed', 'the hard gate must not imply site/theme quality');
 const second = await seoCaseCollect({ topic:'other research', queries:['specialist lessons for adults'], maxNewSites:8 },deps);
 assert.equal(second.newlySaved,1);
@@ -106,6 +126,10 @@ assert.ok(listing.items.every((item: any) => item.qualityGate.passed === true));
 const summary = await seoCaseSummary({},request);
 assert.equal(summary.recentRegistration,2);
 assert.equal(summary.ageUnknown,0);
+assert.equal(summary.audienceRegionCounts.overseas_likely,2);
+assert.equal(summary.audienceRegionCounts.japan_likely,0);
+assert.equal(summary.legacyMarketInferenceCount,0);
+assert.deepEqual(summary.recordedSearchMarkets,[{market:'JP/ja',domainCount:2}]);
 const repeated = await seoCaseCollect({ topic:'another', queries:['piano app comparison'] },deps);
 assert.equal(repeated.newlySaved,0);
 assert.equal(repeated.alreadyInCorpus,2);

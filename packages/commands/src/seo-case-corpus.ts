@@ -45,6 +45,60 @@ function normalizeObservation(input: any) {
   };
 }
 
+/** Search market is an observed SERP configuration; site audience is NOT the same fact. */
+export type SeoCaseAudienceRegion = 'japan_likely' | 'overseas_likely' | 'mixed_language' | 'undetermined';
+export type SeoCaseSiteLanguage = 'ja' | 'en' | 'mixed' | 'unknown';
+export type SeoCaseMarket = {
+  searchCountry: string | null;
+  searchLanguage: string | null;
+  siteLanguage: SeoCaseSiteLanguage;
+  audienceRegion: SeoCaseAudienceRegion;
+  audienceEvidence: 'page_language_heuristic' | 'insufficient';
+  provenance: 'recorded_at_collection' | 'derived_from_legacy_excerpt';
+};
+
+/**
+ * Language is an informative audience clue, not proof of traffic geography,
+ * business jurisdiction, site ownership, or where most users live.
+ * Work on visible site page text, not the English query used to find it.
+ */
+export function inferSeoCaseSiteLanguage(raw: string): SeoCaseSiteLanguage {
+  const plain = raw.replace(/&(?:#[a-z0-9]+|[a-z]+);/gi, ' ').slice(0, 8000);
+  const japaneseCount = (plain.match(/[\u3040-\u30ff\u3400-\u9fff]/g) ?? []).length;
+  const latinCount = (plain.match(/[a-z]/gi) ?? []).length;
+  const total = japaneseCount + latinCount;
+  if (japaneseCount >= 25 && total > 0) {
+    const ratio = japaneseCount / total;
+    if (ratio >= 0.23) return 'ja';
+    if (ratio >= 0.08) return 'mixed';
+  }
+  if (latinCount >= 80) return 'en';
+  return 'unknown';
+}
+
+export function deriveSeoCaseMarket(item: any): SeoCaseMarket {
+  const existing = item?.market;
+  if (existing?.provenance === 'recorded_at_collection') return existing as SeoCaseMarket;
+  const readable = (item?.pageEvidence ?? []).slice(0, 2)
+    .map((page: any) => [String(page.title ?? ''), String(page.excerpt ?? '')].join(' ')).join(' ');
+  const siteLanguage = inferSeoCaseSiteLanguage(readable);
+  const audienceRegion: SeoCaseAudienceRegion =
+    siteLanguage === 'ja' ? 'japan_likely'
+      : siteLanguage === 'en' ? 'overseas_likely'
+      : siteLanguage === 'mixed' ? 'mixed_language' : 'undetermined';
+  return {
+    // Legacy records omitted country/language; never backfill guessed geography.
+    searchCountry: null,
+    searchLanguage: null,
+    siteLanguage,
+    audienceRegion,
+    audienceEvidence: siteLanguage === 'unknown' ? 'insufficient' : 'page_language_heuristic',
+    provenance: 'derived_from_legacy_excerpt'
+  };
+}
+function caseWithMarket(item: any) { return { ...item, market: deriveSeoCaseMarket(item) }; }
+
+
 /** A small, explicit hard gate on verifiable facts; not an AI quality score. */
 export const SEO_CASE_GATE_VERSION = '2026-10-18-v1';
 export const SEO_CASE_MAX_AGE_DAYS = 365;
@@ -122,10 +176,24 @@ export function evaluateSeoCaseGate(candidate: any, pages: any[], now: string) {
  * not a monitoring or rank-history model. Repeated observations can be
  * investigated with the existing read-only young_domain_serp_research tool.
  */
-export function materializeCase(input: any, topic: string, pages: any[], collectedAt: string, gate = evaluateSeoCaseGate(input, pages, collectedAt)) {
+export function materializeCase(input: any, topic: string, pages: any[], collectedAt: string, gate = evaluateSeoCaseGate(input, pages, collectedAt), searchMarket?: { country: string; language: string }) {
   const best = [...input.appearances].sort((a: any, b: any) => (a.position ?? 999) - (b.position ?? 999));
   const reviews = pages.filter(page => page.domain === input.domain && page.status === 'read').slice(0, 2);
   const observations = best.slice(0, 12).map(normalizeObservation);
+  const evidence = reviews.map(page => ({
+    url: String(page.url).slice(0, 2000),
+    finalUrl: String(page.finalUrl ?? page.url).slice(0, 2000),
+    title: String(page.title ?? '').slice(0, 500),
+    excerpt: String(page.text ?? '').slice(0, 1000),
+    truncated: Boolean(page.truncated),
+    fetchedAt: String(page.fetchedAt ?? '')
+  }));
+  const market = deriveSeoCaseMarket({ pageEvidence: evidence });
+  if (searchMarket) {
+    market.searchCountry = searchMarket.country.toLowerCase();
+    market.searchLanguage = searchMarket.language.toLowerCase();
+    market.provenance = 'recorded_at_collection';
+  }
   return {
     id: seoCaseId(input.domain),
     domain: input.domain,
@@ -139,14 +207,8 @@ export function materializeCase(input: any, topic: string, pages: any[], collect
     bestObservedPosition: gate.bestQualifiedPosition ?? null,
     observedQueryCount: input.queryCount ?? 0,
     observations,
-    pageEvidence: reviews.map(page => ({
-      url: String(page.url).slice(0, 2000),
-      finalUrl: String(page.finalUrl ?? page.url).slice(0, 2000),
-      title: String(page.title ?? '').slice(0, 500),
-      excerpt: String(page.text ?? '').slice(0, 1000),
-      truncated: Boolean(page.truncated),
-      fetchedAt: String(page.fetchedAt ?? '')
-    })),
+    pageEvidence: evidence,
+    market,
     qualityGate: gate,
     interpretationStatus: 'unreviewed',
     siteIdeaStatus: 'reference_only',
@@ -201,7 +263,7 @@ export async function seoCaseCollect(input: unknown, deps: CorpusDependencies = 
   // Evaluate every checked candidate before limiting saves: failing candidates
   // must not consume the maxNewSites allowance or enter the clean corpus.
   const accepted = gateEvaluations.filter(item => item.gate.passed).slice(0, maxNewSites);
-  const prepared = accepted.map(({ candidate, gate }) => materializeCase(candidate, topic, discovery.pageReviews, now, gate));
+  const prepared = accepted.map(({ candidate, gate }) => materializeCase(candidate, topic, discovery.pageReviews, now, gate, { country: args.country, language: args.language }));
   const gateRejectedReasons = Object.entries(gateEvaluations
     .filter(item => !item.gate.passed)
     .flatMap(item => item.gate.reasons)
@@ -252,7 +314,7 @@ export async function seoCaseCollect(input: unknown, deps: CorpusDependencies = 
     gateRejectedExamples,
     notSavedDueToBatchLimit: Math.max(0, gateEvaluations.filter(item => item.gate.passed).length - accepted.length),
     qualityGateVersion: SEO_CASE_GATE_VERSION,
-    newCases: runId ? saved.map(item => ({ id: item.id, domain: item.domain, registrationStatus: item.registrationStatus, bestObservedPosition: item.bestObservedPosition, topics: item.topics })) : [],
+    newCases: runId ? saved.map(item => ({ id: item.id, domain: item.domain, registrationStatus: item.registrationStatus, bestObservedPosition: item.bestObservedPosition, topics: item.topics, market: item.market })) : [],
     runId,
     collisions,
     discoveryCoverage: discovery.coverage,
@@ -265,7 +327,7 @@ export async function seoCaseGet(input: unknown, request: typeof firestore = fir
   const args = z.object(seoCaseGetShape).strict().parse(input);
   const item = await readCase(request, args.id);
   if (!item) throw new Error('SEO case not found');
-  return item;
+  return caseWithMarket(item);
 }
 
 export async function seoCaseList(input: unknown = {}, request: typeof firestore = firestore) {
@@ -273,7 +335,7 @@ export async function seoCaseList(input: unknown = {}, request: typeof firestore
   const params = new URLSearchParams({ pageSize: String(args.limit), orderBy: 'createdAt desc' });
   if (args.pageToken) params.set('pageToken', args.pageToken);
   const result = await request('/seoCaseSites?' + params);
-  return { items: (result.documents ?? []).map(decodeDoc), nextPageToken: result.nextPageToken ?? null,
+  return { items: (result.documents ?? []).map(decodeDoc).map(caseWithMarket), nextPageToken: result.nextPageToken ?? null,
     scope: 'stored domain-level first discoveries; not rank history or a complete web census' };
 }
 
@@ -287,7 +349,19 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
   let ageUnknown = 0;
   let gatePassedCount = 0;
   let ungatedLegacyCount = 0;
+  const audienceRegionCounts: Record<SeoCaseAudienceRegion, number> = {
+    japan_likely: 0, overseas_likely: 0, mixed_language: 0, undetermined: 0
+  };
+  const recordedSearchMarkets = new Map<string, number>();
+  let legacyMarketInferenceCount = 0;
   for (const item of listing.items) {
+    const market = deriveSeoCaseMarket(item);
+    audienceRegionCounts[market.audienceRegion]++;
+    if (market.provenance === 'derived_from_legacy_excerpt') legacyMarketInferenceCount++;
+    if (market.searchCountry && market.searchLanguage) {
+      const key = market.searchCountry.toUpperCase() + '/' + market.searchLanguage.toLowerCase();
+      recordedSearchMarkets.set(key, (recordedSearchMarkets.get(key) ?? 0) + 1);
+    }
     if (item.registrationStatus === 'recent_registration') recentRegistration++;
     if (item.registrationStatus === 'unknown') ageUnknown++;
     if (item.qualityGate?.passed === true) gatePassedCount++;
@@ -311,8 +385,10 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
     analyzedCases: listing.items.length, scope: 'one fetched page only',
     nextPageToken: listing.nextPageToken,
     recentRegistration, ageUnknown, gatePassedCount, ungatedLegacyCount,
+    audienceRegionCounts, legacyMarketInferenceCount,
+    recordedSearchMarkets: [...recordedSearchMarkets].map(([market, domainCount]) => ({ market, domainCount })),
     topicCoverage: [...topics].map(([topic, value]) => ({ topic, ...value })).sort((a, b) => b.domainCount - a.domainCount),
     observedQueryForms: [...searchForms].map(([form, count]) => ({ form, count })),
-    caveat: 'Keyword-form buckets are lexical, overlap across observations and do not establish ranking factors. Themes are collection tags, not verified site categories.'
+    caveat: 'Audience region is only a site-language heuristic, not verified geographic traffic or commercial targeting. Legacy cases lack recorded search country/language, which must remain unknown. Keyword-form buckets are lexical and themes are collection tags.'
   };
 }
