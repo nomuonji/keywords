@@ -6,7 +6,7 @@
 .seoCaseIntroCount strong {font-size:33px;display:block;font-variant-numeric:tabular-nums;}
 .seoCaseIntroCount span {font-size:11px;color:#b7cbbd;}
 .seoCaseCaveat {color:#99aea3;font-size:12px;line-height:1.8;}
-.seoCaseStats {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:24px 0;}
+.seoCaseStats {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:24px 0;}
 .seoCaseStats>div {padding:16px 18px;border:1px solid #263d32;border-radius:14px;background:#111b17;display:grid;gap:5px;}
 .seoCaseStats small,.seoCaseStats span {color:#9caf9f;font-size:11px;}
 .seoCaseStats b {font-size:29px;line-height:1.2;font-variant-numeric:tabular-nums;}
@@ -44,3 +44,11 @@
 @media(max-width:600px){.seoCaseIntro{align-items:flex-start}.seoCaseIntroCount{min-width:100px;padding:10px}.seoCaseTools{flex-wrap:wrap}.seoCaseTools input{flex:1 1 100%}.seoCaseTools select{flex:1}.seoCaseList{grid-template-columns:1fr}.seoCaseDetail{padding:16px}}
 
 .seoCaseGate {font-size:12px;line-height:1.75;color:#cadcb5;background:#19271b;border:1px solid #405d3b;border-radius:10px;padding:12px 14px;}
+
+/* Region is a transparent language-based inference, not a traffic claim. */
+.seoCaseMarketPanel {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0;}
+.seoCaseMarketPanel>div {display:grid;gap:5px;padding:13px 14px;border:1px solid #365142;border-radius:10px;background:#101a15;min-width:0;}
+.seoCaseMarketPanel span {font-size:11px;color:#a6bba8;}
+.seoCaseMarketPanel strong {font-size:15px;color:#e5f4df;overflow-wrap:anywhere;}
+.seoCaseMarketPanel small {font-size:11px;line-height:1.5;color:#a4b7a8;}
+@media(max-width:600px){.seoCaseMarketPanel{grid-template-columns:1fr;}}
