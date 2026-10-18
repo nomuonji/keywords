@@ -97,6 +97,19 @@ async function readLimitedText(response: Response, maxBytes = MAX_WEB_BYTES) {
   return text;
 }
 
+/** Reuse the SSRF-safe redirect and response-size guards for public JSON evidence. */
+export async function fetchPublicJson<T>(input: { url: string; maxBytes?: number }): Promise<{ data: T; finalUrl: string }> {
+  const { response, finalUrl } = await safeFetch(input.url, {
+    headers: { accept: 'application/rdap+json, application/json;q=0.9' },
+    signal: AbortSignal.timeout(10_000)
+  });
+  if (!response.ok) throw new Error('Public JSON source unavailable (HTTP ' + response.status + ')');
+  const type = response.headers.get('content-type') ?? '';
+  if (!/json/i.test(type)) throw new Error('Public JSON source returned a non-JSON response');
+  const text = await readLimitedText(response, Math.max(1_000, Math.min(input.maxBytes ?? 150_000, 300_000)));
+  return { data: JSON.parse(text) as T, finalUrl };
+}
+
 function decodeEntities(value: string) {
   return value
     .replaceAll('&nbsp;', ' ')
