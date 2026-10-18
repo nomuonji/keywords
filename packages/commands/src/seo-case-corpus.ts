@@ -59,7 +59,9 @@ function suitableOrganicHit(hit: any, domain: string) {
   const condensed = query.replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, '');
   const stem = domain.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
   const fullDomain = domain.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (condensed.includes(fullDomain) || (stem.length >= 5 && condensed.includes(stem))) return false;
+  // A matching topic word in a descriptive domain (e.g. piano.com) is NOT
+  // enough to call a query branded. Only reject explicit domain navigation.
+  if (condensed.includes(fullDomain) || (stem.length >= 5 && (condensed === stem || condensed === stem + 'official' || condensed === stem + '公式'))) return false;
   if (hit.provider !== 'api' || !['reserp', 'brightdata'].includes(hit.upstreamProvider)) return false;
   if (!Number.isInteger(hit.position) || hit.position < 1 || hit.position > SEO_CASE_MAX_SERP_POSITION) return false;
   try {
