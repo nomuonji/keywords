@@ -11,7 +11,7 @@
     "test:autopilot": "tsx scripts/autopilot-smoke.ts",
     "test:autopilot-preflight": "tsx scripts/autopilot-preflight-smoke.ts",
     "test:headless": "tsx scripts/headless-generation-smoke.ts && tsx scripts/revision-smoke.ts",
-    "test:mcp": "tsx scripts/young-domain-serp-smoke.ts && tsx scripts/discovery-layout-smoke.ts && tsx scripts/remote-mcp-contract-smoke.ts && tsx scripts/idea-memory-smoke.ts && tsx scripts/idea-review-route-smoke.ts && tsx scripts/seo-source-pool-smoke.ts && tsx scripts/market-intent-regression-smoke.ts && tsx scripts/market-evidence-coverage-smoke.ts && tsx scripts/market-product-discovery-smoke.ts && tsx scripts/traffic-route-discovery-smoke.ts && tsx scripts/distribution-case-discovery-smoke.ts && tsx scripts/market-agent-routing-smoke.ts && tsx scripts/market-discovery-runner-smoke.ts",
+    "test:mcp": "tsx scripts/seo-case-corpus-smoke.ts && tsx scripts/young-domain-serp-smoke.ts && tsx scripts/discovery-layout-smoke.ts && tsx scripts/remote-mcp-contract-smoke.ts && tsx scripts/idea-memory-smoke.ts && tsx scripts/idea-review-route-smoke.ts && tsx scripts/seo-source-pool-smoke.ts && tsx scripts/market-intent-regression-smoke.ts && tsx scripts/market-evidence-coverage-smoke.ts && tsx scripts/market-product-discovery-smoke.ts && tsx scripts/traffic-route-discovery-smoke.ts && tsx scripts/distribution-case-discovery-smoke.ts && tsx scripts/market-agent-routing-smoke.ts && tsx scripts/market-discovery-runner-smoke.ts",
     "test:remote-keyword": "tsx scripts/remote-keyword-workflow-smoke.ts && tsx scripts/search-discovery-smoke.ts",
     "test:market-intent": "tsx scripts/market-intent-regression-smoke.ts",
     "test:site-operations": "tsx scripts/site-operations-smoke.ts",

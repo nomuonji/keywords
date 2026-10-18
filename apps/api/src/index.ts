@@ -19,6 +19,7 @@ import { siteStructureGet, siteStructureList } from '@keywords/commands/site-str
 import { researchSessionList } from '@keywords/commands/remote-keyword-research';
 import { themeResearchContext } from '@keywords/commands/theme-research';
 import { seoSourcePoolContext } from '@keywords/commands/seo-source-pool';
+import { seoCaseGet, seoCaseList, seoCaseSummary } from '@keywords/commands/seo-case-corpus';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
@@ -76,6 +77,10 @@ app.get('/seo-source-pool', async c => c.json(await seoSourcePoolContext({
   staleAfterDays: c.req.query('staleAfterDays') ? Number(c.req.query('staleAfterDays')) : undefined,
   scanLimitPerSource: c.req.query('scanLimitPerSource') ? Number(c.req.query('scanLimitPerSource')) : undefined
 })));
+app.get('/seo-case-corpus', async c => c.json(c.req.query('id')
+  ? await seoCaseGet({ id: c.req.query('id') })
+  : await seoCaseList({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 50, pageToken: c.req.query('pageToken') || undefined })));
+app.get('/seo-case-summary', async c => c.json(await seoCaseSummary({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 100, pageToken: c.req.query('pageToken') || undefined })));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));

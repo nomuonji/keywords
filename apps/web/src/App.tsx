@@ -7,11 +7,12 @@ const KeywordTreasury = lazy(() => import('./KeywordTreasury').then(module => ({
 const SiteStructures = lazy(() => import('./SiteStructures').then(module => ({ default: module.SiteStructures })));
 const ThemeResearch = lazy(() => import('./ThemeResearch').then(module => ({ default: module.ThemeResearch })));
 const SeoSourcePool = lazy(() => import('./SeoSourcePool').then(module => ({ default: module.SeoSourcePool })));
+const SeoCaseCorpus = lazy(() => import('./SeoCaseCorpus').then(module => ({ default: module.SeoCaseCorpus })));
 const MarketDiscovery = lazy(() => import('./MarketDiscovery').then(module => ({ default: module.MarketDiscovery })));
 const IdeaReview = lazy(() => import('./IdeaReview').then(module => ({ default: module.IdeaReview })));
 
 type DiscoveryTool='market'|'research'|'structures';
-type View='operations'|'articles'|'sites'|'treasury'|'sources'|'discover';
+type View='operations'|'articles'|'sites'|'treasury'|'sources'|'cases'|'discover';
 const legacyDiscoveryViews=['ideas','market','research','structures'];
 // Three specialist ledgers remain accessible as supporting evidence, not parallel idea stores.
 const discoveryTools:Array<{id:DiscoveryTool;label:string;description:string}>=[
@@ -25,6 +26,7 @@ const views:Array<{id:View;label:string;hint:string}>=[
   {id:'articles',label:'記事',hint:'管理・検証・成果'},
   {id:'treasury',label:'お宝KW',hint:'共有ストック'},
   {id:'sources',label:'情報源',hint:'X・媒体の監視プール'},
+  {id:'cases',label:'SEO事例',hint:'新興ドメインを横断研究'},
   {id:'discover',label:'発見・企画',hint:'観測から7つの出口へ'}
 ];
 
@@ -72,6 +74,7 @@ export function App(){
       {view==='sites'&&<SitesOverview focusedProjectId={projectId} onClearProject={()=>navigate('sites','',true)} onOpenArticles={id=>navigate('articles',id)} onOpenOperations={id=>navigate('operations',id)}/>}
       {view==='treasury'&&<KeywordTreasury/>}
       {view==='sources'&&<SeoSourcePool/>}
+      {view==='cases'&&<SeoCaseCorpus/>}
       {view==='discover'&&<div className="discoveryWorkspace">
         <div className="discoveryHubIntro">
           <p className="coreEyebrow">DISCOVERY / SINGLE IDEA MEMORY</p>
