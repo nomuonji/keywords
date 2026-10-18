@@ -235,14 +235,36 @@ try {
     id: readyTask.id, expectedRevision: heartbeatTask.revision, status: 'completed', claimRunId: 'smoke-run-0001'
   }), /completed SEO task requires resultCommitSha/);
 
+  const checkpointFixture = async (
+    task: { id: string; revision: number }, runId: string, branch: string
+  ) => {
+    const common = {
+      runId, transport: 'prepared' as const, branch, baseSha: 'b'.repeat(40),
+      paths: ['src/content/article.md'], detail: 'Synthetic validated Git change',
+      updatedAt: '2026-10-18T00:00:00.000Z'
+    };
+    const started = await seoTaskUpdate({
+      id: task.id, expectedRevision: task.revision, claimRunId: runId,
+      gitOperationCheckpoint: { ...common, phase: 'started', headSha: null }
+    });
+    const intent = await seoTaskUpdate({
+      id: task.id, expectedRevision: started.revision, claimRunId: runId,
+      gitOperationCheckpoint: { ...common, phase: 'handoff_intent', headSha: 'c'.repeat(40) }
+    });
+    return { intent, common };
+  };
+  const testCheckpoint = await checkpointFixture(
+    heartbeatTask, 'smoke-run-0001', `seo/${readyTask.id}`
+  );
   const pushPendingTask = await seoTaskUpdate({
     id: readyTask.id,
-    expectedRevision: heartbeatTask.revision,
+    expectedRevision: testCheckpoint.intent.revision,
     claimRunId: 'smoke-run-0001',
+    gitOperationCheckpoint: { ...testCheckpoint.common, phase: 'handed_off', headSha: 'c'.repeat(40) },
     executionSummary: 'Local implementation commit prepared; write-ahead checkpoint recorded before remote push.',
     deliveryHandoff: {
       state: 'push_pending',
-      branch: 'seo/smoke-delivery',
+      branch: `seo/${readyTask.id}`,
       headSha: 'c'.repeat(40),
       baseSha: 'b'.repeat(40),
       validationSummary: 'targeted checks passed',
@@ -281,12 +303,14 @@ try {
     id: chatgptReady.id, expectedRevision: chatgptReady.revision,
     actor: 'chatgpt_seo_worker', runId: 'chatgpt-e2e-run-01'
   });
+  const chatgptCheckpoint = await checkpointFixture(chatgptClaimed, 'chatgpt-e2e-run-01', `seo/${chatgptReady.id}`);
   const chatgptPending = await seoTaskUpdate({
-    id: chatgptReady.id, expectedRevision: chatgptClaimed.revision,
+    id: chatgptReady.id, expectedRevision: chatgptCheckpoint.intent.revision,
     claimRunId: 'chatgpt-e2e-run-01',
+    gitOperationCheckpoint: { ...chatgptCheckpoint.common, phase: 'handed_off', headSha: 'c'.repeat(40) },
     deliveryHandoff: {
       state: 'push_pending',
-      branch: 'seo/chatgpt-handoff-probe',
+      branch: `seo/${chatgptReady.id}`,
       headSha: 'c'.repeat(40),
       baseSha: 'b'.repeat(40),
       validationSummary: 'Action-Ref-Handoff: v1\nVerified test-only implementation.',
@@ -342,12 +366,14 @@ try {
     id: preparedGroqReady.id, expectedRevision: preparedGroqReady.revision,
     actor: 'seo_worker', runId: 'groq-prepared-run-01'
   });
+  const groqCheckpoint = await checkpointFixture(preparedGroqClaimed, 'groq-prepared-run-01', `seo/${preparedGroqReady.id}`);
   const preparedGroqPending = await seoTaskUpdate({
-    id: preparedGroqReady.id, expectedRevision: preparedGroqClaimed.revision,
+    id: preparedGroqReady.id, expectedRevision: groqCheckpoint.intent.revision,
     claimRunId: 'groq-prepared-run-01',
+    gitOperationCheckpoint: { ...groqCheckpoint.common, phase: 'handed_off', headSha: 'c'.repeat(40) },
     deliveryHandoff: {
       state: 'push_pending',
-      branch: 'seo/groq-prepared-handoff-probe',
+      branch: `seo/${preparedGroqReady.id}`,
       headSha: 'c'.repeat(40),
       baseSha: 'b'.repeat(40),
       validationSummary: 'Action-Ref-Handoff: v1\nVerified transport-only fixture.',
@@ -371,6 +397,65 @@ try {
     actor: 'seo_worker', runId: 'groq-prepared-run-02'
   }), /Pending centralized Actions handoff cannot be reclaimed/);
 
+  // Interruption: the expired Claim can be recovered, but the uncertain Git
+  // write may not be silently repeated by the new Worker.
+  const interruptedReady = await seoTaskCreate({
+    id: 'seo-unresolved-write-test', siteId: 'site-a',
+    targetUrls: ['https://example.com/unresolved'],
+    repo: 'nomuonji/site-a', taskType: 'technical',
+    title: 'Durable checkpoint test',
+    rationale: 'Synthetic lease recovery test.',
+    evidence: ['In-memory test only.'],
+    dedupeKey: 'site-a:unresolved-git-write'
+  });
+  const interruptedClaimed = await seoTaskClaim({
+    id: interruptedReady.id, expectedRevision: interruptedReady.revision,
+    actor: 'seo_worker', runId: 'interrupted-worker-001'
+  });
+  assert.equal(interruptedClaimed.gitOperationCheckpointRequired, true);
+  const interruptedStart = await seoTaskUpdate({
+    id: interruptedReady.id, expectedRevision: interruptedClaimed.revision,
+    claimRunId: 'interrupted-worker-001',
+    gitOperationCheckpoint: {
+      phase: 'started', runId: 'interrupted-worker-001', transport: 'prepared',
+      branch: `seo/${interruptedReady.id}`, baseSha: 'b'.repeat(40),
+      headSha: null, paths: ['src/content/article.md'],
+      detail: 'Before Git object creation', updatedAt: '2026-10-18T00:00:00.000Z'
+    }
+  });
+  await assert.rejects(seoTaskUpdate({
+    id: interruptedReady.id, expectedRevision: interruptedStart.revision,
+    claimRunId: 'interrupted-worker-001',
+    deliveryHandoff: {
+      state: 'push_pending', branch: `seo/${interruptedReady.id}`,
+      baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40),
+      validationSummary: 'Action-Ref-Handoff: v1\nNot verified',
+      handedOffAt: null, prNumber: null, prUrl: null, lastError: '', updatedAt: null
+    }
+  }), /require durable started, handoff_intent/);
+  const interruptedPath = `${root}seoTasks/${interruptedReady.id}`;
+  const interruptedDoc = docs.get(interruptedPath);
+  docs.set(interruptedPath, {
+    ...interruptedDoc,
+    fields: { ...interruptedDoc.fields,
+      executionClaim: field({ ...interruptedStart.executionClaim, expiresAt: '2000-01-01T00:00:00.000Z' })
+    }
+  });
+  const reclaimed = await seoTaskClaim({
+    id: interruptedReady.id, expectedRevision: interruptedStart.revision,
+    actor: 'seo_worker', runId: 'replacement-worker-002'
+  });
+  assert.equal(reclaimed.recoveryRequired, true);
+  assert.equal(reclaimed.gitOperationCheckpoint?.phase, 'started');
+  await assert.rejects(seoTaskUpdate({
+    id: interruptedReady.id, expectedRevision: reclaimed.revision,
+    claimRunId: 'replacement-worker-002',
+    gitOperationCheckpoint: {
+      ...reclaimed.gitOperationCheckpoint!,
+      runId: 'replacement-worker-002', phase: 'started',
+      updatedAt: '2026-10-18T00:01:00.000Z'
+    }
+  }), /Unresolved Git checkpoint/);
   const handedOffTask = await seoTaskUpdate({
     id: readyTask.id,
     expectedRevision: pushPendingTask.revision,
