@@ -3,6 +3,7 @@ import ideaReviewApp from '../server/idea-memory.js';
 import { researchSessionList } from '../packages/commands/src/remote-keyword-research.js';
 import { themeResearchContext } from '../packages/commands/src/theme-research.js';
 import { seoSourcePoolContext } from '../packages/commands/src/seo-source-pool.js';
+import { seoCaseList, seoCaseGet, seoCaseSummary } from '../packages/commands/src/seo-case-corpus.js';
 
 const app = new Hono();
 // Reuse this Vercel function for the owner-only Idea Memory UI.
@@ -13,6 +14,19 @@ app.get('/api/theme-research', async c => {
     if (c.req.query('resource') === 'sessions') {
       const result = await researchSessionList({ limit: 100 });
       return c.json({ ...result, items: result.items.filter((session: any) => session.id === 'seo-theme-research' || session.id.startsWith('seo-discovery-')) }, 200, { 'cache-control': 'no-store' });
+    }
+    if (c.req.query('resource') === 'seo-case-corpus') {
+      const id = c.req.query('id');
+      const result = id
+        ? await seoCaseGet({ id })
+        : await seoCaseList({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 50,
+            pageToken: c.req.query('pageToken') || undefined });
+      return c.json(result, 200, { 'cache-control': 'no-store' });
+    }
+    if (c.req.query('resource') === 'seo-case-summary') {
+      const result = await seoCaseSummary({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 100,
+        pageToken: c.req.query('pageToken') || undefined });
+      return c.json(result, 200, { 'cache-control': 'no-store' });
     }
     if (c.req.query('resource') === 'seo-source-pool') {
       const result = await seoSourcePoolContext({
