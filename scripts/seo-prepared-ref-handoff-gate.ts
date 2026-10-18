@@ -131,7 +131,6 @@ export function verifiedDisjointCorrectiveDrift(
  * details include negated phrases such as "No safety refusal" and must never
  * be parsed as an authorization decision.
  */
-export function preparedHandoffHasRecordedRefusal(
 /** Central release must match the prior durable three-phase write-ahead receipt. */
 export function gitOperationHandoffError(task: SeoTaskRecord): string | null {
   if (!task.gitOperationCheckpointRequired) return null;
@@ -153,6 +152,7 @@ export function gitOperationPathsError(task: SeoTaskRecord, changed: readonly st
     : 'Git diff paths differ from the durable operation checkpoint';
 }
 
+export function preparedHandoffHasRecordedRefusal(
   task: Pick<SeoTaskRecord, 'id' | 'history'>
 ): boolean {
   return (task.history ?? []).some(({ event }) =>
