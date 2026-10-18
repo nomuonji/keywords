@@ -61,10 +61,76 @@ export function readRegistrationEvent(payload: RdapPayload, now = Date.now()) {
   return earliest ? { registrationDate: new Date(earliest.ms).toISOString(), domainAgeDays: Math.floor((now - earliest.ms) / 86_400_000) } : { registrationDate: null, domainAgeDays: null };
 }
 
+type RdapBootstrap = { services?: Array<[string[], string[]]> };
+let bootstrapCache: { at: number; data: RdapBootstrap } | null = null;
+let bootstrapRequest: Promise<RdapBootstrap> | null = null;
+
+/** IANA's published RDAP registry is authoritative for TLD routing. */
+async function loadRdapBootstrap(): Promise<RdapBootstrap> {
+  if (bootstrapCache && Date.now() - bootstrapCache.at < 24 * 60 * 60 * 1000) return bootstrapCache.data;
+  if (!bootstrapRequest) {
+    bootstrapRequest = fetchPublicJson<RdapBootstrap>({
+      url: 'https://data.iana.org/rdap/dns.json', maxBytes: 300_000
+    }).then(result => {
+      bootstrapCache = { at: Date.now(), data: result.data };
+      return result.data;
+    }).finally(() => { bootstrapRequest = null; });
+  }
+  return bootstrapRequest;
+}
+
+/**
+ * Direct registry RDAP before the public redirector. Both registration dates
+ * and unavailability come exclusively from RDAP evidence, never SERP metadata.
+ */
+export function authoritativeRdapUrls(domain: string, bootstrap: RdapBootstrap | null): string[] {
+  const tld = domain.split('.').pop()?.toLowerCase() ?? '';
+  const bases: string[] = [];
+  if (tld === 'com' || tld === 'net') bases.push('https://rdap.verisign.com/' + tld + '/v1/');
+  const services = (bootstrap?.services ?? [])
+    .filter(service => Array.isArray(service) && Array.isArray(service[0]) && Array.isArray(service[1]))
+    .filter(([tlds]) => tlds.some(entry => entry.toLowerCase() === tld))
+    .flatMap(([, urls]) => urls);
+  for (const base of services) {
+    try { if (new URL(base).protocol === 'https:') bases.push(base); } catch { /* invalid IANA service */ }
+  }
+  return [...new Set(bases)].slice(0, 2).map(base => base.replace(/\/+$/, '') + '/domain/' + encodeURIComponent(domain));
+}
+
+function rdapFailureCategory(error: unknown): string {
+  const message = String(error);
+  if (/429|rate.?limit/i.test(message)) return 'rate_limited';
+  if (/404|not found/i.test(message)) return 'not_found';
+  if (/403|forbidden/i.test(message)) return 'forbidden';
+  if (/5\d\d|server error/i.test(message)) return 'registry_error';
+  if (/timeout|aborted/i.test(message)) return 'timeout';
+  if (/ENOTFOUND|EAI_AGAIN|lookup|network|fetch failed|dns/i.test(message)) return 'network_error';
+  if (/non-JSON/i.test(message)) return 'invalid_response';
+  return 'unavailable';
+}
+
 async function rdapLookup(domain: string) {
-  const source = 'https://rdap.org/domain/' + domain;
-  const response = await fetchPublicJson<RdapPayload>({ url: source, maxBytes: 150_000 });
-  return { payload: response.data, url: response.finalUrl };
+  // .com and .net have known authoritative registry endpoints. Other TLDs
+  // use IANA's HTTPS RDAP bootstrap; missing .jp entries remain unknown.
+  let bootstrap: RdapBootstrap | null = null;
+  let routingError: string | null = null;
+  if (!/\.(com|net)$/i.test(domain)) {
+    try { bootstrap = await loadRdapBootstrap(); }
+    catch (error) { routingError = rdapFailureCategory(error); }
+  }
+  const sources = [...authoritativeRdapUrls(domain, bootstrap), 'https://rdap.org/domain/' + domain];
+  const reasons: string[] = routingError ? ['bootstrap:' + routingError] : [];
+  for (const source of [...new Set(sources)]) {
+    try {
+      const response = await fetchPublicJson<RdapPayload>({ url: source, maxBytes: 150_000 });
+      if (!response.data || !Array.isArray(response.data.events)) {
+        reasons.push('missing_registration_events');
+        continue;
+      }
+      return { payload: response.data, url: response.finalUrl };
+    } catch (error) { reasons.push(rdapFailureCategory(error)); }
+  }
+  throw new Error('RDAP lookup unavailable [' + [...new Set(reasons)].join(',') + ']');
 }
 
 type Dependencies = {
@@ -140,8 +206,11 @@ export async function youngDomainSerpResearch(input: unknown, dependencies: Depe
         registrationStatus: registration.domainAgeDays === null ? 'unknown' as const
           : registration.domainAgeDays <= args.ageDays ? 'recent_registration' as const : 'older_registration' as const
       };
-    } catch {
-      errors.push({ stage: 'rdap', target: record.domain, reason: 'Registration data unavailable; age is unknown.' });
+    } catch (error) {
+      const reason = String(error).startsWith('Error: RDAP lookup unavailable [')
+        ? String(error).slice('Error: '.length)
+        : 'Registration data unavailable (' + rdapFailureCategory(error) + ').';
+      errors.push({ stage: 'rdap', target: record.domain, reason });
       return {
         ...record, registrationDate: null, domainAgeDays: null, rdapUrl: null,
         registrationStatus: 'unknown' as const
