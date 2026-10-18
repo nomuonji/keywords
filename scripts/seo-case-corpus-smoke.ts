@@ -18,7 +18,7 @@ const unknown = { ...recent, domain: 'unknown.example', registrationStatus: 'unk
   appearances: [{ query: 'piano app comparison', position: 6, title: 'Unknown domain guide', url: 'https://unknown.example/guide', provider: 'brave', upstreamProvider: null, observedAt: now }] };
 const discoveries = { recentRegistrationCandidates: [recent], unknownRegistrationCandidates: [unknown],
   olderRegistrationCount: 7, uncheckedDomainCount: 6,
-  pageReviews: [{ domain: recent.domain, url: recent.appearances[0].url, finalUrl: recent.appearances[0].url, title: 'Real source', text: 'Detailed first-party source evidence.', truncated: true, fetchedAt: now }],
+  pageReviews: [{ status: 'read', domain: recent.domain, url: recent.appearances[0].url, finalUrl: recent.appearances[0].url, title: 'Real source', text: 'Detailed first-party source evidence.', truncated: true, fetchedAt: now }],
   coverage: { completedQueries: 2, stoppedEarly: false }, errors: [] };
 
 const request: any = async (path: string, init?: RequestInit) => {
