@@ -45,6 +45,7 @@
     "./keyword-research-pipeline": "./src/keyword-research-pipeline.ts",
     "./theme-research": "./src/theme-research.ts",
     "./seo-source-pool": "./src/seo-source-pool.ts",
+    "./seo-case-corpus": "./src/seo-case-corpus.ts",
     "./market-intelligence": "./src/market-intelligence.ts"
   },
   "scripts": {
