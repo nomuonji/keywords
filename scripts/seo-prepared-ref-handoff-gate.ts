@@ -132,6 +132,27 @@ export function verifiedDisjointCorrectiveDrift(
  * be parsed as an authorization decision.
  */
 export function preparedHandoffHasRecordedRefusal(
+/** Central release must match the prior durable three-phase write-ahead receipt. */
+export function gitOperationHandoffError(task: SeoTaskRecord): string | null {
+  if (!task.gitOperationCheckpointRequired) return null;
+  const c = task.gitOperationCheckpoint, h = task.deliveryHandoff;
+  if (!c || c.phase !== 'handed_off' || c.branch !== h.branch
+      || c.baseSha !== h.baseSha || c.headSha !== h.headSha
+      || !c.headSha || c.branch !== `seo/${task.id}`) {
+    return 'Missing or mismatched durable Git operation checkpoint';
+  }
+  return null;
+}
+
+export function gitOperationPathsError(task: SeoTaskRecord, changed: readonly string[]): string | null {
+  if (!task.gitOperationCheckpointRequired) return null;
+  const recorded = task.gitOperationCheckpoint?.paths ?? [];
+  const a = [...new Set(recorded)].sort(), b = [...new Set(changed)].sort();
+  return recorded.length === a.length && changed.length === b.length
+    && JSON.stringify(a) === JSON.stringify(b) ? null
+    : 'Git diff paths differ from the durable operation checkpoint';
+}
+
   task: Pick<SeoTaskRecord, 'id' | 'history'>
 ): boolean {
   return (task.history ?? []).some(({ event }) =>
@@ -178,6 +199,8 @@ export function preparedRefHandoffPreflight(
   if (preparedHandoffHasRecordedRefusal(task)) {
     return 'Task has an explicit safety/authorization refusal event; independent review required, no delegated retry';
   }
+  const checkpointError = gitOperationHandoffError(task);
+  if (checkpointError) return checkpointError;
   if (handoff.lastError) return 'Checkpoint has an unresolved error; no delegated retry is authorized';
   return null;
 }
