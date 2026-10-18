@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
-import { readRegistrationEvent, registeredDomain, youngDomainSerpResearch } from '../packages/commands/src/young-domain-serp-research.js';
+import { authoritativeRdapUrls, readRegistrationEvent, registeredDomain, youngDomainSerpResearch } from '../packages/commands/src/young-domain-serp-research.js';
 
+assert.deepEqual(authoritativeRdapUrls('google.com', null), ['https://rdap.verisign.com/com/v1/domain/google.com']);
+assert.deepEqual(authoritativeRdapUrls('site.net', null), ['https://rdap.verisign.com/net/v1/domain/site.net']);
+assert.deepEqual(authoritativeRdapUrls('site.jp', {services: []}), []);
+assert.deepEqual(authoritativeRdapUrls('site.xyz', {services: [
+  [['xyz'], ['http://unsafe.invalid/', 'https://rdap.nic.xyz/rdap/']],
+  [['app'], ['https://pubapi.registry.google/rdap/']]
+]}), ['https://rdap.nic.xyz/rdap/domain/site.xyz']);
+assert.deepEqual(authoritativeRdapUrls('x.com', {services: [[['com'], ['https://rdap.verisign.com/com/v1/']]]}),
+  ['https://rdap.verisign.com/com/v1/domain/x.com']);
 assert.equal(registeredDomain('www.blog.example.co.jp'), 'example.co.jp');
 assert.equal(registeredDomain('www.example.com'), 'example.com');
 assert.equal(registeredDomain('example.github.io'), null);
