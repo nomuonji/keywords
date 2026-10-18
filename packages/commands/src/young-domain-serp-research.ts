@@ -102,7 +102,7 @@ function rdapFailureCategory(error: unknown): string {
   if (/429|rate.?limit/i.test(message)) return 'rate_limited';
   if (/404|not found/i.test(message)) return 'not_found';
   if (/403|forbidden/i.test(message)) return 'forbidden';
-  if (/5\\d\\d|server error/i.test(message)) return 'registry_error';
+  if (/5\d\d|server error/i.test(message)) return 'registry_error';
   if (/timeout|aborted/i.test(message)) return 'timeout';
   if (/ENOTFOUND|EAI_AGAIN|lookup|network|fetch failed|dns/i.test(message)) return 'network_error';
   if (/non-JSON/i.test(message)) return 'invalid_response';
