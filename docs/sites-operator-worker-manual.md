@@ -2,6 +2,24 @@
 
 > Canonical execution runbook. Always call `seo_agent_context(role=executor)` first. The live versioned policy and selected Sites Operator task take precedence over this document.
 
+## Durable Git operation checkpoints (2026-10-18)
+
+For each newly claimed Task, three durable `seo_task_update` phases are required, with
+`gitOperationCheckpointRequired=true` and `seo_task_get` readback after each write:
+
+1. BEFORE touching Git: `gitOperationCheckpoint={phase:'started',runId,transport,branch,baseSha,headSha:null,paths,detail,updatedAt}`. Select transport before claim. `branch` must equal `seo/<task-id>`; `baseSha` is the observed Git HEAD; `paths` are exact changed source paths.
+2. AFTER validating Git commit/tree/blob and actual changed files: save matching `phase:'handoff_intent'` with verified full `headSha`. If the tool refuses, stop; do not try a different writer or handoff.
+3. Atomically save `gitOperationCheckpoint.phase='handed_off'` and `deliveryHandoff.state='push_pending'` in the SAME call, with matching SHA/ref. Central Actions independently validates these and the Git diff before publishing any ref/PR/merge.
+
+Keep the active `claimRunId` and current `expectedRevision` at each phase.
+Lease expiry still permits claim recovery. An unresolved started/handoff_intent checkpoint returns
+`recoveryRequired=true`: the new Worker may inspect records and Git READ-ONLY, but may NOT
+overwrite this intent or repeat an uncertain/refused Git write/handoff. If confirmation
+of an actual safety refusal can be recorded independently, cancel the Task; if that
+recording is also refused, report without rerouting. Other Tasks remain executable.
+Legacy in-progress Tasks remain compatible; no past refusal becomes authorized
+merely because it is absent from history. Scheduled tasks must not be modified.
+
 ## Central CI and event handoff (2026-10-16)
 
 After source and acceptance readback, save the existing `seo_task_update` `push_pending` checkpoint once and stop. The Sites Operator backend sends an opaque Task-ID wakeup after the durable save. A failed or missing event credential does not undo the Task; the existing 30-minute central cron retries. Workers do not dispatch Actions, create PRs or merge.
