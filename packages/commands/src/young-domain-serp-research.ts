@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isIP } from 'node:net';
 import { fetchPublicJson, fetchWebDocument, type SerpSnapshot } from '../../research/src/index.js';
 import { serpResearchCached, serpResearchCachedShape } from './remote-keyword-research.js';
 
@@ -16,7 +17,7 @@ const sharedHosting = [
 export function registeredDomain(hostname: string): string | null {
   const host = hostname.toLowerCase().replace(/\.$/, '').replace(/^www\./, '');
   if (sharedHosting.some(suffix => host === suffix || host.endsWith('.' + suffix))) return null;
-  if (host.length > 253 || !/^[a-z0-9.-]+$/.test(host) || host.includes('..')) return null;
+  if (isIP(host) || host.length > 253 || !/^[a-z0-9.-]+$/.test(host) || host.includes('..')) return null;
   const labels = host.split('.');
   if (labels.length < 2 || labels.some(label => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) return null;
   const suffix = labels.slice(-2).join('.');
