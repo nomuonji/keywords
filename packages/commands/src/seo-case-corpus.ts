@@ -3,12 +3,14 @@ import { z } from 'zod';
 import { field, firestore, firestoreDocumentName, FirestoreError, value } from '../../db/src/firestore.js';
 import { registeredDomain, youngDomainSerpResearch, youngDomainSerpResearchShape } from './young-domain-serp-research.js';
 
-const domainName = z.string().trim().min(4).max(253);
 const caseId = z.string().regex(/^case_[a-f0-9]{24}$/);
 const text = z.string().trim().min(1).max(120);
 
 export const seoCaseCollectShape = {
   ...youngDomainSerpResearchShape,
+  // An evidence-led case library must not silently mix Brave with Google-proxy positions.
+  provider: z.literal('api').default('api'),
+  maxPageReads: z.number().int().min(1).max(4).default(4),
   topic: text,
   includeUnknownAge: z.boolean().default(true),
   maxNewSites: z.number().int().min(1).max(8).default(8)
@@ -43,12 +45,84 @@ function normalizeObservation(input: any) {
   };
 }
 
+/** A small, explicit hard gate on verifiable facts; not an AI quality score. */
+export const SEO_CASE_GATE_VERSION = '2026-10-18-v1';
+export const SEO_CASE_MAX_AGE_DAYS = 365;
+export const SEO_CASE_MAX_SERP_POSITION = 10;
+export const SEO_CASE_MIN_PAGE_CHARS = 160;
+const DAY_MS = 86_400_000;
+
+function suitableOrganicHit(hit: any, domain: string) {
+  const query = String(hit.query ?? '').normalize('NFKC').toLowerCase().trim();
+  if (!query || /(?:^|\s)(?:site:|inurl:|intitle:)/.test(query) || /https?:\/\/|www\./.test(query)) return false;
+  // Obvious navigational terms are not evidence of ranking for a topic query.
+  const condensed = query.replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g, '');
+  const stem = domain.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+  const fullDomain = domain.toLowerCase().replace(/[^a-z0-9]/g, '');
+  // A matching topic word in a descriptive domain (e.g. piano.com) is NOT
+  // enough to call a query branded. Only reject explicit domain navigation.
+  if (condensed.includes(fullDomain) || (stem.length >= 5 && (condensed === stem || condensed === stem + 'official' || condensed === stem + '公式'))) return false;
+  if (hit.provider !== 'api' || !['reserp', 'brightdata'].includes(hit.upstreamProvider)) return false;
+  if (!Number.isInteger(hit.position) || hit.position < 1 || hit.position > SEO_CASE_MAX_SERP_POSITION) return false;
+  try {
+    const url = new URL(hit.url);
+    if (url.protocol !== 'https:' || registeredDomain(url.hostname) !== domain) return false;
+  } catch { return false; }
+  return true;
+}
+export function evaluateSeoCaseGate(candidate: any, pages: any[], now: string) {
+  const reasons: string[] = [];
+  const registrationMs = Date.parse(String(candidate.registrationDate ?? ''));
+  const nowMs = Date.parse(now);
+  const registrationAgeDays = Number.isFinite(registrationMs) && Number.isFinite(nowMs)
+    ? Math.floor((nowMs - registrationMs) / DAY_MS)
+    : null;
+  if (candidate.registrationStatus !== 'recent_registration'
+    || registrationAgeDays === null || registrationAgeDays < 0) {
+    reasons.push('registration_unverified');
+  } else if (registrationAgeDays > SEO_CASE_MAX_AGE_DAYS) {
+    reasons.push('registration_older_than_365_days');
+  }
+  // Do not call self-reported GSC metrics or proxy search hints a verified rank.
+  const hits = (Array.isArray(candidate.appearances) ? candidate.appearances : [])
+    .filter((hit: any) => suitableOrganicHit(hit, String(candidate.domain ?? '')))
+    .sort((a: any, b: any) => a.position - b.position);
+  if (!hits.length) reasons.push('no_nonbranded_google_proxy_top10');
+  const matchingPage = hits.map((hit: any) => pages.find((page: any) => {
+    if (page.domain !== candidate.domain || page.status !== 'read' || page.url !== hit.url) return false;
+    try { return registeredDomain(new URL(page.finalUrl ?? page.url).hostname) === candidate.domain; }
+    catch { return false; }
+  })).find(Boolean);
+  const pageChars = String(matchingPage?.text ?? '').trim().length;
+  if (!matchingPage || pageChars < SEO_CASE_MIN_PAGE_CHARS
+      || /\b(?:access denied|captcha|please enable javascript|sign in to continue)\b/i.test(String(matchingPage.text).slice(0, 250))) {
+    reasons.push('page_body_unverified_or_thin');
+  }
+  const qualifyingQueryCount = new Set(hits.map((hit: any) => hit.query.normalize('NFKC').toLowerCase().trim())).size;
+  const bestPosition = hits[0]?.position ?? null;
+  const passed = reasons.length === 0;
+  return {
+    passed,
+    policyVersion: SEO_CASE_GATE_VERSION,
+    reasons,
+    evidenceStrength: passed && ((bestPosition !== null && bestPosition <= 5) || qualifyingQueryCount >= 2) ? 'strong_observation' : passed ? 'single_top10_observation' : 'insufficient',
+    registrationAgeDays,
+    bestQualifiedPosition: bestPosition,
+    qualifyingQueryCount,
+    pageChars: pageChars,
+    qualifyingUrl: matchingPage?.url ?? null,
+    // Additional relevance, editorial value, rank persistence and theme viability
+    // are human/agent research judgments, not implicit effects of passing this gate.
+    interpretationRequired: true
+  };
+}
+
 /**
  * Store only a first discovery per domain. This is a cross-topic case library,
  * not a monitoring or rank-history model. Repeated observations can be
  * investigated with the existing read-only young_domain_serp_research tool.
  */
-export function materializeCase(input: any, topic: string, pages: any[], collectedAt: string) {
+export function materializeCase(input: any, topic: string, pages: any[], collectedAt: string, gate = evaluateSeoCaseGate(input, pages, collectedAt)) {
   const best = [...input.appearances].sort((a: any, b: any) => (a.position ?? 999) - (b.position ?? 999));
   const reviews = pages.filter(page => page.domain === input.domain && page.status === 'read').slice(0, 2);
   const observations = best.slice(0, 12).map(normalizeObservation);
@@ -62,7 +136,7 @@ export function materializeCase(input: any, topic: string, pages: any[], collect
     rdapUrl: input.rdapUrl ?? null,
     firstObservedAt: collectedAt,
     createdAt: collectedAt,
-    bestObservedPosition: input.bestPosition ?? null,
+    bestObservedPosition: gate.bestQualifiedPosition ?? null,
     observedQueryCount: input.queryCount ?? 0,
     observations,
     pageEvidence: reviews.map(page => ({
@@ -73,6 +147,7 @@ export function materializeCase(input: any, topic: string, pages: any[], collect
       truncated: Boolean(page.truncated),
       fetchedAt: String(page.fetchedAt ?? '')
     })),
+    qualityGate: gate,
     interpretationStatus: 'unreviewed',
     siteIdeaStatus: 'reference_only',
     limitations: [
@@ -118,9 +193,22 @@ export async function seoCaseCollect(input: unknown, deps: CorpusDependencies = 
   const candidates = [
     ...discovery.recentRegistrationCandidates,
     ...(includeUnknownAge ? discovery.unknownRegistrationCandidates : [])
-  ].slice(0, maxNewSites);
+  ];
   const now = deps.clock();
-  const prepared = candidates.map(item => materializeCase(item, topic, discovery.pageReviews, now));
+  const gateEvaluations = candidates.map(item => ({
+    candidate: item, gate: evaluateSeoCaseGate(item, discovery.pageReviews, now)
+  }));
+  // Evaluate every checked candidate before limiting saves: failing candidates
+  // must not consume the maxNewSites allowance or enter the clean corpus.
+  const accepted = gateEvaluations.filter(item => item.gate.passed).slice(0, maxNewSites);
+  const prepared = accepted.map(({ candidate, gate }) => materializeCase(candidate, topic, discovery.pageReviews, now, gate));
+  const gateRejectedReasons = Object.entries(gateEvaluations
+    .filter(item => !item.gate.passed)
+    .flatMap(item => item.gate.reasons)
+    .reduce<Record<string, number>>((counts, reason) => ({ ...counts, [reason]: (counts[reason] ?? 0) + 1 }), {}))
+    .map(([reason, count]) => ({ reason, count }));
+  const gateRejectedExamples = gateEvaluations.filter(item => !item.gate.passed).slice(0, 8)
+    .map(item => ({ domain: item.candidate.domain, reasons: item.gate.reasons }));
   const existing: string[] = [];
   const toCreate: any[] = [];
   for (const item of prepared) {
@@ -158,12 +246,18 @@ export async function seoCaseCollect(input: unknown, deps: CorpusDependencies = 
     alreadyInCorpus: [...new Set(existing)].length,
     skippedForAgeOrBudget: discovery.olderRegistrationCount + discovery.uncheckedDomainCount,
     candidateCount: candidates.length,
+    gatePassedCount: gateEvaluations.filter(item => item.gate.passed).length,
+    gateRejectedCount: gateEvaluations.filter(item => !item.gate.passed).length,
+    gateRejectedReasons,
+    gateRejectedExamples,
+    notSavedDueToBatchLimit: Math.max(0, gateEvaluations.filter(item => item.gate.passed).length - accepted.length),
+    qualityGateVersion: SEO_CASE_GATE_VERSION,
     newCases: runId ? saved.map(item => ({ id: item.id, domain: item.domain, registrationStatus: item.registrationStatus, bestObservedPosition: item.bestObservedPosition, topics: item.topics })) : [],
     runId,
     collisions,
     discoveryCoverage: discovery.coverage,
     errors: discovery.errors,
-    note: 'Corpus-first: once per domain by default. No routine rank refresh or automatic SEO/task/site idea approval.'
+    note: 'Evidence gate is mandatory: verified registration within 365 days, nonbranded Google-proxy top10 and readable matching page >=160 chars. Unknown-age/Brave/thin pages are rejected, not silently admitted. No automatic success or idea verdict.'
   };
 }
 
@@ -191,9 +285,13 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
   const searchForms = new Map<string, number>();
   let recentRegistration = 0;
   let ageUnknown = 0;
+  let gatePassedCount = 0;
+  let ungatedLegacyCount = 0;
   for (const item of listing.items) {
     if (item.registrationStatus === 'recent_registration') recentRegistration++;
     if (item.registrationStatus === 'unknown') ageUnknown++;
+    if (item.qualityGate?.passed === true) gatePassedCount++;
+    else ungatedLegacyCount++;
     for (const topic of item.topics ?? []) {
       const current = topics.get(topic) ?? { domainCount: 0, examples: [] };
       current.domainCount++;
@@ -212,7 +310,7 @@ export async function seoCaseSummary(input: unknown = {}, request: typeof firest
   return {
     analyzedCases: listing.items.length, scope: 'one fetched page only',
     nextPageToken: listing.nextPageToken,
-    recentRegistration, ageUnknown,
+    recentRegistration, ageUnknown, gatePassedCount, ungatedLegacyCount,
     topicCoverage: [...topics].map(([topic, value]) => ({ topic, ...value })).sort((a, b) => b.domainCount - a.domainCount),
     observedQueryForms: [...searchForms].map(([form, count]) => ({ form, count })),
     caveat: 'Keyword-form buckets are lexical, overlap across observations and do not establish ranking factors. Themes are collection tags, not verified site categories.'
