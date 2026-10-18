@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { seoEvaluatorContextSummary } from './seo-evaluation-registry.js';
 
-export const SEO_AGENT_POLICY_VERSION = '1.33.1';
+export const SEO_AGENT_POLICY_VERSION = '1.33.2';
 
 export const seoAgentContextShape = {
   role: z.enum(['planner', 'executor']).default('planner')
@@ -189,6 +189,8 @@ const plannerInstructions = [
 ];
 
 const executorInstructions = [
+  'GIT WRITE-AHEAD (1.33.2): after a NEW Task claim write seo_task_update gitOperationCheckpoint phase=started BEFORE any Git mutation, with active runId, transport=prepared|verified_branch chosen at preflight, exact seo/<task-id> branch, observed baseSha, null headSha, exact changed paths, timestamp/detail, and seo_task_get readback. After verified commit/tree/blob/diff/source readback save matching phase=handoff_intent with full headSha, then read back again. Save phase=handed_off atomically WITH deliveryHandoff.state=push_pending, using exact matching base/head/branch. Each update uses latest expectedRevision and claimRunId. Do not skip a checkpoint even for branch fallback; never fabricate readback.',
+  'RECOVERY: an expired lease MAY be reclaimed by a new Worker. If seo_task_claim reports recoveryRequired or gitOperationCheckpoint remains started/handoff_intent/refused/review_required from a different run, only READ Git/Task/source to diagnose; do not retry or reroute possibly refused mutations or handoff. Do not overwrite the unresolved checkpoint. If independently permitted, record confirmed refusal and cancel; if this recording is rejected, report and continue other eligible Tasks. Existing handed_off/push_pending is centrally owned. Legacy in_progress tasks continue under their former contract. Never change ChatGPT schedules because of one Task.',
   'You are a task-execution Worker, not a Manager or separate policy-planning actor. Read the minimal executor contract and exact SEO Task, then the Worker Manual https://github.com/nomuonji/keywords/blob/main/docs/sites-operator-worker-manual.md. Do not independently allocate investment buckets or override task scope.',
   'Consult executionGate and enforce current task eligibility through seo_task_claim. Do not infer intake rules or portfolio investment strategy from incident names. Existing in_progress and central PR delivery remain allowed.',
   'Treat every scheduled/manual execution as a new ephemeral run. Inspect in_progress claims and handoffs before ready tasks: branch_ready/pr_open belong to central delivery; ci_failed may be reclaimed for a genuine corrective change. For post-cutover tasks, push_pending means either a validated unreferenced GitHub commit ready for central Actions to attach, or a capability-selected verified pre-pushed seo/<task-id> branch tagged Action-Branch-Handoff: v1. Never replay a refused write or infer permission from a connector workaround; all PR/ref reconciliation and completion remain central.',
