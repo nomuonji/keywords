@@ -105,7 +105,7 @@ export function evaluateSeoCaseGate(candidate: any, pages: any[], now: string) {
     passed,
     policyVersion: SEO_CASE_GATE_VERSION,
     reasons,
-    evidenceStrength: passed && (bestPosition <= 5 || qualifyingQueryCount >= 2) ? 'strong_observation' : passed ? 'single_top10_observation' : 'insufficient',
+    evidenceStrength: passed && ((bestPosition !== null && bestPosition <= 5) || qualifyingQueryCount >= 2) ? 'strong_observation' : passed ? 'single_top10_observation' : 'insufficient',
     registrationAgeDays,
     bestQualifiedPosition: bestPosition,
     qualifyingQueryCount,
