@@ -136,7 +136,7 @@ export function materializeCase(input: any, topic: string, pages: any[], collect
     rdapUrl: input.rdapUrl ?? null,
     firstObservedAt: collectedAt,
     createdAt: collectedAt,
-    bestObservedPosition: input.bestPosition ?? null,
+    bestObservedPosition: gate.bestQualifiedPosition ?? null,
     observedQueryCount: input.queryCount ?? 0,
     observations,
     pageEvidence: reviews.map(page => ({
