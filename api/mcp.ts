@@ -35,6 +35,7 @@ import {
 import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
 import { youngDomainSerpResearch, youngDomainSerpResearchShape } from '../packages/commands/src/young-domain-serp-research.js';
+import { seoCaseCollect, seoCaseCollectShape, seoCaseGet, seoCaseGetShape, seoCaseList, seoCaseListShape, seoCaseSummary, seoCaseSummaryShape } from '../packages/commands/src/seo-case-corpus.js';
 import { marketDiscoveryRun, marketDiscoveryRunShape } from '../packages/commands/src/market-discovery-runner.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
@@ -328,6 +329,26 @@ function server() {
     inputSchema: searchGapResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await searchGapResearch(input)));
+  mcp.registerTool('seo_case_collect', {
+    description: 'Corpus-first SEO site discovery: run up to five cached SERP queries, verify up to eight domain-registration records and add new eligible domains to the shared Firestore case library. Existing cases are never rewritten just for tracking. The required topic is a research tag, not a verified site taxonomy. Report real zero-findings; no fabricated cases, tasks, publication or automatic idea approval.',
+    inputSchema: seoCaseCollectShape,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
+  }, async input => structured(await seoCaseCollect(input)));
+  mcp.registerTool('seo_case_list', {
+    description: 'Page through saved first-discovery SEO cases by creation date for cross-topic browsing. This is not historical rank tracking.',
+    inputSchema: seoCaseListShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await seoCaseList(input)));
+  mcp.registerTool('seo_case_get', {
+    description: 'Read stored site case evidence, sampled queries and page excerpts for careful comparison and site-theme research.',
+    inputSchema: seoCaseGetShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await seoCaseGet(input)));
+  mcp.registerTool('seo_case_summary', {
+    description: 'Descriptive topic distribution and query-form patterns for one bounded page of the site-case corpus. Not evidence of SEO causes or site theme viability.',
+    inputSchema: seoCaseSummaryShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await seoCaseSummary(input)));
   mcp.registerTool('young_domain_serp_research', {
     description: 'Read-only discovery of recently registered domains appearing in bounded SERP samples. Aggregate queries, verify registration events using public RDAP, and read a few actual pages. Domain registration is not site launch; provider position is not traffic or a proven ranking factor. Reuses shared SERP cache/quota. No persistence of findings, automatic tasks or publishing.',
     inputSchema: youngDomainSerpResearchShape,
