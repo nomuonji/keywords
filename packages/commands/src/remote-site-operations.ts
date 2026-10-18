@@ -1445,8 +1445,8 @@ export async function seoTaskUpdate(input: unknown) {
     allocationPolicyRevision,
     deploymentVerification,
     executionClaim: nextExecutionClaim,
-    deliveryHandoff,    gitOperationCheckpoint: checkpointPatch ?? current.gitOperationCheckpoint,
-
+    deliveryHandoff,
+    gitOperationCheckpoint: checkpointPatch ?? current.gitOperationCheckpoint,
     history: history.slice(-100),
     completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
     revision: expectedRevision + 1,
