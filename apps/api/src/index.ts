@@ -19,7 +19,7 @@ import { siteStructureGet, siteStructureList } from '@keywords/commands/site-str
 import { researchSessionList } from '@keywords/commands/remote-keyword-research';
 import { themeResearchContext } from '@keywords/commands/theme-research';
 import { seoSourcePoolContext } from '@keywords/commands/seo-source-pool';
-import { seoCaseGet, seoCaseList, seoCaseSummary } from '../../../packages/commands/src/seo-case-corpus.js';
+import { seoCaseGet, seoCaseList, seoCaseSummary } from '@keywords/commands/seo-case-corpus';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
