@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-18",
-  "generatedAt": "2026-10-17T21:47:45.091Z",
+  "date": "2026-10-19",
+  "generatedAt": "2026-10-18T21:57:14.532Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -13,16 +13,32 @@
   "interpretation": "Category rank is not sales units or evidence of an affiliate conversion. No buyer motivations are inferred from rank alone.",
   "coverage": {
     "rootGenreCount": 39,
-    "sampledToday": 9,
-    "historicObservations": 41
+    "sampledToday": 7,
+    "historicObservations": 48
   },
   "warnings": [
     {
-      "genreId": "100002",
+      "genreId": "210900",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "111427",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "100001",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "100000",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "112919",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "101114",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -2602,6 +2618,473 @@
         "previousDate": "2026-10-17",
         "sameItemCount": 4,
         "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "216129",
+      "rootName": "ジュエリー・アクセサリー",
+      "genreId": "567432",
+      "genreName": "タトゥーシール",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "babyriver:10000093",
+          "rank": 1
+        },
+        {
+          "itemCode": "beauty-fun:10000195",
+          "rank": 2
+        },
+        {
+          "itemCode": "happytyam-88yuz88:10000014",
+          "rank": 3
+        },
+        {
+          "itemCode": "classe-shop:10000759",
+          "rank": 4
+        },
+        {
+          "itemCode": "catherine:10008263",
+          "rank": 5
+        },
+        {
+          "itemCode": "plays23:10644163",
+          "rank": 6
+        },
+        {
+          "itemCode": "toyjapan:10190314",
+          "rank": 7
+        },
+        {
+          "itemCode": "your-sales-shop:10374285",
+          "rank": 8
+        },
+        {
+          "itemCode": "beauty-fun:10000228",
+          "rank": 9
+        },
+        {
+          "itemCode": "lavett-shop:10178419",
+          "rank": 10
+        },
+        {
+          "itemCode": "horiku:10225145",
+          "rank": 11
+        },
+        {
+          "itemCode": "babyriver:10000082",
+          "rank": 12
+        },
+        {
+          "itemCode": "tattoosticker:10000086",
+          "rank": 13
+        },
+        {
+          "itemCode": "happytyam-88yuz88:10000078",
+          "rank": 14
+        },
+        {
+          "itemCode": "sallierjapan:10053861",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "100939",
+      "rootName": "美容・コスメ・香水",
+      "genreId": "100944",
+      "genreName": "スキンケア",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "attenir:10000252",
+          "rank": 1
+        },
+        {
+          "itemCode": "rakuten24:11354091",
+          "rank": 2
+        },
+        {
+          "itemCode": "shuuemura:10000018",
+          "rank": 3
+        },
+        {
+          "itemCode": "anuajapan:10000450",
+          "rank": 4
+        },
+        {
+          "itemCode": "rakuten24:11386627",
+          "rank": 5
+        },
+        {
+          "itemCode": "takami-labo:10000519",
+          "rank": 6
+        },
+        {
+          "itemCode": "tvert:10000064",
+          "rank": 7
+        },
+        {
+          "itemCode": "pycno:10007568",
+          "rank": 8
+        },
+        {
+          "itemCode": "rakuten24:11354093",
+          "rank": 9
+        },
+        {
+          "itemCode": "sk-ii:10003857",
+          "rank": 10
+        },
+        {
+          "itemCode": "renngekesyousui:10000002",
+          "rank": 11
+        },
+        {
+          "itemCode": "pdc-shop:10000101",
+          "rank": 12
+        },
+        {
+          "itemCode": "yunth:10000000",
+          "rank": 13
+        },
+        {
+          "itemCode": "sk-ii:10003011",
+          "rank": 14
+        },
+        {
+          "itemCode": "fancl-shop:10009046",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "216131",
+      "rootName": "バッグ・小物・ブランド雑貨",
+      "genreId": "100467",
+      "genreName": "眼鏡・サングラス",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "lorelife:10000124",
+          "rank": 1
+        },
+        {
+          "itemCode": "nanala-kamakura:10000340",
+          "rank": 2
+        },
+        {
+          "itemCode": "raitrick:10000000",
+          "rank": 3
+        },
+        {
+          "itemCode": "plus-fujikon:10000600",
+          "rank": 4
+        },
+        {
+          "itemCode": "wavecontact:10000317",
+          "rank": 5
+        },
+        {
+          "itemCode": "upi-outdoor:10001340",
+          "rank": 6
+        },
+        {
+          "itemCode": "hodopus:10000000",
+          "rank": 7
+        },
+        {
+          "itemCode": "hazuki-official-shop:10000001",
+          "rank": 8
+        },
+        {
+          "itemCode": "plus-fujikon:10000598",
+          "rank": 9
+        },
+        {
+          "itemCode": "selene-:10046765",
+          "rank": 10
+        },
+        {
+          "itemCode": "annexsp:10731776",
+          "rank": 11
+        },
+        {
+          "itemCode": "mochiagirl:10000006",
+          "rank": 12
+        },
+        {
+          "itemCode": "upi-outdoor:10001341",
+          "rank": 13
+        },
+        {
+          "itemCode": "lifestyleweb:10000390",
+          "rank": 14
+        },
+        {
+          "itemCode": "ladies-gift:10000432",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "200162",
+      "rootName": "本・雑誌・コミック",
+      "genreId": "101257",
+      "genreName": "写真集",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "book:22075955",
+          "rank": 1
+        },
+        {
+          "itemCode": "book:22126581",
+          "rank": 2
+        },
+        {
+          "itemCode": "book:22115425",
+          "rank": 3
+        },
+        {
+          "itemCode": "rakutenkobo-ebooks:27035717",
+          "rank": 4
+        },
+        {
+          "itemCode": "book:22131230",
+          "rank": 5
+        },
+        {
+          "itemCode": "book:22075951",
+          "rank": 6
+        },
+        {
+          "itemCode": "book:22051135",
+          "rank": 7
+        },
+        {
+          "itemCode": "book:22139883",
+          "rank": 8
+        },
+        {
+          "itemCode": "book:21886649",
+          "rank": 9
+        },
+        {
+          "itemCode": "book:22132752",
+          "rank": 10
+        },
+        {
+          "itemCode": "hummingbird2022:10001354",
+          "rank": 11
+        },
+        {
+          "itemCode": "book:22138531",
+          "rank": 12
+        },
+        {
+          "itemCode": "bookfan:13155363",
+          "rank": 13
+        },
+        {
+          "itemCode": "book:22111623",
+          "rank": 14
+        },
+        {
+          "itemCode": "book:22096790",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "100533",
+      "rootName": "キッズ・ベビー・マタニティ",
+      "genreId": "551702",
+      "genreName": "ベビー用教材",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "edute:10002460",
+          "rank": 1
+        },
+        {
+          "itemCode": "netbaby:10042143",
+          "rank": 2
+        },
+        {
+          "itemCode": "ameliashop:10000051",
+          "rank": 3
+        },
+        {
+          "itemCode": "e-kit:10042860",
+          "rank": 4
+        },
+        {
+          "itemCode": "crstore:10000003",
+          "rank": 5
+        },
+        {
+          "itemCode": "crstore:10000075",
+          "rank": 6
+        },
+        {
+          "itemCode": "zakka-unique:10000261",
+          "rank": 7
+        },
+        {
+          "itemCode": "sonorite:10000363",
+          "rank": 8
+        },
+        {
+          "itemCode": "shichida:10001180",
+          "rank": 9
+        },
+        {
+          "itemCode": "netbaby:10042149",
+          "rank": 10
+        },
+        {
+          "itemCode": "hakuseiboueki:10000390",
+          "rank": 11
+        },
+        {
+          "itemCode": "mantubiz:10020830",
+          "rank": 12
+        },
+        {
+          "itemCode": "shichida:10000297",
+          "rank": 13
+        },
+        {
+          "itemCode": "hashkude:10002361",
+          "rank": 14
+        },
+        {
+          "itemCode": "namosee:10002629",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 18 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "e-kurashi:10052401",
+          "rank": 1
+        },
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 2
+        },
+        {
+          "itemCode": "seven-eight:10005871",
+          "rank": 4
+        },
+        {
+          "itemCode": "a-price:11363375",
+          "rank": 5
+        },
+        {
+          "itemCode": "e-kurashi:10047330",
+          "rank": 6
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 7
+        },
+        {
+          "itemCode": "to-rulease:10011232",
+          "rank": 8
+        },
+        {
+          "itemCode": "daiyu8:10150114",
+          "rank": 9
+        },
+        {
+          "itemCode": "auc-gion:10214061",
+          "rank": 10
+        },
+        {
+          "itemCode": "fa-fe:10002165",
+          "rank": 11
+        },
+        {
+          "itemCode": "to-rulease:10011096",
+          "rank": 12
+        },
+        {
+          "itemCode": "rcmd:36787926",
+          "rank": 13
+        },
+        {
+          "itemCode": "tubame-direct:10000007",
+          "rank": 14
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-18",
+        "sameItemCount": 5,
+        "denominator": 14
+      }
+    },
+    {
+      "date": "2026-10-19",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-18",
+        "sameItemCount": 3,
+        "denominator": 3
       }
     }
   ]
