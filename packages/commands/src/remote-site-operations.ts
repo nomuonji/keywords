@@ -1050,9 +1050,9 @@ const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   acceptanceChecks: task.acceptanceChecks ?? [],
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
   executionClaim: task.executionClaim ?? null,
-  deliveryHandoff:  gitOperationCheckpointRequired: task.gitOperationCheckpointRequired ?? false,
+  gitOperationCheckpointRequired: task.gitOperationCheckpointRequired ?? false,
   gitOperationCheckpoint: task.gitOperationCheckpoint ?? null,
- task.deliveryHandoff ?? defaultDeliveryHandoff()
+  deliveryHandoff: task.deliveryHandoff ?? defaultDeliveryHandoff()
 });
 
 export async function seoTaskGet(input: unknown) {
