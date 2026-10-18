@@ -1329,7 +1329,7 @@ export async function seoTaskUpdate(input: unknown) {
       && JSON.stringify(previousCheckpoint.paths) === JSON.stringify(checkpointPatch.paths);
     if (checkpointPatch.phase === 'started') {
       if (checkpointPatch.headSha !== null || !(
-        previousCheckpoint === null
+        previousCheckpoint == null
         || (previousCheckpoint.phase === 'handed_off' && current.deliveryHandoff.state === 'ci_failed')
       )) throw new Error('Unresolved Git checkpoint; do not overwrite an uncertain operation');
     } else if (checkpointPatch.phase === 'handoff_intent') {
