@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, verifiedBranchHandoffPreflight, BRANCH_HANDOFF_MARKER, selectSeoGitTransport, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift, gitOperationPathsError } from './seo-prepared-ref-handoff-gate.js';
 import type { SeoTaskRecord, SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const sample={id:'task-123',title:'[CF-Pages-Skip] Fix real content',siteId:'wiki-shikaku-wiki'};
@@ -37,6 +37,27 @@ const sites = [{id:'site-a',status:'active',repository:'nomuonji/site-a'}] as Si
 const preflight = (t: SeoTaskRecord = task, enabled = '1', since = rollout, registry = sites) =>
   preparedRefHandoffPreflight(t, registry, enabled, since);
 assert.equal(preflight(), null);
+const receiptFixture = {
+  ...task, gitOperationCheckpointRequired: true
+} as SeoTaskRecord;
+assert.match(preflight(receiptFixture)!, /checkpoint/, 'new work must have a matching operation receipt');
+const checkedFixture = {
+  ...receiptFixture,
+  gitOperationCheckpoint: {
+    phase: 'handed_off', runId: 'new-claim-01', transport: 'prepared',
+    branch: 'seo/fresh-task-01', baseSha: 'b'.repeat(40), headSha: 'c'.repeat(40),
+    paths: ['src/content/article.md'], detail: 'Git readback fixture',
+    updatedAt: '2026-10-18T00:00:00.000Z'
+  }
+} as SeoTaskRecord;
+assert.equal(preflight(checkedFixture), null);
+assert.equal(gitOperationPathsError(checkedFixture, ['src/content/article.md']), null);
+assert.match(gitOperationPathsError(checkedFixture, ['src/content/unexpected.md'])!, /differ/);
+assert.match(preflight({
+  ...checkedFixture,
+  gitOperationCheckpoint: { ...checkedFixture.gitOperationCheckpoint!, phase: 'handoff_intent' }
+})!, /checkpoint/, 'interrupted handoff may not enter central delivery');
+
 assert.equal(preparedHandoffRequired(task), true);
 assert.equal(preparedHandoffRequired({createdAt:'2026-10-13T05:49:59.999Z'}), false);
 assert.equal(preparedHandoffRequired({createdAt:'2026-10-13T05:50:00.000Z'}), true);

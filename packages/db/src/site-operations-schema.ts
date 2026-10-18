@@ -209,6 +209,19 @@ export type SeoTaskExecutionClaim = {
   expiresAt: string;
 };
 
+/** Persisted write-ahead checkpoint; a recovered lease is for readback, not blind replay. */
+export type SeoTaskGitOperationCheckpoint = {
+  phase: 'started' | 'handoff_intent' | 'handed_off' | 'refused' | 'review_required';
+  runId: string;
+  transport: 'prepared' | 'verified_branch';
+  branch: string;
+  baseSha: string;
+  headSha: string | null;
+  paths: string[];
+  detail: string;
+  updatedAt: string;
+};
+
 export type SeoTaskDeliveryState = 'none' | 'push_pending' | 'branch_ready' | 'pr_open' | 'ci_failed' | 'merged';
 export type SeoTaskDeliveryHandoff = {
   state: SeoTaskDeliveryState;
@@ -285,6 +298,9 @@ export type SeoTaskRecord = {
   deploymentVerification: SeoTaskDeploymentVerification;
   /** Temporary run lease. It is not a persistent worker identity and may be reclaimed after expiry. */
   executionClaim: SeoTaskExecutionClaim | null;
+  /** Required on new claims; existing in-flight Tasks retain legacy compatibility. */
+  gitOperationCheckpointRequired?: boolean;
+  gitOperationCheckpoint?: SeoTaskGitOperationCheckpoint | null;
   /** Structured handoff from unattended Worker branch delivery to the centralized GitHub delivery controller. */
   deliveryHandoff: SeoTaskDeliveryHandoff;
   history: SeoTaskHistoryEntry[];

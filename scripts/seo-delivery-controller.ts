@@ -10,7 +10,7 @@ import type { SeoTaskDeliveryHandoff, SeoTaskRecord } from '../packages/db/src/s
 import { seoDeliveryMergePayload } from '../packages/commands/src/seo-delivery-merge.js';
 import { verifySeoSiteBuild } from './seo-site-ci.js';
 import { transientDeliveryError, retryMergeability, cleanupSweepLimit, firestoreRateLimited } from './seo-delivery-throughput.js';
-import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift, preparedHandoffHasRecordedRefusal } from './seo-prepared-ref-handoff-gate.js';
+import { preparedHandoffRequired, preparedRefBaseError, preparedRefHandoffPreflight, preparedRefHandoffScopeError, BRANCH_HANDOFF_MARKER, verifiedBranchHandoffPreflight, verifiedBranchMainDriftIsNonInterfering, verifiedCorrectiveMainNetDiff, verifiedDisjointCorrectiveDrift, preparedHandoffHasRecordedRefusal, gitOperationPathsError } from './seo-prepared-ref-handoff-gate.js';
 
 const token = process.env.SEO_DELIVERY_GITHUB_TOKEN?.trim() ?? '';
 const ACTIONS_MARKER = 'Action-Ref-Handoff: v1\n';
@@ -366,6 +366,8 @@ async function pushPreparedRef(task: SeoTaskRecord, existingSha: string | null):
   }
   const scopeError = preparedRefHandoffScopeError(compare.files.map(file => file.filename));
   if (scopeError) throw Error(`Unsafe prepared commit ${task.id}: ${scopeError}`);
+  const checkpointPathsError = gitOperationPathsError(task, compare.files.map(file => file.filename));
+  if (checkpointPathsError) throw Error(`Unsafe prepared checkpoint ${task.id}: ${checkpointPathsError}`);
   // Prevent stale observations from being delivered after a rival Worker
   // or the Task controller has changed its revision/claim/checkpoint.
   const current = await seoTaskGet({ id: task.id });
@@ -444,6 +446,8 @@ async function verifyWorkerBranch(task: SeoTaskRecord, actualSha: string | null)
   const workerPaths = compare.files.map(file => file.filename);
   const unsafe = preparedRefHandoffScopeError(workerPaths);
   if (unsafe) throw Error(`Worker branch has prohibited paths: ${unsafe}`);
+  const checkpointPathsError = gitOperationPathsError(task, workerPaths);
+  if (checkpointPathsError) throw Error(`Unsafe Worker checkpoint ${task.id}: ${checkpointPathsError}`);
   if (!(await compatibleFallbackMainDrift(task.repo, h.baseSha, defaultSha, workerPaths))) {
     console.log(`Worker branch ${task.id} cannot be delivered because main advanced by non-state or overlapping changes`);
     throw new Error(`Worker branch base is stale against current main; fresh validation and a new exact-main-based handoff are required for ${task.id}`);

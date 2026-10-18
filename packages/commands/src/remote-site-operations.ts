@@ -49,6 +49,17 @@ const seoTaskDeliveryHandoffShape = z.object({
   updatedAt: isoTime.nullable()
 }).strict();
 const seoTaskRunId = z.string().trim().min(8).max(120);
+const seoGitOperationCheckpoint = z.object({
+  phase: z.enum(['started', 'handoff_intent', 'handed_off', 'refused', 'review_required']),
+  runId: seoTaskRunId,
+  transport: z.enum(['prepared', 'verified_branch']),
+  branch: z.string().trim().regex(/^seo\/[A-Za-z0-9_-]{1,100}$/),
+  baseSha: commitSha,
+  headSha: commitSha.nullable(),
+  paths: z.array(z.string().trim().min(1).max(240)).min(1).max(50),
+  detail: z.string().trim().max(2000),
+  updatedAt: isoTime
+}).strict();
 const seoTaskLeaseMinutes = z.number().int().min(15).max(180).default(75);
 const seoTaskDeploymentVerificationPatch = z.object({
   status: seoTaskDeploymentVerificationStatus,
@@ -250,6 +261,7 @@ export const seoTaskUpdateShape = {
   acceptanceChecks: z.array(seoTaskAcceptanceCheck).max(20).optional(),
   deliveryHandoff: seoTaskDeliveryHandoffShape.optional(),
   claimRunId: seoTaskRunId.optional(),
+  gitOperationCheckpoint: seoGitOperationCheckpoint.optional(),
   appendHistory: historyEntry.optional()
 };
 const seoTaskUpdateSchema = z.object(seoTaskUpdateShape).strict();
@@ -1038,6 +1050,8 @@ const normalizeSeoTask = (task: SeoTaskRecord): SeoTaskRecord => ({
   acceptanceChecks: task.acceptanceChecks ?? [],
   deploymentVerification: task.deploymentVerification ?? defaultDeploymentVerification(task),
   executionClaim: task.executionClaim ?? null,
+  gitOperationCheckpointRequired: task.gitOperationCheckpointRequired ?? false,
+  gitOperationCheckpoint: task.gitOperationCheckpoint ?? null,
   deliveryHandoff: task.deliveryHandoff ?? defaultDeliveryHandoff()
 });
 
@@ -1130,6 +1144,8 @@ export async function seoTaskCreate(input: unknown) {
     deploymentVerification: defaultDeploymentVerification({ targetUrls: args.targetUrls }),
     executionClaim: null,
     deliveryHandoff: defaultDeliveryHandoff(),
+    gitOperationCheckpointRequired: true,
+    gitOperationCheckpoint: null,
     history: [{ at: t, actor: args.createdBy, event: 'ready', detail: 'Evidence-backed SEO task recorded in Sites Operator for later implementation; no GitHub Issue required.' }],
     createdBy: args.createdBy,
     revision: 1,
@@ -1203,14 +1219,15 @@ export async function seoTaskClaim(input: unknown) {
 
   const sameRun = current.executionClaim?.runId === requestedRunId;
   const reclaimed = current.status === 'in_progress' && !sameRun;
+  const recoveryRequired = reclaimed && ['started', 'handoff_intent', 'refused', 'review_required'].includes(current.gitOperationCheckpoint?.phase ?? '');
   const claimedAt = sameRun ? current.executionClaim!.claimedAt : t;
   const claim = executionClaim(requestedRunId, args.actor, claimedAt, t, args.leaseMinutes);
   const history = [...(current.history ?? []), {
     at: t,
     actor: args.actor,
-    event: sameRun ? 'worker_claim_refreshed' : reclaimed ? 'worker_reclaimed' : 'worker_claimed',
+    event: sameRun ? 'worker_claim_refreshed' : recoveryRequired ? 'worker_reclaimed_checkpoint_review_required' : reclaimed ? 'worker_reclaimed' : 'worker_claimed',
     detail: reclaimed
-      ? `Reclaimed stale/unleased in_progress work with run ${requestedRunId}; previous claim ${current.executionClaim?.runId ?? 'none'}.`
+      ? `Reclaimed stale/unleased in_progress work with run ${requestedRunId}; previous claim ${current.executionClaim?.runId ?? 'none'}. ${recoveryRequired ? 'Unresolved Git checkpoint; READ-ONLY audit required; no replay.' : ''}`
       : `Claimed execution with ephemeral run ${requestedRunId}; lease expires ${claim.expiresAt}.`
   }];
 
@@ -1219,11 +1236,12 @@ export async function seoTaskClaim(input: unknown) {
     status: 'in_progress',
     executionClaim: claim,
     history: history.slice(-100),
+    gitOperationCheckpointRequired: current.gitOperationCheckpointRequired || current.status !== 'in_progress',
     revision: args.expectedRevision + 1,
     updatedAt: t
   };
   const auditRunId = await auditWrite('seo_task_claim', record.id, { __write: { collection: 'seoTasks', id: record.id, fields: record } }, previous);
-  return { ...record, auditRunId };
+  return { ...record, auditRunId, recoveryRequired: Boolean(recoveryRequired) };
 }
 
 export async function seoTaskHeartbeat(input: unknown) {
@@ -1281,7 +1299,7 @@ export async function seoTaskUpdate(input: unknown) {
       throw new Error('Allocation effort exceeds active policy cap');
     allocationPolicyRevision = macroPolicy.revision;
   }
-  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, claimRunId, ...patch } = args;
+  const { id: _id, expectedRevision, appendHistory, deploymentVerification: deploymentPatch, deliveryHandoff: deliveryPatch, gitOperationCheckpoint: checkpointPatch, claimRunId, ...patch } = args;
   if (current.history?.some(event => event.event === 'safety_write_rejected_task_cancelled') &&
       patch.status && !['cancelled', 'superseded'].includes(patch.status)) {
     throw new Error('Safety-rejected SEO task cannot be restarted by changing its status; independent review is required');
@@ -1291,6 +1309,61 @@ export async function seoTaskUpdate(input: unknown) {
   }
   if (current.status !== 'in_progress' && patch.status === 'in_progress') {
     throw new Error('Use seo_task_claim to enter in_progress so execution ownership is time-bounded');
+  }
+
+  // Intent is saved BEFORE touching Git. A denied metadata update cannot erase
+  // that intent, so a later Worker may reclaim only for read-only recovery.
+  const previousCheckpoint = current.gitOperationCheckpoint;
+  if (checkpointPatch) {
+    if (current.status !== 'in_progress' || !current.executionClaim
+        || claimRunId !== current.executionClaim.runId || checkpointPatch.runId !== claimRunId) {
+      throw new Error('Git checkpoint requires the active Worker claim');
+    }
+    if (checkpointPatch.branch !== `seo/${current.id}`) {
+      throw new Error('Git checkpoint requires the exact task-bound branch');
+    }
+    const sameIdentity = previousCheckpoint
+      && previousCheckpoint.transport === checkpointPatch.transport
+      && previousCheckpoint.branch === checkpointPatch.branch
+      && previousCheckpoint.baseSha === checkpointPatch.baseSha
+      && JSON.stringify(previousCheckpoint.paths) === JSON.stringify(checkpointPatch.paths);
+    if (checkpointPatch.phase === 'started') {
+      if (checkpointPatch.headSha !== null || !(
+        previousCheckpoint == null
+        || (previousCheckpoint.phase === 'handed_off' && current.deliveryHandoff.state === 'ci_failed')
+      )) throw new Error('Unresolved Git checkpoint; do not overwrite an uncertain operation');
+    } else if (checkpointPatch.phase === 'handoff_intent') {
+      if (!previousCheckpoint || previousCheckpoint.phase !== 'started'
+          || previousCheckpoint.runId !== checkpointPatch.runId || !sameIdentity
+          || !checkpointPatch.headSha || deliveryPatch) {
+        throw new Error('Git readback intent requires the same-run started checkpoint');
+      }
+    } else if (checkpointPatch.phase === 'handed_off') {
+      if (!previousCheckpoint || previousCheckpoint.phase !== 'handoff_intent'
+          || previousCheckpoint.runId !== checkpointPatch.runId || !sameIdentity
+          || !checkpointPatch.headSha || checkpointPatch.headSha !== previousCheckpoint.headSha
+          || deliveryPatch?.state !== 'push_pending'
+          || deliveryPatch.headSha !== checkpointPatch.headSha
+          || deliveryPatch.baseSha !== checkpointPatch.baseSha
+          || deliveryPatch.branch !== checkpointPatch.branch) {
+        throw new Error('Handoff requires matching saved exact-SHA intent');
+      }
+    } else if (checkpointPatch.phase === 'refused' || checkpointPatch.phase === 'review_required') {
+      if (!previousCheckpoint || !['started', 'handoff_intent', 'review_required'].includes(previousCheckpoint.phase)
+          || !sameIdentity || deliveryPatch || checkpointPatch.headSha !== previousCheckpoint.headSha
+          || (checkpointPatch.phase === 'refused' && patch.status !== 'cancelled')) {
+        throw new Error('Unresolved/refused operation may only be recorded, not delivered');
+      }
+    }
+  }
+  if (deliveryPatch?.state === 'push_pending' && current.gitOperationCheckpointRequired
+      && checkpointPatch?.phase !== 'handed_off') {
+    throw new Error('New claims require durable started, handoff_intent and handed_off receipts');
+  }
+  if (deliveryPatch?.state === 'push_pending'
+      && (current.history?.some(event => event.event === 'safety_write_rejected_task_cancelled')
+          || previousCheckpoint?.phase === 'refused' || previousCheckpoint?.phase === 'review_required')) {
+    throw new Error('Unresolved safety or authorization review prohibits handoff');
   }
 
   const terminalTransition = Boolean(patch.status && ['completed', 'cancelled', 'superseded'].includes(patch.status));
@@ -1373,6 +1446,9 @@ export async function seoTaskUpdate(input: unknown) {
     deploymentVerification,
     executionClaim: nextExecutionClaim,
     deliveryHandoff,
+    gitOperationCheckpoint: checkpointPatch
+      ? { ...checkpointPatch, headSha: checkpointPatch.headSha ?? null }
+      : current.gitOperationCheckpoint,
     history: history.slice(-100),
     completedAt: status === 'completed' ? (current.completedAt ?? t) : current.completedAt,
     revision: expectedRevision + 1,
