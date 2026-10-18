@@ -34,6 +34,7 @@ import {
 } from '../packages/commands/src/seo-source-pool.js';
 import { keywordResearchPipeline, keywordResearchPipelineShape } from '../packages/commands/src/keyword-research-pipeline.js';
 import { searchGapResearch, searchGapResearchShape } from '../packages/commands/src/search-gap-research.js';
+import { youngDomainSerpResearch, youngDomainSerpResearchShape } from '../packages/commands/src/young-domain-serp-research.js';
 import { marketDiscoveryRun, marketDiscoveryRunShape } from '../packages/commands/src/market-discovery-runner.js';
 import { trendArticleResearch, trendArticleResearchShape } from '../packages/commands/src/trend-article-research.js';
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
@@ -327,6 +328,11 @@ function server() {
     inputSchema: searchGapResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await searchGapResearch(input)));
+  mcp.registerTool('young_domain_serp_research', {
+    description: 'Read-only discovery of recently registered domains appearing in bounded SERP samples. Aggregate queries, verify registration events using public RDAP, and read a few actual pages. Domain registration is not site launch; provider position is not traffic or a proven ranking factor. Reuses shared SERP cache/quota. No persistence of findings, automatic tasks or publishing.',
+    inputSchema: youngDomainSerpResearchShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await youngDomainSerpResearch(input)));
   mcp.registerTool('market_discovery_run', {
     description: 'Read-only adaptive market evidence entry. Observe selected public sensors without supplied industry seeds, or directly investigate up to three existing candidates, including non-database questions. Neither action requires the other. A 429 stops remaining focused checks in the batch. The agent chooses depth from the objective, remaining uncertainty, source costs and decision stakes; record observed facts separately from ideas. No automated approval or persistence.',
     inputSchema: marketDiscoveryRunShape,
