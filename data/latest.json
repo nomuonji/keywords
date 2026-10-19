@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-19",
-  "generatedAt": "2026-10-18T21:57:14.532Z",
+  "date": "2026-10-20",
+  "generatedAt": "2026-10-19T23:08:25.228Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,19 +14,19 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 48
+    "historicObservations": 55
   },
   "warnings": [
     {
-      "genreId": "210900",
+      "genreId": "112919",
       "reason": "unsupported_subgenre"
     },
     {
-      "genreId": "111427",
+      "genreId": "101114",
       "reason": "Rakuten upstream HTTP 400"
     },
     {
-      "genreId": "100001",
+      "genreId": "100004",
       "reason": "unsupported_subgenre"
     },
     {
@@ -34,11 +34,11 @@
       "reason": "Rakuten upstream HTTP 400"
     },
     {
-      "genreId": "112919",
+      "genreId": "210900",
       "reason": "unsupported_subgenre"
     },
     {
-      "genreId": "101114",
+      "genreId": "111427",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -3085,6 +3085,477 @@
         "previousDate": "2026-10-18",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "100371",
+      "rootName": "レディースファッション",
+      "genreId": "553036",
+      "genreName": "レインウェア",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "azusa:10000099",
+          "rank": 1
+        },
+        {
+          "itemCode": "workerbee:10001868",
+          "rank": 2
+        },
+        {
+          "itemCode": "birena:10000474",
+          "rank": 3
+        },
+        {
+          "itemCode": "chakasho-dina:10000610",
+          "rank": 4
+        },
+        {
+          "itemCode": "nekobadostore:10000679",
+          "rank": 5
+        },
+        {
+          "itemCode": "aquilaria:10000013",
+          "rank": 6
+        },
+        {
+          "itemCode": "lulu-couture:10000175",
+          "rank": 7
+        },
+        {
+          "itemCode": "beautyshopnagomi:10000655",
+          "rank": 8
+        },
+        {
+          "itemCode": "dailycompass:10000365",
+          "rank": 9
+        },
+        {
+          "itemCode": "workerbee:10001958",
+          "rank": 10
+        },
+        {
+          "itemCode": "tanabesp:10162154",
+          "rank": 11
+        },
+        {
+          "itemCode": "workerbee:10001772",
+          "rank": 12
+        },
+        {
+          "itemCode": "mono-land-miyabi-1:10000021",
+          "rank": 13
+        },
+        {
+          "itemCode": "dearcologne:10000948",
+          "rank": 14
+        },
+        {
+          "itemCode": "workerbee:10001869",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "510901",
+      "rootName": "日本酒・焼酎",
+      "genreId": "100337",
+      "genreName": "日本酒",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "shunsake:10000370",
+          "rank": 1
+        },
+        {
+          "itemCode": "belluna-gourmet:10023388",
+          "rank": 2
+        },
+        {
+          "itemCode": "echigo:10002642",
+          "rank": 3
+        },
+        {
+          "itemCode": "b-miyoshi:10000124",
+          "rank": 4
+        },
+        {
+          "itemCode": "izumise:10000403",
+          "rank": 5
+        },
+        {
+          "itemCode": "shalemon:10002963",
+          "rank": 6
+        },
+        {
+          "itemCode": "issyusouden:10011116",
+          "rank": 7
+        },
+        {
+          "itemCode": "courage0115:10000715",
+          "rank": 8
+        },
+        {
+          "itemCode": "tsuzumiya:10001039",
+          "rank": 9
+        },
+        {
+          "itemCode": "b-miyoshi:10000123",
+          "rank": 10
+        },
+        {
+          "itemCode": "first19782012:10020302",
+          "rank": 11
+        },
+        {
+          "itemCode": "craftbeer:10003284",
+          "rank": 12
+        },
+        {
+          "itemCode": "belluna-gourmet:10021473",
+          "rank": 13
+        },
+        {
+          "itemCode": "fukumitsuya-shop:10000084",
+          "rank": 14
+        },
+        {
+          "itemCode": "shidukuya:10001843",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "503190",
+      "rootName": "車用品・バイク用品",
+      "genreId": "503249",
+      "genreName": "その他",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "forthon:10001303",
+          "rank": 1
+        },
+        {
+          "itemCode": "allinstore:10029577",
+          "rank": 2
+        },
+        {
+          "itemCode": "sp-connect-japan:10000170",
+          "rank": 3
+        },
+        {
+          "itemCode": "a-camper:10000013",
+          "rank": 4
+        },
+        {
+          "itemCode": "webike-rb:27781389",
+          "rank": 5
+        },
+        {
+          "itemCode": "g-cr2023:10000001",
+          "rank": 6
+        },
+        {
+          "itemCode": "cocooilshop:10000003",
+          "rank": 7
+        },
+        {
+          "itemCode": "kumazou:10041922",
+          "rank": 8
+        },
+        {
+          "itemCode": "cumainte:10000705",
+          "rank": 10
+        },
+        {
+          "itemCode": "ariel-store:10107868",
+          "rank": 11
+        },
+        {
+          "itemCode": "grkart:10000362",
+          "rank": 12
+        },
+        {
+          "itemCode": "sev-online:10000039",
+          "rank": 14
+        },
+        {
+          "itemCode": "partsisland:11998681",
+          "rank": 15
+        },
+        {
+          "itemCode": "lovelonestar:10045090",
+          "rank": 16
+        },
+        {
+          "itemCode": "wondertec:10227345",
+          "rank": 17
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "566382",
+      "rootName": "おもちゃ",
+      "genreId": "201591",
+      "genreName": "ベビー向けおもちゃ",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "ikurun:10058134",
+          "rank": 1
+        },
+        {
+          "itemCode": "nttxstore:10004492",
+          "rank": 2
+        },
+        {
+          "itemCode": "netbaby:10050031",
+          "rank": 3
+        },
+        {
+          "itemCode": "careland:10000228",
+          "rank": 4
+        },
+        {
+          "itemCode": "gajumarunoki:10001116",
+          "rank": 5
+        },
+        {
+          "itemCode": "r-kojima:11675600",
+          "rank": 6
+        },
+        {
+          "itemCode": "es-toys:12129770",
+          "rank": 7
+        },
+        {
+          "itemCode": "polaristure:10000000",
+          "rank": 8
+        },
+        {
+          "itemCode": "nttxstore:10004305",
+          "rank": 9
+        },
+        {
+          "itemCode": "netbaby:10054909",
+          "rank": 10
+        },
+        {
+          "itemCode": "dadcco:10039823",
+          "rank": 11
+        },
+        {
+          "itemCode": "toysrus:10692745",
+          "rank": 12
+        },
+        {
+          "itemCode": "edute:10001205",
+          "rank": 13
+        },
+        {
+          "itemCode": "edute:10002282",
+          "rank": 14
+        },
+        {
+          "itemCode": "gajumarunoki:10000278",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "100938",
+      "rootName": "ダイエット・健康",
+      "genreId": "203260",
+      "genreName": "健康アクセサリー",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "colantotte-official:10000081",
+          "rank": 1
+        },
+        {
+          "itemCode": "colantotte-official:10000177",
+          "rank": 2
+        },
+        {
+          "itemCode": "colantotte-official:10000120",
+          "rank": 3
+        },
+        {
+          "itemCode": "colantotte-official:10000228",
+          "rank": 4
+        },
+        {
+          "itemCode": "colantotte-official:10000002",
+          "rank": 5
+        },
+        {
+          "itemCode": "colantotte-official:10000129",
+          "rank": 6
+        },
+        {
+          "itemCode": "colantotte-official:10000087",
+          "rank": 7
+        },
+        {
+          "itemCode": "colantotte-official:10000179",
+          "rank": 8
+        },
+        {
+          "itemCode": "creidea-coms:10001762",
+          "rank": 9
+        },
+        {
+          "itemCode": "colantotte-official:10000210",
+          "rank": 10
+        },
+        {
+          "itemCode": "leidenschaft:10000062",
+          "rank": 11
+        },
+        {
+          "itemCode": "colantotte-official:10000110",
+          "rank": 12
+        },
+        {
+          "itemCode": "colantotte-official:10000009",
+          "rank": 13
+        },
+        {
+          "itemCode": "colantotte-official:10000148",
+          "rank": 14
+        },
+        {
+          "itemCode": "colantotte-official:10000015",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-19",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-20",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 19 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "farson:10007690",
+          "rank": 1
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 2
+        },
+        {
+          "itemCode": "forma-ra:10003197",
+          "rank": 3
+        },
+        {
+          "itemCode": "e-kurashi:10052400",
+          "rank": 4
+        },
+        {
+          "itemCode": "kaden-bbx:10013160",
+          "rank": 5
+        },
+        {
+          "itemCode": "biccamera:14106732",
+          "rank": 6
+        },
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 7
+        },
+        {
+          "itemCode": "biccamera:13635082",
+          "rank": 8
+        },
+        {
+          "itemCode": "ksdenki:10533568",
+          "rank": 9
+        },
+        {
+          "itemCode": "e-kurashi:10047330",
+          "rank": 10
+        },
+        {
+          "itemCode": "r-kojima:11437880",
+          "rank": 11
+        },
+        {
+          "itemCode": "rcmdse:17391629",
+          "rank": 12
+        },
+        {
+          "itemCode": "syora:10000024",
+          "rank": 13
+        },
+        {
+          "itemCode": "e-kurashi:10052401",
+          "rank": 14
+        },
+        {
+          "itemCode": "kounotorinodvd:10008469",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-19",
+        "sameItemCount": 4,
+        "denominator": 15
       }
     }
   ]
