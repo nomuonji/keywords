@@ -1,0 +1,37 @@
+name: Claude OAuth credential probe
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/claude-auth-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  claude-auth-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Check whether authentication exists
+        shell: bash
+        env:
+          OAUTH: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          API: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [[ -z "$OAUTH" && -z "$API" ]]; then
+            echo "::error::Neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY configured in this repository."
+            exit 1
+          fi
+          echo "An authentication secret is present."
+      - name: Claude Code one-message invocation (no writes)
+        uses: anthropics/claude-code-base-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--max-turns 1 --allowedTools Read'
+          prompt: |
+            Pure connectivity test. Do not read repository files, invoke tools,
+            modify files, or disclose secrets. Reply only: CLAUDE_AUTH_OK
