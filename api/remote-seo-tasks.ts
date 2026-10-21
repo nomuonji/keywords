@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { seoTaskList } from '../packages/commands/src/remote-site-operations.js';
 import { seoAgentContext } from '../packages/commands/src/seo-agent-policy.js';
+import { publicReadCacheHeaders } from '../server/public-read-cache.js';
 
 // Bounded read-only task feed for the human UI. It intentionally returns a
 // compact projection rather than the full evidence/history payload.
@@ -44,6 +45,6 @@ app.get('/api/remote-seo-tasks', async c => {
     policyVersion: planner.policyVersion,
     taskCount: tasks.length,
     tasks
-  }, 200, { 'cache-control': 'no-store' });
+  }, 200, publicReadCacheHeaders);
 });
 export default app;

@@ -42,7 +42,7 @@ const RETRY_BASE_DELAY_MS = 1000;
 const RETRY_MAX_DELAY_MS = 30_000;
 // Avoid repeated paid/quota-rejected calls within a warm serverless worker.
 // Ordinary transient 429s and 503s still use the existing retry policy.
-const QUOTA_COOLDOWN_MS = 30_000;
+const QUOTA_COOLDOWN_MS = 5 * 60_000;
 let quotaUnavailableUntil = 0;
 
 function retryAttempts() {

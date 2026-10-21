@@ -3,6 +3,7 @@ import { siteRegistryList, siteArticleList } from '../packages/commands/src/remo
 import { seoPlanningDigestList } from '../packages/commands/src/seo-planning-digest.js';
 import { siteIndexationHistory } from '../packages/commands/src/site-indexation.js';
 import { siteIndexationPortfolioOverview } from '../packages/commands/src/site-indexation-overview.js';
+import { publicReadCacheHeaders } from '../server/public-read-cache.js';
 
 // Public read-only browser endpoint for agent-managed Sites Operator sites.
 // Keep this view cheap: one registry read + one compact planning-digest list.
@@ -18,7 +19,7 @@ const articleListHandler = async (c: any) => {
   if (!siteId) return c.json({ error: 'siteId is required' }, 400);
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
   const items = await siteArticleList({ siteId, status: c.req.query('status') || undefined, limit });
-  return c.json({ siteId, items: items.items }, 200, { 'cache-control': 'no-store' });
+  return c.json({ siteId, items: items.items }, 200, publicReadCacheHeaders);
 };
 app.get('/api/remote-articles', articleListHandler);
 app.get('/api/remote-sites', async c => {
@@ -27,7 +28,7 @@ app.get('/api/remote-sites', async c => {
     const siteId = c.req.query('siteId') ?? '';
     if (!/^[a-zA-Z0-9_-]{1,100}$/.test(siteId)) return c.json({ error: 'Valid siteId is required' }, 400);
     const history = await siteIndexationHistory({ siteId, weeks: 16 });
-    return c.json(history, 200, { 'cache-control': 'no-store' });
+    return c.json(history, 200, publicReadCacheHeaders);
   }
   const limit = Math.max(1, Math.min(Number(c.req.query('limit') ?? 50), 100));
   const registry = await siteRegistryList({ limit });
@@ -70,6 +71,6 @@ app.get('/api/remote-sites', async c => {
       indexation: 'Latest inspected URL counts from the scheduled indexation cache; not Search Console total indexable pages'
     },
     sites
-  }, 200, { 'cache-control': 'no-store' });
+  }, 200, indexationUnavailable ? { 'cache-control': 'no-store' } : publicReadCacheHeaders);
 });
 export default app;

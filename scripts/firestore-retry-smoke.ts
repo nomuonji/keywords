@@ -9,6 +9,7 @@ process.env.FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ client_email: 'test
 process.env.FIREBASE_PROJECT_ID = 'test';
 delete process.env.KEYWORDS_FIRESTORE_RETRY_ATTEMPTS;
 const originalFetch = globalThis.fetch;
+const originalNow = Date.now;
 let calls: string[] = [];
 let script: Array<{ status: number; body?: unknown; retryAfter?: string }> = [];
 
@@ -72,8 +73,15 @@ try {
   assert.equal(calls.length, 1, 'known daily quota exhaustion must not retry');
   await assert.rejects(firestore('/sites?pageSize=1'), (error: unknown) => error instanceof FirestoreError && error.status === 429);
   assert.equal(calls.length, 1, 'quota cooldown must reject before issuing another request');
+  const quotaAt = Date.now();
+  Date.now = () => quotaAt + 31_000;
+  await assert.rejects(firestore('/sites?pageSize=1'), (error: unknown) => error instanceof FirestoreError && error.status === 429);
+  assert.equal(calls.length, 1, 'daily quota must not be probed again after only 30 seconds');
+  Date.now = () => quotaAt + 301_000;
+  assert.deepEqual(await firestore('/sites?pageSize=1'), { ok: true }, 'a later request can recover after cooldown');
 
   console.log('firestore retry smoke passed: transient retries, daily quota fail-fast/circuit, and bulk write pacing');
 } finally {
   globalThis.fetch = originalFetch;
+  Date.now = originalNow;
 }

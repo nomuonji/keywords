@@ -316,9 +316,19 @@ async function listDocuments(collection: string, input: { limit: number; pageTok
 }
 
 async function queryByField(collection: string, fieldPath: string, expected: unknown, limit = 500) {
+  return queryByEqualities(collection, [[fieldPath, expected]], limit);
+}
+
+async function queryByEqualities(collection: string, matches: Array<[string, unknown]>, limit = 500) {
+  const filters = matches.map(([fieldPath, expected]) => ({
+    fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: field(expected) }
+  }));
   const result = await firestore(':runQuery', { method: 'POST', body: JSON.stringify({ structuredQuery: {
     from: [{ collectionId: collection }],
-    where: { fieldFilter: { field: { fieldPath }, op: 'EQUAL', value: field(expected) } },
+    // Equality-only AND uses Firestore index merging without requiring a new
+    // composite index. Keep updatedAt sorting local; adding orderBy here would
+    // require provisioning compound indexes before this can be deployed.
+    where: filters.length === 1 ? filters[0] : { compositeFilter: { op: 'AND', filters } },
     limit: Math.max(1, Math.min(limit, 1000))
   } }) });
   return (Array.isArray(result) ? result : []).flatMap((row: any) => row.document ? [row.document] : []);
@@ -1160,20 +1170,23 @@ export async function seoTaskCreate(input: unknown) {
 export async function seoTaskList(input: unknown) {
   const args = z.object(seoTaskListShape).strict().parse(input);
   let items: SeoTaskRecord[];
-  if (args.siteId) {
-    await ensureSite(args.siteId);
-    items = ((await queryBySite('seoTasks', args.siteId, 1000)) as SeoTaskRecord[]).map(normalizeSeoTask);
-  } else if (args.status || args.deploymentVerificationStatus) {
-    // Choose the narrowest indexed equality. Pending publication is normally
-    // far smaller than all completed Tasks; avoid fetching every completed
-    // record on each bounded verification pass.
-    const key = args.deploymentVerificationStatus ? 'deploymentVerification.status' : 'status';
-    const match = args.deploymentVerificationStatus ?? args.status!;
-    const docs = await queryByField('seoTasks', key, match, 1000);
-    if (docs.length >= 1000) throw new Error('SEO Task status query exceeds 999 matches; pagination is required');
+  const matches: Array<[string, unknown]> = [];
+  if (args.siteId) { await ensureSite(args.siteId); matches.push(['siteId', args.siteId]); }
+  if (args.status) matches.push(['status', args.status]);
+  if (args.deploymentVerificationStatus) matches.push(['deploymentVerification.status', args.deploymentVerificationStatus]);
+  if (args.taskType) matches.push(['taskType', args.taskType]);
+  if (matches.length) {
+    // Apply ALL equality predicates before billable document reads. In
+    // particular, completed+pending must not read ready/cancelled Tasks whose
+    // default deployment state is also pending, or the site's entire history.
+    const docs = await queryByEqualities('seoTasks', matches, 1000);
+    if (docs.length >= 1000) throw new Error('SEO Task filtered query exceeds 999 matches; pagination is required');
     items = docs.map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   } else {
-    const listed = await listDocuments('seoTasks', { limit: Math.min(args.limit * 5, 500), orderBy: 'updatedAt desc' });
+    // The unfiltered human feed already has server-side updatedAt ordering.
+    // Only article membership still needs the legacy bounded local filtering.
+    const limit = args.articleId ? Math.min(args.limit * 5, 500) : args.limit;
+    const listed = await listDocuments('seoTasks', { limit, orderBy: 'updatedAt desc' });
     items = (listed.documents ?? []).map((doc: any) => normalizeSeoTask(decoded(doc) as SeoTaskRecord));
   }
   items = items.filter(task =>

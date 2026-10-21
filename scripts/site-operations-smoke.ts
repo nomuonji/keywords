@@ -36,6 +36,7 @@ const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();
 let sequence = 0;
 let seoTaskCollectionScans = 0;
+let seoTaskDocumentsRead = 0;
 const seoTaskStatusQueries: string[] = [];
 const firestorePointReads: string[] = [];
 const originalFetch = globalThis.fetch;
@@ -52,9 +53,12 @@ globalThis.fetch = async (input, init) => {
   if ((init?.method ?? 'GET') === 'GET') firestorePointReads.push(path);
   const body = init?.body ? JSON.parse(String(init.body)) : null;
   if (path.endsWith('/seoTasks') && (init?.method ?? 'GET') === 'GET') seoTaskCollectionScans++;
-  if (url.endsWith(':runQuery') && body?.structuredQuery?.from?.[0]?.collectionId === 'seoTasks'
-      && ['status', 'deploymentVerification.status'].includes(body?.structuredQuery?.where?.fieldFilter?.field?.fieldPath)) {
-    seoTaskStatusQueries.push(String(decodeField(body.structuredQuery.where.fieldFilter.value)));
+  if (url.endsWith(':runQuery') && body?.structuredQuery?.from?.[0]?.collectionId === 'seoTasks') {
+    const filters = body.structuredQuery.where.compositeFilter?.filters ?? [body.structuredQuery.where];
+    for (const { fieldFilter: filter } of filters) {
+      if (['status', 'deploymentVerification.status'].includes(filter.field.fieldPath))
+        seoTaskStatusQueries.push(String(decodeField(filter.value)));
+    }
   }
 
   if (url.endsWith(':commit')) {
@@ -70,20 +74,25 @@ globalThis.fetch = async (input, init) => {
   if (url.endsWith(':runQuery')) {
     const query = body.structuredQuery;
     const collection = query.from[0].collectionId;
-    const filter = query.where.fieldFilter;
-    const expected = decodeField(filter.value);
+    const filters = query.where.compositeFilter?.filters ?? [query.where];
     const queryField = (fields: any, fieldPath: string) => fieldPath.split('.').reduce((node, key) => node?.mapValue?.fields?.[key] ?? node?.[key], fields);
     const rows = [...docs.values()]
-      .filter(doc => doc.name.startsWith(`${root}${collection}/`) && decodeField(queryField(doc.fields, filter.field.fieldPath)) === expected)
+      .filter(doc => doc.name.startsWith(`${root}${collection}/`) && filters.every(({ fieldFilter: filter }: any) =>
+        decodeField(queryField(doc.fields, filter.field.fieldPath)) === decodeField(filter.value)))
       .slice(0, Number(query.limit ?? 500))
       .map(document => ({ document }));
+    if (collection === 'seoTasks') seoTaskDocumentsRead += rows.length;
     return Response.json(rows);
   }
 
   if (/\/(sites|articles|metricSnapshots|optimizationEvents|siteDirections|seoTasks|seoRecoveryControls|seoRecoverySites)$/.test(path)) {
     const collection = path.split('/').at(-1)!;
     const all = [...docs.values()].filter(doc => doc.name.startsWith(`${root}${collection}/`));
-    return Response.json({ documents: all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50)) });
+    if (parsed.searchParams.get('orderBy') === 'updatedAt desc')
+      all.sort((a, b) => String(decodeField(b.fields.updatedAt)).localeCompare(String(decodeField(a.fields.updatedAt))));
+    const documents = all.slice(0, Number(parsed.searchParams.get('pageSize') ?? 50));
+    if (collection === 'seoTasks') seoTaskDocumentsRead += documents.length;
+    return Response.json({ documents });
   }
 
   return docs.has(path) ? Response.json(docs.get(path)) : Response.json({}, { status: 404 });
@@ -514,8 +523,24 @@ try {
   assert.equal(completedTask.executionClaim, null);
   assert.ok(completedTask.completedAt);
   const scansBeforeCompleted = seoTaskCollectionScans;
+  // More unrelated pending records than the query ceiling used to make a
+  // completed+pending lookup fail or consume 1000 reads for one eligible task.
+  for (let i = 0; i < 1100; i++) {
+    const id = `quota-fixture-${i}`;
+    docs.set(`${root}seoTasks/${id}`, { name: `${root}seoTasks/${id}`, fields: {
+      ...docs.get(`${root}seoTasks/${readyTask.id}`).fields,
+      id: field(id), status: field('cancelled'), siteId: field('other-site'),
+      updatedAt: field('2000-01-01T00:00:00.000Z')
+    } });
+  }
+  const readsBeforeCompleted = seoTaskDocumentsRead;
   assert.equal((await seoTaskList({ status: 'completed', deploymentVerificationStatus: 'pending' })).items.length, 1);
+  assert.equal(seoTaskDocumentsRead - readsBeforeCompleted, 1, 'compound publication filter reads only the eligible task');
   assert.equal(seoTaskCollectionScans, scansBeforeCompleted, 'completed+pending publication audit must not scan unrelated Tasks');
+  const readsBeforeFeed = seoTaskDocumentsRead;
+  assert.equal((await seoTaskList({ limit: 3 })).items.length, 3);
+  assert.equal(seoTaskDocumentsRead - readsBeforeFeed, 3, 'unfiltered feed must not read five times the requested count');
+  for (let i = 0; i < 1100; i++) docs.delete(`${root}seoTasks/quota-fixture-${i}`);
   assert.ok(seoTaskStatusQueries.includes('pending'));
   const verifiedTask = await seoTaskUpdate({
     id: readyTask.id,

@@ -56,7 +56,8 @@ try {
   assert.equal((await app.request('/api/remote-articles')).status, 400);
   const response = await app.request('/api/remote-articles?siteId=site-r&limit=50');
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  assert.equal(response.headers.get('vercel-cdn-cache-control'), 'max-age=120, stale-while-revalidate=60');
   const body = await response.json() as { siteId: string; items: Array<Record<string, unknown>> };
   assert.equal(body.siteId, 'site-r');
   assert.equal(body.items.length, 1);

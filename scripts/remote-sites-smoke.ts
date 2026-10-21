@@ -89,7 +89,8 @@ try {
   const { default: app } = await import('../api/remote-sites.js');
   const response = await app.request('/api/remote-sites');
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('cache-control'), 'public, max-age=0, must-revalidate');
+  assert.equal(response.headers.get('vercel-cdn-cache-control'), 'max-age=120, stale-while-revalidate=60');
   const body = await response.json() as { generatedAt: string; sites: Array<Record<string, unknown>> };
   assert.equal(body.sites.length, 1);
   const site = body.sites[0];
