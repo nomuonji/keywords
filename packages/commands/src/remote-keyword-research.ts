@@ -188,13 +188,14 @@ async function recordCacheHit() {
   return mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
 }
 
-function freeProxyProviderForRequest(requestNumber: number): 'reserp' | 'brightdata' {
-  // Keep a 10% safety margin under the two providers' current 5k free tiers.
-  // This budget is local to Keywords Operator and prevents normal automation
-  // from intentionally crossing the configured free allowance.
+function freeProxyProviderForRequest(requestNumber: number): 'auto' | 'brightdata' {
+  // Keep the planned 4,500 + 4,500 request allocations and safety margin.
+  // During the Reserp allocation, let the shared proxy fail over to Bright
+  // Data if Reserp runs out early (for example, from usage outside Keywords).
+  // Once the Reserp allocation is exhausted, route directly to Bright Data.
   const reserpBudget = integerEnv('KEYWORDS_SERP_RESERP_BUDGET', 4500, 0, 5000);
   const brightDataBudget = integerEnv('KEYWORDS_SERP_BRIGHT_DATA_BUDGET', 4500, 0, 5000);
-  if (requestNumber <= reserpBudget) return 'reserp';
+  if (requestNumber <= reserpBudget) return 'auto';
   if (requestNumber <= reserpBudget + brightDataBudget) return 'brightdata';
   throw new Error('Configured free SERP provider budget reached');
 }
