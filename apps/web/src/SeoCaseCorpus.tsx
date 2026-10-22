@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import { AdminDelete } from './AdminDelete';
 import './seo-case-corpus.css';
 
 type Observation = { query: string; position: number | null; title: string; url: string; provider: string; upstreamProvider: string | null; observedAt: string };
@@ -113,7 +114,7 @@ export function SeoCaseCorpus() {
       </div>
       <div className="seoCaseDetail">
         {current ? <>
-          <p className="coreEyebrow">OBSERVED CASE / {current.id.slice(-6)}</p>
+          <p className="coreEyebrow">OBSERVED CASE / {current.id.slice(-6)}</p><AdminDelete kind="seo_case" id={current.id} label={current.domain} onDeleted={()=>{setItems(old=>old.filter(v=>v.id!==current.id));setSelected('');void api<SummaryResponse>(SUMMARY).then(setSummary).catch(()=>undefined);}}/>
           <h2>{current.domain}</h2>
           <p className="seoCaseCaveat">初回収集 {fmt(current.createdAt)} ・ ドメイン登録 {fmt(current.registrationDate)}（{ageText(current)}）</p>
           <div className="seoCaseMarketPanel">
