@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { api } from './api';
 
 type Kind = 'keyword' | 'idea' | 'seo_source' | 'seo_case';
@@ -24,7 +24,7 @@ export function AdminDelete(props:Props) {
     if(result.authenticated)return true;
     setLoginRequired(true);return false;
   }
-  async function login(event:React.FormEvent<HTMLFormElement>) {
+  async function login(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();setBusy(true);setError('');
     try {
       await api(ENDPOINT,{method:'POST',body:JSON.stringify({action:'login',password})});
@@ -59,7 +59,7 @@ export function AdminDelete(props:Props) {
     } catch(e){setPreview(null);setReady(false);setError(e instanceof Error?e.message:'削除できませんでした');}
     finally{setBusy(false);}
   }
-  return <span className="adminDeleteControl">
+  return <div className="adminDeleteControl">
     <button type="button" disabled={busy} onClick={()=>void perform()} aria-label={label}>{busy?'処理中…':preview?'削除 '+preview.deleteCount+'件を確定':label}</button>
     {preview&&<small role="status">全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。ボタンをもう一度押して確定してください。</small>}
     {loginRequired&&<form onSubmit={event=>void login(event)}>
@@ -71,5 +71,5 @@ export function AdminDelete(props:Props) {
       <button type="submit" disabled={busy}>ログイン</button>
     </form>}
     {error&&<small role="alert">{error}</small>}
-  </span>;
+  </div>;
 }
