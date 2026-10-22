@@ -2,10 +2,11 @@ import { useState, type FormEvent } from 'react';
 import { api } from './api';
 
 type Kind = 'keyword' | 'idea' | 'seo_source' | 'seo_case';
-type Props = {kind:Kind; id:string; label:string; revision?:number; onDeleted:()=>void}
-  | {kind:'prune'; keepKeywords:string[]; onDeleted:()=>void};
-type Preview = {deleted:false; preview:{total:number;deleteCount:number;keep:Array<{id:string;keyword:string}>;toDelete:Array<{id:string;keyword:string}>}};
-type Deleted = {deleted:true;count?:number};
+type Target = {id:string;keyword:string};
+type Props =
+  | {kind:Kind;id:string;label:string;revision?:number;onDeleted:()=>void}
+  | {kind:'selected-keywords';targets:Target[];onDeleted:()=>void};
+type Preview = {total:number;deleteCount:number;toDelete:Target[]};
 const ENDPOINT='/api/theme-research';
 
 /** All destructive UI actions share the existing owner-only HttpOnly session. */
@@ -14,10 +15,10 @@ export function AdminDelete(props:Props) {
   const [password,setPassword]=useState('');
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
-  const [preview,setPreview]=useState<Preview['preview']|null>(null);
+  const [preview,setPreview]=useState<Preview|null>(null);
   const [ready,setReady]=useState(false);
-  const isPrune=props.kind==='prune';
-  const label=isPrune?'チェックを外したキーワードを一括削除':'削除';
+  const isBulk=props.kind==='selected-keywords';
+  const label=isBulk?`選択した${props.targets.length}件を削除`:'削除';
 
   async function ensureLogin() {
     const result=await api<{authenticated:boolean}>(ENDPOINT+'?resource=idea-session');
@@ -37,18 +38,24 @@ export function AdminDelete(props:Props) {
     setBusy(true);setError('');
     try {
       if(!ready && !await ensureLogin())return;
-      if(isPrune){
+      if(props.kind==='selected-keywords'){
+        const targets=props.targets.map(x=>({id:x.id,expectedLabel:x.keyword}));
+        if(!targets.length)return;
         if(!preview){
-          const result=await api<Preview>(ENDPOINT,{method:'POST',body:JSON.stringify({
-            action:'prune-keywords',keepKeywords:props.keepKeywords
+          const result=await api<{deleted:false;preview:Preview}>(ENDPOINT,{method:'POST',body:JSON.stringify({
+            action:'delete-selected-keywords',targets
           })});
           setPreview(result.preview);return;
         }
-        if(!window.confirm(preview.deleteCount+'件を削除し、'+preview.keep.map(x=>x.keyword).join('・')+'を残します。削除対象がサイト構想で参照されている場合、その参照も外します（サイト構想そのものは残します）。実行しますか？'))return;
-        await api<Deleted>(ENDPOINT,{method:'POST',body:JSON.stringify({
-          action:'prune-keywords',keepKeywords:props.keepKeywords,expectedDeleteCount:preview.deleteCount
+        if(preview.deleteCount!==targets.length || 
+           preview.toDelete.some(item=>!targets.some(x=>x.id===item.id&&x.expectedLabel===item.keyword))) {
+          setPreview(null);throw new Error('選択内容が変わりました。再度プレビューを確認してください。');
+        }
+        if(!window.confirm(`選択した${preview.deleteCount}件を完全に削除します。削除対象のサイト構想内の参照は外しますが、サイト構想自体は残します。取り消せません。実行しますか？`))return;
+        await api(ENDPOINT,{method:'POST',body:JSON.stringify({
+          action:'delete-selected-keywords',targets,expectedDeleteCount:preview.deleteCount
         })});
-      }else{
+      } else {
         if(!window.confirm('「'+props.label+'」を削除します。元に戻せません。よろしいですか？'))return;
         await api(ENDPOINT,{method:'POST',body:JSON.stringify({
           action:'delete-record',kind:props.kind,id:props.id,expectedLabel:props.label,
@@ -60,8 +67,17 @@ export function AdminDelete(props:Props) {
     finally{setBusy(false);}
   }
   return <div className="adminDeleteControl">
-    <button type="button" disabled={busy||(isPrune&&props.keepKeywords.length===0)} onClick={()=>void perform()} aria-label={label}>{busy?'処理中…':preview?'削除 '+preview.deleteCount+'件を確定':label}</button>
-    {preview&&<div role="status"><small>全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。サイト構想のキーワード参照も必要に応じて解除します。対象を確認後、ボタンをもう一度押して確定してください。</small><details><summary>削除対象{preview.deleteCount}件を確認</summary><div style={{maxHeight:240,overflowY:'auto'}}><ul>{preview.toDelete.map(item=><li key={item.id}>{item.keyword}</li>)}</ul></div></details></div>}
+    <button type="button" disabled={busy||(isBulk&&props.targets.length===0)} onClick={()=>void perform()} aria-label={label}>
+      {busy?'処理中…':preview?`削除${preview.deleteCount}件を確定`:label}
+    </button>
+    {preview&&<div role="status">
+      <small>登録全{preview.total}件中、選択した{preview.deleteCount}件だけを削除します。対象を確認し、もう一度ボタンを押して確定してください。</small>
+      <details><summary>削除対象{preview.deleteCount}件を確認</summary>
+        <div style={{maxHeight:240,overflowY:'auto'}}><ul>
+          {preview.toDelete.map(item=><li key={item.id}>{item.keyword}</li>)}
+        </ul></div>
+      </details>
+    </div>}
     {loginRequired&&<form onSubmit={event=>void login(event)}>
       <label>削除操作には管理者認証が必要です
         <input type="password" autoComplete="current-password" required
