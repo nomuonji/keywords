@@ -44,7 +44,7 @@ export function AdminDelete(props:Props) {
           })});
           setPreview(result.preview);return;
         }
-        if(!window.confirm(preview.deleteCount+'件を削除し、'+preview.keep.map(x=>x.keyword).join('・')+'を残します。実行しますか？'))return;
+        if(!window.confirm(preview.deleteCount+'件を削除し、'+preview.keep.map(x=>x.keyword).join('・')+'を残します。削除対象がサイト構想で参照されている場合、その参照も外します（サイト構想そのものは残します）。実行しますか？'))return;
         await api<Deleted>(ENDPOINT,{method:'POST',body:JSON.stringify({
           action:'prune-keywords',keepKeywords:props.keepKeywords,expectedDeleteCount:preview.deleteCount
         })});
@@ -61,7 +61,7 @@ export function AdminDelete(props:Props) {
   }
   return <div className="adminDeleteControl">
     <button type="button" disabled={busy} onClick={()=>void perform()} aria-label={label}>{busy?'処理中…':preview?'削除 '+preview.deleteCount+'件を確定':label}</button>
-    {preview&&<small role="status">全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。ボタンをもう一度押して確定してください。</small>}
+    {preview&&<small role="status">全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。サイト構想のキーワード参照も必要に応じて解除します。ボタンをもう一度押して確定してください。</small>}
     {loginRequired&&<form onSubmit={event=>void login(event)}>
       <label>削除操作には管理者認証が必要です
         <input type="password" autoComplete="current-password" required
