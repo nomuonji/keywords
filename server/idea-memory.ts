@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
+import { recordDelete, treasuryPrune } from '../packages/commands/src/delete-records.js';
 import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewDetail, ideaReviewList, ideaMemoryPatch } from '../packages/commands/src/idea-memory.js';
 
 const app = new Hono();
@@ -107,6 +108,18 @@ app.post('/api/theme-research', async c => {
     return c.json({ authenticated: false }, 200, { 'cache-control': 'no-store' });
   }
   if (!authenticated(c.req.raw)) return c.json({ error: '認証が必要です。' }, 401);
+  if (input.action === 'delete-record' || input.action === 'prune-keywords') {
+    try {
+      const result = input.action === 'delete-record'
+        ? await recordDelete({kind:input.kind,id:input.id,expectedLabel:input.expectedLabel,...(input.expectedRevision===undefined?{}:{expectedRevision:input.expectedRevision})})
+        : await treasuryPrune({keepKeywords:input.keepKeywords,...(input.expectedDeleteCount===undefined?{}:{expectedDeleteCount:input.expectedDeleteCount})});
+      return c.json(result,200,{'cache-control':'no-store'});
+    } catch (error) {
+      const status=Number((error as {status?:number})?.status);
+      if (status===400 || status===404 || status===409) return c.json({error:(error as Error).message},status);
+      const reason=safeError(error);return c.json({error:reason.error},reason.status);
+    }
+  }
   if (input.action === 'organize') {
     try {
       // Same auth / same-origin boundary as feedback; no public metadata mutation.

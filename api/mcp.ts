@@ -6,6 +6,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import * as z from 'zod/v4';
 // Keep these imports relative: Vercel bundles a root-level serverless function
 // independently of npm workspace links.
+import { recordDelete, recordDeleteShape, treasuryPrune, treasuryPruneShape } from '../packages/commands/src/delete-records.js';
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { marketplaceAdapterCapabilities, marketplaceResearch, supportedMarketplaceAdapters } from '../packages/research/src/marketplace.js';
@@ -252,6 +253,20 @@ function server() {
   mcp.registerTool('seo_source_scan_record', { description: 'Record the result of inspecting one watched source over a time window. Save URL-backed concise finding summaries, relevance, confidence, verification need, and possible evaluator links; do not copy full post bodies.', inputSchema: seoSourceScanRecordShape, annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true } }, async input => structured(await seoSourceScanRecord(input)));
   mcp.registerTool('serp_usage_status', { description: 'Show current-month SERP actual API requests, cache hits, monthly limit, soft limit, reserve, remaining quota and whether normal/forced requests are allowed.', annotations: { readOnlyHint: true } }, async () => structured(await serpUsageStatus()));
   mcp.registerTool('keyword_treasury_search', { description: 'Search Firestore treasury by demand, CPC, competition, opportunity, status, theme/seed, research date and whether a keyword is already linked to any site concept. Old treasury documents remain searchable through compatibility fallbacks.', inputSchema: { query: z.string().optional(), seed: z.string().optional(), status: z.enum(['inbox', 'shortlisted', 'rejected', 'published']).optional(), minVolume: z.number().min(0).optional(), maxVolume: z.number().min(0).optional(), minCpc: z.number().min(0).optional(), maxCpc: z.number().min(0).optional(), minCompetition: z.number().min(0).max(100).optional(), maxCompetition: z.number().min(0).max(100).optional(), minOpportunityScore: z.number().min(0).max(100).optional(), linkedToSite: z.boolean().optional(), researchedAfter: z.string().optional(), researchedBefore: z.string().optional(), sortBy: z.enum(['updatedAt', 'keyword', 'avgMonthlySearches', 'averageCpcMicros', 'competitionIndex', 'opportunityScore']).optional(), sortOrder: z.enum(['asc', 'desc']).optional(), pageToken: z.string().optional(), limit: z.number().int().min(1).max(100).optional() }, annotations: { readOnlyHint: true } }, async input => structured(await treasurySearch(input)));
+  mcp.registerTool('record_delete', { description: 'Permanently remove one exact keyword, canonical idea, SEO source, or SEO site case by ID and confirmed display label. Idea feedback and SEO source scan history remain as audit evidence. Built-in SEO sources are suppressed with a tombstone. This action cannot be undone.', inputSchema: recordDeleteShape, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false } }, async input => structured(await recordDelete(input)));
+  for (const [tool, kind] of [
+    ['keyword_treasury_delete','keyword'],
+    ['idea_memory_delete','idea'],
+    ['seo_source_delete','seo_source'],
+    ['seo_case_delete','seo_case']
+  ] as const) {
+    mcp.registerTool(tool, {
+      description: 'Delete exactly one ' + kind + ' record after verifying its ID and visible label. This operation is irreversible; related historical feedback/scans are not erased.',
+      inputSchema: { id: recordDeleteShape.id, expectedLabel: recordDeleteShape.expectedLabel, expectedRevision: recordDeleteShape.expectedRevision },
+      annotations: { readOnlyHint:false, destructiveHint:true, idempotentHint:false }
+    }, async input => structured(await recordDelete({kind,...input})));
+  }
+  mcp.registerTool('keyword_treasury_prune', { description: 'Preview which keywords will be deleted when keeping an explicit list of exact keyword names. First call without expectedDeleteCount; supply returned deleteCount to commit. Rejects linked keywords and changed counts. Destructive.', inputSchema: treasuryPruneShape, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false } }, async input => structured(await treasuryPrune(input)));
   mcp.registerTool('site_structure_patch', { description: 'Incrementally edit a site concept without resending the full nodes/links arrays. Supports add/update/remove node, add/remove link, and link/unlink keyword operations with optimistic revision control.', inputSchema: siteStructurePatchShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async input => structured(await siteStructurePatch(input)));
   mcp.registerTool('keyword_screen_batch', { description: 'Low-cost first-stage screening. Fetch Google Ads demand for up to 50 keywords and return criteria-passing keywords plus a deterministic shortlist recommended for later SERP checks. This tool never calls SERP.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), criteria: z.object(keywordScreenCriteriaShape).strict().optional(), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
     const demand = await demandWithFallback(input);
