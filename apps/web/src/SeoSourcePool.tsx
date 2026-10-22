@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api';
+import { AdminDelete } from './AdminDelete';
 
 type Finding = {
   url: string;
@@ -92,7 +93,7 @@ export function SeoSourcePool() {
 
       <section className="coreSection sourcePoolDetail">
         {current ? <>
-          <div className="coreSectionHead"><div><p className="coreEyebrow">{current.sourceType}</p><h2>{current.label}</h2></div><a href={current.canonicalUrl} target="_blank" rel="noreferrer">元ソース ↗</a></div>
+          <div className="coreSectionHead"><div><p className="coreEyebrow">{current.sourceType}</p><h2>{current.label}</h2></div><div><a href={current.canonicalUrl} target="_blank" rel="noreferrer">元ソース ↗</a><AdminDelete kind="seo_source" id={current.id} label={current.label} onDeleted={()=>{setContext(old=>old?{...old,items:old.items.filter(v=>v.id!==current.id),dueSourceIds:old.dueSourceIds.filter(id=>id!==current.id),recentUsefulFindings:old.recentUsefulFindings.filter(v=>v.sourceId!==current.id)}:null);setSelected('');}}/></div></div>
           <dl className="sourceMeta">
             <div><dt>WHY WATCH</dt><dd>{current.whyWatch}</dd></div>
             <div><dt>TRUST BOUNDARY</dt><dd>{current.trustNotes}</dd></div>
