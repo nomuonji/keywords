@@ -91,13 +91,27 @@ export async function treasuryPrune(input:unknown) {
   if(args.expectedDeleteCount!==remove.length)error('Treasury changed: preview again',409);
   if(remove.length>400)error('Bulk deletion limited to 400 records',400);
   const linked=await treasurySearch({linkedToSite:true,limit:100});
-  if(linked.nextPageToken||linked.truncated||remove.some(x=>linked.items.some(v=>v.id===x.id)))
-    error('Linked keywords must be unlinked before deletion',409);
+  if(linked.nextPageToken||linked.truncated)error('Cannot verify all keyword links',409);
+  const removingIds=new Set(remove.map(x=>x.id));
+  const affectedIds=[...new Set(linked.items.filter(x=>removingIds.has(x.id)).flatMap(x=>x.linkedSiteConceptIds))];
+  const structures=await Promise.all(affectedIds.map(async structureId=>{
+    const doc=await read('siteStructures/'+structureId);
+    if(!doc)error('Linked site structure disappeared; reload',409);
+    const old=decode(doc);
+    const nodes=(old.nodes??[]).map((node:any)=>({
+      ...node,
+      keywordIds:(node.keywordIds??[]).filter((id:string)=>!removingIds.has(id)),
+      keywordRoles:Object.fromEntries(Object.entries(node.keywordRoles??{}).filter(([id])=>!removingIds.has(id)))
+    }));
+    const updated={...old,nodes,revision:Number(old.revision??0)+1,updatedAt:new Date().toISOString()};
+    return {update:{name:docName('siteStructures/'+structureId),fields:Object.fromEntries(Object.entries(updated).map(([key,item])=>[key,field(item)]))},currentDocument:{updateTime:doc.updateTime}};
+  }));
   if(!remove.length)return {deleted:true,count:0,kept:preview.keep};
   const tracked=audit('keyword_prune',remove.map(v=>({id:v.id,label:v.keyword})));
   await firestore(':commit',{method:'POST',body:JSON.stringify({writes:[
+    ...structures,
     ...remove.map(x=>({delete:docName('keywordTreasury/'+x.id),currentDocument:{exists:true}})),
     tracked.write
   ]})});
-  return {deleted:true,count:remove.length,kept:preview.keep,runId:tracked.runId};
+  return {deleted:true,count:remove.length,kept:preview.keep,detachedSiteStructures:affectedIds,runId:tracked.runId};
 }
