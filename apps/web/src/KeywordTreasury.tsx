@@ -7,7 +7,7 @@ const label:Record<string,string>={inbox:'受信箱',shortlisted:'有望',reject
 
 export function KeywordTreasury(){
   const [items,setItems]=useState<Item[]>([]);
-  const [selectedIds,setSelectedIds]=useState<string[]>([]);
+  const [selectedTargets,setSelectedTargets]=useState<Array<{id:string;keyword:string}>>([]);
   const [status,setStatus]=useState('');
   const [query,setQuery]=useState('');
   const [loading,setLoading]=useState(true);
@@ -21,21 +21,19 @@ export function KeywordTreasury(){
       const path=local?`/keyword-treasury?${params}`:`/api/treasury?${params}`;
       const next=await api<Item[]>(path);
       setItems(next);
-      setSelectedIds(old=>old.filter(id=>next.some(item=>item.id===id)));
     }catch(e){setError(e instanceof Error?e.message:'共有ストックを取得できませんでした');}
     finally{setLoading(false);}
   };
   useEffect(()=>{void load();},[status]);
   const visible=useMemo(()=>items.filter(item=>!query||`${item.keyword} ${item.seed??''} ${item.notes??''}`.toLowerCase().includes(query.toLowerCase())),[items,query]);
-  const selected=new Set(selectedIds);
+  const selected=new Set(selectedTargets.map(item=>item.id));
   const allVisibleSelected=visible.length>0&&visible.every(item=>selected.has(item.id));
-  const toggleSelected=(id:string,checked:boolean)=>setSelectedIds(old=>checked?[...new Set([...old,id])]:old.filter(value=>value!==id));
-  const selectVisible=()=>setSelectedIds(old=>[...new Set([...old,...visible.map(item=>item.id)])]);
-  const clearSelected=()=>setSelectedIds([]);
+  const toggleSelected=(item:Item,checked:boolean)=>setSelectedTargets(old=>checked?(old.some(target=>target.id===item.id)?old:[...old,{id:item.id,keyword:item.keyword}]):old.filter(target=>target.id!==item.id));
+  const selectVisible=()=>setSelectedTargets(old=>[...old,...visible.filter(item=>!old.some(target=>target.id===item.id)).map(item=>({id:item.id,keyword:item.keyword}))]);
+  const clearSelected=()=>setSelectedTargets([]);
   const toggleAllVisible=(checked:boolean)=>checked?selectVisible():
-    setSelectedIds(old=>old.filter(id=>!visible.some(item=>item.id===id)));
+    setSelectedTargets(old=>old.filter(item=>!visible.some(shown=>shown.id===item.id)));
   const afterDelete=()=>{clearSelected();void load();};
-  const selectedTargets=items.filter(item=>selected.has(item.id)).map(item=>({id:item.id,keyword:item.keyword}));
   const selectedKey=selectedTargets.map(x=>x.id).sort().join('|');
 
   return <section className="treasuryView">
@@ -48,9 +46,9 @@ export function KeywordTreasury(){
     </div>
     <div className="treasurySelection">
       <strong>削除するキーワードを選択</strong>
-      <p>チェックしたキーワードだけを削除します。検索中の「全選択」は表示中の行だけが対象です。</p>
+      <p>チェックしたキーワードだけを削除します。検索中の「全選択」は表示中の行だけが対象です。選択した行は別の状態に絞り込んでも保持します。</p>
       <div className="coreToolbar">
-        <span aria-live="polite">選択中：{selectedIds.length}件</span>
+        <span aria-live="polite">選択中：{selectedTargets.length}件</span>
         <button type="button" onClick={selectVisible} disabled={!visible.length||allVisibleSelected}>全選択（表示中）</button>
         <button type="button" onClick={clearSelected} disabled={!selectedIds.length}>選択解除（全件）</button>
       </div>
@@ -75,14 +73,14 @@ export function KeywordTreasury(){
           </tr></thead>
           <tbody>{visible.map(item=><tr key={item.id}>
             <td><input type="checkbox" aria-label={`「${item.keyword}」を削除対象に選択`}
-              checked={selected.has(item.id)} onChange={e=>toggleSelected(item.id,e.target.checked)}/></td>
+              checked={selected.has(item.id)} onChange={e=>toggleSelected(item,e.target.checked)}/></td>
             <td><b>{item.keyword}</b>{item.seed&&<small>seed: {item.seed}</small>}</td>
             <td><span className={`statusPill ${item.status??'inbox'}`}>{label[item.status??'inbox']??item.status}</span></td>
             <td>{item.volume??'—'}{item.competition!=null&&<small>{String(item.competition)}</small>}</td>
             <td><span>allintitle {item.allintitle??'—'}</span><small>SERP弱さ {item.serpWeakness??'—'}</small></td>
             <td>{item.notes||'—'}</td>
             <td>{item.updatedAt?new Intl.DateTimeFormat('ja-JP',{dateStyle:'short',timeStyle:'short'}).format(new Date(item.updatedAt)) :'—'}</td>
-            <td><AdminDelete kind="keyword" id={item.id} label={item.keyword} onDeleted={()=>{setSelectedIds(old=>old.filter(id=>id!==item.id));setItems(old=>old.filter(v=>v.id!==item.id));}}/></td>
+            <td><AdminDelete kind="keyword" id={item.id} label={item.keyword} onDeleted={()=>{setSelectedTargets(old=>old.filter(target=>target.id!==item.id));setItems(old=>old.filter(v=>v.id!==item.id));}}/></td>
           </tr>)}</tbody>
         </table>
         {!visible.length&&<p className="coreEmpty">保存済みの候補はありません。</p>}
