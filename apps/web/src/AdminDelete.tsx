@@ -17,7 +17,7 @@ export function AdminDelete(props:Props) {
   const [preview,setPreview]=useState<Preview['preview']|null>(null);
   const [ready,setReady]=useState(false);
   const isPrune=props.kind==='prune';
-  const label=isPrune?'指定したキーワード以外を一括削除':'削除';
+  const label=isPrune?'チェックを外したキーワードを一括削除':'削除';
 
   async function ensureLogin() {
     const result=await api<{authenticated:boolean}>(ENDPOINT+'?resource=idea-session');
@@ -60,8 +60,8 @@ export function AdminDelete(props:Props) {
     finally{setBusy(false);}
   }
   return <div className="adminDeleteControl">
-    <button type="button" disabled={busy} onClick={()=>void perform()} aria-label={label}>{busy?'処理中…':preview?'削除 '+preview.deleteCount+'件を確定':label}</button>
-    {preview&&<small role="status">全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。サイト構想のキーワード参照も必要に応じて解除します。ボタンをもう一度押して確定してください。</small>}
+    <button type="button" disabled={busy||(isPrune&&props.keepKeywords.length===0)} onClick={()=>void perform()} aria-label={label}>{busy?'処理中…':preview?'削除 '+preview.deleteCount+'件を確定':label}</button>
+    {preview&&<div role="status"><small>全{preview.total}件中、削除予定{preview.deleteCount}件／残す{preview.keep.map(x=>x.keyword).join('・')}。サイト構想のキーワード参照も必要に応じて解除します。対象を確認後、ボタンをもう一度押して確定してください。</small><details><summary>削除対象{preview.deleteCount}件を確認</summary><div style={{maxHeight:240,overflowY:'auto'}}><ul>{preview.toDelete.map(item=><li key={item.id}>{item.keyword}</li>)}</ul></div></details></div>}
     {loginRequired&&<form onSubmit={event=>void login(event)}>
       <label>削除操作には管理者認証が必要です
         <input type="password" autoComplete="current-password" required
