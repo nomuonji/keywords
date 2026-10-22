@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Hono } from 'hono';
-import { recordDelete, treasuryPrune } from '../packages/commands/src/delete-records.js';
+import { recordDelete, treasuryPrune, treasuryDeleteSelected } from '../packages/commands/src/delete-records.js';
 import { ideaFeedbackAppend, ideaMemoryFeedbackProfile, ideaReviewDetail, ideaReviewList, ideaMemoryPatch } from '../packages/commands/src/idea-memory.js';
 
 const app = new Hono();
@@ -108,11 +108,13 @@ app.post('/api/theme-research', async c => {
     return c.json({ authenticated: false }, 200, { 'cache-control': 'no-store' });
   }
   if (!authenticated(c.req.raw)) return c.json({ error: '認証が必要です。' }, 401);
-  if (input.action === 'delete-record' || input.action === 'prune-keywords') {
+  if (input.action === 'delete-record' || input.action === 'prune-keywords' || input.action === 'delete-selected-keywords') {
     try {
       const result = input.action === 'delete-record'
         ? await recordDelete({kind:input.kind,id:input.id,expectedLabel:input.expectedLabel,...(input.expectedRevision===undefined?{}:{expectedRevision:input.expectedRevision})})
-        : await treasuryPrune({keepKeywords:input.keepKeywords,...(input.expectedDeleteCount===undefined?{}:{expectedDeleteCount:input.expectedDeleteCount})});
+        : input.action === 'delete-selected-keywords'
+          ? await treasuryDeleteSelected({targets:input.targets,...(input.expectedDeleteCount===undefined?{}:{expectedDeleteCount:input.expectedDeleteCount})})
+          : await treasuryPrune({keepKeywords:input.keepKeywords,...(input.expectedDeleteCount===undefined?{}:{expectedDeleteCount:input.expectedDeleteCount})});
       return c.json(result,200,{'cache-control':'no-store'});
     } catch (error) {
       const status=Number((error as {status?:number})?.status);
