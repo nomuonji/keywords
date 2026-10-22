@@ -115,3 +115,67 @@ export async function treasuryPrune(input:unknown) {
   ]})});
   return {deleted:true,count:remove.length,kept:preview.keep,detachedSiteStructures:affectedIds,runId:tracked.runId};
 }
+
+
+export const treasuryDeleteSelectedShape = {
+  targets: z.array(z.object({
+    id: z.string().regex(/^[a-f0-9]{32}$/),
+    expectedLabel: z.string().min(1).max(500)
+  }).strict()).min(1).max(100),
+  expectedDeleteCount: z.number().int().min(1).max(100).optional()
+};
+
+/** Delete only explicitly selected keyword IDs, never the inverse of a selection. */
+export async function treasuryDeleteSelected(input: unknown) {
+  const args = z.object(treasuryDeleteSelectedShape).strict().parse(input);
+  const targetIds = new Set(args.targets.map(target => target.id));
+  if (targetIds.size !== args.targets.length) error('Duplicate selected keyword IDs',400);
+
+  const all: Array<{id:string;keyword:string}> = [];
+  let next: string | undefined, truncated = false;
+  for (let page=0;page<20;page++) {
+    const result = await treasurySearch({limit:100,sortBy:'keyword',sortOrder:'asc',pageToken:next});
+    all.push(...result.items.map(item=>({id:item.id,keyword:item.keyword})));
+    truncated ||= result.truncated;
+    next = result.nextPageToken ?? undefined;
+    if (!next) break;
+  }
+  if (truncated || next) error('Cannot verify the full treasury selection',409);
+  const byId = new Map(all.map(item=>[item.id,item]));
+  for (const target of args.targets) {
+    const record = byId.get(target.id);
+    if (!record || norm(record.keyword) !== norm(target.expectedLabel)) {
+      error('Selected keyword has changed or disappeared; reload',409);
+    }
+  }
+  const toDelete = args.targets.map(target => byId.get(target.id)!);
+  const preview = {total:all.length,deleteCount:toDelete.length,toDelete};
+  if (args.expectedDeleteCount === undefined) return {deleted:false,preview};
+  if (args.expectedDeleteCount !== toDelete.length) error('Selection changed: preview again',409);
+
+  const linked = await treasurySearch({linkedToSite:true,limit:100});
+  if (linked.nextPageToken || linked.truncated) error('Cannot verify all site keyword links',409);
+  const affectedIds = [...new Set(linked.items.filter(item=>targetIds.has(item.id)).flatMap(item=>item.linkedSiteConceptIds))];
+  const structures = await Promise.all(affectedIds.map(async structureId=>{
+    const doc = await read('siteStructures/'+structureId);
+    if (!doc) error('Linked site structure disappeared; reload',409);
+    const old = decode(doc);
+    const nodes = (old.nodes??[]).map((node:any)=>({
+      ...node,
+      keywordIds:(node.keywordIds??[]).filter((id:string)=>!targetIds.has(id)),
+      keywordRoles:Object.fromEntries(Object.entries(node.keywordRoles??{}).filter(([id])=>!targetIds.has(id)))
+    }));
+    const updated = {...old,nodes,revision:Number(old.revision??0)+1,updatedAt:new Date().toISOString()};
+    return {update:{name:docName('siteStructures/'+structureId),
+      fields:Object.fromEntries(Object.entries(updated).map(([key,item])=>[key,field(item)]))},
+      currentDocument:{updateTime:doc.updateTime}};
+  }));
+
+  const tracked = audit('keyword_delete_selected',toDelete.map(item=>({id:item.id,label:item.keyword})));
+  await firestore(':commit',{method:'POST',body:JSON.stringify({writes:[
+    ...structures,
+    ...toDelete.map(item=>({delete:docName('keywordTreasury/'+item.id),currentDocument:{exists:true}})),
+    tracked.write
+  ]})});
+  return {deleted:true,count:toDelete.length,detachedSiteStructures:affectedIds,runId:tracked.runId};
+}
