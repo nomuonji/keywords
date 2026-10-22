@@ -50,7 +50,7 @@ export function KeywordTreasury(){
       <div className="coreToolbar">
         <span aria-live="polite">選択中：{selectedTargets.length}件</span>
         <button type="button" onClick={selectVisible} disabled={!visible.length||allVisibleSelected}>全選択（表示中）</button>
-        <button type="button" onClick={clearSelected} disabled={!selectedIds.length}>選択解除（全件）</button>
+        <button type="button" onClick={clearSelected} disabled={!selectedTargets.length}>選択解除（全件）</button>
       </div>
     </div>
     <div className="coreToolbar">
