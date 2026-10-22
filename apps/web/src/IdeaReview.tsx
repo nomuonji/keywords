@@ -426,7 +426,7 @@ export function IdeaReview() {
             <p>{short(item.informationMechanism,mode==='cards'?100:72)}</p>
             <small>{short(item.userTask,66)}</small>
           </div>
-          {ratingButtons(item)}
+          <div>{ratingButtons(item)}<AdminDelete kind="idea" id={item.id} label={item.title} revision={item.revision} onDeleted={()=>setIdeas(old=>old.filter(v=>v.id!==item.id))}/></div>
         </article>)}
         {visible.length === 0 && !loading && <p className="ideaReviewEmpty">条件に一致するアイデアはありません。検索・評価状態を変えてください。</p>}
         {loading && ideas.length === 0 && <p className="ideaReviewEmpty" role="status">アイデアを読み込み中…</p>}
