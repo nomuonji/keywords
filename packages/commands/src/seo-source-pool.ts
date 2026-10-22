@@ -123,7 +123,7 @@ async function allSources() {
   const storedDocs = await listCollection('seoSourceAccounts');
   const stored = storedDocs.map((doc: any) => normalizeSource(parseDoc<SeoSource>(doc)));
   const byId = new Map(BUILTIN_SOURCES.map(item => [item.id, normalizeSource(item)]));
-  for (const item of stored) byId.set(item.id, item);
+  for (const item of stored) { if ((item as SeoSource & { deletedAt?: string }).deletedAt) byId.delete(item.id); else byId.set(item.id, item); }
   return [...byId.values()];
 }
 
