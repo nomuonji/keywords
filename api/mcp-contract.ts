@@ -49,5 +49,9 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'seo_case_get',
   'seo_case_summary',
   'record_delete',
+  'keyword_treasury_delete',
+  'idea_memory_delete',
+  'seo_source_delete',
+  'seo_case_delete',
   'keyword_treasury_prune'
 ] as const;
