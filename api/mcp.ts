@@ -42,6 +42,8 @@ import { trendArticleResearch, trendArticleResearchShape } from '../packages/com
 import { marketProductDiscovery, marketProductDiscoveryShape } from '../packages/commands/src/market-product-discovery.js';
 import { trafficRouteDiscovery, trafficRouteDiscoveryShape } from '../packages/commands/src/traffic-route-discovery.js';
 import { distributionCaseDiscovery, distributionCaseDiscoveryShape } from '../packages/commands/src/distribution-case-discovery.js';
+import { bingKeywordStatsCommand, bingKeywordStatsShape, censoredKeywordDemandEstimate, censoredKeywordDemandEstimateShape } from '../packages/commands/src/censored-keyword-demand.js';
+import { bingKeywordStatsConfiguration } from '../packages/research/src/bing-keyword-stats.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
@@ -124,6 +126,7 @@ function runtimeStatus() {
       directFallback: googleAdsDirectLastError ? 'last_attempt_failed' : 'unknown_or_last_attempt_succeeded'
     },
     serpQuotaConfiguration: serpQuotaConfiguration(),
+    bingKeywordStats: bingKeywordStatsConfiguration(),
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
       capabilities: marketplaceAdapterCapabilities()
@@ -266,6 +269,18 @@ function server() {
       annotations: { readOnlyHint:false, destructiveHint:true, idempotentHint:false }
     }, async input => structured(await recordDelete({kind,...input})));
   }
+  mcp.registerTool('bing_keyword_stats', {
+    description: 'Bing Webmaster keyword research: Bing-wide weekly impressions and a monthly conversion for up to 50 keywords, via the nomuonji/api proxy. Works for adult terms that Google Ads returns as 0. Bing-only and desktop-heavy in Japan; use censored_keyword_demand_estimate to convert to Google scale. Read-only, saves nothing.',
+    inputSchema: bingKeywordStatsShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await bingKeywordStatsCommand(input)));
+  mcp.registerTool('censored_keyword_demand_estimate', {
+    description: 'Estimate Google-scale monthly searches for keywords Google Ads withholds (returns 0), typically adult terms such as 風俗 / デリヘル / ソープランド. Fetches Google Ads (adult included) for targets and anchors, Bing Webmaster impressions, and calibrates Google/Bing ratios separately for head and modified terms. Optional gscSiteId adds own-site GSC calibration from top-position queries (impressions ≈ searches, lower bound). Returns low/mid/high, the basis, leave-one-out anchor error and a recommended value with its source. Read-only, saves nothing.',
+    inputSchema: censoredKeywordDemandEstimateShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await censoredKeywordDemandEstimate(input, {
+    demand: keywords => demandWithFallback({ keywords, includeAdultKeywords: true, languageConstant: input.languageConstant, geoTargetConstants: input.geoTargetConstants })
+  })));
   mcp.registerTool('keyword_treasury_prune', { description: 'Preview which keywords will be deleted when keeping an explicit list of exact keyword names. First call without expectedDeleteCount; supply returned deleteCount to commit. Rejects linked keywords and changed counts. Destructive.', inputSchema: treasuryPruneShape, annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false } }, async input => structured(await treasuryPrune(input)));
   mcp.registerTool('site_structure_patch', { description: 'Incrementally edit a site concept without resending the full nodes/links arrays. Supports add/update/remove node, add/remove link, and link/unlink keyword operations with optimistic revision control.', inputSchema: siteStructurePatchShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async input => structured(await siteStructurePatch(input)));
   mcp.registerTool('keyword_screen_batch', { description: 'Low-cost first-stage screening. Fetch Google Ads demand for up to 50 keywords and return criteria-passing keywords plus a deterministic shortlist recommended for later SERP checks. This tool never calls SERP.', inputSchema: { keywords: z.array(z.string().min(1)).min(1).max(50), criteria: z.object(keywordScreenCriteriaShape).strict().optional(), languageConstant: z.string().optional(), geoTargetConstants: z.array(z.string()).optional(), includeAdultKeywords: z.boolean().optional() } }, async input => {
