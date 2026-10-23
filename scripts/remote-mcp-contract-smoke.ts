@@ -63,9 +63,11 @@ assert.deepEqual([...KEYWORDS_MCP_TOOL_NAMES], [
   'idea_memory_delete',
   'seo_source_delete',
   'seo_case_delete',
-  'keyword_treasury_prune'
+  'keyword_treasury_prune',
+  'bing_keyword_stats',
+  'censored_keyword_demand_estimate'
 ]);
-assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 53);
+assert.equal(KEYWORDS_MCP_TOOL_NAMES.length, 55);
 
 assert.equal(googleAdsMonthNumber('JANUARY'), 1);
 assert.equal(googleAdsMonthNumber('SEPTEMBER'), 9);
