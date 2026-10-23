@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-23",
-  "generatedAt": "2026-10-22T22:49:10.908Z",
+  "date": "2026-10-24",
+  "generatedAt": "2026-10-23T22:41:09.080Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,11 +14,19 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 76
+    "historicObservations": 83
   },
   "warnings": [
     {
-      "genreId": "101736",
+      "genreId": "112919",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "101114",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "100001",
       "reason": "unsupported_subgenre"
     },
     {
@@ -26,19 +34,11 @@
       "reason": "Rakuten upstream HTTP 400"
     },
     {
-      "genreId": "112824",
+      "genreId": "210908",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "111427",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "112919",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "101114",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -4829,6 +4829,433 @@
         "previousDate": "2026-10-22",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "551177",
+      "rootName": "メンズファッション",
+      "genreId": "409065",
+      "genreName": "学生服",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "working:10000628",
+          "rank": 1
+        },
+        {
+          "itemCode": "kanko:10000554",
+          "rank": 2
+        },
+        {
+          "itemCode": "catch:10000021",
+          "rank": 3
+        },
+        {
+          "itemCode": "tombow-school:10000168",
+          "rank": 4
+        },
+        {
+          "itemCode": "catch:10000336",
+          "rank": 5
+        },
+        {
+          "itemCode": "working:10000017",
+          "rank": 6
+        },
+        {
+          "itemCode": "kanko:10000045",
+          "rank": 7
+        },
+        {
+          "itemCode": "working:10000577",
+          "rank": 8
+        },
+        {
+          "itemCode": "nishikishop:10009898",
+          "rank": 9
+        },
+        {
+          "itemCode": "1bangai:10000326",
+          "rank": 10
+        },
+        {
+          "itemCode": "kanko:10000573",
+          "rank": 11
+        },
+        {
+          "itemCode": "working:10000479",
+          "rank": 12
+        },
+        {
+          "itemCode": "classroom:10001329",
+          "rank": 13
+        },
+        {
+          "itemCode": "catch:10000285",
+          "rank": 14
+        },
+        {
+          "itemCode": "miniyama:10005378",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "100939",
+      "rootName": "美容・コスメ・香水",
+      "genreId": "111120",
+      "genreName": "香水・フレグランス",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "hallofbeauty:10000003",
+          "rank": 1
+        },
+        {
+          "itemCode": "premium-grancosme:10000013",
+          "rank": 2
+        },
+        {
+          "itemCode": "ftk-tsutayaelectrics:10000318",
+          "rank": 3
+        },
+        {
+          "itemCode": "jomalone:10000752",
+          "rank": 4
+        },
+        {
+          "itemCode": "shopen:10000810",
+          "rank": 5
+        },
+        {
+          "itemCode": "besba:10004499",
+          "rank": 6
+        },
+        {
+          "itemCode": "osharecafe:10034995",
+          "rank": 7
+        },
+        {
+          "itemCode": "cosmeparfaite:10013350",
+          "rank": 8
+        },
+        {
+          "itemCode": "tomfordbeauty:10000180",
+          "rank": 9
+        },
+        {
+          "itemCode": "wish:10065782",
+          "rank": 10
+        },
+        {
+          "itemCode": "aiambeauty:10000020",
+          "rank": 11
+        },
+        {
+          "itemCode": "homelove:10002003",
+          "rank": 12
+        },
+        {
+          "itemCode": "osharecafe:10011916",
+          "rank": 13
+        },
+        {
+          "itemCode": "wish:10013976",
+          "rank": 14
+        },
+        {
+          "itemCode": "brilliantworld:10001499",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "101213",
+      "rootName": "ペット・ペットグッズ",
+      "genreId": "565699",
+      "genreName": "小動物用品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "mapet:10003327",
+          "rank": 1
+        },
+        {
+          "itemCode": "nyanzaq:10175524",
+          "rank": 2
+        },
+        {
+          "itemCode": "dog-kan:10196326",
+          "rank": 3
+        },
+        {
+          "itemCode": "extolevel:10000156",
+          "rank": 4
+        },
+        {
+          "itemCode": "thinkrich:10237243",
+          "rank": 5
+        },
+        {
+          "itemCode": "rakuten24:11301044",
+          "rank": 6
+        },
+        {
+          "itemCode": "mapet:10005598",
+          "rank": 7
+        },
+        {
+          "itemCode": "petpet:10006145",
+          "rank": 8
+        },
+        {
+          "itemCode": "coco-gourmet:10000101",
+          "rank": 9
+        },
+        {
+          "itemCode": "mapet:10003261",
+          "rank": 10
+        },
+        {
+          "itemCode": "chanet:10915571",
+          "rank": 11
+        },
+        {
+          "itemCode": "kh02:10005965",
+          "rank": 12
+        },
+        {
+          "itemCode": "bokuso:10000005",
+          "rank": 13
+        },
+        {
+          "itemCode": "chanet:11166658",
+          "rank": 14
+        },
+        {
+          "itemCode": "rakuten24:11352674",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "100227",
+      "rootName": "食品",
+      "genreId": "569294",
+      "genreName": "プラントベースフード",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "puapu-online:10003146",
+          "rank": 1
+        },
+        {
+          "itemCode": "greens-gc:10011496",
+          "rank": 2
+        },
+        {
+          "itemCode": "greens-gc:10016671",
+          "rank": 3
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "510915",
+      "rootName": "ビール・洋酒",
+      "genreId": "510915",
+      "genreName": "ビール・洋酒",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "soukaidrink:10009211",
+          "rank": 1
+        },
+        {
+          "itemCode": "soukaidrink:10005932",
+          "rank": 2
+        },
+        {
+          "itemCode": "soukaidrink:10006624",
+          "rank": 3
+        },
+        {
+          "itemCode": "liquor-boss:10003265",
+          "rank": 4
+        },
+        {
+          "itemCode": "tutuigura:10000446",
+          "rank": 5
+        },
+        {
+          "itemCode": "soukaidrink:10005897",
+          "rank": 6
+        },
+        {
+          "itemCode": "soukaidrink:10008511",
+          "rank": 7
+        },
+        {
+          "itemCode": "mywineclub:10013980",
+          "rank": 8
+        },
+        {
+          "itemCode": "champagnehouse:10004571",
+          "rank": 9
+        },
+        {
+          "itemCode": "soukaidrink:10007378",
+          "rank": 10
+        },
+        {
+          "itemCode": "soukaidrink:10005933",
+          "rank": 11
+        },
+        {
+          "itemCode": "soukaidrink:10005900",
+          "rank": 12
+        },
+        {
+          "itemCode": "beer-the-world:10002021",
+          "rank": 13
+        },
+        {
+          "itemCode": "soukaidrink:10007381",
+          "rank": 14
+        },
+        {
+          "itemCode": "ricaoh:10030538",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-17",
+        "sameItemCount": 8,
+        "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-23",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-24",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Fri, 23 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 1
+        },
+        {
+          "itemCode": "rcmdse:16734980",
+          "rank": 2
+        },
+        {
+          "itemCode": "e-kurashi:10052401",
+          "rank": 3
+        },
+        {
+          "itemCode": "fa-fe:10002779",
+          "rank": 4
+        },
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 5
+        },
+        {
+          "itemCode": "koshinohonpo:10047158",
+          "rank": 6
+        },
+        {
+          "itemCode": "kounotorinodvd:10008684",
+          "rank": 7
+        },
+        {
+          "itemCode": "kotsubame:10000218",
+          "rank": 8
+        },
+        {
+          "itemCode": "rcmdse:17012232",
+          "rank": 9
+        },
+        {
+          "itemCode": "farson:10007690",
+          "rank": 10
+        },
+        {
+          "itemCode": "bearhomes:10358639",
+          "rank": 11
+        },
+        {
+          "itemCode": "kounotorinodvd:10007805",
+          "rank": 12
+        },
+        {
+          "itemCode": "rcmdse:16512348",
+          "rank": 13
+        },
+        {
+          "itemCode": "a-price:11220733",
+          "rank": 14
+        },
+        {
+          "itemCode": "cocoiine:10000262",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-23",
+        "sameItemCount": 3,
+        "denominator": 15
       }
     }
   ]
