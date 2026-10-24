@@ -44,6 +44,7 @@ import {
   siteIndexationSnapshotSave, siteIndexationSnapshotSaveShape,
   siteIndexationSummary, siteIndexationSummaryShape
 } from '../packages/commands/src/site-indexation.js';
+import { siteSitemapStatus, siteSitemapStatusShape } from '../packages/commands/src/site-sitemap-submission.js';
 import {
   optimizationEvaluationContext,
   optimizationEvaluationContextShape,
@@ -215,6 +216,16 @@ function server() {
   mcp.registerTool('site_indexation_list', { description: 'List current per-URL indexation cache records for one site. This reads cached observations and never calls Google.', inputSchema: siteIndexationListShape, annotations: { readOnlyHint: true } }, async input => structured(await siteIndexationList(input)));
   mcp.registerTool('site_indexation_summary', { description: 'Aggregate the current URL cache into site and page-family indexation coverage, indexed/not-indexed observations, due counts and the shared property quota status. This never calls Google.', inputSchema: siteIndexationSummaryShape, annotations: { readOnlyHint: true } }, async input => structured(await siteIndexationSummary(input)));
   mcp.registerTool('site_indexation_snapshot_save', { description: 'Persist one overwrite-style weekly site/page-family indexation summary. Re-running within the same UTC week replaces the same snapshot slot rather than appending URL-level history.', inputSchema: siteIndexationSnapshotSaveShape, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async input => structured(await siteIndexationSnapshotSave(input)));
+  mcp.registerTool('site_sitemap_status', { description: 'Read the latest Search Console sitemap submission state per site (discovered sitemap URLs, URL/lastmod counts, last submission by the scheduled operator, and what Search Console reported). Submission itself runs only in the credentialed daily GitHub Actions lane; this read never calls Google.', inputSchema: siteSitemapStatusShape, annotations: { readOnlyHint: true } }, async input => structured(await siteSitemapStatus(input, async () => {
+    const sites: any[] = [];
+    let pageToken: string | undefined;
+    do {
+      const page = await siteRegistryList({ status: 'active', limit: 100, ...(pageToken ? { pageToken } : {}) }) as any;
+      sites.push(...page.items.filter((site: any) => site.searchConsoleProperty));
+      pageToken = page.nextPageToken ?? undefined;
+    } while (pageToken);
+    return sites;
+  })));
   mcp.registerTool('seo_planning_digest_get', { description: 'Read the latest compact 7d/28d/90d article-planning digest for one managed site. Analytics acquisition is externalized and this read never calls Google.', inputSchema: seoPlanningDigestGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestGet(input)));
   mcp.registerTool('seo_planning_digest_list', { description: 'List freshness and coverage summaries for compact site planning digests without returning all article rows.', inputSchema: seoPlanningDigestListShape, annotations: { readOnlyHint: true } }, async input => structured(await seoPlanningDigestList(input)));
   mcp.registerTool('seo_task_get', { description: 'Read one persisted SEO task with implementation evidence, execution claim lease, separate deployment-verification state, and execution history. GitHub Issue links are optional historical references.', inputSchema: seoTaskGetShape, annotations: { readOnlyHint: true } }, async input => structured(await seoTaskGet(input)));

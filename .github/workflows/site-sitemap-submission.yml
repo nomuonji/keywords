@@ -1,0 +1,68 @@
+# Search Console sitemap (re)submission for registered sites.
+#
+# A sitemap is resubmitted only when Google has no record of it, its URL set
+# or lastmod values changed, Google reported errors, or the floor (7 days)
+# elapsed. Submission needs owner/full-user access on the Search Console
+# property for the service account and uses the full webmasters scope.
+name: site-sitemap-submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Resubmit every reachable sitemap regardless of changes'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Decide and report only (no submission, no Firestore write)'
+        type: boolean
+        default: false
+      site_ids:
+        description: 'Comma-separated site IDs (empty = all active sites)'
+        type: string
+        default: ''
+  schedule:
+    # 05:41 JST, after the 04:17 indexation sweep and away from 02:23 measurement.
+    - cron: '41 20 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-sitemap-submission
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITEMAP_SUBMIT_FORCE: ${{ inputs.force && 'true' || 'false' }}
+      SITEMAP_SUBMIT_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
+      SITEMAP_SUBMIT_SITE_IDS: ${{ inputs.site_ids }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Write Google service account file
+        shell: bash
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}
+        run: |
+          if [ -z "$GOOGLE_APPLICATION_CREDENTIALS_JSON" ]; then
+            echo "GOOGLE_APPLICATION_CREDENTIALS secret is empty"
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/google-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
+
+      - name: Submit changed or due sitemaps
+        run: npx tsx scripts/site-sitemap-submission.ts

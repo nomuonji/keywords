@@ -635,18 +635,22 @@ export function searchConsoleCredentialsConfigured(): boolean {
   return Boolean(accessToken?.trim() || process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || searchConsoleRefreshCredentials());
 }
 
-let serviceAccountCache: { path: string; modifiedAt: number; token: string; expiresAt: number } | null = null;
-async function serviceAccountAccessToken() {
+const SEARCH_CONSOLE_READ_SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
+/** Full scope is requested only by the sitemap submission path; analytics and URL Inspection stay read-only. */
+const SEARCH_CONSOLE_WRITE_SCOPE = 'https://www.googleapis.com/auth/webmasters';
+const serviceAccountCaches = new Map<string, { path: string; modifiedAt: number; token: string; expiresAt: number }>();
+async function serviceAccountAccessToken(scope = SEARCH_CONSOLE_READ_SCOPE) {
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
   if (!credentialsPath) return null;
   const modifiedAt = statSync(credentialsPath).mtimeMs;
+  const serviceAccountCache = serviceAccountCaches.get(scope);
   if (serviceAccountCache?.path === credentialsPath && serviceAccountCache.modifiedAt === modifiedAt && serviceAccountCache.expiresAt > Date.now()) return serviceAccountCache.token;
   const credentials = JSON.parse(readFileSync(credentialsPath, 'utf8')) as { client_email?: string; private_key?: string };
   if (!credentials.client_email || !credentials.private_key) throw new Error('Google service account JSON is missing client_email or private_key');
   const now = Math.floor(Date.now() / 1000);
   const encode = (value: string) => Buffer.from(value).toString('base64url');
   const header = encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
-  const claim = encode(JSON.stringify({ iss: credentials.client_email, scope: 'https://www.googleapis.com/auth/webmasters.readonly', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
+  const claim = encode(JSON.stringify({ iss: credentials.client_email, scope, aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 }));
   const signer = createSign('RSA-SHA256');
   signer.update(`${header}.${claim}`);
   const assertion = `${header}.${claim}.${signer.sign(credentials.private_key, 'base64url')}`;
@@ -658,14 +662,14 @@ async function serviceAccountAccessToken() {
   });
   const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
   if (!response.ok || !body.access_token) throw new Error(`Google service account token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
-  serviceAccountCache = { path: credentialsPath, modifiedAt, token: body.access_token, expiresAt: Date.now() + 50 * 60_000 };
+  serviceAccountCaches.set(scope, { path: credentialsPath, modifiedAt, token: body.access_token, expiresAt: Date.now() + 50 * 60_000 });
   return body.access_token;
 }
 
-async function searchConsoleAccessToken() {
+async function searchConsoleAccessToken(options: { write?: boolean } = {}) {
   const configured = process.env.GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN ?? process.env.GOOGLE_OAUTH_ACCESS_TOKEN;
   if (configured) return configured;
-  const serviceAccountToken = await serviceAccountAccessToken();
+  const serviceAccountToken = await serviceAccountAccessToken(options.write ? SEARCH_CONSOLE_WRITE_SCOPE : SEARCH_CONSOLE_READ_SCOPE);
   if (serviceAccountToken) return serviceAccountToken;
   const credentials = searchConsoleRefreshCredentials();
   if (!credentials) throw new Error('Search Console OAuth credentials are required (GOOGLE_SEARCH_CONSOLE_ACCESS_TOKEN or GOOGLE_SEARCH_CONSOLE_REFRESH_TOKEN plus client credentials)');
@@ -678,4 +682,67 @@ async function searchConsoleAccessToken() {
   const body = await response.json() as { access_token?: string; error?: string; error_description?: string };
   if (!response.ok || !body.access_token) throw new Error(`Search Console OAuth token exchange failed: ${body.error_description ?? body.error ?? `HTTP ${response.status}`}`);
   return body.access_token;
+}
+
+export type SearchConsoleSitemap = {
+  path: string;
+  lastSubmitted: string | null;
+  lastDownloaded: string | null;
+  isPending: boolean;
+  isSitemapsIndex: boolean;
+  errors: number;
+  warnings: number;
+  submittedUrls: number | null;
+};
+
+function assertWithinSearchConsoleProperty(siteUrl: string, target: URL) {
+  if (siteUrl.startsWith('sc-domain:')) {
+    const host = siteUrl.slice('sc-domain:'.length).toLowerCase();
+    if (target.hostname !== host && !target.hostname.endsWith(`.${host}`)) throw new Error('URL is outside the Search Console property');
+    return;
+  }
+  const property = new URL(siteUrl);
+  if (property.origin !== target.origin || !target.pathname.startsWith(property.pathname)) throw new Error('URL is outside the Search Console property');
+}
+
+/** Read the sitemaps Google has on record for one property (submitted by any owner of that property). */
+export async function searchConsoleSitemapsList(siteUrl: string): Promise<SearchConsoleSitemap[]> {
+  const accessToken = await searchConsoleAccessToken();
+  const raw = await jsonRequest<{ sitemap?: any[] }>(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`, {
+    headers: { authorization: `Bearer ${accessToken}` }
+  });
+  return (raw.sitemap ?? []).filter(row => typeof row?.path === 'string').map(row => {
+    const submitted = Array.isArray(row.contents)
+      ? row.contents.reduce((sum: number, item: any) => sum + (Number.isFinite(Number(item?.submitted)) ? Number(item.submitted) : 0), 0)
+      : null;
+    return {
+      path: String(row.path),
+      lastSubmitted: typeof row.lastSubmitted === 'string' ? row.lastSubmitted : null,
+      lastDownloaded: typeof row.lastDownloaded === 'string' ? row.lastDownloaded : null,
+      isPending: Boolean(row.isPending),
+      isSitemapsIndex: Boolean(row.isSitemapsIndex),
+      errors: Number(row.errors ?? 0) || 0,
+      warnings: Number(row.warnings ?? 0) || 0,
+      submittedUrls: submitted
+    };
+  });
+}
+
+/** Submit (or resubmit) one sitemap. Requires an owner/full-user grant on the property and the full webmasters scope. */
+export async function searchConsoleSitemapSubmit(input: { siteUrl: string; feedpath: string }): Promise<void> {
+  const target = new URL(input.feedpath);
+  if (target.protocol !== 'https:' && target.protocol !== 'http:') throw new Error('Sitemap URL must use http or https');
+  if (target.username || target.password || target.hash) throw new Error('Sitemap URL must not contain credentials or a fragment');
+  assertWithinSearchConsoleProperty(input.siteUrl, target);
+  await assertSafePublicUrl(target);
+  const accessToken = await searchConsoleAccessToken({ write: true });
+  const response = await fetch(`https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(input.siteUrl)}/sitemaps/${encodeURIComponent(target.toString())}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+  });
+  if (!response.ok) {
+    const body = (await response.text()).slice(0, 2_000);
+    throw new Error(`HTTP ${response.status} from Search Console sitemaps.submit: ${body}`);
+  }
 }
