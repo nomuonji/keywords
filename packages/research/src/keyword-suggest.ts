@@ -46,6 +46,9 @@ export type KeywordSuggestResult = {
   ads: unknown;
   bing: unknown;
   volumes: unknown;
+  seedVolumes: unknown;
+  effectiveExpand: string | null;
+  position: string | null;
   suggestions: KeywordSuggestion[];
 };
 
@@ -119,6 +122,9 @@ export async function keywordSuggest(input: KeywordSuggestInput, fetcher: typeof
     ads: body?.ads ?? null,
     bing: body?.bing ?? null,
     volumes: body?.volumes ?? null,
+    seedVolumes: body?.seedVolumes ?? null,
+    effectiveExpand: typeof body?.effectiveExpand === 'string' ? body.effectiveExpand : null,
+    position: typeof body?.position === 'string' ? body.position : null,
     suggestions
   };
 }

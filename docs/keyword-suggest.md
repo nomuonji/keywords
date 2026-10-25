@@ -15,8 +15,10 @@
 - `modifierPreset: "intent_ja"` は「後悔・代わり・何歳から・捨て方・一人暮らし」など、シード中心の調査で漏れやすい状況語を付けて展開する。英語は `intent_en`。
 - 結果は重複を統合し、複数ソース→多くの接頭辞から出た順→サジェスト順位で並ぶ。`hits` は何本の接頭辞からその語が出たか。
 - `includeVolumes: true` でAdsの月間検索数を付与（最大1000語）。`"auto"` はAdsで測れない語（成人向け等）を最大40語Bingの表示回数で補う。`volumeSource` で出どころが分かる（Bingの値はGoogle検索数ではない）。
+- `includeVolumes` 指定時は `seedVolumes` にシード自体の検索数（`"auto"` ならAdsが0のシードをBingで補う）。
 - 全行に `matchesSeed`（シードを含むか）。Bing関連語の `false` 行は隣接テーマ・ブランド。
 - SERPプロキシが `degraded: true`（0件・別検索の結果）を返した場合、Keywords側はその結果をキャッシュせず、`analysis.limitations` に `DEGRADED SERP` を付ける。
+- SERPプロキシは1回25秒の時間予算で動き、超えると `503 serp_timeout`、全プロバイダの無料枠切れは `503 serp_quota_exhausted`。無料枠は Reserp が月の無料分、Bright Data が月5,000件。Keywords の `serp_research` は月9,000件（Reserp 4,500 → Bright Data 4,500）を配分しているが、`/api/serp-search` を直接叩いた分はこのカウンタに入らない。
 
 ## 注意
 
