@@ -247,10 +247,11 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   const now = nowIso();
   const expiresAt = new Date(Date.now() + config.cacheTtlDays * 24 * 60 * 60 * 1000).toISOString();
   const createdAt = cached?.createdAt ?? now;
-  await firestore(`/serpCache/${cacheId}`, { method: 'PATCH', body: JSON.stringify({ fields: fields({ id: cacheId, cacheKey, query: args.query, country: args.country ?? null, language: args.language ?? null, location: args.location ?? null, provider, num, fetchedAt: snapshot.fetchedAt, expiresAt, snapshot, analysis, createdAt, updatedAt: now }) }) });
+  // A degraded SERP (empty or off-query) is returned but never cached, so the next call refetches.
+  if (!snapshot.degraded) await firestore(`/serpCache/${cacheId}`, { method: 'PATCH', body: JSON.stringify({ fields: fields({ id: cacheId, cacheKey, query: args.query, country: args.country ?? null, language: args.language ?? null, location: args.location ?? null, provider, num, fetchedAt: snapshot.fetchedAt, expiresAt, snapshot, analysis, createdAt, updatedAt: now }) }) });
   // The atomic reservation returned the quota state; another point read
   // here would amplify Firestore reads without changing request admission.
-  return { ...snapshot, analysis, cache: { hit: false, cacheId, fetchedAt: snapshot.fetchedAt, expiresAt }, usage: summarizeSerpUsage(reservedUsage) };
+  return { ...snapshot, analysis, cache: { hit: false, cacheId: snapshot.degraded ? null : cacheId, fetchedAt: snapshot.fetchedAt, expiresAt: snapshot.degraded ? null : expiresAt }, usage: summarizeSerpUsage(reservedUsage) };
 }
 
 function sessionId() { return `rs-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`; }
