@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-25",
-  "generatedAt": "2026-10-24T21:58:54.305Z",
+  "date": "2026-10-26",
+  "generatedAt": "2026-10-25T22:06:56.975Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,9 +14,17 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 90
+    "historicObservations": 97
   },
   "warnings": [
+    {
+      "genreId": "567846",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "111427",
+      "reason": "Rakuten upstream HTTP 400"
+    },
     {
       "genreId": "304564",
       "reason": "unsupported_subgenre"
@@ -26,24 +34,12 @@
       "reason": "Rakuten upstream HTTP 400"
     },
     {
-      "genreId": "112824",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "111427",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "100004",
+      "genreId": "101972",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "101954",
-      "reason": "unsupported_subgenre"
     }
   ],
   "observations": [
@@ -5731,6 +5727,433 @@
         "previousDate": "2026-10-24",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "562637",
+      "rootName": "家電",
+      "genreId": "566694",
+      "genreName": "家電セット",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "trefac-f:10000006",
+          "rank": 1
+        },
+        {
+          "itemCode": "aisuta:10000025",
+          "rank": 2
+        },
+        {
+          "itemCode": "nitori:10330283",
+          "rank": 3
+        },
+        {
+          "itemCode": "enetroom:10183391",
+          "rank": 4
+        },
+        {
+          "itemCode": "enetroom:10183384",
+          "rank": 5
+        },
+        {
+          "itemCode": "e-kurashi:10045746",
+          "rank": 6
+        },
+        {
+          "itemCode": "enetroom:10196798",
+          "rank": 7
+        },
+        {
+          "itemCode": "kaguin:10102541",
+          "rank": 8
+        },
+        {
+          "itemCode": "kurashikenkou:10233097",
+          "rank": 9
+        },
+        {
+          "itemCode": "b-surprise2:10099103",
+          "rank": 10
+        },
+        {
+          "itemCode": "enetroom:10177190",
+          "rank": 11
+        },
+        {
+          "itemCode": "k-home:10092696",
+          "rank": 12
+        },
+        {
+          "itemCode": "takarabuneweb:10023235",
+          "rank": 13
+        },
+        {
+          "itemCode": "trefac-f:10000098",
+          "rank": 14
+        },
+        {
+          "itemCode": "trefac-f:10000104",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "564500",
+      "rootName": "スマートフォン・タブレット",
+      "genreId": "566886",
+      "genreName": "VRゴーグル",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "auc-worldichi:10025761",
+          "rank": 1
+        },
+        {
+          "itemCode": "meta:10000028",
+          "rank": 2
+        },
+        {
+          "itemCode": "meta:10000017",
+          "rank": 3
+        },
+        {
+          "itemCode": "ec-current:12786245",
+          "rank": 4
+        },
+        {
+          "itemCode": "uriurishop:10000839",
+          "rank": 5
+        },
+        {
+          "itemCode": "tokka-com:10994617",
+          "rank": 6
+        },
+        {
+          "itemCode": "kaden-paradise:10001829",
+          "rank": 7
+        },
+        {
+          "itemCode": "e-wellness:10218397",
+          "rank": 8
+        },
+        {
+          "itemCode": "janpara:10901546",
+          "rank": 9
+        },
+        {
+          "itemCode": "yamada-denki:10638052",
+          "rank": 10
+        },
+        {
+          "itemCode": "yamada-denki:10707475",
+          "rank": 11
+        },
+        {
+          "itemCode": "tanaka-denki:10081772",
+          "rank": 12
+        },
+        {
+          "itemCode": "meta:10000027",
+          "rank": 13
+        },
+        {
+          "itemCode": "thinkrich:10239413",
+          "rank": 14
+        },
+        {
+          "itemCode": "vr-electronicsten:10000051",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "100371",
+      "rootName": "レディースファッション",
+      "genreId": "555087",
+      "genreName": "コート・ジャケット",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "meri:10001265",
+          "rank": 1
+        },
+        {
+          "itemCode": "darkangel:10033494",
+          "rank": 2
+        },
+        {
+          "itemCode": "sljapan1:10005524",
+          "rank": 3
+        },
+        {
+          "itemCode": "cocacoca:10020089",
+          "rank": 4
+        },
+        {
+          "itemCode": "antiqua-a:10033153",
+          "rank": 5
+        },
+        {
+          "itemCode": "urs-me:10005444",
+          "rank": 6
+        },
+        {
+          "itemCode": "cocacoca:10024309",
+          "rank": 7
+        },
+        {
+          "itemCode": "hhh-style:10029731",
+          "rank": 8
+        },
+        {
+          "itemCode": "otheshop:10000004",
+          "rank": 9
+        },
+        {
+          "itemCode": "classical:10018361",
+          "rank": 10
+        },
+        {
+          "itemCode": "darkangel:10036957",
+          "rank": 11
+        },
+        {
+          "itemCode": "classical:10014977",
+          "rank": 12
+        },
+        {
+          "itemCode": "antiqua-a:10032734",
+          "rank": 13
+        },
+        {
+          "itemCode": "momentplus:10000413",
+          "rank": 14
+        },
+        {
+          "itemCode": "stylife:15871853",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "100533",
+      "rootName": "キッズ・ベビー・マタニティ",
+      "genreId": "101828",
+      "genreName": "その他",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "pigeon-shop:10002111",
+          "rank": 1
+        },
+        {
+          "itemCode": "pigeon-shop:10002402",
+          "rank": 2
+        },
+        {
+          "itemCode": "stylife:15201820",
+          "rank": 3
+        },
+        {
+          "itemCode": "selectshopkonoha:10001220",
+          "rank": 4
+        },
+        {
+          "itemCode": "pigeon-shop:10002401",
+          "rank": 5
+        },
+        {
+          "itemCode": "ohtashoji:10000017",
+          "rank": 6
+        },
+        {
+          "itemCode": "pigeon-shop:10002386",
+          "rank": 7
+        },
+        {
+          "itemCode": "adorable-closet:10000029",
+          "rank": 8
+        },
+        {
+          "itemCode": "pigeon-shop:10002278",
+          "rank": 9
+        },
+        {
+          "itemCode": "ohtashoji:10000075",
+          "rank": 10
+        },
+        {
+          "itemCode": "airie:10000224",
+          "rank": 11
+        },
+        {
+          "itemCode": "anika-baby:10000003",
+          "rank": 12
+        },
+        {
+          "itemCode": "selectshopkonoha:10000026",
+          "rank": 13
+        },
+        {
+          "itemCode": "pigeon-shop:10002481",
+          "rank": 14
+        },
+        {
+          "itemCode": "pigeon-shop:10002479",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "200162",
+      "rootName": "本・雑誌・コミック",
+      "genreId": "200098",
+      "genreName": "新聞",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "asagaku:10000000",
+          "rank": 1
+        },
+        {
+          "itemCode": "asagaku:10000003",
+          "rank": 2
+        },
+        {
+          "itemCode": "asagaku:10000001",
+          "rank": 3
+        },
+        {
+          "itemCode": "asagaku:10000004",
+          "rank": 4
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-25",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-26",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sun, 25 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 1
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 2
+        },
+        {
+          "itemCode": "farson:10007690",
+          "rank": 3
+        },
+        {
+          "itemCode": "souplesse:10001478",
+          "rank": 4
+        },
+        {
+          "itemCode": "hemukichi:10011480",
+          "rank": 5
+        },
+        {
+          "itemCode": "akindo:10186975",
+          "rank": 7
+        },
+        {
+          "itemCode": "ksdenki:10533568",
+          "rank": 8
+        },
+        {
+          "itemCode": "supplystore:10001086",
+          "rank": 9
+        },
+        {
+          "itemCode": "tantan:13364417",
+          "rank": 10
+        },
+        {
+          "itemCode": "e-kurashi:10052401",
+          "rank": 11
+        },
+        {
+          "itemCode": "superdeal:10005737",
+          "rank": 12
+        },
+        {
+          "itemCode": "fa-fe:10002665",
+          "rank": 13
+        },
+        {
+          "itemCode": "pykespeak:10002416",
+          "rank": 14
+        },
+        {
+          "itemCode": "phoenix:10000347",
+          "rank": 15
+        },
+        {
+          "itemCode": "kounotorinodvd:10008469",
+          "rank": 16
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-25",
+        "sameItemCount": 3,
+        "denominator": 15
       }
     }
   ]
