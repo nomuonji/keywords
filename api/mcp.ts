@@ -278,7 +278,7 @@ function server() {
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await bingKeywordStatsCommand(input)));
   mcp.registerTool('keyword_suggest', {
-    description: 'Expand 1-5 seed keywords into how people actually phrase searches: Google and/or YouTube autocomplete expanded with kana / alphabet suffixes and optional intent modifiers (modifierPreset intent_ja: 後悔, 代わり, 何歳から, 捨て方 ...; intent_en: alternative, worth it, regret ...), merged and ranked by how many prefixes produced each phrase. Add sources ["ads"] for Google Ads Keyword Planner ideas, includeVolumes for Ads monthly searches. Autocomplete is an unofficial public endpoint (no volume, may be rate limited). Read-only, saves nothing; save chosen candidates with keyword_treasury_save.',
+    description: 'Expand 1-5 seed keywords into how people actually phrase searches: Google and/or YouTube autocomplete expanded with kana / alphabet suffixes and optional intent modifiers (modifierPreset intent_ja: 後悔, 代わり, 何歳から, 捨て方 ...; intent_en: alternative, worth it, regret ...), merged and ranked by how many prefixes produced each phrase. Add sources ["ads"] for Google Ads Keyword Planner ideas and ["bing"] for Bing Webmaster related keywords with Bing-wide impressions (bingMonthlyImpressions; adult terms are not withheld); includeVolumes adds Ads monthly searches. Autocomplete is an unofficial public endpoint (no volume, may be rate limited). Read-only, saves nothing; save chosen candidates with keyword_treasury_save.',
     inputSchema: keywordSuggestShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await keywordSuggestCommand(input)));

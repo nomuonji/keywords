@@ -5,7 +5,8 @@ const keywordText = z.string().trim().min(1).max(200);
 
 export const keywordSuggestShape = {
   seeds: z.array(keywordText).min(1).max(5),
-  sources: z.array(z.enum(['google', 'youtube', 'ads'])).min(1).max(3).default(['google']),
+  sources: z.array(z.enum(['google', 'youtube', 'ads', 'bing'])).min(1).max(4).default(['google']),
+  bingDays: z.number().int().min(7).max(180).optional(),
   expand: z.enum(['none', 'kana', 'alphabet', 'full']).optional(),
   modifierPreset: z.enum(['intent_ja', 'intent_en']).optional(),
   modifiers: z.array(keywordText).max(50).optional(),
@@ -21,7 +22,7 @@ export const keywordSuggestShape = {
 export async function keywordSuggestCommand(input: unknown, deps: { suggest?: (input: KeywordSuggestInput) => Promise<KeywordSuggestResult> } = {}) {
   const { minHits, limit, ...args } = z.object(keywordSuggestShape).strict().parse(input);
   const result = await (deps.suggest ?? keywordSuggest)(args);
-  const filtered = result.suggestions.filter(row => row.hits >= minHits || row.sources.includes('ads'));
+  const filtered = result.suggestions.filter(row => row.hits >= minHits || row.sources.includes('ads') || row.sources.includes('bing'));
   return {
     ...result,
     totalBeforeFilter: result.suggestions.length,
