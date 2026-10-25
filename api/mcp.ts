@@ -44,6 +44,8 @@ import { trafficRouteDiscovery, trafficRouteDiscoveryShape } from '../packages/c
 import { distributionCaseDiscovery, distributionCaseDiscoveryShape } from '../packages/commands/src/distribution-case-discovery.js';
 import { bingKeywordStatsCommand, bingKeywordStatsShape, censoredKeywordDemandEstimate, censoredKeywordDemandEstimateShape } from '../packages/commands/src/censored-keyword-demand.js';
 import { bingKeywordStatsConfiguration } from '../packages/research/src/bing-keyword-stats.js';
+import { keywordSuggestConfiguration } from '../packages/research/src/keyword-suggest.js';
+import { keywordSuggestCommand, keywordSuggestShape } from '../packages/commands/src/keyword-suggest.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 
 const app = new Hono();
@@ -127,6 +129,7 @@ function runtimeStatus() {
     },
     serpQuotaConfiguration: serpQuotaConfiguration(),
     bingKeywordStats: bingKeywordStatsConfiguration(),
+    keywordSuggest: keywordSuggestConfiguration(),
     marketplaceResearch: {
       supportedMarketplaces: supportedMarketplaceAdapters(),
       capabilities: marketplaceAdapterCapabilities()
@@ -274,6 +277,11 @@ function server() {
     inputSchema: bingKeywordStatsShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await bingKeywordStatsCommand(input)));
+  mcp.registerTool('keyword_suggest', {
+    description: 'Expand 1-5 seed keywords into how people actually phrase searches: Google and/or YouTube autocomplete expanded with kana / alphabet suffixes and optional intent modifiers (modifierPreset intent_ja: 後悔, 代わり, 何歳から, 捨て方 ...; intent_en: alternative, worth it, regret ...), merged and ranked by how many prefixes produced each phrase. Add sources ["ads"] for Google Ads Keyword Planner ideas, includeVolumes for Ads monthly searches. Autocomplete is an unofficial public endpoint (no volume, may be rate limited). Read-only, saves nothing; save chosen candidates with keyword_treasury_save.',
+    inputSchema: keywordSuggestShape,
+    annotations: { readOnlyHint: true, openWorldHint: true }
+  }, async input => structured(await keywordSuggestCommand(input)));
   mcp.registerTool('censored_keyword_demand_estimate', {
     description: 'Estimate Google-scale monthly searches for keywords Google Ads withholds (returns 0), typically adult terms such as 風俗 / デリヘル / ソープランド. Fetches Google Ads (adult included) for targets and anchors, Bing Webmaster impressions, and calibrates Google/Bing ratios separately for head and modified terms. Optional gscSiteId adds own-site GSC calibration from top-position queries (impressions ≈ searches, lower bound). Returns low/mid/high, the basis, leave-one-out anchor error and a recommended value with its source. Read-only, saves nothing.',
     inputSchema: censoredKeywordDemandEstimateShape,
