@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.24.0';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.25.0';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',
@@ -55,5 +55,6 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'seo_case_delete',
   'keyword_treasury_prune',
   'bing_keyword_stats',
-  'censored_keyword_demand_estimate'
+  'censored_keyword_demand_estimate',
+  'keyword_suggest'
 ] as const;
