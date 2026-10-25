@@ -8,6 +8,7 @@
 - `sources`
   - `google` / `youtube`: Googleの公開オートコンプリート（非公式エンドポイント）。シード＋`expand`（`kana`=あ〜わ、`alphabet`=a〜z、`full`=両方＋数字）＋`modifiers`で展開する。
   - `ads`: Google Ads Keyword Plannerの `generateKeywordIdeas`。検索数付き。
+  - `bing`: Bing Webmasterの `GetRelatedKeywords`。Bing全体の表示回数（`bingMonthlyImpressions`、`bingDays`で集計日数）。アダルト系も伏せられない。
 - `modifierPreset: "intent_ja"` は「後悔・代わり・何歳から・捨て方・一人暮らし」など、シード中心の調査で漏れやすい状況語を付けて展開する。英語は `intent_en`。
 - 結果は重複を統合し、複数ソース→多くの接頭辞から出た順→サジェスト順位で並ぶ。`hits` は何本の接頭辞からその語が出たか。
 - `includeVolumes: true` でAdsの月間検索数を付与（最大1000語）。
