@@ -9,9 +9,14 @@
   - `google` / `youtube`: Googleの公開オートコンプリート（非公式エンドポイント）。シード＋`expand`（`kana`=あ〜わ、`alphabet`=a〜z、`full`=両方＋数字）＋`modifiers`で展開する。
   - `ads`: Google Ads Keyword Plannerの `generateKeywordIdeas`。検索数付き。
   - `bing`: Bing Webmasterの `GetRelatedKeywords`。Bing全体の表示回数（`bingMonthlyImpressions`、`bingDays`で集計日数）。アダルト系も伏せられない。
+- `position: "before" | "both"`（または `expand: "pre"`）で「＿ シード」の前付けも補完する（地名・人名・原因が拾える。Googleのみ）。
+- サジェストの予算は1回400要求。基本→文字展開→修飾語の順に全シードへ均等に割り当て、落ちた分は `autocomplete.skippedByTier` / `skippedBySeed` に出る。
+- `adsMatch`（既定 `seed`）でシードを含まないAdsアイデアを落とす。
 - `modifierPreset: "intent_ja"` は「後悔・代わり・何歳から・捨て方・一人暮らし」など、シード中心の調査で漏れやすい状況語を付けて展開する。英語は `intent_en`。
 - 結果は重複を統合し、複数ソース→多くの接頭辞から出た順→サジェスト順位で並ぶ。`hits` は何本の接頭辞からその語が出たか。
-- `includeVolumes: true` でAdsの月間検索数を付与（最大1000語）。
+- `includeVolumes: true` でAdsの月間検索数を付与（最大1000語）。`"auto"` はAdsで測れない語（成人向け等）を最大40語Bingの表示回数で補う。`volumeSource` で出どころが分かる（Bingの値はGoogle検索数ではない）。
+- 全行に `matchesSeed`（シードを含むか）。Bing関連語の `false` 行は隣接テーマ・ブランド。
+- SERPプロキシが `degraded: true`（0件・別検索の結果）を返した場合、Keywords側はその結果をキャッシュせず、`analysis.limitations` に `DEGRADED SERP` を付ける。
 
 ## 注意
 

@@ -174,6 +174,9 @@ export interface SerpSnapshot {
   provider: 'api' | 'brave' | 'serper';
   upstreamProvider?: 'reserp' | 'brightdata' | null;
   warnings?: string[];
+  /** Proxy judged the SERP broken (zero results or results that never mention the query). */
+  degraded?: boolean;
+  attempts?: number | null;
   fetchedAt: string;
 }
 
@@ -240,6 +243,8 @@ async function searchApiProxy(input: {
     provider: 'api',
     upstreamProvider,
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map((item: any) => String(item)) : [],
+    degraded: raw.degraded === true,
+    attempts: Number.isFinite(Number(raw.attempts)) ? Number(raw.attempts) : null,
     fetchedAt: typeof raw.fetchedAt === 'string' ? raw.fetchedAt : new Date().toISOString()
   };
 }
@@ -322,7 +327,7 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   // More weak/forum/stale results can indicate an addressable gap; exact-title
   // saturation reduces it. Result-count prevents an incomplete response scoring highly.
   const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
-  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' ? ['Brave results are not Google rankings.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
+  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' ? ['Brave results are not Google rankings.'] : []), ...(snapshot.degraded ? ['DEGRADED SERP: the provider returned zero results or results that do not mention the query (likely another search). Do not use for competitor judgement; retry later.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
 }
 
 export interface GoogleAdsKeywordIdea {

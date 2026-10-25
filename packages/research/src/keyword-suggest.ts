@@ -12,6 +12,8 @@ export type KeywordSuggestion = {
   via: string[];
   avgMonthlySearches?: number | null;
   bingMonthlyImpressions?: number | null;
+  volumeSource?: 'google_ads' | 'bing' | null;
+  matchesSeed?: boolean;
   competitionIndex?: number | null;
   competitionLevel?: string | null;
 };
@@ -19,10 +21,12 @@ export type KeywordSuggestion = {
 export type KeywordSuggestInput = {
   seeds: string[];
   sources?: KeywordSuggestSource[];
-  expand?: 'none' | 'kana' | 'alphabet' | 'full';
+  expand?: 'none' | 'kana' | 'alphabet' | 'full' | 'pre';
+  position?: 'after' | 'before' | 'both';
+  adsMatch?: 'seed' | 'any';
   modifierPreset?: 'intent_ja' | 'intent_en';
   modifiers?: string[];
-  includeVolumes?: boolean;
+  includeVolumes?: boolean | 'auto';
   bingDays?: number;
   hl?: string;
   gl?: string;
@@ -41,6 +45,7 @@ export type KeywordSuggestResult = {
   autocomplete: unknown;
   ads: unknown;
   bing: unknown;
+  volumes: unknown;
   suggestions: KeywordSuggestion[];
 };
 
@@ -79,6 +84,8 @@ function normalizeSuggestion(raw: any): KeywordSuggestion | null {
     via: (Array.isArray(raw.via) ? raw.via : []).filter((item: unknown): item is string => typeof item === 'string').slice(0, 3),
     ...(raw.avgMonthlySearches !== undefined ? { avgMonthlySearches: numeric(raw.avgMonthlySearches) } : {}),
     ...(raw.bingMonthlyImpressions !== undefined ? { bingMonthlyImpressions: numeric(raw.bingMonthlyImpressions) } : {}),
+    ...(raw.volumeSource === 'google_ads' || raw.volumeSource === 'bing' || raw.volumeSource === null ? { volumeSource: raw.volumeSource } : {}),
+    ...(typeof raw.matchesSeed === 'boolean' ? { matchesSeed: raw.matchesSeed } : {}),
     ...(raw.competitionIndex !== undefined ? { competitionIndex: numeric(raw.competitionIndex) } : {}),
     ...(raw.competitionLevel !== undefined ? { competitionLevel: typeof raw.competitionLevel === 'string' ? raw.competitionLevel : null } : {})
   };
@@ -111,6 +118,7 @@ export async function keywordSuggest(input: KeywordSuggestInput, fetcher: typeof
     autocomplete: body?.autocomplete ?? null,
     ads: body?.ads ?? null,
     bing: body?.bing ?? null,
+    volumes: body?.volumes ?? null,
     suggestions
   };
 }
