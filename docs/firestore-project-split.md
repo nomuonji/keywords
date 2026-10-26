@@ -34,6 +34,13 @@ Everything else stays in the legacy project, now the Keywords project:
   they silently stay in the Keywords project (still working, but on the
   Keywords budget).
 
+## Build-time tests
+
+`npm run build` runs its Firestore smoke tests through
+`scripts/without-sites-firestore-env.mjs`, which strips the `SITES_*`
+variables so the deterministic doubles never inherit the deployment's live
+routing settings.
+
 ## Configuration
 
 | Where | Name | Value |
@@ -45,6 +52,14 @@ Everything else stays in the legacy project, now the Keywords project:
 
 `SITES_FIRESTORE_TARGET=sites` without Sites credentials fails every Sites
 request loudly instead of silently writing to the legacy project.
+
+**Interlock.** The flag alone never moves traffic onto an empty project. Sites
+requests keep using the legacy project until the migration's `copy` has
+finished, which it records in the Sites project at
+`_migrations/sites-firestore-split` (for exactly this source/target pair).
+Each process checks that record at most once a minute while waiting, then
+switches by itself and never switches back. So the flag can be set before,
+during or after the copy; the actual cutover is the moment the copy finishes.
 `remote_sites_status` and `remote_keyword_status` expose `firestoreRouting`
 (mode, both project ids, no secrets).
 
@@ -63,10 +78,12 @@ Run the **Sites Firestore migration** workflow (`workflow_dispatch`).
    stored in the Sites project at `_migrations/sites-firestore-split`.
    Legacy `sites/{id}/indexationUrls` rows already folded into an
    `indexationBundle` are not copied (they are only read when no bundle
-   exists). Refused once copy finished (unless `restart`) or once
-   `SITES_FIRESTORE_TARGET=sites`.
-3. Cutover — set `SITES_FIRESTORE_TARGET=sites` in Vercel (redeploy) and as a
-   GitHub Actions variable.
+   exists). Refused once the copy has finished (that record is the cutover; redoing
+   the copy would overwrite live data — use `delta`). `restart` only restarts
+   an unfinished copy.
+3. Cutover — needs `SITES_FIRESTORE_TARGET=sites` in Vercel (redeploy) and as
+   a GitHub Actions variable. If it is already set, cutover happens on its own
+   within about a minute of the copy finishing.
 4. `delta` — re-reads the legacy project and brings over everything that
    changed there since the copy started (writes made before every writer
    switched): creates, updates and deletes. A document that changed in both
