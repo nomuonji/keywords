@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { decideSitemapSubmission, parseRobotsSitemaps, parseSitemapXml, sitemapFingerprint } from '../packages/commands/src/site-sitemap-submission.js';
+import { decideBingSubmission, matchBingSite, parseBingDate } from '../packages/commands/src/bing-sitemap-submission.js';
 import { SITES_MCP_TOOL_NAMES } from '../api/sites-mcp-contract.js';
 
 // robots.txt parsing
@@ -37,6 +38,23 @@ assert.deepEqual(decideSitemapSubmission({ ...base, stored: null, gsc: { lastSub
 assert.deepEqual(decideSitemapSubmission({ ...base, canSubmit: false, stored: null, gsc: null }), { submit: false, reason: 'permission_insufficient' });
 assert.deepEqual(decideSitemapSubmission({ ...base, content: { ok: false, fingerprint: null }, stored: null, gsc: null, force: true }), { submit: false, reason: 'sitemap_unreachable' });
 assert.deepEqual(decideSitemapSubmission({ ...base, stored: { submittedFingerprint: 'f1', lastSubmittedByOperatorAt: recent }, gsc: { lastSubmitted: recent, errors: 0 }, force: true }), { submit: true, reason: 'forced' });
+
+// Bing Webmaster
+assert.equal(parseBingDate('/Date(1729728000000)/'), '2024-10-24T00:00:00.000Z');
+assert.equal(parseBingDate('/Date(1729728000000-0700)/'), '2024-10-24T00:00:00.000Z');
+assert.equal(parseBingDate('/Date(-62135596800000)/'), null);
+assert.equal(parseBingDate(null), null);
+const bingSites = [{ url: 'https://antonbase.com/', verified: true }, { url: 'https://bloom.antonbase.com/', verified: false }, { url: 'http://job.antonbase.com', verified: true }];
+assert.deepEqual(matchBingSite('https://job.antonbase.com/', bingSites), { url: 'http://job.antonbase.com', verified: true });
+assert.deepEqual(matchBingSite('https://bloom.antonbase.com/', bingSites), { url: 'https://bloom.antonbase.com/', verified: false });
+assert.deepEqual(matchBingSite('https://edutoy.antonbase.com/', bingSites), { url: 'https://antonbase.com/', verified: true });
+assert.equal(matchBingSite('https://en.chon-mage.com/', bingSites), null);
+const bingBase = { content, floorDays: 7, at };
+assert.deepEqual(decideBingSubmission({ ...bingBase, stored: null, feed: null }), { submit: true, reason: 'not_known_to_bing' });
+assert.deepEqual(decideBingSubmission({ ...bingBase, stored: { submittedFingerprint: 'f0', lastSubmittedByOperatorAt: recent }, feed: { submitted: recent } }), { submit: true, reason: 'content_changed' });
+assert.deepEqual(decideBingSubmission({ ...bingBase, stored: { submittedFingerprint: 'f1', lastSubmittedByOperatorAt: old }, feed: { submitted: old } }), { submit: true, reason: 'periodic_floor' });
+assert.deepEqual(decideBingSubmission({ ...bingBase, stored: null, feed: { submitted: recent } }), { submit: false, reason: 'unchanged_within_floor' });
+assert.deepEqual(decideBingSubmission({ ...bingBase, content: { ok: false, fingerprint: null }, stored: null, feed: null, force: true }), { submit: false, reason: 'sitemap_unreachable' });
 
 assert.ok(SITES_MCP_TOOL_NAMES.includes('site_sitemap_status' as any), 'status must be readable over MCP');
 assert.equal(SITES_MCP_TOOL_NAMES.includes('site_sitemap_submit' as any), false, 'submission runs only in the credentialed scheduled lane');

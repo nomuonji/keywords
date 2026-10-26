@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { searchConsoleSitemapsList, searchConsoleSitemapSubmit, searchConsoleSites, type SearchConsoleSitemap } from '../../research/src/index.js';
 import { field, value, firestore, FirestoreError } from '../../db/src/firestore.js';
 import type { SiteRecord } from '../../db/src/site-operations-schema.js';
+import { bingSubmissionStateGet } from './bing-sitemap-submission.js';
 
 /**
  * Search Console sitemap submission for registered sites.
@@ -309,13 +310,14 @@ export async function siteSitemapStatus(input: unknown, listSites: () => Promise
   const sites = args.siteId ? [{ id: args.siteId } as SiteRecord] : await listSites();
   const items = [];
   for (const site of sites) {
-    const state = await sitemapSubmissionStateGet(site.id);
-    items.push(state ?? { siteId: site.id, checkedAt: null, sitemaps: [], note: 'not_checked_yet' });
+    const [state, bing] = await Promise.all([sitemapSubmissionStateGet(site.id), bingSubmissionStateGet(site.id)]);
+    items.push({ ...(state ?? { siteId: site.id, checkedAt: null, sitemaps: [], note: 'not_checked_yet' }), bing: bing ?? { checkedAt: null, note: 'not_checked_yet' } });
   }
   return {
     policy: {
-      schedule: 'GitHub Actions site-sitemap-submission, daily',
+      schedule: 'GitHub Actions site-sitemap-submission, daily (Search Console, and Bing Webmaster when BING_WEBMASTER_API_KEY is set)',
       resubmitWhen: ['not registered in Search Console', 'sitemap URL set or lastmod changed', 'Search Console reported errors', `no submission for ${DEFAULT_RESUBMIT_FLOOR_DAYS} days`],
+      bing: 'Same rule via Bing Webmaster SubmitSitemap: not yet in GetFeeds, content changed, or floor elapsed. Sites not added/verified in Bing Webmaster are reported as bing_site_not_registered / bing_site_not_verified.',
       note: 'Submission is a crawl hint. Google decides whether and when pages are indexed. Sitemaps without <lastmod> give Google little signal about changed pages.'
     },
     items
