@@ -101,6 +101,8 @@ export type SerpUsage = {
   cacheHits: number;
   forcedApiRequests: number;
   blockedRequests: number;
+  /** Successful requests per upstream that answered (atomic increments after each call). */
+  byProvider?: { reserp?: number; brightdata?: number; brave?: number };
   createdAt: string;
   updatedAt: string;
 };

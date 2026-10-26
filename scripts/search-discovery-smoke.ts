@@ -75,6 +75,8 @@ globalThis.fetch = async (input, init) => {
   const path = url.pathname.replace('/v1/', '');
   const body = init?.body ? JSON.parse(String(init.body)) : null;
   if (urlString.endsWith(':commit')) {
+    // Per-provider SERP usage increments are not under test here.
+    if (body.writes.every((write: any) => write.transform)) return Response.json({});
     for (const write of body.writes) {
       const previous = docs.get(write.update.name);
       if ((write.currentDocument?.exists === false && previous) || (write.currentDocument?.updateTime && previous?.updateTime !== write.currentDocument.updateTime)) return Response.json({}, { status: 409 });

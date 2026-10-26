@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { analyzeSerp, searchSerp, type SerpAnalysis, type SerpSnapshot, type SerpProvider } from '../../research/src/index.js';
+import { analyzeSerp, searchSerp, type SerpAnalysis, type SerpSnapshot, type SerpProvider, type SerpUpstream } from '../../research/src/index.js';
 import { field, firestore, firestoreDocumentName, FirestoreError, value } from '../../db/src/firestore.js';
 import type { ResearchSession, ResearchSessionStatus, SerpUsage } from '../../db/src/remote-keyword-schema.js';
 
@@ -99,12 +99,23 @@ function integerEnv(name: string, fallback: number, min: number, max: number) {
   return Number.isInteger(parsed) ? Math.max(min, Math.min(parsed, max)) : fallback;
 }
 
+// Monthly free allocations per upstream. Reserp and Bright Data answer Google SERPs; Brave
+// is its own index ($5 monthly credit ≈ 1,000 searches) and is the last resort.
+export function serpProviderBudgets() {
+  return {
+    reserp: integerEnv('KEYWORDS_SERP_RESERP_BUDGET', 4500, 0, 100_000),
+    brightdata: integerEnv('KEYWORDS_SERP_BRIGHT_DATA_BUDGET', 4500, 0, 100_000),
+    brave: integerEnv('KEYWORDS_SERP_BRAVE_BUDGET', 900, 0, 100_000)
+  };
+}
+
 export function serpQuotaConfiguration() {
-  const monthlyLimit = integerEnv('KEYWORDS_SERP_MONTHLY_LIMIT', 9000, 1, 1_000_000);
+  const budgets = serpProviderBudgets();
+  const monthlyLimit = integerEnv('KEYWORDS_SERP_MONTHLY_LIMIT', budgets.reserp + budgets.brightdata + budgets.brave, 1, 1_000_000);
   const softLimit = integerEnv('KEYWORDS_SERP_SOFT_LIMIT', Math.min(8000, monthlyLimit), 1, monthlyLimit);
   const reserve = integerEnv('KEYWORDS_SERP_RESERVE', Math.min(1000, Math.max(0, monthlyLimit - softLimit)), 0, monthlyLimit - 1);
   const cacheTtlDays = integerEnv('KEYWORDS_SERP_CACHE_TTL_DAYS', 30, 1, 365);
-  return { monthlyLimit, softLimit, reserve, cacheTtlDays, normalCutoff: Math.max(0, Math.min(softLimit, monthlyLimit - reserve)) };
+  return { monthlyLimit, softLimit, reserve, cacheTtlDays, normalCutoff: Math.max(0, Math.min(softLimit, monthlyLimit - reserve)), providerBudgets: budgets };
 }
 
 async function readDocument(path: string) {
@@ -139,13 +150,47 @@ async function mutateUsage(mutate: (usage: SerpUsage) => SerpUsage) {
   throw new Error('SERP usage counter contention: retry the request');
 }
 
+// Per-upstream usage. Months recorded before byProvider existed are estimated from the total
+// with the old rule (first Reserp allocation, then Bright Data).
+function providerUsage(usage: SerpUsage) {
+  const budgets = serpProviderBudgets();
+  const total = Number(usage.actualApiRequests ?? 0);
+  const recorded = usage.byProvider;
+  const used = recorded
+    ? { reserp: Number(recorded.reserp ?? 0), brightdata: Number(recorded.brightdata ?? 0), brave: Number(recorded.brave ?? 0) }
+    : { reserp: Math.min(total, budgets.reserp), brightdata: Math.max(0, total - budgets.reserp), brave: 0 };
+  const remaining = {
+    reserp: Math.max(0, budgets.reserp - used.reserp),
+    brightdata: Math.max(0, budgets.brightdata - used.brightdata),
+    brave: Math.max(0, budgets.brave - used.brave)
+  };
+  return { used, budgets, remaining, source: recorded ? 'recorded' : 'estimated_from_total' };
+}
+
+// Ordered upstream chain for the shared proxy: Google providers with allocation left, then Brave.
+function proxyChainForUsage(usage: SerpUsage): SerpUpstream[] {
+  const { remaining } = providerUsage(usage);
+  const chain = (['reserp', 'brightdata', 'brave'] as const).filter(provider => remaining[provider] > 0);
+  if (!chain.length) throw new Error('Configured free SERP provider budget reached (Reserp, Bright Data and Brave allocations are used up this month)');
+  return [...chain];
+}
+
+// Atomic per-upstream increment (no read, no revision race).
+async function recordProviderUse(month: string, upstream: SerpUpstream) {
+  try {
+    await firestore(':commit', { method: 'POST', body: JSON.stringify({ writes: [{ transform: { document: firestoreDocumentName(`serpUsage/${month}`), fieldTransforms: [{ fieldPath: `byProvider.${upstream}`, increment: { integerValue: '1' } }] } }] }) });
+  } catch (error) {
+    console.warn('SERP provider usage increment failed', error instanceof Error ? error.message : String(error));
+  }
+}
+
 function summarizeSerpUsage(usage: SerpUsage) {
   const config = serpQuotaConfiguration();
   const used = Number(usage.actualApiRequests ?? 0);
   const remaining = Math.max(0, config.monthlyLimit - used);
   const normalRemaining = Math.max(0, Math.min(config.normalCutoff - used, remaining));
   const state = used >= config.monthlyLimit ? 'hard_limited' : used >= config.normalCutoff ? 'soft_limited' : 'normal';
-  return { ...usage, ...config, remaining, normalRemaining, state, normalRequestsAllowed: state === 'normal', forcedRequestsAllowed: used < config.monthlyLimit };
+  return { ...usage, ...config, remaining, normalRemaining, state, normalRequestsAllowed: state === 'normal', forcedRequestsAllowed: used < config.monthlyLimit, providers: providerUsage(usage), directProxyCallsCounted: false };
 }
 
 export async function serpUsageStatus() {
@@ -188,18 +233,6 @@ async function recordCacheHit() {
   return mutateUsage(current => ({ ...current, cacheHits: Number(current.cacheHits ?? 0) + 1 }));
 }
 
-function freeProxyProviderForRequest(requestNumber: number): 'auto' | 'brightdata' {
-  // Keep the planned 4,500 + 4,500 request allocations and safety margin.
-  // During the Reserp allocation, let the shared proxy fail over to Bright
-  // Data if Reserp runs out early (for example, from usage outside Keywords).
-  // Once the Reserp allocation is exhausted, route directly to Bright Data.
-  const reserpBudget = integerEnv('KEYWORDS_SERP_RESERP_BUDGET', 4500, 0, 5000);
-  const brightDataBudget = integerEnv('KEYWORDS_SERP_BRIGHT_DATA_BUDGET', 4500, 0, 5000);
-  if (requestNumber <= reserpBudget) return 'auto';
-  if (requestNumber <= reserpBudget + brightDataBudget) return 'brightdata';
-  throw new Error('Configured free SERP provider budget reached');
-}
-
 function serpCacheId(input: { query: string; country?: string; language?: string; location?: string; num?: number; provider?: SerpProvider }) {
   const cacheKey = JSON.stringify({
     query: normalizedQuery(input.query),
@@ -222,7 +255,11 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   const cached = cachedDoc ? parseDoc<any>(cachedDoc) : null;
   const cacheAgeHours = Math.min(config.cacheTtlDays * 24, args.maxCacheAgeHours ?? config.cacheTtlDays * 24);
   const cutoff = Date.now() - cacheAgeHours * 60 * 60 * 1000;
-  if (!args.forceRefresh && cached && Date.parse(String(cached.fetchedAt)) >= cutoff) {
+  // A Google query answered by the Brave fallback is reused for at most a day, so Google
+  // results replace it once a Google provider is available again.
+  const braveFallbackCached = provider === 'api' && cached?.snapshot?.upstreamProvider === 'brave';
+  const effectiveCutoff = braveFallbackCached ? Math.max(cutoff, Date.now() - 24 * 60 * 60 * 1000) : cutoff;
+  if (!args.forceRefresh && cached && Date.parse(String(cached.fetchedAt)) >= effectiveCutoff) {
     // The successful, revision-protected cache-hit counter update already returns
     // the quota state. Avoid reading the same document a second time.
     const usage = await recordCacheHit();
@@ -230,10 +267,8 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
   }
 
   const reservedUsage = await reserveApiRequest(Boolean(args.forceRefresh));
-  const proxyProvider =
-    provider === 'api'
-      ? freeProxyProviderForRequest(Number(reservedUsage.actualApiRequests ?? 0))
-      : undefined;
+  if (provider === 'brave' && providerUsage(reservedUsage).remaining.brave <= 0) throw new Error('Brave monthly SERP budget reached');
+  const proxyProviders = provider === 'api' ? proxyChainForUsage(reservedUsage) : undefined;
   const snapshot = await searchSerp({
     query: args.query,
     country: args.country,
@@ -241,8 +276,11 @@ export async function serpResearchCached(input: z.infer<z.ZodObject<typeof serpR
     location: args.location,
     num,
     provider,
-    proxyProvider
+    proxyProvider: proxyProviders ? 'auto' : undefined,
+    proxyProviders
   });
+  const upstream: SerpUpstream | null = provider === 'brave' ? 'brave' : snapshot.upstreamProvider ?? null;
+  if (upstream) await recordProviderUse(reservedUsage.month, upstream);
   const analysis = analyzeSerp(snapshot);
   const now = nowIso();
   const expiresAt = new Date(Date.now() + config.cacheTtlDays * 24 * 60 * 60 * 1000).toISOString();

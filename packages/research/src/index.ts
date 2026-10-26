@@ -172,7 +172,9 @@ export interface SerpSnapshot {
   peopleAlsoAsk: string[];
   relatedSearches: string[];
   provider: 'api' | 'brave' | 'serper';
-  upstreamProvider?: 'reserp' | 'brightdata' | null;
+  upstreamProvider?: 'reserp' | 'brightdata' | 'brave' | null;
+  /** google for Reserp/Bright Data; brave when the answer came from Brave's own index. */
+  engine?: 'google' | 'brave' | null;
   warnings?: string[];
   /** Proxy judged the SERP broken (zero results or results that never mention the query). */
   degraded?: boolean;
@@ -181,7 +183,8 @@ export interface SerpSnapshot {
 }
 
 export type SerpProvider = 'api' | 'brave' | 'serper';
-export type SerpProxyProvider = 'auto' | 'reserp' | 'brightdata';
+export type SerpProxyProvider = 'auto' | 'reserp' | 'brightdata' | 'brave';
+export type SerpUpstream = 'reserp' | 'brightdata' | 'brave';
 
 function hostname(value: string) {
   try { return new URL(value).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
@@ -202,6 +205,7 @@ async function searchApiProxy(input: {
   location?: string;
   num?: number;
   proxyProvider?: SerpProxyProvider;
+  proxyProviders?: SerpUpstream[];
 }): Promise<SerpSnapshot> {
   const endpoint =
     process.env.KEYWORDS_SERP_PROXY_URL ??
@@ -215,7 +219,8 @@ async function searchApiProxy(input: {
       language: input.language,
       location: input.location,
       num: Math.max(1, Math.min(input.num ?? 10, 20)),
-      provider: input.proxyProvider ?? 'auto'
+      provider: input.proxyProvider ?? 'auto',
+      ...(input.proxyProviders?.length ? { providers: input.proxyProviders } : {})
     })
   });
 
@@ -231,7 +236,7 @@ async function searchApiProxy(input: {
     ? raw.relatedSearches.map((item: any) => String(item ?? '')).filter(Boolean)
     : [];
   const upstreamProvider =
-    raw.provider === 'reserp' || raw.provider === 'brightdata' ? raw.provider : null;
+    raw.provider === 'reserp' || raw.provider === 'brightdata' || raw.provider === 'brave' ? raw.provider : null;
 
   return {
     query: input.query,
@@ -242,6 +247,7 @@ async function searchApiProxy(input: {
     relatedSearches,
     provider: 'api',
     upstreamProvider,
+    engine: upstreamProvider === 'brave' ? 'brave' : upstreamProvider ? 'google' : null,
     warnings: Array.isArray(raw.warnings) ? raw.warnings.map((item: any) => String(item)) : [],
     degraded: raw.degraded === true,
     attempts: Number.isFinite(Number(raw.attempts)) ? Number(raw.attempts) : null,
@@ -256,10 +262,20 @@ async function searchBrave(input: { query: string; country?: string; language?: 
   url.searchParams.set('q', input.query);
   url.searchParams.set('count', String(Math.max(1, Math.min(input.num ?? 10, 20))));
   if (input.country) url.searchParams.set('country', input.country.toUpperCase());
-  if (input.language) url.searchParams.set('search_lang', input.language.toLowerCase());
-  const raw = await jsonRequest<Record<string, any>>(url.toString(), { headers: { accept: 'application/json', 'x-subscription-token': apiKey } });
+  // Brave lists Japanese as "jp" (not ISO "ja"); an unsupported code is a 422, so retry without it.
+  const lang = input.language?.toLowerCase().split('-')[0];
+  if (lang) url.searchParams.set('search_lang', lang === 'ja' ? 'jp' : lang);
+  const headers = { accept: 'application/json', 'x-subscription-token': apiKey };
+  let raw: Record<string, any>;
+  try {
+    raw = await jsonRequest<Record<string, any>>(url.toString(), { headers });
+  } catch (error) {
+    if (!lang || !/\b422\b/.test(String((error as Error)?.message ?? error))) throw error;
+    url.searchParams.delete('search_lang');
+    raw = await jsonRequest<Record<string, any>>(url.toString(), { headers });
+  }
   const results = (Array.isArray(raw.web?.results) ? raw.web.results : []).map((item: any, index: number) => normalizedSerpResult({ position: index + 1, title: item.title, url: item.url, snippet: item.description }, index + 1)).filter((item: SerpResult | null): item is SerpResult => Boolean(item));
-  return { query: input.query, country: input.country ?? null, language: input.language ?? null, results, peopleAlsoAsk: [], relatedSearches: [], provider: 'brave', fetchedAt: new Date().toISOString() };
+  return { query: input.query, country: input.country ?? null, language: input.language ?? null, results, peopleAlsoAsk: [], relatedSearches: [], provider: 'brave', upstreamProvider: 'brave', engine: 'brave', fetchedAt: new Date().toISOString() };
 }
 
 async function searchSerper(input: { query: string; country?: string; language?: string; location?: string; num?: number }): Promise<SerpSnapshot> {
@@ -293,6 +309,7 @@ export async function searchSerp(input: {
   num?: number;
   provider?: SerpProvider;
   proxyProvider?: SerpProxyProvider;
+  proxyProviders?: SerpUpstream[];
 }): Promise<SerpSnapshot> {
   if (input.provider === 'serper') return searchSerper(input);
   if (input.provider === 'brave') return searchBrave(input);
@@ -327,7 +344,7 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   // More weak/forum/stale results can indicate an addressable gap; exact-title
   // saturation reduces it. Result-count prevents an incomplete response scoring highly.
   const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
-  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' ? ['Brave results are not Google rankings.'] : []), ...(snapshot.degraded ? ['DEGRADED SERP: the provider returned zero results or results that do not mention the query (likely another search). Do not use for competitor judgement; retry later.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
+  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' || snapshot.upstreamProvider === 'brave' ? ['Brave results are not Google rankings (Brave answered because Google providers were unavailable or Brave was requested).'] : []), ...(snapshot.degraded ? ['DEGRADED SERP: the provider returned zero results or results that do not mention the query (likely another search). Do not use for competitor judgement; retry later.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
 }
 
 export interface GoogleAdsKeywordIdea {
