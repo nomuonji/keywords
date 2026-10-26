@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-26",
-  "generatedAt": "2026-10-25T22:06:56.975Z",
+  "date": "2026-10-27",
+  "generatedAt": "2026-10-26T23:24:35.726Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,11 +14,19 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 97
+    "historicObservations": 104
   },
   "warnings": [
     {
-      "genreId": "567846",
+      "genreId": "100004",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "100000",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "210908",
       "reason": "unsupported_subgenre"
     },
     {
@@ -31,14 +39,6 @@
     },
     {
       "genreId": "101114",
-      "reason": "Rakuten upstream HTTP 400"
-    },
-    {
-      "genreId": "101972",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
     }
   ],
@@ -6154,6 +6154,477 @@
         "previousDate": "2026-10-25",
         "sameItemCount": 3,
         "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "510915",
+      "rootName": "ビール・洋酒",
+      "genreId": "201344",
+      "genreName": "中国酒",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "auc-unnancha:10000139",
+          "rank": 1
+        },
+        {
+          "itemCode": "fumitake-online:10000622",
+          "rank": 2
+        },
+        {
+          "itemCode": "umasen:10000003",
+          "rank": 3
+        },
+        {
+          "itemCode": "umasen:10000014",
+          "rank": 4
+        },
+        {
+          "itemCode": "umasen:10000045",
+          "rank": 5
+        },
+        {
+          "itemCode": "umasen:10000018",
+          "rank": 6
+        },
+        {
+          "itemCode": "g-callshop:10000369",
+          "rank": 7
+        },
+        {
+          "itemCode": "kawachi:10011121",
+          "rank": 8
+        },
+        {
+          "itemCode": "auc-unnancha:10000002",
+          "rank": 9
+        },
+        {
+          "itemCode": "tokabussan:10001503",
+          "rank": 10
+        },
+        {
+          "itemCode": "chagatapark:10073335",
+          "rank": 11
+        },
+        {
+          "itemCode": "umasen:10000104",
+          "rank": 12
+        },
+        {
+          "itemCode": "vin:10004591",
+          "rank": 13
+        },
+        {
+          "itemCode": "shoukoushu:10004927",
+          "rank": 14
+        },
+        {
+          "itemCode": "hamadaya:10000064",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "100938",
+      "rootName": "ダイエット・健康",
+      "genreId": "100987",
+      "genreName": "健康食品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "seedcoms:10004174",
+          "rank": 1
+        },
+        {
+          "itemCode": "naturein-store:10000003",
+          "rank": 2
+        },
+        {
+          "itemCode": "duen1102:10000122",
+          "rank": 3
+        },
+        {
+          "itemCode": "seedcoms:10004178",
+          "rank": 4
+        },
+        {
+          "itemCode": "seikansho:10000071",
+          "rank": 5
+        },
+        {
+          "itemCode": "yukimeg-direct:10000011",
+          "rank": 6
+        },
+        {
+          "itemCode": "wakan-shop:10000084",
+          "rank": 7
+        },
+        {
+          "itemCode": "p-tano:10275875",
+          "rank": 8
+        },
+        {
+          "itemCode": "soukaidrink:10027491",
+          "rank": 9
+        },
+        {
+          "itemCode": "shinnihonseiyaku:10000518",
+          "rank": 10
+        },
+        {
+          "itemCode": "kenkocom:11536961",
+          "rank": 11
+        },
+        {
+          "itemCode": "soukaidrink:10018054",
+          "rank": 12
+        },
+        {
+          "itemCode": "duen1102:10000110",
+          "rank": 13
+        },
+        {
+          "itemCode": "taisho-directshop:10001271",
+          "rank": 14
+        },
+        {
+          "itemCode": "hiryushop:10002517",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "562637",
+      "rootName": "家電",
+      "genreId": "562640",
+      "genreName": "住宅設備家電",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gbft-ltd:10025180",
+          "rank": 1
+        },
+        {
+          "itemCode": "nobu-house:10000002",
+          "rank": 2
+        },
+        {
+          "itemCode": "applied2:11760191",
+          "rank": 3
+        },
+        {
+          "itemCode": "superdeal:10007706",
+          "rank": 4
+        },
+        {
+          "itemCode": "bear-hands:10000513",
+          "rank": 5
+        },
+        {
+          "itemCode": "yamada-denki:10478562",
+          "rank": 6
+        },
+        {
+          "itemCode": "denki-de-material:10000061",
+          "rank": 7
+        },
+        {
+          "itemCode": "townland-c:10001500",
+          "rank": 8
+        },
+        {
+          "itemCode": "juusetsu-plus:10000009",
+          "rank": 9
+        },
+        {
+          "itemCode": "hcvalor-eshop:16877626",
+          "rank": 10
+        },
+        {
+          "itemCode": "applied2:11737703",
+          "rank": 11
+        },
+        {
+          "itemCode": "to-rulease:10010844",
+          "rank": 12
+        },
+        {
+          "itemCode": "comfort:10482599",
+          "rank": 13
+        },
+        {
+          "itemCode": "prostock:10126742",
+          "rank": 14
+        },
+        {
+          "itemCode": "d-price:10090237",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "510901",
+      "rootName": "日本酒・焼酎",
+      "genreId": "510914",
+      "genreName": "その他",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "manroku:10003392",
+          "rank": 1
+        },
+        {
+          "itemCode": "manroku:10003390",
+          "rank": 2
+        },
+        {
+          "itemCode": "rakuten24:11134568",
+          "rank": 3
+        },
+        {
+          "itemCode": "manroku:10003396",
+          "rank": 4
+        },
+        {
+          "itemCode": "tsutsu-uraura:10009752",
+          "rank": 5
+        },
+        {
+          "itemCode": "cheeky:10412590",
+          "rank": 6
+        },
+        {
+          "itemCode": "shochuya-doragon:10008401",
+          "rank": 7
+        },
+        {
+          "itemCode": "mashidayahonten:10004527",
+          "rank": 8
+        },
+        {
+          "itemCode": "usamart:10025603",
+          "rank": 9
+        },
+        {
+          "itemCode": "issyusouden:10023408",
+          "rank": 10
+        },
+        {
+          "itemCode": "manroku:10004691",
+          "rank": 11
+        },
+        {
+          "itemCode": "rakuten24:11138713",
+          "rank": 12
+        },
+        {
+          "itemCode": "rakuten24:10911267",
+          "rank": 13
+        },
+        {
+          "itemCode": "izumiya-sake:10000262",
+          "rank": 14
+        },
+        {
+          "itemCode": "rakuten24:11151605",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "503190",
+      "rootName": "車用品・バイク用品",
+      "genreId": "200305",
+      "genreName": "バイク用品",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "lifeideakan:10000015",
+          "rank": 1
+        },
+        {
+          "itemCode": "jesimaik:10000033",
+          "rank": 2
+        },
+        {
+          "itemCode": "kaedear:10000881",
+          "rank": 3
+        },
+        {
+          "itemCode": "usenya:10000011",
+          "rank": 4
+        },
+        {
+          "itemCode": "jesimaik:10000090",
+          "rank": 5
+        },
+        {
+          "itemCode": "kaedear:10000678",
+          "rank": 6
+        },
+        {
+          "itemCode": "jesimaik:10000032",
+          "rank": 7
+        },
+        {
+          "itemCode": "d-berman:10000000",
+          "rank": 8
+        },
+        {
+          "itemCode": "naps-ec:10035682",
+          "rank": 9
+        },
+        {
+          "itemCode": "kaedear:10002003",
+          "rank": 10
+        },
+        {
+          "itemCode": "az-oil:10001428",
+          "rank": 11
+        },
+        {
+          "itemCode": "delishop:10000227",
+          "rank": 12
+        },
+        {
+          "itemCode": "fs-japan:10002393",
+          "rank": 13
+        },
+        {
+          "itemCode": "kaedear:10001921",
+          "rank": 14
+        },
+        {
+          "itemCode": "webike-rb:27984523",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Mon, 26 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "biccamera:13635083",
+          "rank": 1
+        },
+        {
+          "itemCode": "superdeal:10005737",
+          "rank": 2
+        },
+        {
+          "itemCode": "farson:10007690",
+          "rank": 4
+        },
+        {
+          "itemCode": "ksdenki:10533568",
+          "rank": 5
+        },
+        {
+          "itemCode": "e-kurashi:10052400",
+          "rank": 6
+        },
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 7
+        },
+        {
+          "itemCode": "pykespeak:10002416",
+          "rank": 8
+        },
+        {
+          "itemCode": "jtus:10111177",
+          "rank": 9
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 10
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 11
+        },
+        {
+          "itemCode": "yamazenkaden:10005296",
+          "rank": 12
+        },
+        {
+          "itemCode": "rcmdse:16200354",
+          "rank": 13
+        },
+        {
+          "itemCode": "cocoiine:10002196",
+          "rank": 14
+        },
+        {
+          "itemCode": "cocoiine:10002246",
+          "rank": 15
+        },
+        {
+          "itemCode": "souplesse:10001478",
+          "rank": 16
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-26",
+        "sameItemCount": 7,
+        "denominator": 15
+      }
+    },
+    {
+      "date": "2026-10-27",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-26",
+        "sameItemCount": 3,
+        "denominator": 3
       }
     }
   ]
