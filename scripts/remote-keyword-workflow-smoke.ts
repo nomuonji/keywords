@@ -19,6 +19,7 @@ let serpProxyCalls = 0;
 let firestoreReads = 0;
 const sessionListPageSizes: number[] = [];
 let forceUsageRaceToHardLimit = false;
+const proxyProviderLists: unknown[] = [];
 const originalFetch = globalThis.fetch;
 
 function stored(name: string, fields: Record<string, any>) {
@@ -33,6 +34,7 @@ globalThis.fetch = async (input, init) => {
     serpProxyCalls++;
     const request = JSON.parse(String(init?.body ?? '{}'));
     const query = String(request.query ?? '');
+    proxyProviderLists.push(request.providers ?? null);
     return Response.json({
       query,
       country: request.country ?? null,
@@ -43,7 +45,7 @@ globalThis.fetch = async (input, init) => {
       ],
       peopleAlsoAsk: [],
       relatedSearches: [],
-      provider: request.provider === 'brightdata' ? 'brightdata' : 'reserp',
+      provider: Array.isArray(request.providers) ? request.providers[0] : request.provider === 'brightdata' ? 'brightdata' : 'reserp',
       fetchedAt: new Date().toISOString(),
       warnings: []
     });
@@ -55,6 +57,21 @@ globalThis.fetch = async (input, init) => {
   const body = init?.body ? JSON.parse(String(init.body)) : null;
 
   if (urlString.endsWith(':commit')) {
+    // Atomic field increments (per-provider SERP usage) need no precondition.
+    const transforms = body.writes.filter((write: any) => write.transform);
+    for (const write of transforms) {
+      const name = write.transform.document;
+      const previous = docs.get(name) ?? stored(name, {});
+      const fields = { ...previous.fields };
+      for (const transform of write.transform.fieldTransforms) {
+        const [parent, child] = transform.fieldPath.split('.');
+        const map = fields[parent]?.mapValue?.fields ?? {};
+        const current = Number(map[child]?.integerValue ?? 0);
+        fields[parent] = { mapValue: { fields: { ...map, [child]: { integerValue: String(current + Number(transform.increment.integerValue)) } } } };
+      }
+      docs.set(name, { ...previous, fields, updateTime: `revision-${++sequence}` });
+    }
+    if (transforms.length === body.writes.length) return Response.json({});
     for (const write of body.writes) {
       const previous = docs.get(write.update.name);
       if ((write.currentDocument.exists === false && previous) || (write.currentDocument.updateTime && previous?.updateTime !== write.currentDocument.updateTime)) return Response.json({}, { status: 409 });
@@ -95,6 +112,9 @@ try {
   assert.equal(serpProxyCalls, 1);
   assert.equal(first.usage.actualApiRequests, 1);
   assert.equal(firestoreReads - beforeFirstReads, 2, 'fresh SERP must reuse reserved counter without a third read');
+  assert.deepEqual(proxyProviderLists[0], ['reserp', 'brightdata', 'brave'], 'fresh month routes Reserp → Bright Data → Brave');
+  assert.equal(first.upstreamProvider, 'reserp');
+  assert.equal(first.engine, 'google');
 
   const beforeCacheReads = firestoreReads;
   const cached = await serpResearchCached({ query: '  勤怠管理   SaaS 比較 ', country: 'jp', language: 'JA' });
@@ -112,6 +132,8 @@ try {
   await assert.rejects(serpResearchCached({ query: '経費精算 SaaS 比較', country: 'JP', language: 'ja' }), /soft limit|reserve/i);
   assert.equal(serpProxyCalls, 2, 'soft-limit rejection must happen before provider call');
   const usage = await serpUsageStatus();
+  assert.equal(usage.providers.source, 'recorded');
+  assert.equal(usage.providers.used.reserp, 2, 'each answered request increments its upstream');
   assert.equal(usage.state, 'soft_limited');
   assert.equal(usage.blockedRequests, 1);
   assert.equal(usage.remaining, 2);

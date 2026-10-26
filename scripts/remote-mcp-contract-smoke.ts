@@ -142,7 +142,10 @@ process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '2000';
 process.env.KEYWORDS_SERP_SOFT_LIMIT = '1500';
 process.env.KEYWORDS_SERP_RESERVE = '500';
 process.env.KEYWORDS_SERP_CACHE_TTL_DAYS = '30';
-assert.deepEqual(serpQuotaConfiguration(), { monthlyLimit: 2000, softLimit: 1500, reserve: 500, cacheTtlDays: 30, normalCutoff: 1500 });
+assert.deepEqual(serpQuotaConfiguration(), { monthlyLimit: 2000, softLimit: 1500, reserve: 500, cacheTtlDays: 30, normalCutoff: 1500, providerBudgets: { reserp: 4500, brightdata: 4500, brave: 900 } });
+delete process.env.KEYWORDS_SERP_MONTHLY_LIMIT; delete process.env.KEYWORDS_SERP_SOFT_LIMIT; delete process.env.KEYWORDS_SERP_RESERVE;
+assert.equal(serpQuotaConfiguration().monthlyLimit, 9900, 'default hard limit is the sum of provider allocations');
+process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '2000'; process.env.KEYWORDS_SERP_SOFT_LIMIT = '1500'; process.env.KEYWORDS_SERP_RESERVE = '500';
 
 const analysis = analyzeSerp({
   query: 'ai 英会話 比較',
