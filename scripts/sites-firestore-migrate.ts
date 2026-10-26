@@ -6,9 +6,9 @@ import { runSitesFirestoreMigration, type MigrationMode, type MigrationReport } 
 // Credentials: FIREBASE_SERVICE_ACCOUNT_JSON (legacy/source) and
 // SITES_FIREBASE_SERVICE_ACCOUNT_JSON (Sites/target).
 
-const modes = new Set<MigrationMode>(['inventory', 'copy', 'delta', 'verify']);
+const modes = new Set<MigrationMode>(['inventory', 'copy', 'delta', 'verify', 'finalize']);
 const mode = (process.env.MIGRATION_MODE ?? process.argv[2] ?? 'inventory') as MigrationMode;
-if (!modes.has(mode)) { console.error(`Unknown mode "${mode}" (inventory | copy | delta | verify)`); process.exit(2); }
+if (!modes.has(mode)) { console.error(`Unknown mode "${mode}" (inventory | copy | delta | verify | finalize)`); process.exit(2); }
 const number = (name: string, fallback: number) => { const value = Number(process.env[name] ?? ''); return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback; };
 const flag = (name: string) => /^(1|true|yes)$/i.test(process.env[name] ?? '');
 
