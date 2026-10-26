@@ -160,6 +160,28 @@ assert.deepEqual(mismatched, ['seoTasks']);
 report = await runSitesFirestoreMigration({ mode: 'verify', transport, now, deep: true });
 assert.deepEqual(report.conflicts.sort(), ['seoTasks/t1000: only in Sites project', 'seoTasks/t3: fields differ']);
 
+// 6a. finalize refuses while delta reported conflicts.
+report = await runSitesFirestoreMigration({ mode: 'finalize', transport, now });
+assert.equal(report.outcome, 'refused');
+assert.equal(projects.keywords.has('_LEGACY_SITES_DATA_safe_to_delete/README'), false);
+// Once conflicts are resolved, finalize marks the legacy Sites data and only that.
+const meta = projects.sites.get('_migrations/sites-firestore-split')!;
+const metaState = JSON.parse(meta.fields.state.stringValue);
+metaState.delta.conflicts = [];
+meta.fields.state.stringValue = JSON.stringify(metaState);
+const legacyBefore = [...projects.keywords.keys()].sort();
+report = await runSitesFirestoreMigration({ mode: 'finalize', transport, now });
+assert.equal(report.outcome, 'completed', report.message);
+const marker = projects.keywords.get('_LEGACY_SITES_DATA_safe_to_delete/README')!;
+assert.ok(marker, 'marker written in the legacy project');
+const markedCollections = marker.fields.collectionsSafeToDelete.arrayValue.values.map((v: any) => v.stringValue).sort();
+assert.deepEqual(markedCollections, ['optimizationEvents', 'seoPortfolioPolicies', 'seoTasks', 'sites']);
+assert.ok(!markedCollections.includes('researchSessions') && !markedCollections.includes('runs') && !markedCollections.includes('siteStructures'));
+assert.match(marker.fields.status.stringValue, /SAFE TO DELETE/);
+const detailPaths = marker.fields.details.arrayValue.values.map((v: any) => v.mapValue.fields.path.stringValue);
+assert.ok(detailPaths.includes('sites/a/indexationUrls'), 'legacy-only indexationUrls are listed as deletable');
+assert.deepEqual([...projects.keywords.keys()].filter(path => !path.startsWith('_LEGACY_')).sort(), legacyBefore, 'finalize never changes legacy data');
+
 // 6. Same project on both sides is refused before anything runs.
 process.env.SITES_FIREBASE_SERVICE_ACCOUNT_JSON = JSON.stringify({ project_id: 'kw-p' });
 await assert.rejects(runSitesFirestoreMigration({ mode: 'inventory', transport, now }), /are the same/);

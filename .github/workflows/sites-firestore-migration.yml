@@ -11,11 +11,11 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: inventory (read-only) | copy (before cutover) | delta (after cutover) | verify
+        description: inventory (read-only) | copy (before cutover) | delta (after cutover) | verify | finalize (mark legacy Sites data safe to delete)
         required: true
         default: inventory
         type: choice
-        options: [inventory, copy, delta, verify]
+        options: [inventory, copy, delta, verify, finalize]
       max_source_reads:
         description: Stop before this many reads on the legacy project (free tier is 50,000/day shared with production)
         required: false

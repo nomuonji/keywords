@@ -15,11 +15,11 @@
  * free-tier daily quota and resume from its checkpoint on the next run.
  */
 import { createHash } from 'node:crypto';
-import { FirestoreError, SITES_FIRESTORE_COLLECTIONS, SITES_MIGRATION_STATE_PATH, firestoreDocumentNameFor, firestoreForTarget, projectIdFor, type FirestoreTarget } from '../../db/src/firestore.js';
+import { FirestoreError, field, SITES_FIRESTORE_COLLECTIONS, SITES_MIGRATION_STATE_PATH, firestoreDocumentNameFor, firestoreForTarget, projectIdFor, type FirestoreTarget } from '../../db/src/firestore.js';
 
 export type Transport = (target: FirestoreTarget, path: string, init?: RequestInit) => Promise<any>;
 export type MigrationUnit = { parent: string; collectionId: string };
-export type MigrationMode = 'inventory' | 'copy' | 'delta' | 'verify';
+export type MigrationMode = 'inventory' | 'copy' | 'delta' | 'verify' | 'finalize';
 export type MigrationOptions = {
   mode: MigrationMode;
   maxSourceReads?: number;
@@ -378,6 +378,51 @@ async function verify(session: Session, options: MigrationOptions): Promise<Migr
   return report(session, 'verify', 'completed', mismatches.length ? `${mismatches.length} differences (expected after cutover only for documents the live Sites Operator has written since).` : 'All collections match.', { units, conflicts: mismatches });
 }
 
+/** Where the "safe to delete" note lives in the legacy project, next to the leftover data. */
+export const LEGACY_MARKER_PATH = '_LEGACY_SITES_DATA_safe_to_delete/README';
+
+/**
+ * After a verified copy and delta, leave a note in the legacy project that
+ * lists exactly which collections there are leftover Sites data (and so may be
+ * deleted) and which belong to Keywords and must be kept. Read-only on data.
+ */
+async function finalize(session: Session, now: () => Date): Promise<MigrationReport> {
+  const { state } = await loadState(session);
+  if (!state.copy?.finishedAt || !state.delta?.finishedAt) return report(session, 'finalize', 'refused', 'Both copy and delta must have finished before the legacy data can be marked as safe to delete.');
+  if (state.delta.conflicts.length) return report(session, 'finalize', 'refused', `Delta reported ${state.delta.conflicts.length} conflicts; resolve them before marking legacy data as deletable.`);
+  const plan = await buildPlan(session);
+  const legacyOnly: MigrationUnit[] = session.skipped.map(item => item.split(' ')[0]).map(path => { const parts = path.split('/'); return { parent: parts.slice(0, -1).join('/'), collectionId: parts[parts.length - 1] }; });
+  const deprecated: MigrationUnit[] = [{ parent: '', collectionId: 'siteDigests' }];
+  const rows: Array<{ path: string; documents: number; newestUpdateTime: string | null; note: string }> = [];
+  let newestOverall = '';
+  for (const [unit, note] of [...plan.map(u => [u, 'copied to the Sites project and verified'] as const), ...legacyOnly.map(u => [u, 'legacy URL rows already folded into indexationBundle; never copied, not read by the application'] as const), ...deprecated.map(u => [u, 'deprecated Sites collection; not read or written by the application'] as const)]) {
+    const docs = await session.listAll('keywords', unit);
+    if (!docs.length) continue; // nothing left there to delete
+    const newest = docs.reduce((max, doc) => doc.updateTime > max ? doc.updateTime : max, '');
+    if (newest > newestOverall) newestOverall = newest;
+    rows.push({ path: unitPath(unit), documents: docs.length, newestUpdateTime: newest || null, note });
+  }
+  const topLevel = [...new Set(rows.map(row => row.path.split('/')[0]))];
+  const marker = {
+    status: 'LEFTOVER SITES DATA - SAFE TO DELETE',
+    summary: `Sites Operator data moved to Firebase project ${session.targetProject} on ${state.copy.finishedAt}. The application no longer reads or writes the collections listed in collectionsSafeToDelete in this project (${session.sourceProject}). They are kept only as a rollback copy.`,
+    movedTo: session.targetProject,
+    movedAt: state.copy.finishedAt,
+    deltaFinishedAt: state.delta.finishedAt,
+    markedAt: now().toISOString(),
+    collectionsSafeToDelete: topLevel,
+    doNotDelete: 'Every other collection in this project (researchSessions, ideaMemory, ideaFeedback, keywordTreasury, serpUsage, serpCache, siteStructures, seoCaseSites, seoSource*, marketSignalSnapshots, runs, ...) is live Keywords Operator data. Delete only the collections listed in collectionsSafeToDelete.',
+    newestDocumentUpdateTimeAtMarking: newestOverall || null,
+    howToConfirmBeforeDeleting: `Nothing should have written to these collections after ${state.copy.finishedAt}. In the console, a document whose update time is later than newestDocumentUpdateTimeAtMarking means something still writes here: do not delete then. Otherwise delete each listed collection (including all sites/* subcollections), then delete this _LEGACY_SITES_DATA_safe_to_delete collection.`,
+    details: rows,
+    reference: 'nomuonji/keywords docs/firestore-project-split.md',
+  };
+  await session.transport('keywords', ':commit', { method: 'POST', body: JSON.stringify({ writes: [{ update: { name: firestoreDocumentNameFor('keywords', LEGACY_MARKER_PATH), fields: field(marker).mapValue.fields } }] }) });
+  state.history.push({ at: now().toISOString(), mode: 'finalize', outcome: 'completed', detail: `legacy marker written to ${LEGACY_MARKER_PATH}` });
+  await saveState(session, state);
+  return report(session, 'finalize', 'completed', `Wrote ${LEGACY_MARKER_PATH} in ${session.sourceProject}: ${topLevel.length} collections marked safe to delete (${rows.reduce((n, row) => n + row.documents, 0)} documents, newest update ${newestOverall || 'n/a'}).`, { units: rows.map(row => ({ path: row.path, source: row.documents, status: row.note })) });
+}
+
 export async function runSitesFirestoreMigration(options: MigrationOptions): Promise<MigrationReport> {
   const now = options.now ?? (() => new Date());
   const session = new Session(options.transport ?? firestoreForTarget, options.maxSourceReads ?? 30_000, options.maxTargetWrites ?? 18_000, options.log ?? (() => undefined));
@@ -385,6 +430,7 @@ export async function runSitesFirestoreMigration(options: MigrationOptions): Pro
     if (options.mode === 'inventory') return await inventory(session);
     if (options.mode === 'copy') return await copy(session, options, now);
     if (options.mode === 'delta') return await delta(session, options, now);
+    if (options.mode === 'finalize') return await finalize(session, now);
     return await verify(session, options);
   } catch (error) {
     const outcome = pauseOutcome(error);
