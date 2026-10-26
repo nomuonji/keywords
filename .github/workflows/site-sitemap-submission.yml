@@ -39,6 +39,11 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      # Sites Operator data lives in its own Firebase project once SITES_FIRESTORE_TARGET=sites
+      # (docs/firestore-project-split.md). Unset/legacy keeps everything in the shared project.
+      SITES_FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.SITES_FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITES_FIREBASE_PROJECT_ID: ${{ vars.SITES_FIREBASE_PROJECT_ID }}
+      SITES_FIRESTORE_TARGET: ${{ vars.SITES_FIRESTORE_TARGET || 'legacy' }}
       SITEMAP_SUBMIT_FORCE: ${{ inputs.force && 'true' || 'false' }}
       SITEMAP_SUBMIT_DRY_RUN: ${{ inputs.dry_run && 'true' || 'false' }}
       SITEMAP_SUBMIT_SITE_IDS: ${{ inputs.site_ids }}
