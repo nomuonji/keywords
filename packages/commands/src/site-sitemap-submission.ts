@@ -317,7 +317,7 @@ export async function siteSitemapStatus(input: unknown, listSites: () => Promise
     policy: {
       schedule: 'GitHub Actions site-sitemap-submission, daily (Search Console, and Bing Webmaster when BING_WEBMASTER_API_KEY is set)',
       resubmitWhen: ['not registered in Search Console', 'sitemap URL set or lastmod changed', 'Search Console reported errors', `no submission for ${DEFAULT_RESUBMIT_FLOOR_DAYS} days`],
-      bing: 'Same rule via Bing Webmaster SubmitSitemap: not yet in GetFeeds, content changed, or floor elapsed. Sites not added/verified in Bing Webmaster are reported as bing_site_not_registered / bing_site_not_verified.',
+      bing: 'Same rule via Bing Webmaster SubmitFeed: not yet in GetFeeds, content changed, or floor elapsed. Sites not added/verified in Bing Webmaster are reported as bing_site_not_registered / bing_site_not_verified.',
       note: 'Submission is a crawl hint. Google decides whether and when pages are indexed. Sitemaps without <lastmod> give Google little signal about changed pages.'
     },
     items
