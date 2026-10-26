@@ -3,16 +3,19 @@ import { createSign } from 'node:crypto';
 /**
  * Firestore REST client shared by Keywords Operator and Sites Operator.
  *
- * The two operators keep their data in separate Firebase projects so that each
- * gets its own free-tier read/write budget. Every request is routed by the
- * collection it touches (see SITES_FIRESTORE_COLLECTIONS), not by which
- * endpoint called it, so cross-operator reads (Sites reading a Site Concept in
- * siteStructures, Keywords reading a GSC planning digest) always reach the
- * project that owns the data.
+ * The two operators keep their data in separate Firebase projects, each with
+ * its own free-tier read/write budget:
+ *   keywords  FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_PROJECT_ID
+ *   sites     SITES_FIREBASE_SERVICE_ACCOUNT_JSON / SITES_FIREBASE_PROJECT_ID
  *
- * Routing is opt-in: until SITES_FIRESTORE_TARGET=sites is set, every request
- * goes to the legacy shared project exactly as before. See
- * docs/firestore-project-split.md for the migration and cutover runbook.
+ * Every request is routed by the collection it touches (see
+ * SITES_FIRESTORE_COLLECTIONS), not by which endpoint called it, so
+ * cross-operator reads (Sites reading a Site Concept in siteStructures,
+ * Keywords reading a GSC planning digest) always reach the owning project.
+ *
+ * FIRESTORE_SINGLE_PROJECT=1 sends everything to the Keywords project. It
+ * exists for tests and local development only; production must configure the
+ * Sites project. See docs/firestore-project-split.md.
  */
 
 export type FirestoreTarget = 'keywords' | 'sites';
@@ -98,57 +101,14 @@ function baseUrl(target: FirestoreTarget) { return `https://firestore.googleapis
 // Routing
 // ---------------------------------------------------------------------------
 
-/**
- * True when SITES_FIRESTORE_TARGET=sites is configured (validated). This is a
- * request, not the cutover itself: see sitesCutoverReady().
- */
-export function sitesFirestoreSplitActive() {
-  const mode = (process.env.SITES_FIRESTORE_TARGET ?? 'legacy').trim().toLowerCase();
-  if (mode === '' || mode === 'legacy') return false;
-  if (mode !== 'sites') throw new Error(`SITES_FIRESTORE_TARGET must be "legacy" or "sites" (got "${mode}")`);
-  // Refuse to silently fall back to the legacy project after cutover: that
-  // would split writes between two projects.
-  if (!rawServiceAccount('sites')?.trim()) throw new Error('SITES_FIRESTORE_TARGET=sites but SITES_FIREBASE_SERVICE_ACCOUNT_JSON is not configured');
-  return true;
+/** Test/local-development mode: every collection lives in the Keywords project. */
+export function singleFirestoreProject() {
+  return /^(1|true|yes)$/i.test(process.env.FIRESTORE_SINGLE_PROJECT ?? '');
 }
 
-/**
- * Safety interlock: even with SITES_FIRESTORE_TARGET=sites, Sites requests keep
- * using the legacy project until the migration copy has finished, which the
- * migration records in the Sites project. Setting the flag early is therefore
- * harmless, and the switch happens by itself within READY_RECHECK_MS of the
- * copy finishing. Once seen ready, a process never switches back.
- */
-export const SITES_MIGRATION_STATE_PATH = '_migrations/sites-firestore-split';
-const READY_RECHECK_MS = 60_000;
-let cutoverReady: { ready: true } | { ready: false; checkedAt: number } | undefined;
-let cutoverCheck: Promise<boolean> | undefined;
-
-export async function sitesCutoverReady(): Promise<boolean> {
-  if (!sitesFirestoreSplitActive()) return false;
-  const known = cutoverReady;
-  if (known?.ready) return true;
-  if (known && 'checkedAt' in known && Date.now() - known.checkedAt < READY_RECHECK_MS) return false;
-  cutoverCheck ??= (async () => {
-    try {
-      let ready = false;
-      try {
-        const doc = await firestoreForTarget('sites', `/${SITES_MIGRATION_STATE_PATH}`);
-        const state = JSON.parse(doc?.fields?.state?.stringValue ?? '{}');
-        ready = Boolean(state?.copy?.finishedAt) && state?.sourceProjectId === projectIdFor('keywords') && state?.targetProjectId === projectIdFor('sites');
-      } catch (error) {
-        if (!(error instanceof FirestoreError && error.status === 404)) throw error;
-      }
-      cutoverReady = ready ? { ready: true } : { ready: false, checkedAt: Date.now() };
-      if (!ready) console.warn('SITES_FIRESTORE_TARGET=sites is set but the Sites migration copy has not finished; Sites data stays in the legacy project');
-      return ready;
-    } finally { cutoverCheck = undefined; }
-  })();
-  return cutoverCheck;
+function sitesConfigurationError() {
+  return rawServiceAccount('sites')?.trim() ? null : 'Sites Firebase project is not configured: set SITES_FIREBASE_SERVICE_ACCOUNT_JSON (or FIRESTORE_SINGLE_PROJECT=1 for tests and local development)';
 }
-
-/** Test hook: forget the cached interlock result. */
-export function resetSitesCutoverCache() { cutoverReady = undefined; cutoverCheck = undefined; }
 
 export function collectionOwner(collectionId: string): FirestoreTarget {
   return SITES_OWNED.has(collectionId) ? 'sites' : 'keywords';
@@ -191,7 +151,7 @@ function parseBody(init?: RequestInit) {
   try { return JSON.parse(init.body); } catch { return undefined; }
 }
 
-/** Project that owns a request's collections (ignores the cutover interlock). */
+/** Project that owns a request's collections. */
 function ownerOfRequest(path: string, init?: RequestInit): FirestoreTarget {
   if (path.startsWith('/')) {
     const collection = collectionOfPath(path);
@@ -207,12 +167,17 @@ function ownerOfRequest(path: string, init?: RequestInit): FirestoreTarget {
 }
 
 /** Decide which project a request goes to. Exported for tests and diagnostics. */
-export async function routeFirestoreRequest(path: string, init?: RequestInit): Promise<FirestoreTarget> {
-  if (!sitesFirestoreSplitActive()) return 'keywords';
-  // Validate ownership (and refuse mixed commits) whether or not cutover is ready.
+export function routeFirestoreRequest(path: string, init?: RequestInit): FirestoreTarget {
+  if (singleFirestoreProject()) return 'keywords';
+  // Ownership is validated (mixed commits refused) before any network call.
   const owner = ownerOfRequest(path, init);
-  if (owner === 'keywords') return 'keywords';
-  return await sitesCutoverReady() ? 'sites' : 'keywords';
+  if (owner === 'sites') {
+    // Never fall back to the Keywords project for Sites data: that would split
+    // Sites writes across two projects.
+    const error = sitesConfigurationError();
+    if (error) throw new Error(error);
+  }
+  return owner;
 }
 
 const NAME_PREFIX = /^projects\/[^/]+\/databases\/\(default\)\/documents/;
@@ -300,7 +265,7 @@ export async function firestoreForTarget(target: FirestoreTarget, path: string, 
 }
 
 export async function firestore(path: string, init?: RequestInit) {
-  return firestoreForTarget(await routeFirestoreRequest(path, init), path, init);
+  return firestoreForTarget(routeFirestoreRequest(path, init), path, init);
 }
 
 export function field(value: unknown): any {
@@ -329,26 +294,28 @@ export class FirestoreError extends Error {
 
 /** Full document name in the project that owns the path's collection (runs follow the Keywords project here; commit bodies are retargeted anyway). */
 export function firestoreDocumentName(path: string) {
-  const target = sitesFirestoreSplitActive() ? collectionOwner(collectionOfPath(path)) : 'keywords';
+  const target = singleFirestoreProject() ? 'keywords' : collectionOwner(collectionOfPath(path));
   return `${documentsRoot(target)}/${path}`;
 }
 export function firestoreDocumentNameFor(target: FirestoreTarget, path: string) { return `${documentsRoot(target)}/${path}`; }
 
-/** Non-secret routing summary for status endpoints (cutover state as last observed by this process). */
+/** Whether a target project can be reached (project id resolvable, credentials present). No secrets. */
+export function firestoreTargetConfiguration(target: FirestoreTarget) {
+  const effective: FirestoreTarget = singleFirestoreProject() ? 'keywords' : target;
+  let projectId: string | null = null;
+  try { projectId = projectIdFor(effective); } catch { projectId = null; }
+  return { projectId, projectConfigured: Boolean(projectId), credentialsConfigured: Boolean(rawServiceAccount(effective)?.trim()) };
+}
+
+/** Non-secret routing summary for status endpoints. */
 export function firestoreRoutingStatus() {
-  const safe = (fn: () => string) => { try { return fn(); } catch { return null; } };
-  let requested = false; let error: string | null = null;
-  try { requested = sitesFirestoreSplitActive(); } catch (e) { error = e instanceof Error ? e.message : String(e); }
-  const ready = requested && cutoverReady?.ready === true;
-  const cutover = !requested ? 'not_requested' : ready ? 'active' : cutoverReady ? 'waiting_for_migration_copy' : 'requested_not_yet_checked';
+  const single = singleFirestoreProject();
   return {
-    mode: ready ? 'split' : 'legacy_shared',
-    cutover,
-    keywordsProjectId: safe(() => projectIdFor('keywords')),
-    sitesProjectId: ready ? safe(() => projectIdFor('sites')) : safe(() => projectIdFor('keywords')),
-    configuredSitesProjectId: requested ? safe(() => projectIdFor('sites')) : null,
-    sitesCredentialsConfigured: Boolean(rawServiceAccount('sites')?.trim()),
+    mode: single ? 'single_project' : 'split',
+    keywordsProjectId: firestoreTargetConfiguration('keywords').projectId,
+    sitesProjectId: firestoreTargetConfiguration('sites').projectId,
+    sitesCredentialsConfigured: firestoreTargetConfiguration('sites').credentialsConfigured,
     sitesCollections: [...SITES_FIRESTORE_COLLECTIONS],
-    configurationError: error,
+    configurationError: single ? null : sitesConfigurationError(),
   };
 }
