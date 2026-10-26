@@ -123,8 +123,8 @@ async function projectReadiness(project: any) {
   };
 
   const nextActions: Array<{ code: string; message: string; tool?: string }> = [];
-  if (!sitesRuntime.firestoreConfigured) nextActions.push(action('configure_firebase_project', 'Configure FIREBASE_PROJECT_ID for the Sites control plane.'));
-  if (sitesRuntime.firestoreConfigured && !sitesRuntime.projectConfigured) nextActions.push(action('configure_firebase_service_account', 'Configure the Firebase service account in the runtime environment.'));
+  if (!sitesRuntime.firestoreConfigured) nextActions.push(action('configure_firebase_project', 'Configure the Sites Firebase project (SITES_FIREBASE_SERVICE_ACCOUNT_JSON, optionally SITES_FIREBASE_PROJECT_ID) for the Sites control plane.'));
+  if (sitesRuntime.firestoreConfigured && !sitesRuntime.projectConfigured) nextActions.push(action('configure_firebase_service_account', 'Configure the Sites Firebase service account (SITES_FIREBASE_SERVICE_ACCOUNT_JSON) in the runtime environment.'));
   if (sitesRuntime.firestoreConfigured && sitesRuntime.projectConfigured && !site && !siteLookupFailed) nextActions.push(action('register_real_site', `Register this deployed site once with localProjectId=${project.id}, explicit repository and productionUrl.`, 'site_registry_save'));
   if (siteLookupFailed) nextActions.push(action('repair_site_registry_access', 'Sites registry lookup failed. Check the Firestore connection and service-account access in the runtime environment.'));
   if (!binding) nextActions.push(action('confirm_blog_binding', 'Import/confirm the real Blog repository binding before automatic article sync or edits.', 'blog_importContext'));

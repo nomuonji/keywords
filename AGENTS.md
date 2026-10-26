@@ -66,6 +66,8 @@ This repository is an agent-native SEO workspace. Do not add a second, agent-onl
 16. Research credentials are environment-only; never write access tokens, API keys, developer tokens, or OAuth secrets to SQLite, source metadata, runs, decisions, policy rules, work sessions, checkpoints, or review requests.
 17. CMS publication remains out of scope. A verified local artifact may be committed and pushed only through the configured Git delivery path; it must stage only that artifact and record a `runs` audit entry. For Git-connected production sites, Keywords performs the HTTP/canonical check directly after delivery and may mark the handoff `published` without waiting for a Blog-side response. Do not add WordPress, Hatena, Blogger, or other CMS side effects unless product scope explicitly changes.
 
+18. Firestore data is split across two Firebase projects by collection (`SITES_FIRESTORE_COLLECTIONS` in `packages/db/src/firestore.ts`). A new Sites Operator collection must be added there, and one commit must not mix Sites and Keywords collections. See `docs/firestore-project-split.md`.
+
 ## Agent safety model
 
 - Read operations: allowed without approval.

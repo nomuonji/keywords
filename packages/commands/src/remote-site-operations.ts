@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dispatchSeoDelivery } from './seo-delivery-dispatch.js';
 import { z } from 'zod';
-import { field, value, firestore, firestoreDocumentName, FirestoreError, firestoreRoutingStatus } from '../../db/src/firestore.js';
+import { field, value, firestore, firestoreDocumentName, FirestoreError, firestoreRoutingStatus, firestoreTargetConfiguration } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, SeoRecoverySiteRecord, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
@@ -514,8 +514,9 @@ async function assertNoPendingImplementedChange(siteId: string, articleId: strin
 
 export function remoteSitesStatus() {
   return {
-    firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
-    projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
+    // Sites data lives in the Sites Firebase project (docs/firestore-project-split.md).
+    firestoreConfigured: firestoreTargetConfiguration('sites').projectConfigured,
+    projectConfigured: firestoreTargetConfiguration('sites').credentialsConfigured,
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
     firestoreRouting: firestoreRoutingStatus(),
     collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'growthInitiatives', 'distributionExperiments', 'seoRecoveryControls', 'seoRecoverySites', 'sites/{siteId}/indexationBundle', 'sites/{siteId}/sitemapSubmission', 'indexationSnapshots', 'indexationQuotaDays'],
