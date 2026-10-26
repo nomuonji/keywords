@@ -1,0 +1,78 @@
+name: Sites Firestore migration
+
+# Moves Sites Operator data from the legacy shared Firebase project to the
+# dedicated Sites project. Manual only. Runbook: docs/firestore-project-split.md
+#
+# Requires:
+#   vars.FIREBASE_PROJECT_ID / secrets.FIREBASE_SERVICE_ACCOUNT_JSON            legacy (source)
+#   secrets.SITES_FIREBASE_SERVICE_ACCOUNT_JSON (vars.SITES_FIREBASE_PROJECT_ID) Sites (target)
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: inventory (read-only) | copy (before cutover) | delta (after cutover) | verify
+        required: true
+        default: inventory
+        type: choice
+        options: [inventory, copy, delta, verify]
+      max_source_reads:
+        description: Stop before this many reads on the legacy project (free tier is 50,000/day shared with production)
+        required: false
+        default: '30000'
+      max_target_writes:
+        description: Stop before this many writes on the Sites project (free tier is 20,000/day)
+        required: false
+        default: '18000'
+      restart:
+        description: Ignore the saved checkpoint and start this mode from the beginning
+        required: false
+        default: false
+        type: boolean
+      deep:
+        description: Compare every document's fields (verify) / every document (delta) instead of counts / changed documents
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sites-firestore-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITES_FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.SITES_FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITES_FIREBASE_PROJECT_ID: ${{ vars.SITES_FIREBASE_PROJECT_ID }}
+      SITES_FIRESTORE_TARGET: ${{ vars.SITES_FIRESTORE_TARGET || 'legacy' }}
+      MIGRATION_MODE: ${{ inputs.mode }}
+      MAX_SOURCE_READS: ${{ inputs.max_source_reads }}
+      MAX_TARGET_WRITES: ${{ inputs.max_target_writes }}
+      MIGRATION_RESTART: ${{ inputs.restart }}
+      MIGRATION_DEEP: ${{ inputs.deep }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check credentials
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT_JSON" ]; then echo "::error::secrets.FIREBASE_SERVICE_ACCOUNT_JSON (legacy project) is not set"; exit 1; fi
+          if [ -z "$SITES_FIREBASE_SERVICE_ACCOUNT_JSON" ]; then echo "::error::secrets.SITES_FIREBASE_SERVICE_ACCOUNT_JSON (new Sites project) is not set"; exit 1; fi
+      - run: npm install --ignore-scripts
+      - name: Migrate
+        run: npx tsx scripts/sites-firestore-migrate.ts
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sites-firestore-migration-${{ inputs.mode }}-${{ github.run_id }}
+          path: sites-firestore-migration-report.json
+          if-no-files-found: ignore

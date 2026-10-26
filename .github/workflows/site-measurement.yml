@@ -32,6 +32,11 @@ jobs:
     env:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+      # Sites Operator data lives in its own Firebase project once SITES_FIRESTORE_TARGET=sites
+      # (docs/firestore-project-split.md). Unset/legacy keeps everything in the shared project.
+      SITES_FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.SITES_FIREBASE_SERVICE_ACCOUNT_JSON }}
+      SITES_FIREBASE_PROJECT_ID: ${{ vars.SITES_FIREBASE_PROJECT_ID }}
+      SITES_FIRESTORE_TARGET: ${{ vars.SITES_FIRESTORE_TARGET || 'legacy' }}
       GOOGLE_SEARCH_CONSOLE_SITE_URL: ${{ secrets.GOOGLE_SEARCH_CONSOLE_SITE_URL }}
       KEYWORDS_AGENT_ID: site-measurement-actions
       KEYWORDS_ARTICLE_SYNC_MODE: lazy

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dispatchSeoDelivery } from './seo-delivery-dispatch.js';
 import { z } from 'zod';
-import { field, value, firestore, firestoreDocumentName, FirestoreError } from '../../db/src/firestore.js';
+import { field, value, firestore, firestoreDocumentName, FirestoreError, firestoreRoutingStatus } from '../../db/src/firestore.js';
 import type { MetricSnapshot, OptimizationEvent, SeoRecoveryPortfolioRecord, SeoRecoverySiteRecord, SeoTaskRecord, SiteArticleRecord, SiteDirectionRecord, SiteRecord } from '../../db/src/site-operations-schema.js';
 import { themeCandidateForTask } from './theme-research.js';
 import { assertSeoTaskEvaluation, seoTaskEvaluationShape } from './seo-evaluation-registry.js';
@@ -517,6 +517,7 @@ export function remoteSitesStatus() {
     firestoreConfigured: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT_ID),
     projectConfigured: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64),
     sourceOfTruth: { articleBody: 'git_repository', operations: 'firestore', localExecution: 'sqlite' },
+    firestoreRouting: firestoreRoutingStatus(),
     collections: ['sites', 'articles', 'optimizationEvents', 'seoPlanningDigests', 'siteDirections', 'seoTasks', 'growthInitiatives', 'distributionExperiments', 'seoRecoveryControls', 'seoRecoverySites', 'sites/{siteId}/indexationBundle', 'sites/{siteId}/sitemapSubmission', 'indexationSnapshots', 'indexationQuotaDays'],
     legacyCollections: {
       metricSnapshots: 'read_only_compatibility_for_historical_optimization_evidence',

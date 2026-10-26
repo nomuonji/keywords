@@ -7,6 +7,7 @@ import * as z from 'zod/v4';
 // Keep these imports relative: Vercel bundles a root-level serverless function
 // independently of npm workspace links.
 import { recordDelete, recordDeleteShape, treasuryPrune, treasuryPruneShape } from '../packages/commands/src/delete-records.js';
+import { firestoreRoutingStatus } from '../packages/db/src/firestore.js';
 import { keywordDemand, treasuryConfiguration, treasuryList, treasurySave, treasurySearch } from '../packages/keyword-treasury/src/index.js';
 import { analyzeSerp } from '../packages/research/src/index.js';
 import { marketplaceAdapterCapabilities, marketplaceResearch, supportedMarketplaceAdapters } from '../packages/research/src/marketplace.js';
@@ -103,6 +104,7 @@ function runtimeStatus() {
   const googleAdsDirect = googleAdsDirectConfiguration();
   return {
     ...treasuryConfiguration(),
+    firestoreRouting: firestoreRoutingStatus(),
     serverVersion: KEYWORDS_MCP_SERVER_VERSION,
     gitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? process.env.COMMIT_SHA ?? null,
     deployment: {

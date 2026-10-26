@@ -55,7 +55,8 @@ its unchanged generatedAt within the cache window. Do not use changing cache
 busters to test a hit. Observe the next normal day of Firestore reads/writes
 and 429 incidence; no percentage reduction for the whole project is asserted.
 Other operators may share the same Firebase project, so their load is outside
-this bounded patch.
+this bounded patch. Sites and Keywords data can now be split into separate
+projects: see docs/firestore-project-split.md.
 
 References:
 

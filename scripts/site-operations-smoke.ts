@@ -1141,7 +1141,7 @@ try {
   const body = Buffer.from(JSON.stringify({ kind: 'access', exp: Math.floor(Date.now() / 1000) + 300, clientId: 'smoke' })).toString('base64url');
   const signedAccess = `${body}.${createHmac('sha256', 'test-only-token').update(body).digest('base64url')}`;
   const oauthStatus = await call('tools/call', { name: 'remote_sites_status', arguments: {} }, signedAccess);
-  assert.equal(oauthStatus.structuredContent.serverVersion, '0.23.0');
+  assert.equal(oauthStatus.structuredContent.serverVersion, '0.24.0');
   assert.equal(oauthStatus.structuredContent.evaluationRegistry.version, '1.3.0');
 
   // An incapable Grok Git connector must not produce an hourly stream of
