@@ -6,7 +6,7 @@ import { DEFAULT_RESUBMIT_FLOOR_DAYS, discoverSitemaps, readSitemapContent } fro
 /**
  * Bing Webmaster Tools sitemap submission, run in the same daily lane as the
  * Search Console submission. Bing's anonymous sitemap ping is retired, so this
- * uses the Webmaster API (SubmitSitemap / GetFeeds / GetUserSites) with
+ * uses the Webmaster API (SubmitFeed / GetFeeds / GetUserSites) with
  * BING_WEBMASTER_API_KEY. The same "only when it tells Bing something new"
  * rule applies: not yet known to Bing, URL set/lastmod changed, or the floor
  * elapsed. A site that is not added/verified in Bing Webmaster is skipped and
@@ -155,7 +155,7 @@ async function bingFeeds(apiKey: string, siteUrl: string): Promise<BingFeed[]> {
 }
 
 async function bingSubmitSitemap(apiKey: string, siteUrl: string, feedUrl: string) {
-  await bingCall('SubmitSitemap', apiKey, { body: { siteUrl, feedUrl } });
+  await bingCall('SubmitFeed', apiKey, { body: { siteUrl, feedUrl } });
 }
 
 /* ---------- run ---------- */
