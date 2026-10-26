@@ -15,7 +15,7 @@
  * free-tier daily quota and resume from its checkpoint on the next run.
  */
 import { createHash } from 'node:crypto';
-import { FirestoreError, SITES_FIRESTORE_COLLECTIONS, firestoreDocumentNameFor, firestoreForTarget, projectIdFor, type FirestoreTarget } from '../../db/src/firestore.js';
+import { FirestoreError, SITES_FIRESTORE_COLLECTIONS, SITES_MIGRATION_STATE_PATH, firestoreDocumentNameFor, firestoreForTarget, projectIdFor, type FirestoreTarget } from '../../db/src/firestore.js';
 
 export type Transport = (target: FirestoreTarget, path: string, init?: RequestInit) => Promise<any>;
 export type MigrationUnit = { parent: string; collectionId: string };
@@ -31,7 +31,7 @@ export type MigrationOptions = {
   log?: (line: string) => void;
 };
 
-const META_PATH = '_migrations/sites-firestore-split';
+const META_PATH = SITES_MIGRATION_STATE_PATH;
 const STATE_VERSION = 1;
 const BIG_DOCUMENT_COLLECTIONS = new Set(['indexationBundle', 'seoPlanningDigests', 'indexationSnapshots']);
 const MAX_COMMIT_WRITES = 100;
@@ -254,9 +254,11 @@ async function inventory(session: Session): Promise<MigrationReport> {
 }
 
 async function copy(session: Session, options: MigrationOptions, now: () => Date): Promise<MigrationReport> {
-  if ((process.env.SITES_FIRESTORE_TARGET ?? '').trim().toLowerCase() === 'sites') return report(session, 'copy', 'refused', 'Cutover is active (SITES_FIRESTORE_TARGET=sites): a full copy would overwrite live Sites data. Use mode=delta.');
   const { state } = await loadState(session);
-  if (state.copy?.finishedAt && !options.restart) return report(session, 'copy', 'refused', `Copy already finished at ${state.copy.finishedAt}. Run delta after cutover, or restart=true to copy again before cutover.`);
+  // Recording copy.finishedAt is what switches live traffic to the Sites
+  // project (when SITES_FIRESTORE_TARGET=sites), so a finished copy is never
+  // redone: it would overwrite live Sites data. Use delta instead.
+  if (state.copy?.finishedAt) return report(session, 'copy', 'refused', `Copy already finished at ${state.copy.finishedAt} and the Sites project may be live. Run delta to bring over later legacy changes.`);
   if (!state.copy || options.restart) {
     const plan = await buildPlan(session);
     state.copy = { startedAt: now().toISOString(), unitIndex: 0, plan, documentsWritten: 0 };
@@ -288,7 +290,7 @@ async function copy(session: Session, options: MigrationOptions, now: () => Date
   progress.finishedAt = now().toISOString();
   state.history.push({ at: progress.finishedAt, mode: 'copy', outcome: 'completed', detail: `${progress.documentsWritten} documents` });
   await saveState(session, state);
-  return report(session, 'copy', 'completed', `Copied ${progress.documentsWritten} documents in ${progress.plan.length} collections. Next: switch SITES_FIRESTORE_TARGET=sites (Vercel and GitHub), then run delta.`, { copied: progress.documentsWritten });
+  return report(session, 'copy', 'completed', `Copied ${progress.documentsWritten} documents in ${progress.plan.length} collections. With SITES_FIRESTORE_TARGET=sites, Sites traffic now switches to the Sites project within about a minute; run delta next.`, { copied: progress.documentsWritten });
 }
 
 async function delta(session: Session, options: MigrationOptions, now: () => Date): Promise<MigrationReport> {

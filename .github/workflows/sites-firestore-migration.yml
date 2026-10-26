@@ -25,7 +25,7 @@ on:
         required: false
         default: '18000'
       restart:
-        description: Ignore the saved checkpoint and start this mode from the beginning
+        description: Start this mode again from the beginning (copy - only while unfinished)
         required: false
         default: false
         type: boolean
