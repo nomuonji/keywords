@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "date": "2026-10-27",
-  "generatedAt": "2026-10-26T23:24:35.726Z",
+  "date": "2026-10-28",
+  "generatedAt": "2026-10-27T23:16:13.635Z",
   "method": {
     "stratified": 6,
     "underobserved": 2,
@@ -14,23 +14,23 @@
   "coverage": {
     "rootGenreCount": 39,
     "sampledToday": 7,
-    "historicObservations": 104
+    "historicObservations": 111
   },
   "warnings": [
-    {
-      "genreId": "100004",
-      "reason": "unsupported_subgenre"
-    },
-    {
-      "genreId": "100000",
-      "reason": "Rakuten upstream HTTP 400"
-    },
     {
       "genreId": "210908",
       "reason": "unsupported_subgenre"
     },
     {
       "genreId": "111427",
+      "reason": "Rakuten upstream HTTP 400"
+    },
+    {
+      "genreId": "100004",
+      "reason": "unsupported_subgenre"
+    },
+    {
+      "genreId": "100000",
       "reason": "Rakuten upstream HTTP 400"
     },
     {
@@ -6625,6 +6625,461 @@
         "previousDate": "2026-10-26",
         "sameItemCount": 3,
         "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "558929",
+      "rootName": "腕時計",
+      "genreId": "302123",
+      "genreName": "ペアウォッチ",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "nopple:10024140",
+          "rank": 1
+        },
+        {
+          "itemCode": "iget:10036943",
+          "rank": 2
+        },
+        {
+          "itemCode": "nanaple:10132467",
+          "rank": 3
+        },
+        {
+          "itemCode": "e-bloomstore:10031272",
+          "rank": 4
+        },
+        {
+          "itemCode": "blessyou:10016058",
+          "rank": 5
+        },
+        {
+          "itemCode": "theclockhouse:10008856",
+          "rank": 6
+        },
+        {
+          "itemCode": "theclockhouse:10008857",
+          "rank": 7
+        },
+        {
+          "itemCode": "theclockhouse:10008858",
+          "rank": 8
+        },
+        {
+          "itemCode": "cosmevivi:10004593",
+          "rank": 9
+        },
+        {
+          "itemCode": "nanaple:10090653",
+          "rank": 10
+        },
+        {
+          "itemCode": "kiitos-web:10028855",
+          "rank": 11
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "112493",
+      "rootName": "楽器・音響機器",
+      "genreId": "206024",
+      "genreName": "DAW・DTM・レコーダー",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "shimamuragakki:10279848",
+          "rank": 1
+        },
+        {
+          "itemCode": "shimamuragakki:10254984",
+          "rank": 2
+        },
+        {
+          "itemCode": "rockonline:10005613",
+          "rank": 3
+        },
+        {
+          "itemCode": "shimamuragakki:10278974",
+          "rank": 4
+        },
+        {
+          "itemCode": "ikebe:10133021",
+          "rank": 6
+        },
+        {
+          "itemCode": "shimamuragakki:10247789",
+          "rank": 7
+        },
+        {
+          "itemCode": "key-shibuya:10033872",
+          "rank": 8
+        },
+        {
+          "itemCode": "shimamuragakki:10180504",
+          "rank": 9
+        },
+        {
+          "itemCode": "rockonline:10005625",
+          "rank": 10
+        },
+        {
+          "itemCode": "shimamuragakki:10247788",
+          "rank": 11
+        },
+        {
+          "itemCode": "shimamuragakki:10227782",
+          "rank": 12
+        },
+        {
+          "itemCode": "marks:10022536",
+          "rank": 13
+        },
+        {
+          "itemCode": "key:10054517",
+          "rank": 14
+        },
+        {
+          "itemCode": "r-kojima:11646181",
+          "rank": 15
+        },
+        {
+          "itemCode": "ishibashi:10190188",
+          "rank": 16
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "101205",
+      "rootName": "テレビゲーム",
+      "genreId": "112317",
+      "genreName": "スーパーファミコン",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "centerwave:10000172",
+          "rank": 1
+        },
+        {
+          "itemCode": "srb:10014841",
+          "rank": 2
+        },
+        {
+          "itemCode": "iimoreuse:10002601",
+          "rank": 3
+        },
+        {
+          "itemCode": "centerwave:10000171",
+          "rank": 4
+        },
+        {
+          "itemCode": "wondergoo:10454639",
+          "rank": 5
+        },
+        {
+          "itemCode": "peaceecology:10000892",
+          "rank": 6
+        },
+        {
+          "itemCode": "peaceecology:10000926",
+          "rank": 7
+        },
+        {
+          "itemCode": "wattmann:10604243",
+          "rank": 8
+        },
+        {
+          "itemCode": "3aonlinestore:10139104",
+          "rank": 9
+        },
+        {
+          "itemCode": "eyesrail-r:10000028",
+          "rank": 10
+        },
+        {
+          "itemCode": "iimoreuse:10009725",
+          "rank": 11
+        },
+        {
+          "itemCode": "wattmann:10604508",
+          "rank": 12
+        },
+        {
+          "itemCode": "moumouhouse:10339661",
+          "rank": 13
+        },
+        {
+          "itemCode": "machida:10535158",
+          "rank": 14
+        },
+        {
+          "itemCode": "renet20:12251843",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "566382",
+      "rootName": "おもちゃ",
+      "genreId": "566386",
+      "genreName": "スポーツトイ・アクショントイ",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "jc-group:10000026",
+          "rank": 1
+        },
+        {
+          "itemCode": "ioffice:10003946",
+          "rank": 2
+        },
+        {
+          "itemCode": "kuroma-shop:10000032",
+          "rank": 3
+        },
+        {
+          "itemCode": "ioffice:10004648",
+          "rank": 4
+        },
+        {
+          "itemCode": "mottainaiya:10000989",
+          "rank": 5
+        },
+        {
+          "itemCode": "ebaby-select:10001818",
+          "rank": 6
+        },
+        {
+          "itemCode": "kyarahouse:10135052",
+          "rank": 7
+        },
+        {
+          "itemCode": "hibiiro:10000207",
+          "rank": 8
+        },
+        {
+          "itemCode": "e-baby:10008268",
+          "rank": 9
+        },
+        {
+          "itemCode": "dabada:10000947",
+          "rank": 10
+        },
+        {
+          "itemCode": "jyojyo:10001243",
+          "rank": 11
+        },
+        {
+          "itemCode": "growder:10000222",
+          "rank": 12
+        },
+        {
+          "itemCode": "e-baby:10008449",
+          "rank": 13
+        },
+        {
+          "itemCode": "marketjapan:10001940",
+          "rank": 14
+        },
+        {
+          "itemCode": "venus-wear:10002370",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "551169",
+      "rootName": "医薬品・コンタクト・介護",
+      "genreId": "208223",
+      "genreName": "ひ鍼",
+      "selection": "stratified",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "shopdeclinic:10001511",
+          "rank": 1
+        },
+        {
+          "itemCode": "maiple-nagoya:10001330",
+          "rank": 2
+        },
+        {
+          "itemCode": "shopdeclinic:12648233",
+          "rank": 3
+        },
+        {
+          "itemCode": "shopdeclinic:10096881",
+          "rank": 4
+        },
+        {
+          "itemCode": "shopdeclinic:10535471",
+          "rank": 5
+        },
+        {
+          "itemCode": "tiryouyouhin:10000274",
+          "rank": 6
+        },
+        {
+          "itemCode": "shopdeclinic:10535472",
+          "rank": 7
+        },
+        {
+          "itemCode": "fukuyaku:10035695",
+          "rank": 8
+        },
+        {
+          "itemCode": "shopdeclinic:10056384",
+          "rank": 9
+        },
+        {
+          "itemCode": "shopdeclinic:10021067",
+          "rank": 10
+        },
+        {
+          "itemCode": "tiryouyouhin:10000107",
+          "rank": 11
+        },
+        {
+          "itemCode": "tiryouyouhin:10000091",
+          "rank": 12
+        },
+        {
+          "itemCode": "maiple-nagoya:10001327",
+          "rank": 13
+        },
+        {
+          "itemCode": "shopdeclinic:12926308",
+          "rank": 14
+        },
+        {
+          "itemCode": "shopdeclinic:10103812",
+          "rank": 15
+        }
+      ],
+      "comparison": null
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "101070",
+      "rootName": "スポーツ・アウトドア",
+      "genreId": "407942",
+      "genreName": "ラクロス",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Sat, 05 Sep 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "gameskshop:10069902",
+          "rank": 1
+        },
+        {
+          "itemCode": "tesseractrk:10004472",
+          "rank": 2
+        },
+        {
+          "itemCode": "goodlifeshopstore:10199375",
+          "rank": 3
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-27",
+        "sameItemCount": 3,
+        "denominator": 3
+      }
+    },
+    {
+      "date": "2026-10-28",
+      "rootGenreId": "211742",
+      "rootName": "TV・オーディオ・カメラ",
+      "genreId": "404237",
+      "genreName": "ポータブルテレビ",
+      "selection": "revisit",
+      "source": "rakuten_ichiba_ranking",
+      "rankingUpdatedAt": "Tue, 27 Oct 2026 00:00:00 +0900",
+      "items": [
+        {
+          "itemCode": "farson:10007690",
+          "rank": 1
+        },
+        {
+          "itemCode": "e-kurashi:10047329",
+          "rank": 2
+        },
+        {
+          "itemCode": "brightonshop:10000296",
+          "rank": 3
+        },
+        {
+          "itemCode": "rcmdse:16200354",
+          "rank": 4
+        },
+        {
+          "itemCode": "premiumgarage:10000022",
+          "rank": 5
+        },
+        {
+          "itemCode": "cocoiine:10001717",
+          "rank": 6
+        },
+        {
+          "itemCode": "denitshop-r:10006105",
+          "rank": 7
+        },
+        {
+          "itemCode": "pcbox78:10049531",
+          "rank": 8
+        },
+        {
+          "itemCode": "cecs2022:10000269",
+          "rank": 9
+        },
+        {
+          "itemCode": "fa-fe:10002769",
+          "rank": 10
+        },
+        {
+          "itemCode": "doshisha-marche:10000478",
+          "rank": 11
+        },
+        {
+          "itemCode": "to-rulease:10011464",
+          "rank": 12
+        },
+        {
+          "itemCode": "rcmdse:17012232",
+          "rank": 13
+        },
+        {
+          "itemCode": "yasashisa:10005786",
+          "rank": 14
+        },
+        {
+          "itemCode": "premoa:11156646",
+          "rank": 15
+        }
+      ],
+      "comparison": {
+        "previousDate": "2026-10-27",
+        "sameItemCount": 5,
+        "denominator": 15
       }
     }
   ]
