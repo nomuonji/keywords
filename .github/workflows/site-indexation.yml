@@ -7,6 +7,13 @@
 name: site-indexation
 
 on:
+  # Run one reconciliation immediately when scheduler behavior changes on main.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/site-indexation.yml'
+      - 'scripts/site-indexation-sweep.ts'
+      - 'scripts/site-indexation-policy.ts'
   workflow_dispatch:
   schedule:
     # 04:17, 10:17, 16:17, 22:17 JST, away from 02:23 measurement.
@@ -33,6 +40,8 @@ jobs:
       SITE_INDEXATION_GLOBAL_RUN_BUDGET: '3600'
       SITE_INDEXATION_PROPERTY_RUN_BUDGET: '450'
       SITE_INDEXATION_SITE_CHUNK: '50'
+      # Recheck eligible unresolved URLs after 48h when regular due work leaves quota unused.
+      SITE_INDEXATION_PROACTIVE_MIN_AGE_HOURS: '48'
 
     steps:
       - uses: actions/checkout@v4
@@ -55,5 +64,5 @@ jobs:
           printf '%s' "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > "$RUNNER_TEMP/google-sa.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/google-sa.json" >> "$GITHUB_ENV"
 
-      - name: Inspect due URLs within property budgets
+      - name: Inspect due URLs, then proactively refill unused quota
         run: npx tsx scripts/site-indexation-sweep.ts
