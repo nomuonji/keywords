@@ -1,14 +1,15 @@
 import { createHash } from 'node:crypto';
-import { inspectionSlice } from './site-indexation-policy.js';
+import { inspectionSlice, isProactiveInspectionCandidate, proactiveInspectionPriority } from './site-indexation-policy.js';
 import { classifyGoogleInspectionFailures, isTemporaryGoogleInspectionFailure } from './site-indexation-transient.js';
 import { siteRegistryList } from '../packages/commands/src/remote-site-operations.js';
-import { siteIndexationInspect, siteIndexationSnapshotSave } from '../packages/commands/src/site-indexation.js';
+import { siteIndexationInspect, siteIndexationList, siteIndexationSnapshotSave, type IndexationUrlRecord } from '../packages/commands/src/site-indexation.js';
 import type { SiteRecord } from '../packages/db/src/site-operations-schema.js';
 
 const RUN_INTERVAL_HOURS = 6;
 const globalRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_GLOBAL_RUN_BUDGET ?? 3600) || 3600, 10000));
 const propertyRunBudget = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_PROPERTY_RUN_BUDGET ?? 450) || 450, 1000));
 const siteChunk = Math.max(1, Math.min(Number(process.env.SITE_INDEXATION_SITE_CHUNK ?? 50) || 50, 50));
+const proactiveMinAgeHours = Math.max(24, Math.min(Number(process.env.SITE_INDEXATION_PROACTIVE_MIN_AGE_HOURS ?? 48) || 48, 168));
 
 function stableNumber(value: string) {
   return Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 8), 16);
@@ -39,6 +40,19 @@ async function activeSites() {
     pageToken = result.nextPageToken ?? undefined;
   } while (pageToken);
   return items.filter(site => Boolean(site.searchConsoleProperty));
+}
+
+async function allIndexationRows(siteId: string): Promise<IndexationUrlRecord[]> {
+  const rows: IndexationUrlRecord[] = [];
+  let pageToken: string | undefined;
+  do {
+    const result = await siteIndexationList({
+      siteId, limit: 500, ...(pageToken ? { pageToken } : {})
+    }) as { items: IndexationUrlRecord[]; nextPageToken: string | null };
+    rows.push(...result.items);
+    pageToken = result.nextPageToken ?? undefined;
+  } while (pageToken);
+  return rows;
 }
 
 async function sweepProperty(property: string, sites: SiteRecord[], slot: number, budget: number) {
@@ -112,6 +126,125 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
     if (firestoreQuotaExhausted || !madeProgress) break;
   }
 
+  // If the normal due queue is sparse, spend remaining quota on older unresolved
+  // URLs. Only the three indexable discovery/indexing states below are eligible,
+  // and a URL must be at least proactiveMinAgeHours old since its last inspection.
+  // This bypasses the longer unchanged-result backoff only when quota is otherwise idle.
+  let proactiveCandidatesSeen = 0;
+  let proactiveInspected = 0;
+  let proactiveReserved = 0;
+  let proactiveFailed = 0;
+  let proactiveAuthorizationBlocked = false;
+  const proactiveQueues = new Map<string, { rows: IndexationUrlRecord[]; cursor: number }>();
+
+  if (remaining > 0 && !firestoreQuotaExhausted) {
+    for (const site of ordered) {
+      try {
+        const rows = await allIndexationRows(site.id);
+        const eligible = rows.filter(row => isProactiveInspectionCandidate(row, Date.now(), proactiveMinAgeHours));
+        eligible.sort((a, b) => {
+          const priority = proactiveInspectionPriority(a.coverageState) - proactiveInspectionPriority(b.coverageState);
+          if (priority !== 0) return priority;
+          const age = Date.parse(a.lastInspectedAt ?? '') - Date.parse(b.lastInspectedAt ?? '');
+          if (age !== 0) return age;
+          return stableNumber(`${a.url}:${slot}`) - stableNumber(`${b.url}:${slot}`);
+        });
+        proactiveCandidatesSeen += eligible.length;
+        proactiveQueues.set(site.id, { rows: eligible, cursor: 0 });
+      } catch (error) {
+        failed++;
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ siteId: site.id, error: message });
+        if (isTemporaryGoogleInspectionFailure(message, 'site-operation')) transientFailed++;
+        else blockingFailed++;
+        if (/firestore/i.test(message) && /429|RESOURCE_EXHAUSTED/i.test(message)) {
+          firestoreQuotaExhausted = true;
+          break;
+        }
+      }
+    }
+
+    while (remaining > 0 && !firestoreQuotaExhausted && !proactiveAuthorizationBlocked) {
+      const availableSites = ordered.filter(site => {
+        const queue = proactiveQueues.get(site.id);
+        return queue && queue.cursor < queue.rows.length;
+      });
+      if (!availableSites.length) break;
+
+      let madeProactiveProgress = false;
+      let sitesRemainingInRound = availableSites.length;
+      for (const site of availableSites) {
+        if (remaining <= 0 || firestoreQuotaExhausted || proactiveAuthorizationBlocked) break;
+        const take = inspectionSlice(remaining, sitesRemainingInRound, siteChunk);
+        sitesRemainingInRound--;
+        const queue = proactiveQueues.get(site.id)!;
+        const batch = queue.rows.slice(queue.cursor, queue.cursor + take);
+        queue.cursor += batch.length;
+        if (!batch.length) continue;
+
+        try {
+          const result = await siteIndexationInspect({
+            siteId: site.id,
+            urls: batch.map(row => row.inspectionUrl || row.url),
+            limit: batch.length
+          }) as any;
+          calls++;
+          const thisReserved = Number(result.quota?.reserved ?? 0);
+          const requested = Number(result.requested ?? batch.length);
+          reserved += thisReserved;
+          proactiveReserved += thisReserved;
+          remaining = Math.max(0, remaining - thisReserved);
+          inspected += Number(result.inspected ?? 0);
+          proactiveInspected += Number(result.inspected ?? 0);
+          const failedInCall = Number(result.failed ?? 0);
+          failed += failedInCall;
+          proactiveFailed += failedInCall;
+          const classification = classifyGoogleInspectionFailures(
+            failedInCall, (result.failures ?? []).map((item: any) => ({ error: String(item.error ?? 'inspection_failed') }))
+          );
+          transientFailed += classification.transient;
+          blockingFailed += classification.other;
+          unreportedFailures += classification.unreported;
+          skipped += Number(result.skipped ?? 0);
+          if (thisReserved > 0 || Number(result.inspected ?? 0) > 0) madeProactiveProgress = true;
+
+          const callFailures = (result.failures ?? []).map((item: any) => ({
+            siteId: site.id, error: String(item.error ?? 'inspection_failed')
+          }));
+          failures.push(...callFailures);
+          if (callFailures.some(item => /\bHTTP\s+(?:401|403)\b|invalid_grant|unauthorized|forbidden|permission denied/i.test(item.error))) {
+            proactiveAuthorizationBlocked = true;
+            break;
+          }
+          // If the shared Search Console daily quota has less room than requested,
+          // do not keep probing it with more site batches in this run.
+          if (thisReserved < requested && requested > 0) {
+            remaining = 0;
+            break;
+          }
+        } catch (error) {
+          failed++;
+          const message = error instanceof Error ? error.message : String(error);
+          failures.push({ siteId: site.id, error: message });
+          if (isTemporaryGoogleInspectionFailure(message, 'site-operation')) transientFailed++;
+          else blockingFailed++;
+          if (/firestore/i.test(message) && /429|RESOURCE_EXHAUSTED/i.test(message)) {
+            firestoreQuotaExhausted = true;
+            break;
+          }
+          if (/\bHTTP\s+(?:401|403)\b|invalid_grant|unauthorized|forbidden|permission denied/i.test(message)) {
+            proactiveAuthorizationBlocked = true;
+            break;
+          }
+        }
+      }
+      if (!madeProactiveProgress) break;
+    }
+  }
+
+  const proactiveCandidatesRemaining = [...proactiveQueues.values()]
+    .reduce((total, queue) => total + Math.max(0, queue.rows.length - queue.cursor), 0);
+
   return {
     property,
     siteCount: sites.length,
@@ -119,6 +252,13 @@ async function sweepProperty(property: string, sites: SiteRecord[], slot: number
     chunk: siteChunk,
     calls,
     firestoreQuotaExhausted,
+    proactiveMinAgeHours,
+    proactiveCandidatesSeen,
+    proactiveCandidatesRemaining,
+    proactiveReserved,
+    proactiveInspected,
+    proactiveFailed,
+    proactiveAuthorizationBlocked,
     reserved,
     inspected,
     failed,
