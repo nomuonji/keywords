@@ -100,6 +100,26 @@ never duplicates items.
 A pool item is material, never evidence. A `REPORTED` item means "a public ranking mentioned it", not
 "people buy it".
 
+## Readings (how a model grows)
+
+A definition alone can only be re-typed. Readings live in SQLite `consumer_model_observations`, one row
+per `(target_type, target_key)` with its own evidence label:
+
+| Field | Meaning |
+| --- | --- |
+| `target_type` / `target_key` | `variable:attention`, `angle:meaning`, `thinking:3` |
+| `finding` | what was actually seen, in that target's terms |
+| `label` | `OBSERVED` / `REPORTED` / `INFERRED` / `HYPOTHESIS` / `COUNTEREVIDENCE` / `UNKNOWN` |
+| `value`, `subject_id`, `source_url`, `observed_at`, `population`, `denominator`, `limitation` | the measurement and its boundaries |
+
+- `consumer_model_observe` — record one reading (budgeted write)
+- `consumer_model_evidence` — counts per target and label, counterevidence count, recent findings,
+  **and the targets that have never been tested**
+
+`consumer_model_evidence` is the honest view: it reports `coverage` (e.g. angles 7/15, variables 0/10) and
+`untested`. A model whose variables have zero readings is not validated, however complete it looks.
+Readings are what a later `changeGate` revision points at; the definition never silently absorbs them.
+
 ## Contract
 
 - `id` is a lowercase slug and is the Firestore document id, so import and update are deterministic.

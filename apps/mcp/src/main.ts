@@ -13,6 +13,7 @@ import { operatorCommands } from '@keywords/commands/operator';
 import { operationControl } from '@keywords/commands/guard';
 import { consumerModelCommands } from '@keywords/commands/consumer-model';
 import { consumerSeedPoolCommands } from '@keywords/commands/consumer-seed-pool';
+import { consumerObservationCommands } from '@keywords/commands/consumer-observation';
 import { productTools, isProductTool, callProductTool } from './product.js';
 import { blogTools, isBlogTool, callBlogTool } from './blog.js';
 import { keywordFeedbackTools, isKeywordFeedbackTool, callKeywordFeedbackTool } from './keyword-feedback.js';
@@ -33,7 +34,7 @@ const budgetedTools = new Set([
   'keyword_screen_batch','keyword_research_pipeline','keyword_treasury_save',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate',
-  'consumer_model_save','consumer_model_archive','consumer_model_import_seed','consumer_seed_pool_import'
+  'consumer_model_save','consumer_model_archive','consumer_model_import_seed','consumer_seed_pool_import','consumer_model_observe'
 ]);
 const allowedWhilePaused = new Set([
   'recovery_context',
@@ -41,7 +42,7 @@ const allowedWhilePaused = new Set([
   'blog_contract',
   'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
   'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context',
-  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness','consumer_model_list','consumer_model_get','consumer_seed_pool_list','consumer_model_seeds'
+  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness','consumer_model_list','consumer_model_get','consumer_seed_pool_list','consumer_model_seeds','consumer_model_evidence'
 ]);
 function guardTool(name: string, args: any) {
   if (name === 'work_start') throw new Error('Direct agent work_start is disabled. Use operation_start, or claim a human-created legacy discovery job.');
@@ -110,7 +111,9 @@ const coreTools = [
   { name: 'consumer_model_import_seed', description: 'Import a frozen consumer-model seed file from the repository (local runtime only). Idempotent by content hash.', inputSchema: s('Import seed', { seedPath: { type: 'string' } }, ['seedPath']) },
   { name: 'consumer_seed_pool_import', description: 'Upsert concrete research subjects into a seed pool (material for model angles, never evidence of demand). Idempotent per pool + text. Write: requires an active operation.', inputSchema: s('Import seed pool', { poolId: { type: 'string' }, items: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, category: { type: 'string' }, label: { type: 'string', enum: ['HYPOTHESIS','REPORTED','OBSERVED','UNKNOWN'] }, sourceRef: { type: 'string' }, originRef: { type: 'string' }, note: { type: 'string' }, modelId: { type: 'string' }, status: { type: 'string', enum: ['active','stale','archived'] }, observedAt: { type: 'string' } }, required: ['text'] } } }, ['poolId','items']) },
   { name: 'consumer_seed_pool_list', description: 'Read seed pool items with their provenance label. A pool item is material, not market evidence.', inputSchema: s('Seed pool', { poolId: { type: 'string' }, label: { type: 'string' }, status: { type: 'string' }, category: { type: 'string' }, limit: { type: 'number' } }) },
-  { name: 'consumer_model_seeds', description: 'Cross a consumer model\'s angles with seed-pool material to produce research seeds, each keeping its angle, pool item and label. Distances rotate by rotationKey so repeat runs differ. Seeds are hypotheses: measure search volume and SERP before saving a keyword.', inputSchema: s('Generate seeds', { modelId: { type: 'string' }, poolId: { type: 'string' }, count: { type: 'number' }, label: { type: 'string' }, category: { type: 'string' }, rotationKey: { type: 'string' } }, ['modelId']) }
+  { name: 'consumer_model_seeds', description: 'Cross a consumer model\'s angles with seed-pool material to produce research seeds, each keeping its angle, pool item and label. Distances rotate by rotationKey so repeat runs differ. Seeds are hypotheses: measure search volume and SERP before saving a keyword.', inputSchema: s('Generate seeds', { modelId: { type: 'string' }, poolId: { type: 'string' }, count: { type: 'number' }, label: { type: 'string' }, category: { type: 'string' }, rotationKey: { type: 'string' } }, ['modelId']) },
+  { name: 'consumer_model_observe', description: 'Record one reading against one model target (variable, angle or thinking claim) with its evidence label. This is how a model accumulates evidence instead of being re-typed. Write: requires an active operation.', inputSchema: s('Observe', { modelId: { type: 'string' }, targetType: { type: 'string', enum: ['variable','angle','thinking'] }, targetKey: { type: 'string' }, finding: { type: 'string' }, label: { type: 'string', enum: ['OBSERVED','REPORTED','INFERRED','HYPOTHESIS','COUNTEREVIDENCE','UNKNOWN'] }, value: { type: 'string' }, confidence: { type: 'number' }, subjectType: { type: 'string' }, subjectId: { type: 'string' }, sourceUrl: { type: 'string' }, observedAt: { type: 'string' }, population: { type: 'string' }, denominator: { type: 'string' }, limitation: { type: 'string' }, runRef: { type: 'string' } }, ['modelId','targetType','targetKey','finding']) },
+  { name: 'consumer_model_evidence', description: 'What the model actually has behind each variable, angle and claim: counts per evidence label, counterevidence, recent findings, and which targets have never been tested. Counts are readings, not proof.', inputSchema: s('Model evidence', { modelId: { type: 'string' }, limit: { type: 'number' } }, ['modelId']) }
 ];
 const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
@@ -175,6 +178,8 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'consumer_seed_pool_import': result = await consumerSeedPoolCommands.import(baseCtx, a); break;
     case 'consumer_seed_pool_list': result = await consumerSeedPoolCommands.list(baseCtx, a); break;
     case 'consumer_model_seeds': result = await consumerSeedPoolCommands.generate(baseCtx, a); break;
+    case 'consumer_model_observe': result = await consumerObservationCommands.record(baseCtx, a); break;
+    case 'consumer_model_evidence': result = await consumerObservationCommands.evidence(baseCtx, a); break;
     default:
       if (!isProductTool(name)) throw new Error(`Unknown tool: ${name}`);
       result = await callProductTool(name, a, toolCtx(a.projectId));

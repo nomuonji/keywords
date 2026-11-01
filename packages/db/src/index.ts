@@ -67,6 +67,9 @@ CREATE INDEX IF NOT EXISTS runs_project_created_idx ON runs(project_id, created_
 CREATE TABLE IF NOT EXISTS consumer_model_seeds (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, model_id TEXT, text TEXT NOT NULL, normalized TEXT NOT NULL, category TEXT, label TEXT NOT NULL DEFAULT 'HYPOTHESIS', source_ref TEXT, origin_ref TEXT, note TEXT, status TEXT NOT NULL DEFAULT 'active', observed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS consumer_model_seeds_pool_normalized_idx ON consumer_model_seeds(pool_id, normalized);
 CREATE INDEX IF NOT EXISTS consumer_model_seeds_pool_status_idx ON consumer_model_seeds(pool_id, status, label);
+CREATE TABLE IF NOT EXISTS consumer_model_observations (id TEXT PRIMARY KEY, model_id TEXT NOT NULL, model_version TEXT, target_type TEXT NOT NULL, target_key TEXT NOT NULL, finding TEXT NOT NULL, value TEXT, label TEXT NOT NULL DEFAULT 'HYPOTHESIS', confidence REAL, subject_type TEXT, subject_id TEXT, source_url TEXT, observed_at TEXT, population TEXT, denominator TEXT, limitation TEXT, run_ref TEXT, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS consumer_model_observations_target_idx ON consumer_model_observations(model_id, target_type, target_key);
+CREATE INDEX IF NOT EXISTS consumer_model_observations_label_idx ON consumer_model_observations(model_id, label);
 `;
 
 function ensureColumn(sqlite: Database.Database, table: string, name: string, definition: string) {

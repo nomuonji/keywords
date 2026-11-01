@@ -48,7 +48,8 @@
     "./seo-case-corpus": "./src/seo-case-corpus.ts",
     "./market-intelligence": "./src/market-intelligence.ts",
     "./consumer-model": "./src/consumer-model.ts",
-    "./consumer-seed-pool": "./src/consumer-seed-pool.ts"
+    "./consumer-seed-pool": "./src/consumer-seed-pool.ts",
+    "./consumer-observation": "./src/consumer-observation.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

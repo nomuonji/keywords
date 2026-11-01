@@ -153,3 +153,29 @@ export const consumerModelSeeds = sqliteTable('consumer_model_seeds', {
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull()
 });
+
+/**
+ * What was actually seen, against a specific model target (a variable, an angle or a thinking claim).
+ * The model definition is the instrument; these rows are its readings, and they are what makes
+ * a later version defensible.
+ */
+export const consumerModelObservations = sqliteTable('consumer_model_observations', {
+  id: text('id').primaryKey(),
+  modelId: text('model_id').notNull(),
+  modelVersion: text('model_version'),
+  targetType: text('target_type').notNull(),
+  targetKey: text('target_key').notNull(),
+  finding: text('finding').notNull(),
+  value: text('value'),
+  label: text('label').notNull().default('HYPOTHESIS'),
+  confidence: real('confidence'),
+  subjectType: text('subject_type'),
+  subjectId: text('subject_id'),
+  sourceUrl: text('source_url'),
+  observedAt: text('observed_at'),
+  population: text('population'),
+  denominator: text('denominator'),
+  limitation: text('limitation'),
+  runRef: text('run_ref'),
+  createdAt: text('created_at').notNull()
+});
