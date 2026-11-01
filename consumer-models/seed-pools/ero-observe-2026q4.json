@@ -1,0 +1,11 @@
+{
+  "poolId": "ero-observe-2026q4",
+  "label": "REPORTED",
+  "note": "公開調査から観測した、検索対象になりうる固有名だけを入れる。調査で得た傾向（無課金視聴81.7%、30分未満視聴、違法サイト利用など）は観測側（consumer_model_observations）に記録済みで、プールには入れない。出典: R1=未来のAV協議会/サブロク『成人向けサイトの利用に関するアンケート』2021-03・全国20歳以上男性1,500名。サイトの利用順位は課金・売上の証明ではない。",
+  "items": [
+    { "originRef": "r1-01", "text": "FANZA", "category": "配信サイト", "sourceRef": "R1", "note": "有料サイト大手。利用28.8%" },
+    { "originRef": "r1-02", "text": "XVideos", "category": "配信サイト", "sourceRef": "R1", "note": "利用37.8%・最も利用されている" },
+    { "originRef": "r1-03", "text": "Pornhub", "category": "配信サイト", "sourceRef": "R1", "note": "利用33%" },
+    { "originRef": "r1-04", "text": "カリビアンコム", "category": "配信サイト", "sourceRef": "R1", "note": "無修正系。利用14.8%" }
+  ]
+}
