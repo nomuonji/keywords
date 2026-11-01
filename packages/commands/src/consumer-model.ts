@@ -20,6 +20,7 @@ import type { CommandContext } from '@keywords/domain';
  * workspace's jobs, not the model itself.
  */
 const COLLECTION = 'consumerModels';
+const ALIAS_COLLECTION = 'consumerModelAliases';
 const now = () => new Date().toISOString();
 const MODEL_ID = /^[a-z0-9][a-z0-9-]{1,63}$/;
 const VERSION_ID = /^[0-9]+(\.[0-9]+){0,2}$/;
@@ -44,6 +45,7 @@ export type ConsumerModelFields = {
   status: ConsumerModelStatus;
   role: string;
   summary: string;
+  aliases?: string[];
   definition: Record<string, unknown>;
   objectives: Record<string, unknown>;
   variables: Array<Record<string, unknown>>;
@@ -73,8 +75,38 @@ function assertVersion(version: unknown): string {
 function toItem(doc: any): ConsumerModel {
   return { ...Object.fromEntries(Object.entries(doc?.fields ?? {}).map(([key, item]) => [key, value(item)])), id: String(doc?.name ?? '').split('/').pop() ?? doc?.id } as ConsumerModel;
 }
-function summarize(model: ConsumerModel): ConsumerModelSummary {
-  return {
+/**
+ * Keep the alias index in step with the model. An alias that points at another model, or collides
+ * with a real model id, is refused rather than silently overwritten.
+ */
+async function syncAliases(modelId: string, next: string[], previous: string[]) {
+  const wanted = [...new Set(next.map(alias => {
+    const raw = String(alias ?? '').trim();
+    if (!MODEL_ID.test(raw)) throw new Error(`Alias must be a lowercase slug (2-64 chars): ${raw}`);
+    if (raw === modelId) throw new Error('An alias cannot be the model id itself');
+    return raw;
+  }))];
+  for (const alias of wanted) {
+    const clash = await readModel(alias);
+    if (clash) throw new Error(`Alias ${alias} collides with an existing model id`);
+    try {
+      const doc = await firestore(`/${ALIAS_COLLECTION}/${alias}`);
+      const owner = String(doc?.fields?.modelId?.stringValue ?? '');
+      if (owner && owner !== modelId) throw new Error(`Alias ${alias} already points to ${owner}`);
+    } catch (error) {
+      if (!(error instanceof Error && /failed \(404\)/.test(error.message))) throw error;
+    }
+  }
+  for (const alias of wanted) {
+    await firestore(`/${ALIAS_COLLECTION}/${alias}`, { method: 'PATCH', body: body({ alias, modelId, updatedAt: now() }) });
+  }
+  for (const alias of previous) {
+    if (wanted.includes(alias)) continue;
+    try { await firestore(`/${ALIAS_COLLECTION}/${alias}`, { method: 'DELETE' }); } catch { /* already gone */ }
+  }
+}
+
+function summarize(model: ConsumerModel): ConsumerModelSummary {  return {
     id: model.id, name: model.name, version: model.version, status: model.status, summary: model.summary,
     revision: model.revision, updatedAt: model.updatedAt,
     variableCount: Array.isArray(model.variables) ? model.variables.length : 0,
@@ -89,6 +121,23 @@ async function readModel(id: string): Promise<ConsumerModel | null> {
     return toItem(await firestore(`/${COLLECTION}/${id}`));
   } catch (error) {
     if (error instanceof Error && /failed \(404\)/.test(error.message)) return null;
+    throw error;
+  }
+}
+
+/**
+ * Resolve a model id through its aliases, so a model can be addressed by a working name
+ * ("baka-model") as well as its canonical slug. Aliases are documents, not a hardcoded map.
+ */
+async function resolveModelId(id: string): Promise<string> {
+  const direct = await readModel(id);
+  if (direct) return id;
+  try {
+    const alias = await firestore(`/${ALIAS_COLLECTION}/${id}`);
+    const modelId = (alias?.fields?.modelId?.stringValue ?? '') as string;
+    return MODEL_ID.test(modelId) ? modelId : id;
+  } catch (error) {
+    if (error instanceof Error && /failed \(404\)/.test(error.message)) return id;
     throw error;
   }
 }
@@ -116,16 +165,16 @@ export const consumerModelCommands = {
       .sort((a, b) => (a.status === b.status ? a.name.localeCompare(b.name) : a.status === 'active' ? -1 : 1));
   },
 
-  /** Read one model, optionally a frozen historical version. */
+  /** Read one model, optionally a frozen historical version. Accepts an alias. */
   get: async (_ctx: CommandContext, input: { id: string; version?: string }) => {
-    const id = assertModelId(input.id);
+    const id = await resolveModelId(assertModelId(input.id));
     if (input.version) {
       const version = assertVersion(input.version);
       const doc = await firestore(`/${COLLECTION}/${id}/versions/${version}`);
       return toItem(doc);
     }
     const model = await readModel(id);
-    if (!model) throw new Error(`Consumer model not found: ${id}`);
+    if (!model) throw new Error(`Consumer model not found: ${input.id}`);
     return model;
   },
 
@@ -155,7 +204,8 @@ export const consumerModelCommands = {
     const payload = {
       schemaVersion: input.schemaVersion ?? 1, id, slug: id, name: input.name.trim(), version,
       status: input.status ?? existing?.status ?? 'active', role: input.role ?? 'market_research_premise',
-      summary: input.summary.trim(), definition: input.definition, objectives: input.objectives ?? {},
+      summary: input.summary.trim(), aliases: [...new Set((input.aliases ?? existing?.aliases ?? []).map(alias => String(alias).trim()).filter(Boolean))],
+      definition: input.definition, objectives: input.objectives ?? {},
       variables: input.variables, thinking, preferences: input.preferences ?? {}, seeds: input.seeds ?? [],
       evidencePolicy: input.evidencePolicy ?? {}, antiPatterns: input.antiPatterns ?? [],
       researchProcedure: input.researchProcedure, changeGate: input.changeGate ?? {},
@@ -168,6 +218,7 @@ export const consumerModelCommands = {
       method: 'PATCH',
       body: body({ ...payload, revision, frozenAt: timestamp, changeReason: input.changeReason ?? null })
     });
+    await syncAliases(id, input.aliases ?? [], existing?.aliases ?? []);
     return { ...payload, previousRevision: existing?.revision ?? null } as ConsumerModel & { previousRevision: number | null };
   },
 
@@ -212,9 +263,10 @@ export const consumerModelCommands = {
   }
 };
 
-/** Read a model directly (used by seed-pool generation). Throws when it does not exist. */
+/** Read a model directly (used by seed-pool generation). Accepts an alias. Throws when it does not exist. */
 export async function readConsumerModel(id: string): Promise<ConsumerModel> {
-  const model = await readModel(assertModelId(id));
+  const resolved = await resolveModelId(assertModelId(id));
+  const model = await readModel(resolved);
   if (!model) throw new Error(`Consumer model not found: ${id}`);
   return model;
 }
@@ -255,6 +307,7 @@ export const consumerModelSaveShape = {
   status: z.enum(['active', 'paused', 'archived']).optional(),
   role: z.string().max(80).optional(),
   summary: z.string().min(1).max(4000),
+  aliases: z.array(z.string().min(2).max(64)).max(10).optional(),
   definition: z.record(z.string(), z.unknown()),
   objectives: z.record(z.string(), z.unknown()).optional(),
   variables: z.array(z.record(z.string(), z.unknown())).min(1).max(40),
