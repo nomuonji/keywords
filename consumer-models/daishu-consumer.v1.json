@@ -1,0 +1,204 @@
+{
+  "schemaVersion": 1,
+  "id": "daishu-consumer",
+  "slug": "daishu-consumer",
+  "name": "大衆消費者モデル",
+  "version": "1.0",
+  "status": "active",
+  "role": "market_research_premise",
+  "summary": "時間・知識・関与度が限られた具体的な状況で、分かりやすい手掛かり・社会的証明・感情的報酬・簡便な次の行動を使って判断する消費行動の作業モデル。市場調査の前提として、どの変数を観測するかと、何を証拠として認めないかを固定する。",
+
+  "definition": {
+    "model": "「バカ」は低知能の固定した人格を意味しない。時間・知識・関与度が限られた具体的な状況で、分かりやすい手掛かり、社会的証明、知名度、感情的報酬、簡便な次の行動などを使って判断する消費行動の作業モデル。",
+    "targeting": "対象者属性で決めつけず、状況別・商品別・媒体別に見直す。",
+    "notAssumed": [
+      "知能・学歴・属性による固定的な人格",
+      "特定ジャンル・媒体への恒常的な嗜好",
+      "ユーザー個人の趣味や選好（市場需要の証拠ではない）"
+    ]
+  },
+
+  "objectives": {
+    "reach": [
+      "冒頭での停止・クリック",
+      "視聴維持",
+      "共有",
+      "返信",
+      "保存",
+      "プロフィール遷移"
+    ],
+    "conversion": [
+      "適格クリック",
+      "購入・申込",
+      "承認",
+      "売上 / 訪問者",
+      "EPC",
+      "解約・返品"
+    ],
+    "separationRule": "Reach と Conversion は別々に判定する。バズ・いいね・フォロワー数は購入の証明ではない。販売実績は別の証拠を要する。"
+  },
+
+  "variables": [
+    {
+      "key": "attention",
+      "label": "注意獲得",
+      "observable": "冒頭の一画面で何が手を止めさせるか。クリックと視聴維持のどちらに効いているか。"
+    },
+    {
+      "key": "emotional_reward",
+      "label": "感情的報酬",
+      "observable": "楽しさ・驚き・共感・安心・怒り・所属感・発見のどれが、どの程度発生しているか。"
+    },
+    {
+      "key": "cognitive_cost",
+      "label": "認知コスト",
+      "observable": "前提知識なしで短時間に理解・実行できるか。選択肢や説明の多さが障壁になっていないか。"
+    },
+    {
+      "key": "social_utility",
+      "label": "共有の社会的価値",
+      "observable": "返信・共有・保存によって、読者が何を表現できるか。"
+    },
+    {
+      "key": "choice_heuristic",
+      "label": "選択ヒューリスティック",
+      "observable": "実使用、価格、口コミ、ランキング、ブランド、限定性のどれで選ばれているか。"
+    },
+    {
+      "key": "purchase_motive",
+      "label": "購買動機",
+      "observable": "顕在課題、回避損失、願望、利便性、習慣、自己表現のどれが動機か。"
+    },
+    {
+      "key": "purchase_friction",
+      "label": "購買摩擦",
+      "observable": "信頼、価格、比較、再検索、返品・安全、手間のどこで止まるか。"
+    },
+    {
+      "key": "situation_timing",
+      "label": "利用場面・タイミング",
+      "observable": "どの場面・季節・時間帯の課題か。"
+    },
+    {
+      "key": "alternative",
+      "label": "代替行動",
+      "observable": "購入しない場合に何で代替しているか。"
+    },
+    {
+      "key": "counterevidence",
+      "label": "反証条件",
+      "observable": "この仮説が崩れる観測は何か。"
+    }
+  ],
+
+  "evidencePolicy": {
+    "labels": [
+      "OBSERVED",
+      "REPORTED",
+      "INFERRED",
+      "HYPOTHESIS",
+      "COUNTEREVIDENCE",
+      "UNKNOWN"
+    ],
+    "requiredMetadata": [
+      "URL",
+      "公開日 / 取得日",
+      "対象 / 母集団",
+      "サンプル規模",
+      "指標の分母",
+      "限界"
+    ],
+    "independence": [
+      "複数の二次記事が同じ一つの出典を繰り返している場合は、独立ソース数として数えない。",
+      "証拠が少ないときは数だけ水増しせず、不足として記録する。"
+    ],
+    "nonEvidence": [
+      "ユーザーの趣味・センス、過去X投稿、ラジ父/村上RADIO、Taste ledger は市場需要の証拠ではない。",
+      "過去案件の GOOD / ボツ、ユーザー向けに作成された過去案も市場需要の証拠ではない。",
+      "ユーザーが指定した実行条件（予算・技術・公開先等）は制約であって市場の証拠ではない。",
+      "候補台帳への収録やユーザー指定は「調査対象の指定」であり、市場の証拠ではない。",
+      "AIが説明した心理の仕組みは推論・仮説であり、観測ではない。"
+    ]
+  },
+
+  "antiPatterns": [
+    "単一の人気例・一つのコメント・一つの調査から一般的な消費者ルールを作る。",
+    "ランキング上位・いいね数・フォロワー数を販売実績として扱う。",
+    "属性やジャンルで対象を決めつけ、状況の観測を飛ばす。",
+    "同じ原典の転載を独立した複数ソースとして数える。",
+    "証拠が弱いのに件数だけ増やして「調査完了」とする。",
+    "観測（市場の需要・反応）と実験結果（特定コンテンツの公開後実績）を同じ採点欄で混ぜる。"
+  ],
+
+  "researchProcedure": [
+    "初手はモデル変数を「観測可能な問い」へ変換すること。候補リストから対象を先に選ばない。",
+    "1サイクルで原則3〜5の独立した市場クラスターを横断して比較する。",
+    "複数のデータ型・出典を読み、独立URL4件程度を目安にする（独立性のない転載は数えない）。",
+    "横断比較では各クラスターについて、観測済みReach、観測済みConversion、推論/仮説、反証、未知数を分けて記録する。",
+    "具体的な市場対象を出典付きで大量に収集する（ソースが十分なら30件以上、ランキング等が充実していれば50〜100件を目安）。数合わせ・重複・根拠のない項目は除外する。",
+    "個別対象の深掘りは、横断比較の後、証拠が強いものだけ行う。1件だけ深掘りして終了しない。",
+    "対象の「関心・流行の根拠」と「販売・購買実績の根拠」は別管理する。",
+    "確認できない指標は UNKNOWN とし、推論・仮説は証拠ラベルを付ける。"
+  ],
+
+  "changeGate": {
+    "rule": "モデルの一般則を書き換えるには、最低限 (a) 異なるデータ型を含む独立ソース3件以上、(b) 少なくとも一つの反証/比較対照、(c) 適用範囲と不確実性、(d) 旧版より説明できる観測、(e) 変更後の検証方法 を揃える。",
+    "dailyJobMayChangeModel": false,
+    "newVersion": "重要なルールの修正が必要なときだけ発行し、変更理由・根拠・想定影響・旧版との違い・ロールバック方法を追記する。ケース追加や軽微な表記修正はバージョンアップと数えない。",
+    "exception": "例外的な公式計測や十分に設計された実験がある場合は、理由を記録して別途審査する。"
+  },
+
+  "provenance": {
+    "source": "my-portal",
+    "migratedAt": "2026-11-01",
+    "origin": {
+      "canonicalCardIdeaId": "xB6TLnSpY4copFYU7XaR",
+      "canonicalCardTitle": "大衆消費者モデル v1.0｜モデル本体・管理規約",
+      "spaceId": "WQIGmoPmxfrASsyqes9D",
+      "skillId": "baka-culture-content-engine",
+      "routineJobId": "baka-culture-content-engine",
+      "managementSchemaRevision": 4
+    },
+    "keptFromOrigin": [
+      "モデル定義（状況依存の作業モデル、属性で決めつけない）",
+      "行動メカニズムの変数10種と観測可能な問い",
+      "Reach / Conversion の分離",
+      "証拠ラベル6種と requiredMetadata",
+      "独立性ルール・非証拠リスト",
+      "反証条件とアンチパターン",
+      "横断スキャンの調査手順（クラスター数・独立URL目安・収集件数目安・深掘り順序）",
+      "モデル改訂ゲート"
+    ],
+    "droppedItems": [
+      {
+        "item": "個別カード種別 7種（market-candidate-register / market-object-inventory / market-case-study / market-hypothesis-cluster / market-observation / market-experiment / model-change-proposal）",
+        "reason": "My Portal の Idea Space 構造に依存した管理区分。keywords 側は discovery_candidates / sources / pages / decisions が同じ役割を担うため二重定義になる。"
+      },
+      {
+        "item": "候補台帳 OMHfc7pNvUTLwGoK9kC1 と カタログ bjOWtn95gWAABcp0TIAO へのID参照",
+        "reason": "台帳は未検証の候補キューでありモデル定義の一部ではない。移管するとしても discovery_candidates 側の作業（フェーズ2）。"
+      },
+      {
+        "item": "管理スキーマ追記・managementSchemaRevision などの版管理メタデータ",
+        "reason": "My Portal の管理運用の履歴。keywords 側は Firestore の revision と consumerModelVersions で代替する。"
+      },
+      {
+        "item": "「風刺・皮肉を既定の表現にしない」等の制作表現ルール",
+        "reason": "市場調査の前提ではなく制作側の規約。keywords の調査工程では参照しない。"
+      },
+      {
+        "item": "日次ジョブの実行手順・起動/claim/finish 周り（routine_job_dispatch 等）",
+        "reason": "My Portal のスケジューラ実装。keywords 側は operation / discovery_job が担う。"
+      },
+      {
+        "item": "Space / idea の参照と管理スキーマの更新履歴（2026-10-29 追記群）",
+        "reason": "移行時点の運用経緯であり、モデルを使う側の前提には不要。原文は My Portal 側に履歴として残す。"
+      }
+    ],
+    "notMigrated": {
+      "inventory": "bjOWtn95gWAABcp0TIAO",
+      "candidateRegister": "OMHfc7pNvUTLwGoK9kC1",
+      "note": "フェーズ2で discovery_candidates / sources への取り込みを判断する。v1.0 の移管対象外。"
+    }
+  }
+}
