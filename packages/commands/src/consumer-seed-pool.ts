@@ -121,12 +121,18 @@ export const consumerSeedPoolCommands = {
     const orderedAngles = [...angles].sort((a, b) => rank(`angle:${a.label}`).localeCompare(rank(`angle:${b.label}`)));
     const seen = new Set<string>();
     const generated: Array<Record<string, unknown>> = [];
-    // Spread the requested seeds over angles instead of exhausting one angle first.
-    const perAngle = Math.max(1, Math.floor(count / orderedAngles.length));
-    for (let index = 0; generated.length < count && index < orderedItems.length * orderedAngles.length; index++) {
-      const item = orderedItems[index % orderedItems.length];
-      const angle = orderedAngles[Math.floor(index / perAngle) % orderedAngles.length];
-      if (!fitsAngle(angle, item.category)) continue;
+    // Walk items and pick the next angle that actually fits, rotating the start per item.
+    // Taking one angle per index instead would let universal angles crowd out the specific ones,
+    // because a mismatched angle is skipped and its item is lost.
+    let cursor = 0;
+    for (let index = 0; generated.length < count && index < orderedItems.length; index++) {
+      const item = orderedItems[index];
+      let angle: (typeof orderedAngles)[number] | null = null;
+      for (let step = 0; step < orderedAngles.length; step++) {
+        const candidate = orderedAngles[(cursor + step) % orderedAngles.length];
+        if (fitsAngle(candidate, item.category)) { angle = candidate; cursor = (cursor + step + 1) % orderedAngles.length; break; }
+      }
+      if (!angle) continue;
       const text = angle.template.split('{item}').join(item.text).replace(/\s+/g, ' ').trim();
       if (seen.has(normalize(text))) continue;
       seen.add(normalize(text));
