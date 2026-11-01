@@ -1,0 +1,23 @@
+{
+  "poolId": "otaku-observe-2026q4",
+  "label": "REPORTED",
+  "note": "公開調査から直接観測したオタク界隈の題材。R1=Rankingoo『2026年秋アニメ中間人気調査』10〜40代男女2,360人・2026-10-23（NQ Brief経由）。R2=『オタク用語辞典 大限界』名古屋短期大学小出ゼミ編・三省堂（ダイヤモンド・オンライン抜粋）。R3=NQ Brief 関連ニュース 2026-11-01。ランキング順位は関心の順位であり、課金・購入の証明ではない。",
+  "items": [
+    { "originRef": "r1-01", "text": "薬屋のひとりごと シーズン3", "category": "2026秋アニメ", "sourceRef": "R1", "note": "267票・1位。シーズン2は2025冬アニメおすすめ1位" },
+    { "originRef": "r1-02", "text": "ドラゴンボール超 ビルス", "category": "2026秋アニメ", "sourceRef": "R1", "note": "143票・2位。旧『破壊神ビルス編』の強化版" },
+    { "originRef": "r1-03", "text": "東京卍リベンジャーズ TITANS", "category": "2026秋アニメ", "sourceRef": "R1", "note": "117票・3位" },
+    { "originRef": "r1-04", "text": "らんま1/2 シーズン3", "category": "2026秋アニメ", "sourceRef": "R1", "note": "106票・4位。リメイク継続" },
+    { "originRef": "r1-05", "text": "転生した大聖女は、聖女であることをひた隠す", "category": "2026秋アニメ", "sourceRef": "R1", "note": "105票・5位。なろう系" },
+    { "originRef": "r1-06", "text": "転生貴族、鑑定スキルで成り上がる シーズン3", "category": "2026秋アニメ", "sourceRef": "R1", "note": "92票・6位。なろう系" },
+    { "originRef": "r1-07", "text": "ダイヤのA actII Second Season 第2部", "category": "2026秋アニメ", "sourceRef": "R1", "note": "92票・6位" },
+    { "originRef": "r1-08", "text": "新テニスの王子様 U-17 WORLD CUP", "category": "2026秋アニメ", "sourceRef": "R1", "note": "84票・8位。長期シリーズ" },
+    { "originRef": "r1-09", "text": "ケロロ軍曹", "category": "2026秋アニメ", "sourceRef": "R1", "note": "84票・8位。復活枠" },
+    { "originRef": "r1-10", "text": "アオのハコ シーズン2", "category": "2026秋アニメ", "sourceRef": "R1", "note": "80票・10位" },
+    { "originRef": "r2-01", "text": "エアプ", "category": "界隈語", "sourceRef": "R2", "note": "エアプレイの略＝知ったかぶり。ゲーム界隈発で他界隈へ拡張" },
+    { "originRef": "r2-02", "text": "ATM", "category": "界隈語", "sourceRef": "R2", "note": "推しに金を使う人・その行為" },
+    { "originRef": "r2-03", "text": "古の○○／インターネット老人", "category": "界隈語", "sourceRef": "R2", "note": "古参の呼称。ネチケットへの厳しさと結びつく" },
+    { "originRef": "r2-04", "text": "アクスタ", "category": "界隈語", "sourceRef": "R2", "note": "アクスタを聖地・イベント・映えスポットへ持ち出して撮影する行動" },
+    { "originRef": "r3-01", "text": "HUNTER×HUNTER めじるしアクセサリー Vol.2", "category": "2026-11グッズ", "sourceRef": "R3", "note": "全5種・各300円・2026年11月第4週発売" },
+    { "originRef": "r3-02", "text": "ONE PIECE × ナムコ キャンペーン 2026", "category": "2026-11グッズ", "sourceRef": "R3", "note": "2026-11-20〜2027-01-11。ロキ初フィギュア" }
+  ]
+}
