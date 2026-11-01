@@ -46,7 +46,8 @@
     "./theme-research": "./src/theme-research.ts",
     "./seo-source-pool": "./src/seo-source-pool.ts",
     "./seo-case-corpus": "./src/seo-case-corpus.ts",
-    "./market-intelligence": "./src/market-intelligence.ts"
+    "./market-intelligence": "./src/market-intelligence.ts",
+    "./consumer-model": "./src/consumer-model.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

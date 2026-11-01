@@ -11,6 +11,7 @@ import { siteCommands } from '@keywords/commands/site';
 import { metricsCommands } from '@keywords/commands/metrics';
 import { operatorCommands } from '@keywords/commands/operator';
 import { operationControl } from '@keywords/commands/guard';
+import { consumerModelCommands } from '@keywords/commands/consumer-model';
 import { productTools, isProductTool, callProductTool } from './product.js';
 import { blogTools, isBlogTool, callBlogTool } from './blog.js';
 import { keywordFeedbackTools, isKeywordFeedbackTool, callKeywordFeedbackTool } from './keyword-feedback.js';
@@ -30,7 +31,8 @@ const budgetedTools = new Set([
   'source_record','research_web_fetch','research_serp','research_google_ads_keywords','research_search_console','site_sync','metrics_capture',
   'keyword_screen_batch','keyword_research_pipeline','keyword_treasury_save',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
-  'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate'
+  'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate',
+  'consumer_model_save','consumer_model_archive','consumer_model_import_seed'
 ]);
 const allowedWhilePaused = new Set([
   'recovery_context',
@@ -38,7 +40,7 @@ const allowedWhilePaused = new Set([
   'blog_contract',
   'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
   'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context',
-  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness'
+  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness','consumer_model_list','consumer_model_get'
 ]);
 function guardTool(name: string, args: any) {
   if (name === 'work_start') throw new Error('Direct agent work_start is disabled. Use operation_start, or claim a human-created legacy discovery job.');
@@ -99,7 +101,12 @@ const coreTools = [
   { name: 'task_list', description: 'List shared tasks.', inputSchema: s('Tasks', { projectId: { type: 'string' } }, ['projectId']) },
   { name: 'task_create', description: 'Create a shared task.', inputSchema: s('Task', { projectId: { type: 'string' }, title: { type: 'string' }, description: { type: 'string' }, priority: { type: 'number' }, assigneeType: { type: 'string' } }, ['projectId','title']) },
   { name: 'task_set_status', description: 'Set task status.', inputSchema: s('Task status', { projectId: { type: 'string' }, taskId: { type: 'string' }, status: { type: 'string', enum: ['todo','doing','review','done'] } }, ['projectId','taskId','status']) },
-  { name: 'decision_record', description: 'Record a decision for project memory.', inputSchema: s('Decision', { projectId: { type: 'string' }, action: { type: 'string' }, targetType: { type: 'string' }, targetId: { type: 'string' }, verdict: { type: 'string' }, reason: { type: 'string' } }, ['projectId','action','targetType','verdict']) }
+  { name: 'decision_record', description: 'Record a decision for project memory.', inputSchema: s('Decision', { projectId: { type: 'string' }, action: { type: 'string' }, targetType: { type: 'string' }, targetId: { type: 'string' }, verdict: { type: 'string' }, reason: { type: 'string' } }, ['projectId','action','targetType','verdict']) },
+  { name: 'consumer_model_list', description: 'List registered consumer models used as the market-research premise (Firestore, shared with the remote MCP).', inputSchema: s('Consumer models', { status: { type: 'string', enum: ['active','paused','archived'] }, query: { type: 'string' }, limit: { type: 'number' } }) },
+  { name: 'consumer_model_get', description: 'Read one consumer model definition, optionally a frozen historical version.', inputSchema: s('Consumer model', { id: { type: 'string' }, version: { type: 'string' } }, ['id']) },
+  { name: 'consumer_model_save', description: 'Create or update a consumer model. Updates require expectedRevision; the published definition is frozen per version.', inputSchema: s('Save consumer model', { id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active','paused','archived'] }, summary: { type: 'string' }, definition: { type: 'object', additionalProperties: true }, objectives: { type: 'object', additionalProperties: true }, variables: { type: 'array', items: { type: 'object', additionalProperties: true } }, evidencePolicy: { type: 'object', additionalProperties: true }, antiPatterns: { type: 'array', items: { type: 'string' } }, researchProcedure: { type: 'array', items: { type: 'string' } }, changeGate: { type: 'object', additionalProperties: true }, provenance: { type: 'object', additionalProperties: true }, expectedRevision: { type: 'number' }, changeReason: { type: 'string' } }, ['id','name','version','summary','definition','variables','researchProcedure']) },
+  { name: 'consumer_model_archive', description: 'Archive a consumer model without deleting its history.', inputSchema: s('Archive consumer model', { id: { type: 'string' }, reason: { type: 'string' }, expectedRevision: { type: 'number' } }, ['id','expectedRevision']) },
+  { name: 'consumer_model_import_seed', description: 'Import a frozen consumer-model seed file from the repository (local runtime only). Idempotent by content hash.', inputSchema: s('Import seed', { seedPath: { type: 'string' } }, ['seedPath']) }
 ];
 const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
@@ -156,6 +163,11 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'task_create': result = await commands.task.create(toolCtx(a.projectId), a); break;
     case 'task_set_status': result = await commands.task.setStatus(toolCtx(a.projectId), a); break;
     case 'decision_record': result = await commands.decision.record(toolCtx(a.projectId), a); break;
+    case 'consumer_model_list': result = await consumerModelCommands.list(baseCtx, a); break;
+    case 'consumer_model_get': result = await consumerModelCommands.get(baseCtx, a); break;
+    case 'consumer_model_save': result = await consumerModelCommands.save(baseCtx, a); break;
+    case 'consumer_model_archive': result = await consumerModelCommands.archive(baseCtx, a); break;
+    case 'consumer_model_import_seed': result = await consumerModelCommands.importSeed(baseCtx, a); break;
     default:
       if (!isProductTool(name)) throw new Error(`Unknown tool: ${name}`);
       result = await callProductTool(name, a, toolCtx(a.projectId));

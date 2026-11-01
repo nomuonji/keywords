@@ -48,6 +48,7 @@ import { bingKeywordStatsConfiguration } from '../packages/research/src/bing-key
 import { keywordSuggestConfiguration } from '../packages/research/src/keyword-suggest.js';
 import { keywordSuggestCommand, keywordSuggestShape } from '../packages/commands/src/keyword-suggest.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
+import { consumerModelCommands, consumerModelArchiveShape, consumerModelGetShape, consumerModelListShape, consumerModelSaveShape } from '../packages/commands/src/consumer-model.js';
 
 const app = new Hono();
 const configuredToken = process.env.KEYWORDS_REMOTE_MCP_TOKEN?.trim();
@@ -57,6 +58,7 @@ const groqToken = process.env.KEYWORDS_GROQ_MCP_TOKEN?.trim() || null;
 const corsOrigin = process.env.KEYWORDS_REMOTE_MCP_ALLOWED_ORIGIN?.trim() || '*';
 let googleAdsProxyLastError: string | null = null;
 let googleAdsDirectLastError: string | null = null;
+const remoteConsumerCtx = { actor: 'agent' as const, actorId: 'remote-mcp' };
 
 app.use('*', cors({ origin: corsOrigin, allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'Mcp-Protocol-Version'], exposeHeaders: ['Mcp-Protocol-Version'] }));
 function origin(c: any) { return new URL(c.req.url).origin; }
@@ -404,6 +406,26 @@ function server() {
     inputSchema: trendArticleResearchShape,
     annotations: { readOnlyHint: true, openWorldHint: true }
   }, async input => structured(await trendArticleResearch(input)));
+  mcp.registerTool('consumer_model_list', {
+    description: 'List the consumer models that market research assumes before observing anything. Definitions are shared with the local MCP through the same Firestore collection, so a model saved in either runtime is the same premise here.',
+    inputSchema: consumerModelListShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await consumerModelCommands.list(remoteConsumerCtx, input)));
+  mcp.registerTool('consumer_model_get', {
+    description: 'Read one consumer model definition, or a frozen historical version. The definition states the behaviour variables to observe and what the model refuses to count as evidence.',
+    inputSchema: consumerModelGetShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await consumerModelCommands.get(remoteConsumerCtx, input)));
+  mcp.registerTool('consumer_model_save', {
+    description: 'Create or update a consumer model premise. Updates require the current expectedRevision and publish an immutable version snapshot. Changing the general rules requires the documented change gate, not a routine research pass.',
+    inputSchema: consumerModelSaveShape,
+    annotations: { readOnlyHint: false, destructiveHint: false }
+  }, async input => structured(await consumerModelCommands.save(remoteConsumerCtx, input)));
+  mcp.registerTool('consumer_model_archive', {
+    description: 'Archive a consumer model so it is no longer used as a premise, without deleting its version history.',
+    inputSchema: consumerModelArchiveShape,
+    annotations: { readOnlyHint: false, destructiveHint: true }
+  }, async input => structured(await consumerModelCommands.archive(remoteConsumerCtx, input)));
   return mcp;
 }
 const health = (c: any) => c.json({ ok: true, service: 'keywords-treasury-mcp', ...runtimeStatus() });
