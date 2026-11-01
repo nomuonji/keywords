@@ -210,6 +210,13 @@ async function searchApiProxy(input: {
   const endpoint =
     process.env.KEYWORDS_SERP_PROXY_URL ??
     'https://api-three-gilt-37.vercel.app/api/serp-search';
+  // Always tell the proxy which upstreams to try, in order. It currently answers every request with a
+  // hard 402 (its own billing), so the ordering only matters once that account is funded; the retry
+  // against direct Brave in searchSerp is what answers today. Override with KEYWORDS_SERP_PROVIDER_ORDER.
+  const defaultOrder = (process.env.KEYWORDS_SERP_PROVIDER_ORDER ?? 'brightdata,reserp,brave')
+    .split(',').map(value => value.trim())
+    .filter((value): value is SerpUpstream => value === 'reserp' || value === 'brightdata' || value === 'brave');
+  const providers = input.proxyProviders?.length ? input.proxyProviders : defaultOrder;
   const raw = await jsonRequest<Record<string, any>>(endpoint, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
@@ -220,7 +227,7 @@ async function searchApiProxy(input: {
       location: input.location,
       num: Math.max(1, Math.min(input.num ?? 10, 20)),
       provider: input.proxyProvider ?? 'auto',
-      ...(input.proxyProviders?.length ? { providers: input.proxyProviders } : {})
+      ...(providers.length ? { providers } : {})
     })
   });
 
@@ -313,7 +320,21 @@ export async function searchSerp(input: {
 }): Promise<SerpSnapshot> {
   if (input.provider === 'serper') return searchSerper(input);
   if (input.provider === 'brave') return searchBrave(input);
-  return searchApiProxy(input);
+  // The shared proxy runs its own reserp -> brightdata -> brave chain, but it can still answer with a
+  // hard error (402 when the upstream account runs out of credit, 5xx, DNS). Without a client-side
+  // fallback the caller sees a dead provider even though a direct Brave key is configured, so retry
+  // once against Brave and keep the reason on the snapshot instead of hiding it.
+  try {
+    return await searchApiProxy(input);
+  } catch (error) {
+    if (!env('BRAVE_API_KEY', 'KEYWORDS_BRAVE_API_KEY')) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    const snapshot = await searchBrave(input);
+    return {
+      ...snapshot,
+      warnings: [`SERP proxy failed (${reason}); answered by direct Brave instead.`, ...(snapshot.warnings ?? [])]
+    };
+  }
 }
 
 export interface SerpAnalysis {
