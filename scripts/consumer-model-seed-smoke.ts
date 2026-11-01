@@ -58,3 +58,34 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(`consumer model seed smoke OK (${files.length} seed file(s))`);
+
+// Seed pools: material for model angles. A pool item must never claim to be evidence of demand.
+const POOL_DIR = join(DIR, 'seed-pools');
+const poolFiles = (await readdir(POOL_DIR)).filter(name => name.endsWith('.json'));
+check(poolFiles.length > 0, 'no seed pool files found');
+const poolLabels = new Set(['HYPOTHESIS', 'REPORTED', 'OBSERVED', 'UNKNOWN']);
+const poolTotals: Record<string, number> = {};
+for (const file of poolFiles) {
+  const pool = JSON.parse(await readFile(join(POOL_DIR, file), 'utf8'));
+  const at = `seed-pools/${file}`;
+  check(/^[a-z0-9][a-z0-9-]{1,63}$/.test(pool.poolId ?? ''), `${at}: poolId must be a lowercase slug`);
+  check(poolLabels.has(pool.label), `${at}: pool label must be one of ${[...poolLabels].join('/')}`);
+  check(Array.isArray(pool.items) && pool.items.length > 0, `${at}: items are required`);
+  const seen = new Set<string>();
+  for (const item of pool.items ?? []) {
+    check(typeof item.text === 'string' && item.text.trim().length > 0, `${at}: every item needs text`);
+    check(!seen.has(item.text.trim().toLowerCase()), `${at}: duplicate item text ${item.text}`);
+    seen.add(String(item.text).trim().toLowerCase());
+    check(!item.label || poolLabels.has(item.label), `${at}: ${item.text} has an unknown label`);
+    if (pool.label === 'HYPOTHESIS') check(!item.sourceRef, `${at}: ${item.text} is a hypothesis but cites a source`);
+    if (pool.label !== 'HYPOTHESIS') check(typeof item.sourceRef === 'string' && item.sourceRef.length > 0, `${at}: reported item ${item.text} needs a sourceRef`);
+  }
+  poolTotals[pool.poolId] = (poolTotals[pool.poolId] ?? 0) + pool.items.length;
+}
+
+if (failures.length) {
+  console.error(`consumer seed pool smoke FAILED (${failures.length})`);
+  for (const failure of failures) console.error(` - ${failure}`);
+  process.exit(1);
+}
+console.log(`consumer seed pool smoke OK (${poolFiles.length} file(s): ${Object.entries(poolTotals).map(([pool, total]) => `${pool}=${total}`).join(', ')})`);

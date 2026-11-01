@@ -64,6 +64,9 @@ CREATE TABLE IF NOT EXISTS provider_capabilities (id TEXT PRIMARY KEY, project_i
 CREATE UNIQUE INDEX IF NOT EXISTS provider_capabilities_project_provider_idx ON provider_capabilities(project_id, provider);
 CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, work_session_id TEXT REFERENCES work_sessions(id) ON DELETE SET NULL, actor TEXT NOT NULL, actor_id TEXT, command TEXT NOT NULL, status TEXT NOT NULL, input_json TEXT, output_json TEXT, error TEXT, duration_ms INTEGER, created_at TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS runs_project_created_idx ON runs(project_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS consumer_model_seeds (id TEXT PRIMARY KEY, pool_id TEXT NOT NULL, model_id TEXT, text TEXT NOT NULL, normalized TEXT NOT NULL, category TEXT, label TEXT NOT NULL DEFAULT 'HYPOTHESIS', source_ref TEXT, origin_ref TEXT, note TEXT, status TEXT NOT NULL DEFAULT 'active', observed_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS consumer_model_seeds_pool_normalized_idx ON consumer_model_seeds(pool_id, normalized);
+CREATE INDEX IF NOT EXISTS consumer_model_seeds_pool_status_idx ON consumer_model_seeds(pool_id, status, label);
 `;
 
 function ensureColumn(sqlite: Database.Database, table: string, name: string, definition: string) {

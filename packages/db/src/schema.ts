@@ -130,6 +130,26 @@ export const providerCapabilities = sqliteTable('provider_capabilities', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id, { onDelete: 'cascade' }), provider: text('provider').notNull(), status: text('status').notNull(), lastCheckedAt: text('last_checked_at').notNull(), lastSuccessAt: text('last_success_at'), lastErrorCode: text('last_error_code'), lastErrorMessage: text('last_error_message'), updatedAt: text('updated_at').notNull()
 });
 
-export const runs = sqliteTable('runs', {
-  id: text('id').primaryKey(), projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }), workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }), actor: text('actor').notNull(), actorId: text('actor_id'), command: text('command').notNull(), status: text('status').notNull(), inputJson: text('input_json'), outputJson: text('output_json'), error: text('error'), durationMs: integer('duration_ms'), createdAt: text('created_at').notNull()
+export const runs = sqliteTable('runs', { id: text('id').primaryKey(), projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }), workSessionId: text('work_session_id').references(() => workSessions.id, { onDelete: 'set null' }), actor: text('actor').notNull(), actorId: text('actor_id'), command: text('command').notNull(), status: text('status').notNull(), inputJson: text('input_json'), outputJson: text('output_json'), error: text('error'), durationMs: integer('duration_ms'), createdAt: text('created_at').notNull()
+});
+
+/**
+ * Concrete subjects a consumer model's angles can be applied to. Kept out of the
+ * Firestore model definition because pools churn fast while models change rarely.
+ */
+export const consumerModelSeeds = sqliteTable('consumer_model_seeds', {
+  id: text('id').primaryKey(),
+  poolId: text('pool_id').notNull(),
+  modelId: text('model_id'),
+  text: text('text').notNull(),
+  normalized: text('normalized').notNull(),
+  category: text('category'),
+  label: text('label').notNull().default('HYPOTHESIS'),
+  sourceRef: text('source_ref'),
+  originRef: text('origin_ref'),
+  note: text('note'),
+  status: text('status').notNull().default('active'),
+  observedAt: text('observed_at'),
+  createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull()
 });

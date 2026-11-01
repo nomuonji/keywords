@@ -58,8 +58,47 @@ not guessed.
 
 - Aggregating adoption per model (how many candidates from premise X reached the treasury). The lineage
   fields exist; no rollup view reads them yet.
-- Importing the My Portal candidate register and catalogue.
+- A values layer: the model stores variables and questions, not observations. Without per-variable
+  observations the `changeGate` ("observations that the previous version could not explain") cannot be
+  satisfied, so a general rule can never be revised on evidence.
+- Generic angles such as `やり方` still produce weak combinations against person categories.
 
+
+## Generation layer (v1.2+)
+
+A model is not only a measurement instrument. It also states *how this collective decides* and *which
+angles make them react*, so research seeds can be produced instead of invented each time.
+
+| Field | Meaning |
+| --- | --- |
+| `thinking[]` | claims about how the collective decides, each with its own `label` (start at `HYPOTHESIS`) and `evidenceRefs` |
+| `preferences` | `like[]` / `avoid[]` — what it gravitates to and drops |
+| `seeds[]` | angles: `{ key, label, template, kind, appliesTo }`. `template` must contain `{item}`; `appliesTo` narrows which pool categories the angle may cross with |
+
+`appliesTo` exists because a blind cross product produces nonsense ("person + 代わり"). An angle without
+`appliesTo` applies everywhere, which is only correct for genuinely universal angles.
+
+## Seed pools (material, not evidence)
+
+Concrete subjects live in SQLite `consumer_model_seeds`, not in the Firestore definition: pools churn
+weekly while a model changes rarely, and every generated seed must stay traceable to the pool item.
+
+| Pool | Source | Label | Count |
+| --- | --- | --- | --- |
+| `intuition` | the operator's own candidate list (My Portal `OMHfc7pNvUTLwGoK9kC1`, "偏見100％") | `HYPOTHESIS` | 70 |
+| `observed-trend` | public rankings/surveys (My Portal `bjOWtn95gWAABcp0TIAO`, sources S1–S11) | `REPORTED` | 320 |
+
+Files: `consumer-models/seed-pools/*.json`. Import is idempotent per pool + text, so re-importing a file
+never duplicates items.
+
+- `consumer_seed_pool_import` — upsert items (budgeted write)
+- `consumer_seed_pool_list` — read items with provenance label
+- `consumer_model_seeds({ modelId, poolId?, count?, label?, category?, rotationKey? })` — cross angles with
+  material. Every seed returns `{ text, angle, item, itemLabel, itemSource, itemOrigin }`, and ordering
+  rotates by `rotationKey` so repeat runs differ.
+
+A pool item is material, never evidence. A `REPORTED` item means "a public ranking mentioned it", not
+"people buy it".
 
 ## Contract
 
@@ -69,11 +108,15 @@ not guessed.
   by a later edit; a changed definition needs a new version.
 - `save` rejects a model with no behaviour variables or no research procedure — a premise without an
   observation plan is not usable by research.
+- `save` rejects a seed angle whose template has no `{item}` — it could never be crossed with a pool and
+  would sit unused.
 - Definitions keep `objectives.reach` and `objectives.conversion` separate, because reach (stop/click/share)
   and conversion (purchase/application/revenue) must never be scored in the same column.
-- `evidencePolicy.nonEvidence` records what is *not* market evidence (the operator's personal taste, past
-  posts, prior rejected ideas, candidate lists). This is a hard boundary for the research that consumes
-  the model.
+- `evidencePolicy.nonEvidence` records what is *not* market evidence (search volume as demand, own-site
+  rankings, the requester's taste, candidate lists, single anecdotes). This is a hard boundary for the
+  research that consumes the model.
+- Contemptuous or derogatory search terms are legitimate *research input* (real demand exists). The rule
+  against mocking tone is an output/production rule, not a constraint on observation.
 - Changing the general rules needs the `changeGate` (independent sources across data types, counterevidence,
   scope, verification method). A routine research pass may only produce a proposal, not a new version.
 

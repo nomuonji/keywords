@@ -28,6 +28,13 @@ const { db } = getDatabase();
 
 export type ConsumerModelStatus = 'active' | 'paused' | 'archived';
 
+/** A claim about how the collective decides. Always labelled: a model is a hypothesis set, not facts. */
+export type ConsumerThinking = { statement: string; label?: string; evidenceRefs?: string[] };
+/** What this collective gravitates to and drops. */
+export type ConsumerPreferences = { like?: string[]; avoid?: string[] };
+/** An angle the collective reacts to. `template` must contain {item} so it can cross with a seed pool. */
+export type ConsumerSeedAngle = { key?: string; label: string; template: string; kind?: string; appliesTo?: string[] };
+
 export type ConsumerModelFields = {
   schemaVersion?: number;
   id: string;
@@ -40,6 +47,9 @@ export type ConsumerModelFields = {
   definition: Record<string, unknown>;
   objectives: Record<string, unknown>;
   variables: Array<Record<string, unknown>>;
+  thinking?: ConsumerThinking[];
+  preferences?: ConsumerPreferences;
+  seeds?: ConsumerSeedAngle[];
   evidencePolicy: Record<string, unknown>;
   antiPatterns: string[];
   researchProcedure: string[];
@@ -128,6 +138,15 @@ export const consumerModelCommands = {
     if (!input.definition || typeof input.definition !== 'object') throw new Error('Consumer model definition is required');
     if (!Array.isArray(input.variables) || input.variables.length === 0) throw new Error('Consumer model requires at least one observable variable');
     if (!Array.isArray(input.researchProcedure) || input.researchProcedure.length === 0) throw new Error('Consumer model requires a research procedure');
+    // Angles without a slot cannot be crossed with a seed pool, so they would be silently unused.
+    for (const angle of input.seeds ?? []) {
+      if (!angle?.label?.trim()) throw new Error('Every seed angle needs a label');
+      if (!angle?.template?.includes('{item}')) throw new Error(`Seed angle "${angle.label}" must contain {item} so it can be crossed with a seed pool`);
+    }
+    const thinking = (input.thinking ?? []).map(item => {
+      if (!item?.statement?.trim()) throw new Error('Every thinking claim needs a statement');
+      return { statement: item.statement.trim(), label: item.label ?? 'HYPOTHESIS', evidenceRefs: item.evidenceRefs ?? [] };
+    });
     const existing = await readModel(id);
     if (existing && input.expectedRevision === undefined) throw new Error(`Consumer model ${id} already exists (revision ${existing.revision}); pass expectedRevision to update it`);
     if (existing && existing.revision !== input.expectedRevision) throw new Error(`Consumer model ${id} revision changed (expected ${input.expectedRevision}, actual ${existing.revision})`);
@@ -137,7 +156,8 @@ export const consumerModelCommands = {
       schemaVersion: input.schemaVersion ?? 1, id, slug: id, name: input.name.trim(), version,
       status: input.status ?? existing?.status ?? 'active', role: input.role ?? 'market_research_premise',
       summary: input.summary.trim(), definition: input.definition, objectives: input.objectives ?? {},
-      variables: input.variables, evidencePolicy: input.evidencePolicy ?? {}, antiPatterns: input.antiPatterns ?? [],
+      variables: input.variables, thinking, preferences: input.preferences ?? {}, seeds: input.seeds ?? [],
+      evidencePolicy: input.evidencePolicy ?? {}, antiPatterns: input.antiPatterns ?? [],
       researchProcedure: input.researchProcedure, changeGate: input.changeGate ?? {},
       provenance: { ...(input.provenance ?? {}), ...(input.changeReason ? { lastChangeReason: input.changeReason } : {}) },
       revision, createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp, updatedBy: ctx.actorId ?? ctx.actor
@@ -192,6 +212,13 @@ export const consumerModelCommands = {
   }
 };
 
+/** Read a model directly (used by seed-pool generation). Throws when it does not exist. */
+export async function readConsumerModel(id: string): Promise<ConsumerModel> {
+  const model = await readModel(assertModelId(id));
+  if (!model) throw new Error(`Consumer model not found: ${id}`);
+  return model;
+}
+
 /** Parse a stored id list, tolerating legacy null/blank values. */
 export function parseIds(json: string | null | undefined): string[] {
   if (!json) return [];
@@ -231,6 +258,9 @@ export const consumerModelSaveShape = {
   definition: z.record(z.string(), z.unknown()),
   objectives: z.record(z.string(), z.unknown()).optional(),
   variables: z.array(z.record(z.string(), z.unknown())).min(1).max(40),
+  thinking: z.array(z.object({ statement: z.string().min(1).max(1000), label: z.string().max(40).optional(), evidenceRefs: z.array(z.string().max(200)).max(20).optional() })).max(60).optional(),
+  preferences: z.object({ like: z.array(z.string().max(300)).max(60).optional(), avoid: z.array(z.string().max(300)).max(60).optional() }).optional(),
+  seeds: z.array(z.object({ key: z.string().max(80).optional(), label: z.string().min(1).max(200), template: z.string().min(1).max(300), kind: z.string().max(40).optional(), appliesTo: z.array(z.string().max(80)).max(20).optional() })).max(60).optional(),
   evidencePolicy: z.record(z.string(), z.unknown()).optional(),
   antiPatterns: z.array(z.string().max(1000)).max(60).optional(),
   researchProcedure: z.array(z.string().max(2000)).min(1).max(60),
