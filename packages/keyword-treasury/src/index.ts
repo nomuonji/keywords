@@ -25,6 +25,8 @@ export type TreasuryCandidate = {
   serpResearchedAt?: string | null;
   country?: string | null;
   language?: string | null;
+  /** Consumer model(s) this keyword was found under. */
+  consumerModelIds?: string[];
 };
 
 export type TreasuryItem = TreasuryCandidate & { id: string; createdAt: string; updatedAt: string };

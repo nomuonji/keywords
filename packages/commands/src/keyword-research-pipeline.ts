@@ -66,7 +66,10 @@ const treasuryCandidate = z.object({
   demandResearchedAt: z.string().nullable().optional(),
   serpResearchedAt: z.string().nullable().optional(),
   country: z.string().nullable().optional(),
-  language: z.string().nullable().optional()
+  language: z.string().nullable().optional(),
+  // Which consumer model this keyword was found under. Kept with the saved stock so a
+  // keyword can still be traced to its research premise after the session ends.
+  consumerModelIds: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{1,63}$/)).max(10).optional()
 }).strict();
 
 export const keywordTreasurySaveShape = {

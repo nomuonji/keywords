@@ -114,6 +114,11 @@ function ensureLegacyColumns(sqlite: Database.Database) {
   ensureColumn(sqlite, 'discovery_jobs', 'lease_expires_at', 'lease_expires_at TEXT');
   ensureColumn(sqlite, 'discovery_candidates', 'demand_status', "demand_status TEXT NOT NULL DEFAULT 'unverified'");
   ensureColumn(sqlite, 'discovery_candidates', 'novelty_score', 'novelty_score INTEGER NOT NULL DEFAULT 0');
+  // Consumer-model premise: project binding plus the premise each job and candidate was produced under.
+  ensureColumn(sqlite, 'projects', 'consumer_model_ids_json', 'consumer_model_ids_json TEXT');
+  ensureColumn(sqlite, 'projects', 'default_consumer_model_id', 'default_consumer_model_id TEXT');
+  ensureColumn(sqlite, 'discovery_jobs', 'consumer_model_ids_json', 'consumer_model_ids_json TEXT');
+  ensureColumn(sqlite, 'discovery_candidates', 'consumer_model_ids_json', 'consumer_model_ids_json TEXT');
 }
 
 export function createDatabase(path = process.env.KEYWORDS_DB_PATH ?? DEFAULT_PATH) {
