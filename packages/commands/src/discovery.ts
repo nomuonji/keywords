@@ -5,7 +5,7 @@ import { fetchWebDocument, googleAdsKeywordIdeas, searchSerp } from '@keywords/r
 import { workCommands } from './work.js';
 import { googleAdsConfigured, recordProviderCapability } from './workspace.js';
 import { classifyDemandStatus, isVerifiedDemand, noveltyScore, providerSeedKeywords } from './discovery-policy.js';
-import { parseIds, resolvePremiseIds } from './consumer-model.js';
+import { normalizePremiseIds, parseIds } from './consumer-model.js';
 
 const { db, sqlite } = getDatabase();
 const now = () => new Date().toISOString();
@@ -321,7 +321,7 @@ export const discoveryCommands = {
   start: async (ctx: CommandContext, input: { projectId: string; seedKeywords?: string[]; targetUrl?: string; goal: string; language?: string; country?: string; region?: string; excludedTerms?: string[]; maxCandidates?: number; maxExternalRequests?: number; demandPolicy?: DiscoveryDemandPolicy; consumerModelIds?: string[] }) => withRun(projectCtx(ctx, input.projectId), 'discovery.start', input, async () => {
     if (ctx.actor !== 'human') throw new Error('Starting a discovery job requires a human actor');
     const project = await requireProject(input.projectId); const seeds = [...new Set((input.seedKeywords ?? []).map(x => x.trim()).filter(Boolean))]; const targetUrl = input.targetUrl?.trim() || null;
-    const consumerModelIds = await resolvePremiseIds(input.projectId, input.consumerModelIds);
+    const consumerModelIds = normalizePremiseIds(input.consumerModelIds);
     if (!seeds.length && !targetUrl) throw new Error('At least one seed keyword or target URL is required'); const goal = input.goal.trim(); if (!goal) throw new Error('Discovery goal is required');
     const active = await db.select().from(schema.discoveryJobs).where(and(eq(schema.discoveryJobs.projectId, input.projectId), inArray(schema.discoveryJobs.status, ['waiting_for_agent','running','awaiting_review','blocked']))).orderBy(desc(schema.discoveryJobs.updatedAt)).get();
     if (active) throw new Error(`An unfinished discovery job already exists: ${active.id} (${active.status})`);

@@ -189,60 +189,6 @@ export const consumerModelCommands = {
       provenance: { ...seed.provenance, seedPath: input.seedPath, seedSha256 }
     } as ConsumerModelFields & { expectedRevision?: number; changeReason?: string });
     return { status: existing ? 'updated' : 'created', id, version, revision: saved.revision, seedSha256 };
-  },
-
-  /** Read which premise a project assumes. */
-  binding: async (_ctx: CommandContext, input: { projectId: string }) => {
-    const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get();
-    if (!project) throw new Error('Project not found');
-    const modelIds = parseIds(project.consumerModelIdsJson);
-    return { projectId: project.id, modelIds, defaultModelId: project.defaultConsumerModelId ?? null, models: await describePremise(modelIds) };
-  },
-
-  /**
-   * Bind the consumer models a project assumes. Only models that exist and are active
-   * can be bound, so a typo cannot become a silently unmeasurable premise.
-   */
-  bind: async (ctx: CommandContext, input: { projectId: string; modelIds: string[]; defaultModelId?: string | null }) => {
-    const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get();
-    if (!project) throw new Error('Project not found');
-    const modelIds = [...new Set((input.modelIds ?? []).map(assertModelId))];
-    if (!modelIds.length) throw new Error('At least one consumer model id is required');
-    const defaultModelId = input.defaultModelId === null ? null : (input.defaultModelId ? assertModelId(input.defaultModelId) : modelIds[0]);
-    if (defaultModelId && !modelIds.includes(defaultModelId)) throw new Error(`Default model ${defaultModelId} must be one of the bound ids`);
-    for (const modelId of modelIds) {
-      const model = await readModel(modelId);
-      if (!model) throw new Error(`Consumer model not found: ${modelId}`);
-      if (model.status !== 'active') throw new Error(`Consumer model ${modelId} is ${model.status}; only active models can be bound as a premise`);
-    }
-    await db.update(schema.projects)
-      .set({ consumerModelIdsJson: JSON.stringify(modelIds), defaultConsumerModelId: defaultModelId, updatedAt: now() })
-      .where(eq(schema.projects.id, input.projectId));
-    return { projectId: input.projectId, modelIds, defaultModelId, models: await describePremise(modelIds), updatedBy: ctx.actorId ?? ctx.actor };
-  },
-
-  /** Move a model out of a project binding without touching the model itself. */
-  unbind: async (_ctx: CommandContext, input: { projectId: string; modelId: string }) => {
-    const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get();
-    if (!project) throw new Error('Project not found');
-    const modelId = assertModelId(input.modelId);
-    const modelIds = parseIds(project.consumerModelIdsJson).filter(id => id !== modelId);
-    const defaultModelId = project.defaultConsumerModelId === modelId ? (modelIds[0] ?? null) : project.defaultConsumerModelId;
-    await db.update(schema.projects)
-      .set({ consumerModelIdsJson: JSON.stringify(modelIds), defaultConsumerModelId: defaultModelId ?? null, updatedAt: now() })
-      .where(eq(schema.projects.id, input.projectId));
-    return { projectId: input.projectId, modelIds, defaultModelId: defaultModelId ?? null };
-  },
-
-  /** Choose which bound model is the project default. */
-  setDefault: async (_ctx: CommandContext, input: { projectId: string; modelId: string }) => {
-    const project = await db.select().from(schema.projects).where(eq(schema.projects.id, input.projectId)).get();
-    if (!project) throw new Error('Project not found');
-    const modelId = assertModelId(input.modelId);
-    const modelIds = parseIds(project.consumerModelIdsJson);
-    if (!modelIds.includes(modelId)) throw new Error(`Model ${modelId} is not bound to project ${input.projectId}`);
-    await db.update(schema.projects).set({ defaultConsumerModelId: modelId, updatedAt: now() }).where(eq(schema.projects.id, input.projectId));
-    return { projectId: input.projectId, defaultModelId: modelId, modelIds };
   }
 };
 
@@ -256,29 +202,12 @@ export function parseIds(json: string | null | undefined): string[] {
 }
 
 /**
- * The premise a discovery run should record: explicit ids win, then the project
- * default, then the project's bound list. Never invents a model.
+ * The premise a discovery run records. Explicit only: deciding which model a project should
+ * assume is the orchestrator's job, not the operator's, so nothing is inherited implicitly.
  */
-export async function resolvePremiseIds(projectId: string, explicit?: string[]): Promise<string[]> {
-  if (explicit?.length) return [...new Set(explicit.map(assertModelId))];
-  const project = await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)).get();
-  if (!project) return [];
-  if (project.defaultConsumerModelId) return [project.defaultConsumerModelId];
-  return parseIds(project.consumerModelIdsJson);
-}
-
-/** Best-effort names for a premise. An unresolved id stays visible instead of disappearing. */
-export async function describePremise(modelIds: string[]) {
-  const described: Array<{ id: string; resolved: boolean; name?: string; version?: string; status?: string }> = [];
-  for (const id of modelIds) {
-    try {
-      const model = await readModel(id);
-      described.push(model ? { id, resolved: true, name: model.name, version: model.version, status: model.status } : { id, resolved: false });
-    } catch {
-      described.push({ id, resolved: false });
-    }
-  }
-  return described;
+export function normalizePremiseIds(ids?: string[]): string[] {
+  if (!ids?.length) return [];
+  return [...new Set(ids.map(assertModelId))];
 }
 
 export const consumerModelListShape = {
@@ -315,10 +244,4 @@ export const consumerModelArchiveShape = {
   id: z.string().min(2).max(64),
   reason: z.string().max(2000).optional(),
   expectedRevision: z.number().int().min(1)
-};
-
-export const consumerModelBindShape = {
-  projectId: z.string().min(1).max(100),
-  modelIds: z.array(z.string().min(2).max(64)).min(1).max(10),
-  defaultModelId: z.string().min(2).max(64).nullable().optional()
 };

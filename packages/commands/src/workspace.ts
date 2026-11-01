@@ -2,7 +2,6 @@ import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { getDatabase, schema } from '@keywords/db';
 import type { CapabilityStatus, CommandContext, ProjectMode } from '@keywords/domain';
 import { loadResearchEnvironment } from '@keywords/research';
-import { describePremise, parseIds } from './consumer-model.js';
 
 const { db } = getDatabase();
 loadResearchEnvironment();
@@ -81,15 +80,7 @@ function reasonFrequency(rows: Array<{ reason: string | null }>) {
 }
 
 export const workspaceCommands = {
-  brief: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'workspace.brief', { projectId }, async () => {
-    const project = await requireProject(projectId);
-    const modelIds = parseIds(project.consumerModelIdsJson);
-    // Market research must state its premise; an unbound project shows empty rather than implied.
-    return {
-      ...briefView(project),
-      consumerModels: { modelIds, defaultModelId: project.defaultConsumerModelId ?? null, models: await describePremise(modelIds) }
-    };
-  }),
+  brief: async (ctx: CommandContext, projectId: string) => withRun(projectCtx(ctx, projectId), 'workspace.brief', { projectId }, async () => briefView(await requireProject(projectId))),
 
   updateBrief: async (ctx: CommandContext, input: {
     projectId: string; name?: string; domain?: string | null; mode?: ProjectMode; topic?: string | null; audience?: string | null;

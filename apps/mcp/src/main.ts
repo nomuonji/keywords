@@ -32,7 +32,7 @@ const budgetedTools = new Set([
   'keyword_screen_batch','keyword_research_pipeline','keyword_treasury_save',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate',
-  'consumer_model_save','consumer_model_archive','consumer_model_import_seed','consumer_model_bind','consumer_model_unbind','consumer_model_set_default'
+  'consumer_model_save','consumer_model_archive','consumer_model_import_seed'
 ]);
 const allowedWhilePaused = new Set([
   'recovery_context',
@@ -106,10 +106,7 @@ const coreTools = [
   { name: 'consumer_model_get', description: 'Read one consumer model definition, optionally a frozen historical version.', inputSchema: s('Consumer model', { id: { type: 'string' }, version: { type: 'string' } }, ['id']) },
   { name: 'consumer_model_save', description: 'Create or update a consumer model. Updates require expectedRevision; the published definition is frozen per version.', inputSchema: s('Save consumer model', { id: { type: 'string' }, name: { type: 'string' }, version: { type: 'string' }, status: { type: 'string', enum: ['active','paused','archived'] }, summary: { type: 'string' }, definition: { type: 'object', additionalProperties: true }, objectives: { type: 'object', additionalProperties: true }, variables: { type: 'array', items: { type: 'object', additionalProperties: true } }, evidencePolicy: { type: 'object', additionalProperties: true }, antiPatterns: { type: 'array', items: { type: 'string' } }, researchProcedure: { type: 'array', items: { type: 'string' } }, changeGate: { type: 'object', additionalProperties: true }, provenance: { type: 'object', additionalProperties: true }, expectedRevision: { type: 'number' }, changeReason: { type: 'string' } }, ['id','name','version','summary','definition','variables','researchProcedure']) },
   { name: 'consumer_model_archive', description: 'Archive a consumer model without deleting its history.', inputSchema: s('Archive consumer model', { id: { type: 'string' }, reason: { type: 'string' }, expectedRevision: { type: 'number' } }, ['id','expectedRevision']) },
-  { name: 'consumer_model_import_seed', description: 'Import a frozen consumer-model seed file from the repository (local runtime only). Idempotent by content hash.', inputSchema: s('Import seed', { seedPath: { type: 'string' } }, ['seedPath']) },
-  { name: 'consumer_model_bind', description: 'Bind the consumer models a project assumes, with one default. Only active models can be bound. This is the premise discovery inherits. Write: requires an active operation.', inputSchema: s('Bind consumer models', { projectId: { type: 'string' }, modelIds: { type: 'array', items: { type: 'string' } }, defaultModelId: { type: 'string' } }, ['projectId','modelIds']) },
-  { name: 'consumer_model_unbind', description: 'Remove one model from a project binding without touching the model itself.', inputSchema: s('Unbind consumer model', { projectId: { type: 'string' }, modelId: { type: 'string' } }, ['projectId','modelId']) },
-  { name: 'consumer_model_set_default', description: 'Choose which already-bound model is the project default premise.', inputSchema: s('Default consumer model', { projectId: { type: 'string' }, modelId: { type: 'string' } }, ['projectId','modelId']) }
+  { name: 'consumer_model_import_seed', description: 'Import a frozen consumer-model seed file from the repository (local runtime only). Idempotent by content hash.', inputSchema: s('Import seed', { seedPath: { type: 'string' } }, ['seedPath']) }
 ];
 const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
@@ -171,9 +168,6 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
     case 'consumer_model_save': result = await consumerModelCommands.save(baseCtx, a); break;
     case 'consumer_model_archive': result = await consumerModelCommands.archive(baseCtx, a); break;
     case 'consumer_model_import_seed': result = await consumerModelCommands.importSeed(baseCtx, a); break;
-    case 'consumer_model_bind': result = await consumerModelCommands.bind(baseCtx, a); break;
-    case 'consumer_model_unbind': result = await consumerModelCommands.unbind(baseCtx, a); break;
-    case 'consumer_model_set_default': result = await consumerModelCommands.setDefault(baseCtx, a); break;
     default:
       if (!isProductTool(name)) throw new Error(`Unknown tool: ${name}`);
       result = await callProductTool(name, a, toolCtx(a.projectId));

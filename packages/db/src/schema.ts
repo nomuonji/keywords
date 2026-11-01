@@ -12,8 +12,6 @@ export const projects = sqliteTable('projects', {
   country: text('country').notNull().default('jp'),
   region: text('region'),
   excludedTermsJson: text('excluded_terms_json'),
-  consumerModelIdsJson: text('consumer_model_ids_json'),
-  defaultConsumerModelId: text('default_consumer_model_id'),
   discoveryCadenceDays: integer('discovery_cadence_days').notNull().default(14),
   discoveryMaxCandidates: integer('discovery_max_candidates').notNull().default(50),
   discoveryMaxExternalRequests: integer('discovery_max_external_requests').notNull().default(8),

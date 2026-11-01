@@ -30,32 +30,29 @@ Local stdio MCP:
 - `consumer_model_list`, `consumer_model_get` — read (allowed even while agent operations are paused)
 - `consumer_model_save`, `consumer_model_archive` — writes, in `budgetedTools`, so they need an active shared `Operation`
 - `consumer_model_import_seed` — reads a seed file from the repo; local runtime only, idempotent by content hash
-- `consumer_model_bind`, `consumer_model_unbind`, `consumer_model_set_default` — project binding (write, also budgeted)
 
 Remote treasury MCP (`KEYWORDS_MCP_TOOL_NAMES`, server 1.30.0):
 
 - `consumer_model_list`, `consumer_model_get`, `consumer_model_save`, `consumer_model_archive`
 
-The remote has no `consumer_model_import_seed` or binding tools: its function bundle has no repository
-working directory, and its runtime has no projects.
+The remote has no `consumer_model_import_seed`: its function bundle has no repository working directory.
 
 ## Where the premise is consumed
 
+The premise is declared **per run, explicitly**. There is no project-level binding: deciding which model a
+site's research should assume is orchestration, not measurement, so it stays outside the operator.
+
 | Layer | Field | Meaning |
 | --- | --- | --- |
-| `projects.consumer_model_ids_json` | bound models | what this project may assume |
-| `projects.default_consumer_model_id` | default | the premise a run inherits when it names none |
-| `discovery_jobs.consumer_model_ids_json` | per run | the premise actually recorded for that run |
+| `discovery_jobs.consumer_model_ids_json` | per run | the premise recorded for that run |
 | `discovery_candidates.consumer_model_ids_json` | per candidate | copied from the job at insert, so lineage survives later job edits |
 | Treasury document `consumerModelIds` | per saved keyword | `keyword_treasury_save({candidates:[{..., consumerModelIds:[...]}]})` |
 
-`project_brief` returns `consumerModels: { modelIds, defaultModelId, models[] }`, so a research pass
-sees the premise before it starts. `operation_discovery_start` accepts `consumerModelIds`; explicit ids
-win, otherwise the project default is used, otherwise the bound list. A run with no binding records an
-empty premise rather than an implied one.
-
-Binding validates against Firestore: a model that does not exist or is not active cannot be bound, so a
-typo fails loudly instead of producing research with an unmeasurable premise.
+`operation_discovery_start({ ..., consumerModelIds: ['daishu-consumer'] })` and the human
+`discovery.start` path both take the ids directly. Ids are validated as slugs (deduplicated, invalid
+values rejected) but not resolved against Firestore, so a Firestore outage cannot block a research run.
+A run that names no model records an empty premise rather than an implied one — the absence is visible,
+not guessed.
 
 ## Not implemented yet
 

@@ -6,7 +6,7 @@ import { assertHuman, assertOperationAllowed, fingerprint, listDelegations, oper
 import { headlessCommands } from './headless.js';
 import { googleAdsConfigured } from './workspace.js';
 import { isVerifiedDemand } from './discovery-policy.js';
-import { resolvePremiseIds } from './consumer-model.js';
+import { normalizePremiseIds } from './consumer-model.js';
 import { snapshotCounts, workCommands } from './work.js';
 
 const { sqlite } = getDatabase();
@@ -340,7 +340,8 @@ export const operationCommands = {
     const active = one("SELECT * FROM discovery_jobs WHERE project_id=? AND status IN ('waiting_for_agent','running','awaiting_review','blocked') ORDER BY updated_at DESC LIMIT 1", input.projectId); if (active) return { reused: true, jobId: active.id, status: active.status, taskId: active.task_id };
     const jobId = randomUUID(), taskId = randomUUID(), t = now(); const maxCandidates = Math.max(1, Math.min(Math.floor(input.maxCandidates ?? 50), 500)); const maxExternal = Math.max(1, Math.min(Math.floor(input.maxExternalRequests ?? 8), 50));
     // The premise is recorded on the job so a candidate can always be traced to the model it assumed.
-    const premiseIds = await resolvePremiseIds(input.projectId, input.consumerModelIds);
+    // It is explicit only: choosing the premise belongs to the caller, not to the operator.
+    const premiseIds = normalizePremiseIds(input.consumerModelIds);
     sqlite.transaction(() => {
       run('INSERT INTO tasks(id,project_id,title,description,status,priority,assignee_type,related_type,related_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)', taskId, input.projectId, `キーワード探索: ${normalizeText(input.goal)}`, `Discovery job ${jobId}; operation ${input.operationId}`, 'todo', 80, 'agent', 'discovery_job', jobId, t, t);
       run(`INSERT INTO discovery_jobs(id,project_id,seed_keywords_json,target_url,goal,language,country,region,excluded_terms_json,consumer_model_ids_json,demand_policy,max_candidates,candidate_writes_used,max_external_requests,external_requests_used,status,task_id,work_session_id,executor_id,heartbeat_at,lease_expires_at,started_at,completed_at,error,created_at,updated_at)
