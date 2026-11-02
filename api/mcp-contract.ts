@@ -1,4 +1,4 @@
-export const KEYWORDS_MCP_SERVER_VERSION = '1.30.0';
+export const KEYWORDS_MCP_SERVER_VERSION = '1.31.0';
 
 export const KEYWORDS_MCP_TOOL_NAMES = [
   'remote_keyword_status',
@@ -61,6 +61,7 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'consumer_model_get',
   'consumer_model_save',
   'consumer_model_archive',
+  'consumer_model_frame',
   'technique_list',
   'technique_get',
   'technique_save',

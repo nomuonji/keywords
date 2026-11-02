@@ -50,6 +50,7 @@
     "./consumer-model": "./src/consumer-model.ts",
     "./consumer-seed-pool": "./src/consumer-seed-pool.ts",
     "./consumer-observation": "./src/consumer-observation.ts",
+    "./consumer-analysis-frame": "./src/consumer-analysis-frame.ts",
     "./marketing-techniques": "./src/marketing-techniques.ts"
   },
   "scripts": {
