@@ -8,11 +8,12 @@ const SiteStructures = lazy(() => import('./SiteStructures').then(module => ({ d
 const ThemeResearch = lazy(() => import('./ThemeResearch').then(module => ({ default: module.ThemeResearch })));
 const SeoSourcePool = lazy(() => import('./SeoSourcePool').then(module => ({ default: module.SeoSourcePool })));
 const SeoCaseCorpus = lazy(() => import('./SeoCaseCorpus').then(module => ({ default: module.SeoCaseCorpus })));
+const MarketingTechniques = lazy(() => import('./MarketingTechniques').then(module => ({ default: module.MarketingTechniques })));
 const MarketDiscovery = lazy(() => import('./MarketDiscovery').then(module => ({ default: module.MarketDiscovery })));
 const IdeaReview = lazy(() => import('./IdeaReview').then(module => ({ default: module.IdeaReview })));
 
 type DiscoveryTool='market'|'research'|'structures';
-type View='operations'|'articles'|'sites'|'treasury'|'sources'|'cases'|'discover';
+type View='operations'|'articles'|'sites'|'treasury'|'sources'|'cases'|'techniques'|'discover';
 const legacyDiscoveryViews=['ideas','market','research','structures'];
 // Three specialist ledgers remain accessible as supporting evidence, not parallel idea stores.
 const discoveryTools:Array<{id:DiscoveryTool;label:string;description:string}>=[
@@ -27,6 +28,7 @@ const views:Array<{id:View;label:string;hint:string}>=[
   {id:'treasury',label:'お宝KW',hint:'共有ストック'},
   {id:'sources',label:'情報源',hint:'X・媒体の監視プール'},
   {id:'cases',label:'SEO事例',hint:'新興ドメインを横断研究'},
+  {id:'techniques',label:'マーケ術',hint:'売れ方の型を貯める'},
   {id:'discover',label:'発見・企画',hint:'観測から7つの出口へ'}
 ];
 
@@ -75,6 +77,7 @@ export function App(){
       {view==='treasury'&&<KeywordTreasury/>}
       {view==='sources'&&<SeoSourcePool/>}
       {view==='cases'&&<SeoCaseCorpus/>}
+      {view==='techniques'&&<MarketingTechniques/>}
       {view==='discover'&&<div className="discoveryWorkspace">
         <div className="discoveryHubIntro">
           <p className="coreEyebrow">DISCOVERY / SINGLE IDEA MEMORY</p>

@@ -60,5 +60,10 @@ export const KEYWORDS_MCP_TOOL_NAMES = [
   'consumer_model_list',
   'consumer_model_get',
   'consumer_model_save',
-  'consumer_model_archive'
+  'consumer_model_archive',
+  'technique_list',
+  'technique_get',
+  'technique_save',
+  'technique_use',
+  'technique_archive'
 ] as const;

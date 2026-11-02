@@ -4,6 +4,7 @@ import { researchSessionList } from '../packages/commands/src/remote-keyword-res
 import { themeResearchContext } from '../packages/commands/src/theme-research.js';
 import { seoSourcePoolContext } from '../packages/commands/src/seo-source-pool.js';
 import { seoCaseList, seoCaseGet, seoCaseSummary } from '../packages/commands/src/seo-case-corpus.js';
+import { marketingTechniqueGet, marketingTechniqueList } from '../packages/commands/src/marketing-techniques.js';
 
 const app = new Hono();
 // Reuse this Vercel function for the owner-only Idea Memory UI.
@@ -37,6 +38,20 @@ app.get('/api/theme-research', async c => {
         staleAfterDays: c.req.query('staleAfterDays') ? Number(c.req.query('staleAfterDays')) : undefined,
         scanLimitPerSource: c.req.query('scanLimitPerSource') ? Number(c.req.query('scanLimitPerSource')) : undefined
       });
+      return c.json(result, 200, { 'cache-control': 'no-store' });
+    }
+
+    if (c.req.query('resource') === 'marketing-techniques') {
+      const id = c.req.query('id');
+      const result = id
+        ? await marketingTechniqueGet({ id })
+        : await marketingTechniqueList({
+            query: c.req.query('query') || undefined,
+            lever: c.req.query('lever') || undefined,
+            status: c.req.query('status') || undefined,
+            includeArchived: c.req.query('includeArchived') === 'true',
+            limit: c.req.query('limit') ? Number(c.req.query('limit')) : 100
+          });
       return c.json(result, 200, { 'cache-control': 'no-store' });
     }
 

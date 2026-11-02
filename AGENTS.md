@@ -36,6 +36,10 @@
 
 Google Trendsの検索トラフィック、TikTokの投稿数・閲覧数・広告CTR percentile、HNのscore/comments、App Storeの評価件数はそれぞれ異なる種類の注意・行動・商品化シグナルであり、売上や支払意思を直接示さない。複数ソースの反復パターンから行動・欲望・見せ方を抽出する。ただしmarket thesisを書く前に対象intent branchを明示し、別枝の検索量を合算しない。副枝は捨てず、別市場として独立検証するときだけ別thesisへ昇格させる。Top Adsからはcomparison / social proof / problem-solution / demonstration等の訴求mechanicを読むが、これはcross-categoryの訴求参考値であり対象queryの需要証拠ではない。App Store Searchもlexical search evidenceに留め、タイトルとdescriptionExcerptの意味が選択したsenseと合うことを確認してから商品化根拠へ使う。その後に audience / format / context / social loop / output artifact / distribution / business model のどこを横にずらせるかを考える。観測した商品をそのまま模倣せず、copy_like / adjacent / speculative を明示する。単一の総合Opportunity Scoreへ潰さない。
 
+## マーケ術ライブラリ
+
+タイトル・サムネ・商品名・CTA・SNSの企画や、LPの構成を決めるときは、ゼロから発想せず先に `technique_list` を読む。観測した売れ方の型が、効く理由・実例・出典・`avoidWhen` 付きで保存されている。採用する候補は `technique_get` で使わない条件を確認し、実際に使ったら `technique_use` に面・対象・結果を追記する。新しく見つけた手法は `technique_save` で残すが、効果を自分で観測していないものを `observed` にしない。詳細は `docs/marketing-techniques.md`。
+
 ## SEO情報源ウォッチ
 
 SEO界隈の人物・Xアカウント・ブログ・ニュースレター等を継続観測するときは、チャット履歴だけで監視対象を再構築せず、remote Keywords MCP の `seo_source_pool_context` を最初に読む。ユーザーが「最近あいつら何か有益なこと言ってる？」「このSEOアカウントを貯めておいて」などと依頼した場合は `docs/seo-source-watch-pool.md` に従う。

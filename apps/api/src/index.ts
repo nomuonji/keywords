@@ -20,6 +20,7 @@ import { researchSessionList } from '@keywords/commands/remote-keyword-research'
 import { themeResearchContext } from '@keywords/commands/theme-research';
 import { seoSourcePoolContext } from '@keywords/commands/seo-source-pool';
 import { seoCaseGet, seoCaseList, seoCaseSummary } from '@keywords/commands/seo-case-corpus';
+import { marketingTechniqueArchive, marketingTechniqueGet, marketingTechniqueList, marketingTechniqueSave, marketingTechniqueUse } from '@keywords/commands/marketing-techniques';
 
 const app = new Hono();
 const humanToken = process.env.KEYWORDS_API_HUMAN_TOKEN?.trim();
@@ -81,6 +82,19 @@ app.get('/seo-case-corpus', async c => c.json(c.req.query('id')
   ? await seoCaseGet({ id: c.req.query('id') })
   : await seoCaseList({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 50, pageToken: c.req.query('pageToken') || undefined })));
 app.get('/seo-case-summary', async c => c.json(await seoCaseSummary({ limit: c.req.query('limit') ? Number(c.req.query('limit')) : 100, pageToken: c.req.query('pageToken') || undefined })));
+// Marketing technique library: shared playbook of observed selling mechanics.
+app.get('/marketing-techniques', async c => c.json(c.req.query('id')
+  ? await marketingTechniqueGet({ id: c.req.query('id') })
+  : await marketingTechniqueList({
+    query: c.req.query('query') || undefined,
+    lever: c.req.query('lever') || undefined,
+    status: c.req.query('status') || undefined,
+    includeArchived: c.req.query('includeArchived') === 'true',
+    limit: c.req.query('limit') ? Number(c.req.query('limit')) : 100
+  })));
+app.post('/marketing-techniques', async c => c.json(await marketingTechniqueSave(await body(c))));
+app.post('/marketing-techniques/use', async c => c.json(await marketingTechniqueUse(await body(c))));
+app.post('/marketing-techniques/archive', async c => c.json(await marketingTechniqueArchive(await body(c))));
 app.post('/projects', async c => c.json(await commands.project.create(ctx(c), await body(c)), 201));
 app.get('/autopilot/portfolio', async c => c.json(await autopilotCommands.portfolio()));
 app.get('/projects/:projectId/autopilot', async c => c.json(await autopilotCommands.status(ctx(c), c.req.param('projectId'))));

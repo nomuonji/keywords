@@ -159,3 +159,41 @@ export type SeoSourceScan = {
   actor: string;
   createdAt: string;
 };
+
+/**
+ * A reusable marketing mechanic observed in the wild (or in literature) and
+ * kept for reference when planning titles, creatives, product hooks and CTAs.
+ * A technique is a hypothesis about why something sold, not proof that it will
+ * work for another product; `avoidWhen` is part of the record, not an aside.
+ */
+export type MarketingTechniqueStatus = 'candidate' | 'usable' | 'avoid' | 'archived';
+export type MarketingTechniqueEvidence = 'observed' | 'reported' | 'literature' | 'hypothesis';
+export type MarketingTechniqueUsage = {
+  at: string;
+  surface: string;
+  target: string;
+  note: string;
+};
+export type MarketingTechnique = {
+  id: string;
+  name: string;
+  lever: string;
+  category: string;
+  summary: string;
+  mechanism: string;
+  example: string;
+  evidenceLevel: MarketingTechniqueEvidence;
+  sourceUrl: string | null;
+  sourceLabel: string | null;
+  observedAt: string | null;
+  surfaces: string[];
+  fitWhen: string;
+  avoidWhen: string;
+  tags: string[];
+  status: MarketingTechniqueStatus;
+  usages: MarketingTechniqueUsage[];
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  origin: 'builtin' | 'firestore';
+};

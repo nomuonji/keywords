@@ -1,0 +1,182 @@
+/* Marketing technique library — keeps the core dark console language. */
+
+.mtAddButton {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #8dbb65;
+  background: #c8f288;
+  color: #101a17;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.mtAddButton:hover { background: #d7f6a8; }
+.mtAddButton:disabled { opacity: .45; cursor: default; background: #1b2624; border-color: #30413d; color: #7e9189; }
+
+.mtNotice {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #2f4a33;
+  border-radius: 10px;
+  background: #16241c;
+  color: #c8f288;
+  font-size: 13px;
+}
+
+.dangerPill {
+  font-style: normal;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  background: #432b29;
+  color: #ffae9c;
+}
+.neutralPill {
+  font-style: normal;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  background: #293530;
+  color: #8f9e98;
+}
+
+.mtDetailActions { display: flex; gap: 8px; }
+.mtDetailActions button,
+.mtClose {
+  padding: 8px 12px;
+  border-radius: 9px;
+  border: 1px solid #30413d;
+  background: #111a19;
+  color: #dbe8e3;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mtDetailActions button:hover,
+.mtClose:hover { border-color: #8dbb65; color: #eaf7bd; }
+
+.mtLead {
+  margin: 2px 0 16px;
+  font-size: 16px;
+  line-height: 1.65;
+  color: #dbe8e3;
+}
+
+.mtMeta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid #263632;
+  border-radius: 12px;
+  background: #111a19;
+}
+.mtMeta div { display: grid; gap: 4px; }
+.mtMeta dt { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: #6d817a; }
+.mtMeta dd { margin: 0; font-size: 13px; color: #cfdcd6; line-height: 1.5; }
+.mtMeta a { color: #c8f288; }
+
+.sourcePoolDetail h3 { margin: 22px 0 8px; font-size: 13px; letter-spacing: .04em; color: #9db0a8; }
+
+.mtBody { margin: 0; color: #c3d2cc; font-size: 14px; line-height: 1.8; }
+
+.mtConditions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+.mtConditions > div {
+  padding: 14px;
+  border: 1px solid #263632;
+  border-radius: 12px;
+  background: #111a19;
+}
+.mtConditions h3 { margin-top: 0 !important; }
+.mtAvoid { border-color: #4a3330 !important; background: #1d1513 !important; }
+.mtAvoid h3 { color: #ffb3a3; }
+
+.mtTags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+.mtTags span {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #1b2624;
+  border: 1px solid #2b3b37;
+  color: #93a79f;
+  font-size: 11px;
+}
+
+.mtStatusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #24332f;
+}
+.mtStatusRow small { color: #6d817a; font-size: 11px; margin-right: 4px; }
+.mtStatusRow button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #30413d;
+  background: #111a19;
+  color: #b7c7c0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.mtStatusRow button.active { border-color: #8dbb65; color: #c8f288; background: #17231d; }
+.mtStatusRow button:disabled { cursor: default; opacity: .85; }
+
+.mtUsages { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.mtUsages li {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid #263632;
+  border-radius: 12px;
+  background: #111a19;
+}
+.mtUsages b { font-size: 12px; color: #c8f288; font-weight: 600; }
+.mtUsages span { font-size: 13px; color: #cfdcd6; }
+.mtUsages p { margin: 4px 0 0; font-size: 12px; color: #90a29a; line-height: 1.6; }
+
+.mtForm { display: grid; gap: 12px; margin-top: 16px; }
+.mtForm label { display: grid; gap: 6px; font-size: 12px; color: #93a79f; }
+.mtForm input,
+.mtForm textarea,
+.mtForm select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #30413d;
+  border-radius: 10px;
+  background: #0f1817;
+  color: #e3eee9;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+.mtForm input:focus,
+.mtForm textarea:focus,
+.mtForm select:focus { outline: none; border-color: #8dbb65; box-shadow: 0 0 0 3px rgba(185, 243, 107, .1); }
+.mtForm textarea { resize: vertical; }
+.mtGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.mtFormActions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mtFormActions button {
+  padding: 11px 22px;
+  border-radius: 10px;
+  border: 1px solid #8dbb65;
+  background: #c8f288;
+  color: #101a17;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mtFormActions button:disabled { opacity: .6; cursor: default; }
+.mtFormActions small { color: #7e9189; font-size: 11px; line-height: 1.6; max-width: 520px; }
+
+@media (max-width: 900px) {
+  .sourcePoolLayout { grid-template-columns: 1fr; }
+  .mtDetailActions { flex-wrap: wrap; }
+}

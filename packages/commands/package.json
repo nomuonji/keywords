@@ -49,7 +49,8 @@
     "./market-intelligence": "./src/market-intelligence.ts",
     "./consumer-model": "./src/consumer-model.ts",
     "./consumer-seed-pool": "./src/consumer-seed-pool.ts",
-    "./consumer-observation": "./src/consumer-observation.ts"
+    "./consumer-observation": "./src/consumer-observation.ts",
+    "./marketing-techniques": "./src/marketing-techniques.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
