@@ -36,6 +36,14 @@
 
 Google Trendsの検索トラフィック、TikTokの投稿数・閲覧数・広告CTR percentile、HNのscore/comments、App Storeの評価件数はそれぞれ異なる種類の注意・行動・商品化シグナルであり、売上や支払意思を直接示さない。複数ソースの反復パターンから行動・欲望・見せ方を抽出する。ただしmarket thesisを書く前に対象intent branchを明示し、別枝の検索量を合算しない。副枝は捨てず、別市場として独立検証するときだけ別thesisへ昇格させる。Top Adsからはcomparison / social proof / problem-solution / demonstration等の訴求mechanicを読むが、これはcross-categoryの訴求参考値であり対象queryの需要証拠ではない。App Store Searchもlexical search evidenceに留め、タイトルとdescriptionExcerptの意味が選択したsenseと合うことを確認してから商品化根拠へ使う。その後に audience / format / context / social loop / output artifact / distribution / business model のどこを横にずらせるかを考える。観測した商品をそのまま模倣せず、copy_like / adjacent / speculative を明示する。単一の総合Opportunity Scoreへ潰さない。
 
+発想は帰納的に行い、演繹的に行わない。「この層ならこう検索するはず」「この市場ならこう買うはず」という一般的なイメージから検索語や仮説を先に決めて、それを測って確認する進め方をしない。それでは定番のイメージをなぞるだけになる。先に仮説なしで広く集める（行動の語の Google サジェスト あ〜ん 総当たり、関連検索・PAA、知恵袋の一覧など）。そのうえで、実際に出てきたもののうちイメージからは予測できない枝を見つけ、その枝を Google Ads の量・入札と一人称の投稿で確かめる。結論は「イメージ（from）→ 実測で分かったこと（to）→ 根拠」の形で残し、外れた仮説は消さずに反証として残す。コンシューマーモデル・収益テーマ・キーワード・商品や記事の企画のすべてに適用する。コンシューマーモデルでは `definition.observedShift` に記録する（`consumer-models/README.md`）。
+
+コンシューマーモデルを使って市場を分析するときは、集め始める前に `consumer_model_frame` で、ターゲット（persona／segment と side）、視点（self_search／life_corpus／money_moment／intersection／observed_output／surrounding_mirror）、決めたい問いを宣言する。出発点には、枠が返す計測済み・記録済みのものだけを使う。結果は from→to・根拠・お金・反証・致命傷の形で書き、`deliverables.writeBack` の既存の保存先（observedShift・searchEvidence・voices・`consumer_model_observe`・seed pool・discovery の consumerModelIds）に戻す。手順は `docs/consumer-model-market-analysis.md`。
+
+## バズの再現性
+
+SNSで伸びる企画やバズを扱うときは、AIの「面白い」という感覚で候補を選ばない。市場で実際に伸びた投稿の実数（投稿者の普段の中央値に対する倍率）と、同じ型で伸びなかった投稿（分母）を根拠にする。品質の下限はAIで判定してよいが、品質を満たした候補のどれが当たるかは実地テストで決める。他人の体験を、自分の一人称の体験として投稿しない。設計・実測・未決事項・再開手順は `docs/buzz-reproducibility.md`。
+
 ## マーケ術ライブラリ
 
 タイトル・サムネ・商品名・CTA・SNSの企画や、LPの構成を決めるときは、ゼロから発想せず先に `technique_list` を読む。観測した売れ方の型が、効く理由・実例・出典・`avoidWhen` 付きで保存されている。採用する候補は `technique_get` で使わない条件を確認し、実際に使ったら `technique_use` に面・対象・結果を追記する。新しく見つけた手法は `technique_save` で残すが、効果を自分で観測していないものを `observed` にしない。詳細は `docs/marketing-techniques.md`。

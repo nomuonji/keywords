@@ -147,12 +147,29 @@ export const consumerSeedPoolCommands = {
         note: item.note
       });
     }
+    // A consumer model describes who buys, not who is harmed. Carry that into the response so a
+    // caller cannot apply the angles without seeing whose search box they came from.
+    const evidence = model.searchEvidence ?? [];
+    const selfRows = evidence.filter(row => row.side === 'self');
+    const buyerNote = model.buyer
+      ? `Buyer: ${model.buyer.pays} Do not target ${model.buyer.doesNotPay} with this model.`
+      : 'This model states no buyer; confirm who pays before targeting anything.';
+    const evidenceNote = selfRows.length
+      ? `Self-side search evidence on file: ${selfRows.length} rows (e.g. ${selfRows.slice(0, 3).map(row => row.keyword).join(' / ')}).`
+      : 'No side:"self" search evidence on file — the model currently describes the people around the persona, not the consumer.';
     return {
       modelId: model.id, modelVersion: model.version, rotationKey: key,
       pools: [...new Set(items.map(item => item.poolId))],
       angleCount: angles.length, itemCount: items.length,
+      usage: 'ideation_only',
+      buyer: model.buyer ?? null,
+      searchEvidence: { total: evidence.length, self: selfRows.length },
+      personas: (model.personas ?? []).map(persona => ({
+        key: persona.key, name: persona.name, oneLine: persona.oneLine,
+        searchWords: persona.searchWords ?? []
+      })),
       seeds: generated,
-      caveat: 'Each seed is an angle applied to pool material. The pool item is not evidence of demand; measure search volume and SERP before saving anything as a keyword.'
+      caveat: 'These are random ideation seeds, not findings. The angle is pasted onto a pool item mechanically, so unnatural pairs are normal output. Use a seed only to start a train of thought: never treat one as a hypothesis, a keyword, an article premise, or evidence that anyone searches it. Measure volume and SERP before anything is saved. ' + buyerNote + ' ' + evidenceNote
     };
   }
 };

@@ -1,0 +1,23 @@
+{
+  "poolId": "reply-crowd-life-2026q4",
+  "label": "OBSERVED",
+  "note": "ヤフコメの経験談コメント（2026-11-02、8カテゴリ48記事・1,417件のうち体験の語り111件）から、書き手が自分の生活として語った具体物・出来事を本人の言葉に近い形で抜いた。ユーザー名・ID は記録していない。記事の題材に引かれて経験者が書き込むため、生活の固まりは観測した記事の題材に偏る（脳梗塞の記事→脳卒中の経験談）。量は suggest-soup.ts で枝を出し kw-volumes.ts で測った値を note に置く。Ads が値を返さない長い語も、サジェストに出ていれば存在はしている。出典: Y-<記事ID> = https://news.yahoo.co.jp/articles/<記事ID>/comments",
+  "items": [
+    { "originRef": "life-01", "text": "脳梗塞 退院後", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "「脳梗塞で2ヶ月入院」。サジェスト: 食事・車の運転・仕事復帰・一人暮らし・疲れやすい・お酒。脳梗塞 退院後 食事 260（入札 47〜264円）" },
+    { "originRef": "life-02", "text": "脳出血 後遺症", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "「44歳で脳出血、左手指先に麻痺が残った」。サジェスト: しびれ 強くなる・怒りっぽい・障害年金・低気圧・仕事復帰。しびれ 170（入札 37〜252円）" },
+    { "originRef": "life-03", "text": "くも膜下出血 後遺症", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "「開頭手術で1ヶ月入院、口が2センチしか開かなかった」。12,100（入札 4〜158円）" },
+    { "originRef": "life-04", "text": "ラクナ梗塞", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "「夫が10年前にラクナ梗塞、禁酒、顔の左側が無感覚で幼児用カレーもむせる」。14,800（入札 4〜182円）" },
+    { "originRef": "life-05", "text": "高次脳機能障害", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "脳出血 後遺症 のサジェストから。40,500（入札 19〜182円）。患者家族・医療職の検索を含む" },
+    { "originRef": "life-06", "text": "嚥下 むせる", "category": "病気の後の生活", "label": "OBSERVED", "sourceRef": "Y-f43b745af2abbd0a7298cfdf17cfefc6e8a989a2", "note": "「おもゆでもむせて食べられなかった（母）」「言語聴覚士が食事を確認」" },
+    { "originRef": "life-07", "text": "ワイド団信", "category": "病気とお金の交点", "label": "OBSERVED", "sourceRef": "Y-d33ef9420d971b52b01c135bdbdcfcce506cb0cb", "note": "住宅ローン 借り換え のサジェストに「健康状態」「三大疾病」。病気の後に団信へ入れず借り換えられない局面。1,900（入札 157〜629円）、脳梗塞 住宅ローン 170、団信 脳梗塞 90" },
+    { "originRef": "life-08", "text": "住宅ローン 借り換え 何歳まで", "category": "住宅ローンの来歴", "label": "OBSERVED", "sourceRef": "Y-d33ef9420d971b52b01c135bdbdcfcce506cb0cb", "note": "「38年前に公庫で3.4%、1%の銀行へ3年ごとに借り換え」。40（入札 61〜317円）。年齢制限 30（42〜137円）" },
+    { "originRef": "life-09", "text": "繰り上げ返済 退職金", "category": "住宅ローンの来歴", "label": "OBSERVED", "sourceRef": "Y-d33ef9420d971b52b01c135bdbdcfcce506cb0cb", "note": "借り換えのサジェストに「退職金 証明書」。10" },
+    { "originRef": "life-10", "text": "個人情報 流出 通知", "category": "流出の後", "label": "OBSERVED", "sourceRef": "Y-3094327f1345d98bca65535708bf89506420de68", "note": "「松坂屋とアイリスプラザから流出の通知、迷惑メールが増え海外から電話」。長い語は Ads 値なし" },
+    { "originRef": "life-11", "text": "ペット 同伴 避難所", "category": "防災の現実", "label": "OBSERVED", "sourceRef": "Y-5dda7ce8eeb86c0a5d702250c14d1b847f690396", "note": "「犬が2頭いるので避難所には行かない」。サジェストは市区町村名＋避難所 ペットが延々と続く。140" },
+    { "originRef": "life-12", "text": "冬 停電 暖房", "category": "防災の現実", "label": "OBSERVED", "sourceRef": "Y-5dda7ce8eeb86c0a5d702250c14d1b847f690396", "note": "「北海道の冬は燃料が無いと凍死、薪ストーブも寝る時は消す」。10" },
+    { "originRef": "life-13", "text": "高齢ドライバー 事故 被害", "category": "親のこと", "label": "OBSERVED", "sourceRef": "Y-17f55995839e6372261d983d9d15fd2954296327", "note": "「父が88歳の運転する軽にはねられ意識が戻らない、ドラレコを見せてもらった」。長い語は Ads 値なし" },
+    { "originRef": "life-14", "text": "ステンレス鍋 取っ手", "category": "台所", "label": "OBSERVED", "sourceRef": "Y-193c3aaf298ae410480bc2f9f800d2404d0c80af", "note": "「20年使った大型ステンレス鍋の樹脂の取っ手だけ崩れ始めた」" },
+    { "originRef": "life-15", "text": "販売終了 復刻", "category": "懐かしさ", "label": "OBSERVED", "sourceRef": "Y-2997ebd1332a8f3c97ebcb79559960f6a1c89a6f", "note": "「娘が小さい頃ダイソーで10個買い置きした。27歳の娘が見つけたら買ってと言う」" },
+    { "originRef": "life-16", "text": "募金 使い道", "category": "お金の行き先", "label": "OBSERVED", "sourceRef": "Y-5075aba52ef0367d4ba5876346af82e638015e2a", "note": "「10年毎年募金してきた。食べ物のような実物で渡す方法に変えようか」" }
+  ]
+}

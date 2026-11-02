@@ -49,6 +49,7 @@ import { keywordSuggestConfiguration } from '../packages/research/src/keyword-su
 import { keywordSuggestCommand, keywordSuggestShape } from '../packages/commands/src/keyword-suggest.js';
 import { marketIntelligenceResearch, marketIntelligenceResearchShape, marketSignalSnapshotSave, marketSignalSnapshotSaveShape, marketSignalSnapshotCompare, marketSignalSnapshotCompareShape } from '../packages/commands/src/market-intelligence.js';
 import { consumerModelCommands, consumerModelArchiveShape, consumerModelGetShape, consumerModelListShape, consumerModelSaveShape } from '../packages/commands/src/consumer-model.js';
+import { consumerAnalysisFrameCommands, consumerAnalysisFrameShape } from '../packages/commands/src/consumer-analysis-frame.js';
 import {
   marketingTechniqueArchive, marketingTechniqueArchiveShape,
   marketingTechniqueGet, marketingTechniqueGetShape,
@@ -438,6 +439,11 @@ function server() {
     inputSchema: consumerModelArchiveShape,
     annotations: { readOnlyHint: false, destructiveHint: true }
   }, async input => structured(await consumerModelCommands.archive(remoteConsumerCtx, input)));
+  mcp.registerTool('consumer_model_frame', {
+    description: 'Start a model-based market analysis by declaring its target (persona/segment, side) and viewpoint (self_search, life_corpus, money_moment, intersection, observed_output, surrounding_mirror). Returns the viewpoint procedure, the baseline the model already has (countable vs mixed rows, money rows, voices, observedShift), starting points taken only from measured data, and where findings must be written back. Read-only; untested-variable coverage is local-only.',
+    inputSchema: consumerAnalysisFrameShape,
+    annotations: { readOnlyHint: true }
+  }, async input => structured(await consumerAnalysisFrameCommands.frame(remoteConsumerCtx, input)));
   return mcp;
 }
 const health = (c: any) => c.json({ ok: true, service: 'keywords-treasury-mcp', ...runtimeStatus() });

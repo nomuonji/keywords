@@ -1,0 +1,1401 @@
+{
+  "schemaVersion": 1,
+  "id": "gomi-consumer",
+  "slug": "gomi-consumer",
+  "name": "ゴミ人間モデル",
+  "version": "0.12",
+  "status": "active",
+  "role": "market_research_premise",
+  "aliases": [
+    "gomi-ningen",
+    "gomi-model",
+    "gomi",
+    "kuzu-model"
+  ],
+  "summary": "コストの行き先が自分以外になる判断の型。人物像は「悪意ではなく順番が違う人」ではなく、摩擦を避け、現在を割り引き、優位を楽しみ、自分を被害者と思っている人。消費者としては、予防に金を払わず、摩擦が起きたときだけ検索し、その摩擦は金で外注できるなら外注する。買い手はこの人自身であり、コストを負わされた側ではない。",
+  "definition": {
+    "model": "コストの行き先が自分以外になる判断の型。利得は自分の側で先に確定し、決定で生じるコスト（損害・リスク・関係終了・後始末）は相手・家族・職場・取引先が負う。本人の勘定にコストが入るのは、請求・露見・評判低下で戻ってきたときだけ。",
+    "targeting": "入口（誰と・どの立場で）を先に固定しない。まず「誰がコストを負っているか」で事例を集め、入口は後から分類する。属性で人を決めつけない。",
+    "notAssumed": [
+      "本人の感情（罪悪感・後悔・本気）をモデルの軸にすること。感情は語りでしか観測できず、行動の予測に使えない",
+      "この人にコストを負わされた側を「このモデルの消費者」と取り違えること",
+      "特定の入口（不倫・詐欺・パワハラ）をモデルの定義と取り違えること",
+      "実在個人の人格判定・特定",
+      "「攻め方」を検索するという前提（実測では攻めの語は極小）"
+    ],
+    "instantiation": {
+      "note": "個別の題材に当てるときは、以下の順で1枚に埋める。埋まらない欄は推測で埋めず UNKNOWN として残す。",
+      "steps": [
+        "入口：どの関係か（恋愛／家族／職場／取引／消費／友人／コミュニティ）。非対称は何か",
+        "利得：本人が何を得ているか（金・時間・性・世話・体裁・優越・免責）",
+        "コスト負担者：損害を最終的に誰が払っているか",
+        "正当化の在庫：本人が使う言い訳の語彙を3つ以上",
+        "コストの戻り方：何が起きればコストが本人の勘定に戻るか",
+        "購買：その場面で金を出すのは4つの摩擦のどれか（去る／払う／収める／体裁）",
+        "人物像：口癖・謝り方・去り方・約束の守り方を1段落で書く。書けなければ未完成",
+        "反証：この型に当てはまらない観測"
+      ]
+    },
+    "persona": {
+      "oneLine": "悪意で動く人ではない。摩擦を払わず、得をしても満足せず、損をしなかったことで満足する人。",
+      "drives": [
+        "摩擦の回避：手間・気まずさ・説明を払わない。説明を求められること自体が苦痛",
+        "現在への極端な割引：1年後の損失をほぼゼロと見積もる。今日の気まずさ ≫ 来年の破綻",
+        "優位の快感：相手が待つ時間が資源。返信しないこと自体が報酬",
+        "被害者としての自己像：自分の我慢は克明に計上し、相手の我慢は計上しない"
+      ],
+      "devices": [
+        "軽蔑：感謝しない。感謝は借りを認めることだから",
+        "先制の逃避：露見する前に切る・嘘をつく・消える。攻撃ではなく先回り",
+        "正当化の自動化：考えずに言葉が出る。反省ではなく反射"
+      ],
+      "innerVoice": [
+        "別に悪いことしてない",
+        "向こうが勝手に期待した",
+        "俺だって我慢してる",
+        "今さら言っても変わらない",
+        "めんどくさい",
+        "なんでそんなことで",
+        "もう終わったこと",
+        "あとで返せばいい",
+        "バレなきゃ同じ",
+        "言ったらもめるだろ",
+        "可哀想だけど、しょうがない"
+      ],
+      "surface": [
+        "返信は「あとで」と思って忘れる。悪意はない。忘れるのだ",
+        "約束を「予定」と呼ぶ。予定は変更できるもの",
+        "謝るとき、行為ではなく自分の意図を謝る",
+        "相手が怒ると「また始まった」と思う。反省ではなく疲労",
+        "金を借りたことは忘れる。返す約束をしたことは覚えている",
+        "相手が弱っていると、助けるより先に「今なら通る」と思う",
+        "安定すると飽きる。安定＝退屈＝コスト",
+        "謝罪はする。行動は変えない。謝罪は安い"
+      ],
+      "decisionOrder": [
+        "めんどくさいか",
+        "今得するか",
+        "バレるか",
+        "相手がどう思うか（ほぼ評価されない）"
+      ]
+    },
+    "consumption": {
+      "note": "このモデルは「この人がどう買うか」の前提。買い手はこの人自身。",
+      "purchaseLogic": [
+        "利益を得るときは言葉がいらない。摩擦が起きたときだけ検索する",
+        "その摩擦は、金で外注できるなら外注する。情報はタダで足りる",
+        "予防・貯金・保険・研修を買わない。金を使うのは今月をしのぐため",
+        "即日・分割・後払い・今だけが刺さる",
+        "値引き・追加要求・返金要求を購買後にも出す。CSコストを見込んで価格に入れる"
+      ],
+      "buys": [
+        "代行（退職・示談・内容証明）",
+        "体裁（言い訳の設計・見せる記号）",
+        "沈静化（請求が来た後の処理）",
+        "優位の材料（相手の状態の解説）"
+      ],
+      "notBuys": [
+        "予防（保険・研修・点検）",
+        "行動変容（カウンセリング・治療）",
+        "長期的改善",
+        "相手への補償"
+      ]
+    }
+  },
+  "objectives": {
+    "reach": [
+      "検索流入（出口・事後の語）",
+      "記事の滞在",
+      "体験談の共有",
+      "相談・代行への遷移"
+    ],
+    "conversion": [
+      "代行サービスの申込",
+      "債務整理・時効援用の相談",
+      "転職エージェントの登録",
+      "示談・内容証明の書式購入"
+    ],
+    "separationRule": "このモデルの買い手は本人。コストを負わされた側（企業・配偶者）を買い手に置いた時点でモデルの外側になる。売るなら別モデルで扱う。"
+  },
+  "buyer": {
+    "pays": "コストを外部化した本人。摩擦が発生した局面（去る・払う・収める・体裁）で金を出す",
+    "doesNotPay": "この人にコストを負わされた側（企業・配偶者・取引先・従業員）。このモデルで売り先にしてはいけない"
+  },
+  "personas": [
+    {
+      "key": "salaryman-boss",
+      "name": "タカシ（42・課長）",
+      "segment": "職場・立場型",
+      "oneLine": "会議で「俺が回してる」と言うが、資料は部下が作っている。",
+      "situation": "20人ほどの会社の課長。部下3人。上には弱く、下には強い。",
+      "daily": [
+        "会議の冒頭で方針だけ言い、細部は「任せる」と言って触らない",
+        "自分の遅刻は「付き合い」、部下の遅刻は「意識が低い」",
+        "資料の作り直しを当日に指示する。理由は言わない",
+        "部下が辞めると「最近の若者は」と言い、自分の関わり方は振り返らない"
+      ],
+      "phrases": [
+        "俺がいないと回らない",
+        "確認しなかった方が悪い",
+        "だから言った",
+        "普通こうするでしょ"
+      ],
+      "wants": [
+        "一目置かれること",
+        "説明を求められないこと"
+      ],
+      "avoids": [
+        "数字の根拠を聞かれること",
+        "部下と1対1で話すこと"
+      ],
+      "buys": [
+        "ビジネス書",
+        "管理職向けセミナー",
+        "スーツ",
+        "名刺の肩書き"
+      ],
+      "notBuys": [
+        "部下向けのマネジメント研修（自分が変わる話）",
+        "1on1の設計"
+      ],
+      "searchWords": [
+        "舐められる",
+        "遅刻 言い訳",
+        "面接 退職理由",
+        "評価 されない 転職"
+      ],
+      "isComposite": true,
+      "note": "年齢・役職は例示。役職にこの型を帰属させない。"
+    },
+    {
+      "key": "family-eldest",
+      "name": "ヨシオ（51・長男）",
+      "segment": "家族・情型",
+      "oneLine": "介護は姉に任せ、相続の話になると急に熱心になる。",
+      "situation": "実家に母。姉が週3で通っている。本人は月1回、手土産を持って顔を出す。",
+      "daily": [
+        "「仕事が忙しい」で通院の付き添いを断る",
+        "相続の話題になると日程を最速で調整する",
+        "姉の疲労を「大げさ」と言う",
+        "立て替えた金は請求するが、領収書は出さない"
+      ],
+      "phrases": [
+        "長男だから",
+        "俺だって我慢してる",
+        "可哀想だけど、しょうがない",
+        "もう終わったこと"
+      ],
+      "wants": [
+        "「よくやっている」と言われること",
+        "実家の決定権"
+      ],
+      "avoids": [
+        "介護の当番を固定されること",
+        "過去の負担を金額で比べられること"
+      ],
+      "buys": [
+        "相続の書籍",
+        "実家のリフォーム",
+        "法事の段取り"
+      ],
+      "notBuys": [
+        "介護用品",
+        "訪問介護の手配",
+        "きょうだいでの話し合いの設計"
+      ],
+      "searchWords": [
+        "長男 相続",
+        "実家 処分"
+      ],
+      "isComposite": true,
+      "note": "性別・続柄は例示。長男にこの型を帰属させない。"
+    },
+    {
+      "key": "freelance-client",
+      "name": "ケンジ（38・個人事業主）",
+      "segment": "取引・制度型",
+      "oneLine": "納品後に「今回は勉強不足だったね」で減額する。",
+      "situation": "従業員2人の制作会社。発注は口頭、契約書は結ばない。",
+      "daily": [
+        "発注時は「長く付き合いたい」と言う",
+        "検収で必ず1項目指摘してから金額の話に入る",
+        "支払いを遅らせ、理由は「銀行の手続き」",
+        "トラブルになると「うちも厳しい」で自分の苦労を語る"
+      ],
+      "phrases": [
+        "今回は勉強不足だったね",
+        "うちも厳しい",
+        "次につなげよう",
+        "言ったよね"
+      ],
+      "wants": [
+        "安く早く仕上がること",
+        "自分の判断が正しいと認められること"
+      ],
+      "avoids": [
+        "契約書にサインすること",
+        "単価の根拠を書面で残すこと"
+      ],
+      "buys": [
+        "見栄えのする事務所",
+        "業務効率化ツール",
+        "名刺"
+      ],
+      "notBuys": [
+        "契約書レビュー",
+        "下請け向けの待遇改善",
+        "支払いサイトの短縮"
+      ],
+      "searchWords": [
+        "支払い 猶予",
+        "減額 交渉",
+        "内容 証明 無視"
+      ],
+      "isComposite": true,
+      "note": "業種・規模は例示。個人事業主にこの型を帰属させない。"
+    },
+    {
+      "key": "married-dater",
+      "name": "リョウ（34・既婚）",
+      "segment": "恋愛・関係維持型",
+      "oneLine": "「今は家庭の問題がある」と言い続けて3年。",
+      "situation": "結婚6年目。相手は職場の同僚。関係は続いているが、先の話はしない。",
+      "daily": [
+        "会うのは平日の夜だけ。週末は理由をつけて断る",
+        "相手が将来の話をすると「今は状況が状況だから」で流す",
+        "怒られると「そんなことで」と言って疲れた顔をする",
+        "別れ話が出ると黙る。返信を遅らせて自然に薄くする"
+      ],
+      "phrases": [
+        "今は状況が状況だから",
+        "向こうも了承してた",
+        "そんなことで怒る？",
+        "めんどくさい"
+      ],
+      "wants": [
+        "現状維持",
+        "詮索されないこと"
+      ],
+      "avoids": [
+        "期限を決めること",
+        "配偶者と相手を同じ場に置くこと"
+      ],
+      "buys": [
+        "身だしなみ",
+        "プレゼント",
+        "個室の店"
+      ],
+      "notBuys": [
+        "関係を整理する相談",
+        "カウンセリング"
+      ],
+      "searchWords": [
+        "不倫 やめたい",
+        "円満 別れ",
+        "都合 の いい 関係"
+      ],
+      "isComposite": true,
+      "note": "合成例。実在の誰かをモデルにしたものではない。"
+    }
+  ],
+  "variables": [
+    {
+      "key": "friction",
+      "label": "摩擦の回避",
+      "observable": "手間・気まずさ・説明のうち何を払いたくないか。説明を求められたとき逃げるか、黙るか、逆ギレするか"
+    },
+    {
+      "key": "discount",
+      "label": "現在への割引",
+      "observable": "1年後の損失をどの程度の重みで見積もっているか。予防・貯金・保険に支出があるか"
+    },
+    {
+      "key": "advantage",
+      "label": "優位の快感",
+      "observable": "相手を待たせる・焦らす・比べる行動があるか。待たせる時間を資源として使っているか"
+    },
+    {
+      "key": "victim_self",
+      "label": "被害者としての自己像",
+      "observable": "自分の我慢を語る量と、相手の我慢を語る量の比"
+    },
+    {
+      "key": "justification",
+      "label": "正当化の在庫",
+      "observable": "使う言い訳の語彙。入口ごとに変わるが機能は同じ（コストを相手側に戻す）"
+    },
+    {
+      "key": "cost_bearer",
+      "label": "コスト負担者",
+      "observable": "決定のコストを最終的に誰が払っているか。負担者は同意しているか、気づいているか"
+    },
+    {
+      "key": "cost_recognition",
+      "label": "コストの認識条件",
+      "observable": "請求・露見・評判低下・制度のどれが起きたとき初めてコストを勘定に入れるか"
+    },
+    {
+      "key": "outsource",
+      "label": "摩擦の外注",
+      "observable": "代行・代弁・代理に金を払うか。自分で言わずに他人に言わせる手段を探しているか"
+    },
+    {
+      "key": "exit_cost",
+      "label": "離脱コストの転嫁",
+      "observable": "去るコストをどちらが負う建て付けか。去る側／去られる側のどちらの位置を取るか"
+    },
+    {
+      "key": "reputation_scope",
+      "label": "評判の分母",
+      "observable": "誰に見られたくないか。分母が数人か不特定多数か"
+    },
+    {
+      "key": "counterevidence",
+      "label": "反証条件",
+      "observable": "この型が崩れる観測（自発的な返済・謝罪後の行動変化・負担者の明確な同意）"
+    }
+  ],
+  "thinking": [
+    {
+      "statement": "利益を得るときは言葉がいらない。摩擦が起きたときだけ検索する。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "その摩擦は金で外注できるなら外注する。情報はタダで足りる。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "攻め方は検索しない。もうできるから。勉強するのは逃げ方だけ。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "判断は利得ではなく摩擦から始まる。だから「得なのにやらない」が起きる。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "得をしても満足しない。損をしなかったことが満足で、次の要求が始まる。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "露見が怖いので、先に切る・嘘をつく・消える。攻撃ではなく先制の逃避。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "謝罪はするが行動は変えない。謝罪は安い。",
+      "label": "HYPOTHESIS"
+    },
+    {
+      "statement": "本人側は書かない。知恵袋で「不倫 別れたい 既婚」「介護 相続 長男」を検索すると、上位はほぼコストを負わされた側の投稿で、本人の投稿は10件中1〜2件。本人の声は少数の投稿から拾うしかない",
+      "label": "OBSERVED",
+      "evidenceRefs": [
+        "https://chiebukuro.yahoo.co.jp/search?p=既婚者+不倫相手+別れたい+男性",
+        "https://chiebukuro.yahoo.co.jp/search?p=姉+介護+文句+相続+長男"
+      ]
+    },
+    {
+      "statement": "金が動く語と動かない語が分かれる。入札があるのは借金（時効援用 140〜701円、借金逃げる 252〜1114円）、慰謝料減額（340〜2578円）、支払い猶予（510〜1474円）、退職代行（111〜491円）。体裁の語（遅刻 言い訳・仮病 バレない・謝罪の仕方・舐められる）は入札ゼロで、広告主がいない",
+      "label": "OBSERVED",
+      "evidenceRefs": [
+        "google_ads historical metrics 2026-11-02"
+      ]
+    }
+  ],
+  "preferences": {
+    "buying": [
+      "即日",
+      "分割・後払い",
+      "限定・今だけ",
+      "手間が少ない",
+      "実費の明示",
+      "他社比較表"
+    ],
+    "reading": [
+      "一人称の告白",
+      "具体的な手順",
+      "金額と期限",
+      "匿名化された事例"
+    ],
+    "avoid": [
+      "将来のリスクの話",
+      "自分の行動を変える要求",
+      "長い前提",
+      "倫理的な説教",
+      "「あなたにも非がある」"
+    ]
+  },
+  "searchEvidence": [
+    {
+      "keyword": "退職代行",
+      "side": "self",
+      "volume": 60500,
+      "competition": "MEDIUM",
+      "competitionIndex": 58,
+      "intent": "摩擦の外注（自分で辞めずに辞める）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 111,
+      "bidHighYen": 491,
+      "sideCertainty": "mixed",
+      "note": "劣悪な職場から逃げる被害側も同じ語を打つ。むしろそちらが多い可能性が高く、全量をこのモデルの需要に数えない"
+    },
+    {
+      "keyword": "副業 バレない",
+      "side": "self",
+      "volume": 18100,
+      "competition": "LOW",
+      "competitionIndex": 30,
+      "intent": "体裁（ばれずに続ける）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 146,
+      "bidHighYen": 397,
+      "sideCertainty": "mixed",
+      "note": "大半は会社にコストを負わせていない普通の副業者。このモデルの比率は不明"
+    },
+    {
+      "keyword": "時効 借金",
+      "side": "self",
+      "volume": 9900,
+      "competition": "MEDIUM",
+      "competitionIndex": 64,
+      "intent": "事後の摩擦（法的な逃れ）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 106,
+      "bidHighYen": 621,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "時効 援用",
+      "side": "self",
+      "volume": 8100,
+      "competition": "MEDIUM",
+      "competitionIndex": 53,
+      "intent": "事後の摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 140,
+      "bidHighYen": 701,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "夜逃げ",
+      "side": "self",
+      "volume": 4400,
+      "competition": "LOW",
+      "competitionIndex": 6,
+      "intent": "逃げ",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 200,
+      "bidHighYen": 205,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "面接 退職理由",
+      "side": "self",
+      "volume": 2900,
+      "competition": "MEDIUM",
+      "competitionIndex": 37,
+      "intent": "体裁（去った後の言い訳）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 3,
+      "bidHighYen": 25,
+      "sideCertainty": "mixed",
+      "note": "転職者一般の語。体裁の需要として読むのは一部だけ"
+    },
+    {
+      "keyword": "遅刻 言い訳",
+      "side": "self",
+      "volume": 2900,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "体裁",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "開き直る",
+      "side": "self",
+      "volume": 1900,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "正当化",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "LINE 消す 方法",
+      "side": "self",
+      "volume": 1900,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "隠蔽（記事にしない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 2,
+      "bidHighYen": 2,
+      "sideCertainty": "mixed",
+      "note": "端末整理などの一般用途を含む"
+    },
+    {
+      "keyword": "位置 情報 偽装",
+      "side": "self",
+      "volume": 1600,
+      "competition": "LOW",
+      "competitionIndex": 3,
+      "intent": "隠蔽（記事にしない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 9,
+      "bidHighYen": 155,
+      "sideCertainty": "mixed",
+      "note": "位置情報ゲームの利用者を大きく含む"
+    },
+    {
+      "keyword": "舐め られる",
+      "side": "self",
+      "volume": 1300,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "体裁（下に見られたくない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "円満 退職",
+      "side": "self",
+      "volume": 720,
+      "competition": "LOW",
+      "competitionIndex": 8,
+      "intent": "去る摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 7,
+      "bidHighYen": 306,
+      "sideCertainty": "mixed",
+      "note": "転職者一般の語"
+    },
+    {
+      "keyword": "不倫 やめたい",
+      "side": "self",
+      "volume": 720,
+      "competition": "LOW",
+      "competitionIndex": 1,
+      "intent": "収める摩擦（状態の告白）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 67,
+      "bidHighYen": 234,
+      "sideCertainty": "mixed",
+      "note": "独身の交際相手側も打つ（知恵袋の上位はほぼ交際相手側）"
+    },
+    {
+      "keyword": "謝罪 の 仕方",
+      "side": "self",
+      "volume": 590,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "収める摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "mixed",
+      "note": "仕事上の謝罪一般を含む"
+    },
+    {
+      "keyword": "バイト バックレ",
+      "side": "self",
+      "volume": 590,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "逃げ",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "円満 別れ",
+      "side": "self",
+      "volume": 390,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "去る摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "仮病 バレ ない",
+      "side": "self",
+      "volume": 390,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "体裁",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "借金 踏み倒す",
+      "side": "self",
+      "volume": 390,
+      "competition": "LOW",
+      "competitionIndex": 13,
+      "intent": "事後の摩擦（推奨しない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 159,
+      "bidHighYen": 684,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "実家 処分",
+      "side": "self",
+      "intent": "後始末の外注",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 390,
+      "competition": "MEDIUM",
+      "competitionIndex": 60,
+      "cpcYen": null,
+      "bidLowYen": 184,
+      "bidHighYen": 954,
+      "sideCertainty": "mixed",
+      "note": "空き家の処分一般。介護を他人に任せた本人かは語から分からない"
+    },
+    {
+      "keyword": "内容 証明 無視",
+      "side": "self",
+      "volume": 260,
+      "competition": "LOW",
+      "competitionIndex": 1,
+      "intent": "事後の摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "支払い 猶予",
+      "side": "self",
+      "volume": 140,
+      "competition": "LOW",
+      "competitionIndex": 7,
+      "intent": "払う摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 510,
+      "bidHighYen": 1474,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "慰謝 料 減額",
+      "side": "self",
+      "volume": 140,
+      "competition": "MEDIUM",
+      "competitionIndex": 52,
+      "intent": "払う摩擦",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 340,
+      "bidHighYen": 2578,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "評価 されない 転職",
+      "side": "self",
+      "intent": "体裁（去る理由を相手側に置く）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 140,
+      "competition": "MEDIUM",
+      "competitionIndex": 36,
+      "cpcYen": null,
+      "bidLowYen": 269,
+      "bidHighYen": 1396,
+      "sideCertainty": "mixed",
+      "note": "正当に評価されていない被害側も打つ"
+    },
+    {
+      "keyword": "長男 相続",
+      "side": "self",
+      "intent": "取り分の確認",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 90,
+      "competition": "LOW",
+      "competitionIndex": 9,
+      "cpcYen": null,
+      "bidLowYen": 12,
+      "bidHighYen": 298,
+      "sideCertainty": "mixed",
+      "note": "長男以外のきょうだいが長男の扱いを調べる用途を含む"
+    },
+    {
+      "keyword": "借金 逃げる",
+      "side": "self",
+      "volume": 70,
+      "competition": "LOW",
+      "competitionIndex": 22,
+      "intent": "逃げ",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 252,
+      "bidHighYen": 1114,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "減額 交渉",
+      "side": "self",
+      "intent": "払う摩擦（払う額を下げる）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 50,
+      "competition": "LOW",
+      "competitionIndex": 31,
+      "cpcYen": null,
+      "bidLowYen": 426,
+      "bidHighYen": 1448,
+      "sideCertainty": "mixed",
+      "note": "受注側が減額を求められたときにも打つ"
+    },
+    {
+      "keyword": "弱み 握る",
+      "side": "self",
+      "volume": 40,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "攻め（恐喝域・記事にしない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "束縛 方法",
+      "side": "self",
+      "volume": 30,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "攻め（記事にしない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null,
+      "sideCertainty": "clear"
+    },
+    {
+      "keyword": "ガス ライティング",
+      "side": "surrounding",
+      "volume": 27100,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の教育需要。本人は概念を学ばずに実行する",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "モラハラ 特徴",
+      "side": "surrounding",
+      "volume": 12100,
+      "competition": "LOW",
+      "competitionIndex": 2,
+      "intent": "周囲が相手を同定する語",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 3,
+      "bidHighYen": 80
+    },
+    {
+      "keyword": "既読 無視 心理",
+      "side": "surrounding",
+      "volume": 1600,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "待たされた側の語",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "痛い 人",
+      "side": "surrounding",
+      "volume": 1300,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の観察",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "既読 スルー 心理",
+      "side": "surrounding",
+      "intent": "待たされる側の推測",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 1300,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "図々しい 人",
+      "side": "surrounding",
+      "volume": 1000,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の観察",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "ずるい 人",
+      "side": "surrounding",
+      "volume": 880,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の観察",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "反省 しない 人",
+      "side": "surrounding",
+      "volume": 390,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の観察",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "罪悪 感 ない 人",
+      "side": "surrounding",
+      "volume": 210,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "周囲の観察",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "相続 不公平",
+      "side": "surrounding",
+      "intent": "負担した側の不満",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 30,
+      "competition": "LOW",
+      "competitionIndex": 9,
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "介護 押し付け",
+      "side": "surrounding",
+      "intent": "押し付けられた側の不満",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 30,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "下請け 減額",
+      "side": "surrounding",
+      "intent": "減額された側",
+      "note": "Google Ads が値を返さなかった（volume=null は 0 ではない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": null,
+      "competition": null,
+      "competitionIndex": null,
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "寝取る",
+      "side": "unknown",
+      "volume": 8100,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "NTRという性癖の消費。購買行動ではない",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "脈 あり サイン",
+      "side": "unknown",
+      "volume": 8100,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "一般層の語。本人は行動で解決する",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "都合 の いい 女",
+      "side": "unknown",
+      "volume": 5400,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "男女どちらの需要か不明。単独では採用しない",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    },
+    {
+      "keyword": "メンタル 強い 人",
+      "side": "unknown",
+      "volume": 4400,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "intent": "自己啓発の一般語。広告主ゼロ＝課金しない層",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": 2,
+      "bidHighYen": 62
+    },
+    {
+      "keyword": "都合 の いい 関係",
+      "side": "unknown",
+      "intent": "関係の維持（どちら側か語から決まらない）",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "volume": 590,
+      "competition": "LOW",
+      "competitionIndex": 0,
+      "cpcYen": null,
+      "bidLowYen": 139,
+      "bidHighYen": 1682,
+      "sideCertainty": "mixed",
+      "note": "都合よく扱われている側も打つ"
+    },
+    {
+      "keyword": "図太く 生きる",
+      "side": "unknown",
+      "volume": 390,
+      "competition": "LOW",
+      "competitionIndex": 8,
+      "intent": "図太くなりたい人の語。本人は既に図太い",
+      "source": "google_ads",
+      "measuredAt": "2026-11-02",
+      "cpcYen": null,
+      "bidLowYen": null,
+      "bidHighYen": null
+    }
+  ],
+  "seeds": [
+    {
+      "key": "outsource",
+      "label": "外注",
+      "template": "{item} 代行",
+      "kind": "service",
+      "appliesTo": [
+        "職場",
+        "家族",
+        "取引"
+      ]
+    },
+    {
+      "key": "exit",
+      "label": "去り方",
+      "template": "{item} やめ方",
+      "kind": "howto",
+      "appliesTo": [
+        "職場",
+        "恋愛",
+        "家族",
+        "コミュニティ"
+      ]
+    },
+    {
+      "key": "excuse",
+      "label": "言い訳",
+      "template": "{item} 言い訳",
+      "kind": "definition",
+      "appliesTo": [
+        "職場",
+        "家族",
+        "恋愛",
+        "取引"
+      ]
+    },
+    {
+      "key": "conceal",
+      "label": "体裁（ばれない）",
+      "template": "{item} バレない",
+      "kind": "risk",
+      "appliesTo": [
+        "職場",
+        "取引"
+      ]
+    },
+    {
+      "key": "delay",
+      "label": "猶予・分割",
+      "template": "{item} 猶予",
+      "kind": "howto",
+      "appliesTo": [
+        "取引",
+        "家族",
+        "消費"
+      ]
+    },
+    {
+      "key": "reduce",
+      "label": "減額",
+      "template": "{item} 減額",
+      "kind": "price",
+      "appliesTo": [
+        "取引",
+        "家族",
+        "消費"
+      ]
+    },
+    {
+      "key": "apology",
+      "label": "謝罪",
+      "template": "{item} 謝り方",
+      "kind": "howto",
+      "appliesTo": [
+        "恋愛",
+        "家族",
+        "職場",
+        "取引"
+      ]
+    },
+    {
+      "key": "ghosting",
+      "label": "消える",
+      "template": "{item} 音信不通",
+      "kind": "howto",
+      "appliesTo": [
+        "恋愛",
+        "友人",
+        "職場"
+      ]
+    },
+    {
+      "key": "reframe",
+      "label": "開き直り",
+      "template": "{item} 開き直る",
+      "kind": "definition",
+      "appliesTo": [
+        "職場",
+        "家族",
+        "恋愛"
+      ]
+    },
+    {
+      "key": "face",
+      "label": "体裁（見下されたくない）",
+      "template": "{item} 舐められる",
+      "kind": "risk",
+      "appliesTo": [
+        "職場",
+        "取引",
+        "友人"
+      ]
+    }
+  ],
+  "evidencePolicy": {
+    "labels": [
+      "OBSERVED",
+      "REPORTED",
+      "INFERRED",
+      "HYPOTHESIS",
+      "COUNTEREVIDENCE",
+      "UNKNOWN"
+    ],
+    "nonEvidence": [
+      "本人の感情についての供述（罪悪感がなかった・後悔している）は自己提示であって証明ではない",
+      "検索ボリュームは本人側・周囲側のどちらの需要か区別できない（同一クエリに両者が流入する）",
+      "広告競合 index はオーガニック競合ではない",
+      "低競合はチャンスではない。この領域では低競合＝広告主がいない＝課金しない層のサイン",
+      "単一の報道・単一の判決を型の代表にしない"
+    ],
+    "requiredMetadata": [
+      "URL または provider",
+      "取得日",
+      "side（self/surrounding/unknown）",
+      "対象 / 母集団",
+      "指標の分母",
+      "限界"
+    ],
+    "independence": [
+      "同じ原典を繰り返す二次記事は独立ソースとして数えない"
+    ]
+  },
+  "antiPatterns": [
+    "このモデルを『被害者側・企業側の購買モデル』として使う。買い手はこの人自身",
+    "周囲が打つ語（モラハラ特徴・図々しい人・ずるい人）を本人の語として使う",
+    "「図太く生きる」等の自己啓発語を入口にする。図太くなりたい人は別の層",
+    "攻め方（弱みを握る・束縛・罪悪感の植え付け）を需要とみなす。実測では極小",
+    "予防・改善・未然防止で商品を設計する。購買動機と一致しない",
+    "回避手順（位置情報偽装・LINE削除・督促逃れ）を記事化する",
+    "実在個人の特定・攻撃",
+    "低競合を根拠に参入可否を判断する"
+  ],
+  "researchProcedure": [
+    "「誰がコストを負っているか」で事例を集め、入口は後から分類する",
+    "persona を書く前に、本人側の一人称の投稿を URL と原文（125字以内）つきで voices に集める。モデルに反する投稿も contradicts として残す",
+    "3〜5の異なる入口を横断し、機構×入口のマトリクスを作る",
+    "検索語を必ず side で分ける。self が無いモデルは消費者モデルではない",
+    "検索語の side は語の字面ではなく「誰がその語を打つか」で決める。両方の側が打つ語は sideCertainty:\"mixed\" にし、その volume をこのモデルの需要に数えない",
+    "広告競合ではなくSERPでオーガニック競合を確認する",
+    "代行・送客の単価を先に確認する（情報商材は弱い）",
+    "情緒的な正当化は語彙として記録し、事実認定には使わない",
+    "確認できない指標は UNKNOWN とし、推論はラベルを付ける"
+  ],
+  "changeGate": {
+    "rule": "モデルの一般則を書き換えるには、異なる入口・資料種別の独立ソース3件以上、反証1件、適用範囲、旧版より説明できる観測、検証方法を揃える",
+    "redLine": "実在個人の特定・攻撃、または回避手順の実行支援に使えるルールは追加しない",
+    "entryDrift": "1つの入口が目立っても、その入口専用のルールをモデル本体に足さない",
+    "dailyJobMayChangeModel": false
+  },
+  "provenance": {
+    "source": "authored",
+    "origin": {
+      "note": "2026-11-02 に keywords 側で作成。不倫を入口の例として始め、局面モデル→摩擦→外注へと改訂した経緯を droppedItems に残す",
+      "createdBy": "agent"
+    },
+    "droppedItems": [
+      {
+        "item": "不倫・慰謝料・離婚・探偵を軸にした seed",
+        "reason": "1つの入口にモデル全体が寄り、他の入口で使えなくなるため（v0.2）"
+      },
+      {
+        "item": "変数 guilt_timing（罪悪感の発生条件）",
+        "reason": "罪悪感は語りでしか観測できず、行動の予測に寄与しない。コストの認識条件に置換（v0.3）"
+      },
+      {
+        "item": "図太く生きる・メンタル強い人を入口にすること",
+        "reason": "図太くなりたい人の語であり、本人は既に図太い。広告主ゼロで課金しない層（v0.9）"
+      },
+      {
+        "item": "脈ありサイン・デート誘い方を入口にすること",
+        "reason": "一般層の語。本人は行動で解決する（v0.9）"
+      },
+      {
+        "item": "「悪意ではなく順番が違う」という説明",
+        "reason": "モデルを上品にしすぎた。順番の前に快感・軽蔑・臆病がある（v0.9）"
+      },
+      {
+        "item": "persona の searchWords にあった負担側の語（相続 不公平・介護 押し付け・既読 スルー 心理・下請け 減額）",
+        "reason": "本人ではなくコストを負わされた側が打つ語だった。persona の想起に使うと被害者のモデルに戻るため searchEvidence の surrounding に移した（v0.12）"
+      }
+    ],
+    "lastChangeReason": "v0.12: 本人側の知恵袋投稿8件を voices に追加（fits 3・partial 4・contradicts 1）。persona の未計測語9語を計測し、全語に入札レンジを付けた。両方の側が打つ語を sideCertainty:mixed にし、persona から負担側の語を外した。"
+  },
+  "voices": [
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q14239927934",
+      "quote": "私は会社で管理職（課長）です。 仕事で声を荒げて部下を叱責することは皆無ですし、どちらかという",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2021-03-07",
+      "observedAt": "2026-11-02",
+      "fit": "fits",
+      "reading": "自己像は「穏やかに助言する上司」。同じ本文で、使えないと見た部下を社内標準（4〜5年）より早い1〜2年で異動させていると書く。叱らないことを善良さの証拠にし、異動というコストは部下側に置いている。自己像と行動のずれが本人の語りで観測できる例",
+      "personaKeys": [
+        "salaryman-boss"
+      ],
+      "variables": [
+        "victim_self",
+        "cost_bearer",
+        "justification"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q11280415311",
+      "quote": "社員２名（うち1名は女性）を部下にもつ課長です。会社の飲み会には部長も交えて4名で行くのですが、正直不愉快なので行きたくありません。",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2023-05-31",
+      "observedAt": "2026-11-02",
+      "fit": "partial",
+      "reading": "部下に無視される被害者として自分を語る。この型の「被害者としての自己像」と一致するが、本人がコストを外部化している証拠は本文に無い。本当に冷遇されている課長である可能性を排除できない",
+      "personaKeys": [
+        "salaryman-boss"
+      ],
+      "variables": [
+        "victim_self"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q13162360988",
+      "quote": "親の介護問題、この場合、弟夫婦がすべきですよね？ 実家には両親、祖母、弟一家が住んでいます。",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2016-07-31",
+      "observedAt": "2026-11-02",
+      "fit": "fits",
+      "reading": "投稿者は長女。相続した弟夫婦が介護を担うべきだとし、弟に確実に介護させる言い方を求め、施設入所は認めない立場。自分は様子を見に行く監視役を自任する。「相続した側が介護する」という論理でコストの行き先を固定している。家族型は長男に限らないことの観測でもある",
+      "personaKeys": [
+        "family-eldest"
+      ],
+      "variables": [
+        "cost_bearer",
+        "justification",
+        "outsource"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q10149659445",
+      "quote": "外注さんに本当に困りました！ とある外注さんを起用し、あるプロジェクトを進めていたのですが、納期は守れない",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2015-08-29",
+      "observedAt": "2026-11-02",
+      "fit": "partial",
+      "reading": "発注側。契約書を交わしていない「トライアル」扱いを理由に大幅減額し手付金程度だけ払う意向で、請求書の書き直しまで指示している。自分は「クライアントに頭を下げ続けた」被害者として語る。外注先の納期遅れは実在した可能性があり、減額の正当性はこの投稿だけでは判定できない",
+      "personaKeys": [
+        "freelance-client"
+      ],
+      "variables": [
+        "victim_self",
+        "justification",
+        "exit_cost"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q12247680907",
+      "quote": "不倫相手にどハマりしてしまい、でも相手から別れを告げられて忘れられない人はいますか？ 自分は既婚者男性、相手は独身女性です",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2021-08-14",
+      "observedAt": "2026-11-02",
+      "fit": "partial",
+      "reading": "既婚男性本人。語りの中心は自分の未練で、配偶者は一度も出てこない。コスト負担者が語りから消えている点は型と一致する。一方で別れを切り出したのは相手側で、「去り方を相手に任せる」型の典型とは逆",
+      "personaKeys": [
+        "married-dater"
+      ],
+      "variables": [
+        "cost_bearer",
+        "victim_self"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q14272275929",
+      "quote": "ダブル不倫が妻にバレれた側です。 相手家族にはバレず、私も家族と再構築という流れの中彼女とは別れず連絡を取っていました。",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2022-12-10",
+      "observedAt": "2026-11-02",
+      "fit": "contradicts",
+      "reading": "本人は責任を自分にあると明言し、相手を傷つけたことを後悔している。「反省しない」「罪悪感がない」人物像とは合わない。ただし再構築を進めながら連絡を続けていた行動は「謝罪はする、行動は変えない」と一致する。語り（後悔）と行動（継続）が分かれる例で、感情を軸にしない現行定義の根拠にはなるが、人物像の「罪悪感ない」寄りの記述は過剰",
+      "personaKeys": [
+        "married-dater"
+      ],
+      "variables": [
+        "justification",
+        "cost_recognition"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q11266124841",
+      "quote": "恥ずかしながら、5年放置している借金があります。借金の時効援用って実際可能なのでしょうか？",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2022-08-09",
+      "observedAt": "2026-11-02",
+      "fit": "fits",
+      "reading": "購買行動の観測。「ググったら最初に出てきた」司法書士法人に3万円で頼むつもりだが、後から費用が数十万に膨らまないかを恐れている。比較せず最初の結果に乗る、提示価格が低い、追加費用への不信、の3点が見える。借金の経緯や債権者側への言及は無い",
+      "personaKeys": [],
+      "variables": [
+        "outsource",
+        "discount"
+      ]
+    },
+    {
+      "url": "https://detail.chiebukuro.yahoo.co.jp/qa/question_detail/q10324281330",
+      "quote": "時効援用というのについて教えてください。 今クレカや、消費者金融なとから借りて 返せなくなったので、 自己破産の手続きをしています。",
+      "platform": "yahoo_chiebukuro",
+      "postedAt": "2026-01-14",
+      "observedAt": "2026-11-02",
+      "fit": "partial",
+      "reading": "弁護士費用を払えなくなり解任通知が出た後、時効援用に乗り換えられるかを聞いている。代行に金を払う意思はあるが払い切れない層で、単価の天井が低い。返せなくなった理由は書かれておらず、不運で困窮した人である可能性もある",
+      "personaKeys": [],
+      "variables": [
+        "outsource",
+        "discount",
+        "cost_recognition"
+      ]
+    }
+  ]
+}

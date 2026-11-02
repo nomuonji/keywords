@@ -31,9 +31,10 @@ Local stdio MCP:
 - `consumer_model_save`, `consumer_model_archive` — writes, in `budgetedTools`, so they need an active shared `Operation`
 - `consumer_model_import_seed` — reads a seed file from the repo; local runtime only, idempotent by content hash
 
-Remote treasury MCP (`KEYWORDS_MCP_TOOL_NAMES`, server 1.30.0):
+Remote treasury MCP (`KEYWORDS_MCP_TOOL_NAMES`, server 1.31.0):
 
 - `consumer_model_list`, `consumer_model_get`, `consumer_model_save`, `consumer_model_archive`
+- `consumer_model_frame` — declare target + viewpoint before a model-based market analysis (read-only; also on the local MCP, where it adds untested variables and observed seed-pool clusters). See `docs/consumer-model-market-analysis.md`.
 
 The remote has no `consumer_model_import_seed`: its function bundle has no repository working directory.
 
