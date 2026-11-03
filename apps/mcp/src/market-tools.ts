@@ -100,7 +100,7 @@ export const marketTools = [
       researchGoal: { type: 'string', enum: ['general', 'affiliate', 'social_affiliate', 'product_ideation'] }
     })
   }
-] as const;
+];
 
 const MARKET_TOOL_NAMES = new Set(marketTools.map(tool => tool.name));
 
