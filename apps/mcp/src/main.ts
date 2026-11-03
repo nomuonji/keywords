@@ -19,6 +19,7 @@ import { marketingTechniqueList, marketingTechniqueGet, marketingTechniqueSave, 
 import { productTools, isProductTool, callProductTool } from './product.js';
 import { blogTools, isBlogTool, callBlogTool } from './blog.js';
 import { keywordFeedbackTools, isKeywordFeedbackTool, callKeywordFeedbackTool } from './keyword-feedback.js';
+import { marketTools, isMarketTool, callMarketTool } from './market-tools.js';
 
 const baseCtx = { actor: 'agent' as const, actorId: process.env.KEYWORDS_AGENT_ID ?? 'mcp' };
 let activeWorkSession: { id: string; projectId: string; status: string; remainingActions: number } | null = null;
@@ -36,7 +37,8 @@ const budgetedTools = new Set([
   'keyword_screen_batch','keyword_research_pipeline','keyword_treasury_save',
   'keyword_create','keyword_reject','cluster_create','cluster_add_keyword','cluster_bulk_assign','page_plan','insight_create','task_create','task_set_status','policy_propose','decision_record',
   'discovery_import_candidates','discovery_ads_ideas','discovery_serp','discovery_web_evidence','discovery_annotate',
-  'consumer_model_save','consumer_model_archive','consumer_model_import_seed','consumer_seed_pool_import','consumer_model_observe'
+  'consumer_model_save','consumer_model_archive','consumer_model_import_seed','consumer_seed_pool_import','consumer_model_observe',
+  'traffic_route_discovery','market_intelligence_research'
 ]);
 const allowedWhilePaused = new Set([
   'recovery_context',
@@ -44,7 +46,8 @@ const allowedWhilePaused = new Set([
   'blog_contract',
   'work_context','work_checkpoint','work_complete','work_cancel','work_list','review_list','portfolio_context','project_snapshot','operator_context','site_list','metrics_context','policy_context','research_context','opportunity_context','source_list','keyword_list','cluster_list','page_list','page_targets','page_cannibalization','insight_list','task_list',
   'project_brief','project_capabilities','workspace_keyword_search','evidence_for_target','continuous_discovery_context','discovery_list','discovery_context',
-  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness','consumer_model_list','consumer_model_get','consumer_seed_pool_list','consumer_model_seeds','consumer_model_evidence','consumer_model_frame'
+  'operation_context','operation_resume','operation_cancel','operation_checkpoint','operation_complete','operation_outcomes','measurement_context','remote_readiness','consumer_model_list','consumer_model_get','consumer_seed_pool_list','consumer_model_seeds','consumer_model_evidence','consumer_model_frame',
+  'market_signal_scan','distribution_case_discovery'
 ]);
 function guardTool(name: string, args: any) {
   if (name === 'work_start') throw new Error('Direct agent work_start is disabled. Use operation_start, or claim a human-created legacy discovery job.');
@@ -52,14 +55,23 @@ function guardTool(name: string, args: any) {
   if (projectId && operationControl(projectId).paused && !allowedWhilePaused.has(name)) {
     throw new Error(`Agent operations are paused for project ${projectId}. Read operation_context or wait for a human to resume it.`);
   }
-  if (budgetedTools.has(name) && !activeWorkSession) {
+  if (requiresActionBudget(name, args) && !activeWorkSession) {
     throw new Error('Budgeted MCP research/write requires an active shared Operation or a claimed legacy discovery job. Use operation_start/operation_resume or discovery_claim first.');
   }
   if (!activeWorkSession) return;
   if (['awaiting_review','blocked'].includes(activeWorkSession.status) && !allowedWhilePaused.has(name)) throw new Error(`Work session ${activeWorkSession.id} is ${activeWorkSession.status}. Read context or resume/finish before more writes or research.`);
-  if (budgetedTools.has(name) && activeWorkSession.remainingActions <= 0) throw new Error(`Work session ${activeWorkSession.id} has exhausted its action budget. Checkpoint or complete it.`);
+  if (requiresActionBudget(name, args) && activeWorkSession.remainingActions <= 0) throw new Error(`Work session ${activeWorkSession.id} has exhausted its action budget. Checkpoint or complete it.`);
 }
-function consumeBudget(name: string) { if (activeWorkSession && budgetedTools.has(name)) activeWorkSession.remainingActions = Math.max(0, activeWorkSession.remainingActions - 1); }
+function requiresActionBudget(name: string, args: any = {}) {
+  if (budgetedTools.has(name)) return true;
+  // Broad public observation is free; validation or affiliate-backed collection is budgeted.
+  return name === 'market_discovery_run' && (
+    args?.phase === 'validate' || args?.withDemand === true || args?.sources?.includes('commerce_rankings')
+  );
+}
+function consumeBudget(name: string, args: any = {}) {
+  if (activeWorkSession && requiresActionBudget(name, args)) activeWorkSession.remainingActions = Math.max(0, activeWorkSession.remainingActions - 1);
+}
 // A finished session must not stay bound to this process. Otherwise work_context re-reads the
 // completed row, keeps it as active with remainingActions=0, and every budgeted tool fails forever
 // until the server is restarted — which is exactly how research silently stops being possible.
@@ -134,7 +146,7 @@ const coreTools = [
   { name: 'technique_use', description: 'Record that one technique was actually applied to a concrete surface (title, thumbnail, product name, CTA, SNS) and target. Append only; requires the current revision.', inputSchema: s('Use technique', { id: { type: 'string' }, expectedRevision: { type: 'number' }, surface: { type: 'string' }, target: { type: 'string' }, note: { type: 'string' }, usedAt: { type: 'string' } }, ['id','expectedRevision','surface','target']) },
   { name: 'technique_archive', description: 'Archive one marketing technique so it stops appearing in the default library while its history stays readable. Requires the current revision and a reason.', inputSchema: s('Archive technique', { id: { type: 'string' }, expectedRevision: { type: 'number' }, reason: { type: 'string' } }, ['id','expectedRevision','reason']) }
 ];
-const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...coreTools];
+const tools = [{ name: 'portfolio_context', description: 'Read Blog portfolio GA4/GSC snapshot, freshness and shared work counts.', inputSchema: s('Portfolio', {}) }, ...blogTools, ...keywordFeedbackTools, ...productTools, ...marketTools, ...coreTools];
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async request => {
   const a = (request.params.arguments ?? {}) as any; const name = request.params.name; guardTool(name, a); let result: unknown;
@@ -143,6 +155,11 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
   }
   if (isKeywordFeedbackTool(name)) {
     result = await callKeywordFeedbackTool(name, a); consumeBudget(name); return text(result);
+  }
+  if (isMarketTool(name)) {
+    result = await callMarketTool(name, a);
+    consumeBudget(name, a);
+    return text(result);
   }
   switch (name) {
     case 'portfolio_context': result = await portfolioCommands.context(); break;
@@ -220,6 +237,6 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
       // finished session with its remaining budget, and the next block is silent until restart.
       if (name === 'operation_complete' || name === 'operation_cancel') activeWorkSession = null;
   }
-  consumeBudget(name); return text(result);
+  consumeBudget(name, a); return text(result);
 });
 await server.connect(new StdioServerTransport());
