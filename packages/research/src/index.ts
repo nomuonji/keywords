@@ -213,7 +213,7 @@ async function searchApiProxy(input: {
   // Always tell the proxy which upstreams to try, in order. It currently answers every request with a
   // hard 402 (its own billing), so the ordering only matters once that account is funded; the retry
   // against direct Brave in searchSerp is what answers today. Override with KEYWORDS_SERP_PROVIDER_ORDER.
-  const defaultOrder = (process.env.KEYWORDS_SERP_PROVIDER_ORDER ?? 'brightdata,reserp,brave')
+  const defaultOrder = (process.env.KEYWORDS_SERP_PROVIDER_ORDER ?? 'reserp,brightdata,brave')
     .split(',').map(value => value.trim())
     .filter((value): value is SerpUpstream => value === 'reserp' || value === 'brightdata' || value === 'brave');
   const providers = input.proxyProviders?.length ? input.proxyProviders : defaultOrder;
