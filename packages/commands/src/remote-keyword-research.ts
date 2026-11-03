@@ -173,9 +173,9 @@ function providerUsage(usage: SerpUsage) {
 // searchSerp is what actually answers. Override with KEYWORDS_SERP_PROVIDER_ORDER.
 function proxyChainForUsage(usage: SerpUsage): SerpUpstream[] {
   const { remaining } = providerUsage(usage);
-  const configured = (process.env.KEYWORDS_SERP_PROVIDER_ORDER ?? 'brightdata,reserp,brave')
+  const configured = (process.env.KEYWORDS_SERP_PROVIDER_ORDER ?? 'reserp,brightdata,brave')
     .split(',').map(value => value.trim()).filter((value): value is SerpUpstream => value === 'reserp' || value === 'brightdata' || value === 'brave');
-  const order: SerpUpstream[] = configured.length ? [...new Set(configured)] : ['brightdata', 'reserp', 'brave'];
+  const order: SerpUpstream[] = configured.length ? [...new Set(configured)] : ['reserp', 'brightdata', 'brave'];
   const chain = order.filter(provider => remaining[provider] > 0);
   if (!chain.length) throw new Error('Configured free SERP provider budget reached (Reserp, Bright Data and Brave allocations are used up this month)');
   return [...chain];
