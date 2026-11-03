@@ -11,6 +11,8 @@ process.env.KEYWORDS_SERP_MONTHLY_LIMIT = '4';
 process.env.KEYWORDS_SERP_SOFT_LIMIT = '2';
 process.env.KEYWORDS_SERP_RESERVE = '2';
 process.env.KEYWORDS_SERP_CACHE_TTL_DAYS = '30';
+// Test the documented default independently of a developer's local .env override.
+delete process.env.KEYWORDS_SERP_PROVIDER_ORDER;
 
 const root = 'projects/test/databases/(default)/documents/';
 const docs = new Map<string, any>();

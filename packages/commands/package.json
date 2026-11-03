@@ -51,7 +51,10 @@
     "./consumer-seed-pool": "./src/consumer-seed-pool.ts",
     "./consumer-observation": "./src/consumer-observation.ts",
     "./consumer-analysis-frame": "./src/consumer-analysis-frame.ts",
-    "./marketing-techniques": "./src/marketing-techniques.ts"
+    "./marketing-techniques": "./src/marketing-techniques.ts",
+    "./market-discovery-runner": "./src/market-discovery-runner.ts",
+    "./distribution-case-discovery": "./src/distribution-case-discovery.ts",
+    "./traffic-route-discovery": "./src/traffic-route-discovery.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
