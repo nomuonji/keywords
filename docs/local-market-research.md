@@ -26,7 +26,7 @@ These tools are read-only. Views, bookmarks, points and comments are not referra
 - `market_discovery_run` with `phase: "validate"` uses SERP and may use Google Ads demand. It requires an active shared Operation budget.
 - `traffic_route_discovery` and `market_intelligence_research` use SERP/Ads-backed research and require an active shared Operation budget.
 
-The no-quota observation tools remain available when an operation is paused. They do not create an idea, write to Idea Memory, publish content, or post to social accounts. Store a candidate only after evidence review and the canonical Idea Final Judge gate.
+The two basic public-observation tools remain available when an operation is paused. They do not create an idea, write to Idea Memory, publish content, or post to social accounts. Store a candidate only after evidence review and the canonical Idea Final Judge gate.
 
 ## Known independent outage
 
