@@ -25,6 +25,13 @@ for (const invariant of ['I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7']) {
 
 assert.ok(doc.includes('methodVersion'), 'the doc must keep the run-recording obligation (methodVersion in evidence)');
 
+// The narrative canonical lives in My Portal; this file is the CI mirror. The
+// pointer keeps the two from diverging silently: bumping the Pack without
+// updating the mirror (or the reverse) leaves a version nobody checked.
+const canonicalMatch = doc.match(/CANONICAL: my-portal intelligence_pack `([a-z0-9-]+)` v(\d+)/);
+assert.ok(canonicalMatch, 'the doc must name the canonical My Portal Pack and its version (CANONICAL: my-portal intelligence_pack `<id>` vN)');
+assert.equal(canonicalMatch![1], 'treasure-keyword-intelligence', 'the canonical Pack id changed; update the smoke and the skill together');
+
 const analysis = analyzeSerp({
   query: '試験 費用 相場',
   provider: 'brave',

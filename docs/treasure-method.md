@@ -1,10 +1,22 @@
 # Treasure keyword discovery — canonical method
 
 **METHOD VERSION: tsk-v8** (2026-11-10)
+**CANONICAL: my-portal intelligence_pack `treasure-keyword-intelligence` v2**
 
-この文書が探索法の唯一の正本。スキル本文・コード・過去の会話より、この文書が優先する。
-手法を変えたら**この文書を更新し、バージョンを上げ、changelogに理由を書く**。
-`scripts/treasure-method-contract-smoke.ts` が、この文書の不変条件とコードのフィールドの対応を検査する。
+## この文書の役割
+
+探索法の**叙述の正本は My Portal の Intelligence Pack `treasure-keyword-intelligence`（v2）**にある。
+Pack は不変バージョンで、resolver が正確な版を固定して注入できる。手法を変えるときは Pack を v3 に上げる。
+
+この文書は、その手法を **CI で検査できる契約**に落としたミラーである。
+
+- 不変条件のID（I1–I7）
+- コードが返すべきフィールド名
+- `methodVersion` の記録義務
+- Pack 側の版との対応（このヘッダの `CANONICAL` 行）
+
+`scripts/treasure-method-contract-smoke.ts` が、この契約とコードの一致を検査する。
+**Pack を更新したら、この文書のバージョン行と CANONICAL 行も同じ run で更新する。** 片方だけ直すと次の run が古い版を読む。
 
 ---
 
