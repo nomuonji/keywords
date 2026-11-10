@@ -376,6 +376,23 @@ export interface SerpAnalysis {
    * answered = dedicated pages exist
    */
   answerGap: 'none' | 'partial' | 'answered';
+  /**
+   * Page-one results that are a tool rather than a read: a calculator,
+   * simulator, diagnosis, checklist or quick-reference table. A keyword can be
+   * fully "written" and still have no tool — that is where an untouched asset
+   * usually sits, because writing is cheap and tools are not.
+   */
+  toolPageCount: number;
+  toolGap: 'none' | 'exists';
+  /**
+   * Share of page one that covers the query's CORE terms (generic modifiers such
+   * as 費用/相場/方法 removed). This is the competition reading: if every result
+   * already covers the core, the topic is taken, whatever the tool situation is.
+   */
+  coreCoverage: number;
+  coreTokenCount: number;
+  /** Competition reading from page one only: how many already answer the core. */
+  competitionLevel: 'low' | 'medium' | 'high';
   limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
@@ -384,6 +401,13 @@ const FORUM_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchan
 const WEAK_HOST = /(^|\.)(note\.com|ameblo\.jp|hatena\.ne\.jp|fc2\.com|livedoor\.blog|blogspot\.com|wordpress\.com|reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|5ch\.net|chiebukuro\.yahoo\.co\.jp)$/i;
 function normalText(value: string) { return value.toLocaleLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim(); }
 function staleSnippet(value: string | null) { return Boolean(value && /(?:19|20)\d{2}[年\/.\-]\s?(?:0?[1-9]|1[0-2])(?:月|[\/.\-])|\b(?:19|20)(?:0|1)\d\b/.test(value)); }
+/** For coverage only: グッド・トイ and グッドトイ are the same term on page one. */
+const coverageText = (value: string) => normalText(value).replace(/[・･]/g, '');
+
+// Modifiers that carry intent but not topic. Removing them is what makes a
+// competition reading possible: 永代供養 費用 and 永代供養の料金相場 are the same
+// market, and a title-matching test would wrongly call the second one empty.
+const GENERIC_MODIFIERS = ['費用', '料金', '相場', '見積', '比較', '方法', 'やり方', 'ランキング', 'おすすめ', '安い', '違い', '評判', '口コミ', '一覧', '選び方', 'とは', '意味', '最新', '格安', '必要', '目安', 'いくら', '2026', '2025'];
 
 const APP_STORE_HOST = /(^|\.)(play\.google\.com|apps\.apple\.com)$/i;
 const SOCIAL_HOST = /(^|\.)(x\.com|twitter\.com|instagram\.com|facebook\.com|tiktok\.com|youtube\.com|threads\.net)$/i;
@@ -396,6 +420,10 @@ const QA_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchange\
 // cheapest observable evidence that the query is answered by sellers, not by
 // explainers — i.e. that someone is already buying.
 const TRANSACTION_TERMS = /(予約|申込|申し込み|お申込|見積|購入|注文|カート|資料請求|無料相談|来店|体験|エントリー|相談する|問い合わせる|はこちら)/;
+// A page that computes, diagnoses, or checks something for the reader. Titles
+// only: this undercounts (a tool page can be titled plainly), so toolGap 'none'
+// means "no tool is visible on page one", not "no tool exists anywhere".
+const TOOL_TERMS = /(計算|シミュレーション|シミュレーター|診断|チェックリスト|早見表|比較表|簡易診断|無料見積もり|かんたん)/;
 
 /**
  * Purchase intent of the query itself, from its modifiers alone.
@@ -510,6 +538,24 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   const answerGap: SerpAnalysis['answerGap'] = classification.exactTitleShare < 0.2 && termCoverage < 0.5 ? 'none'
     : termCoverage < 0.8 ? 'partial'
     : 'answered';
+  const toolPages = snapshot.results.filter(result => TOOL_TERMS.test(String(result.title ?? '')));
+  const toolPageCount = toolPages.length;
+  const toolGap: SerpAnalysis['toolGap'] = toolPageCount === 0 ? 'none' : 'exists';
+  // Competition is not "is there a tool" and not "does a title contain the exact
+  // string". A cost explainer titled 永代供養の料金相場 is competition for
+  // 永代供養 費用 even though it never writes those three words together. So
+  // strip the generic modifiers and ask whether page one already covers the core.
+  const rawTokens = normalText(snapshot.query).split(' ').filter(Boolean).map(token => token.replace(/[・･]/g, ''));
+  const coreTokens = rawTokens.filter(token => !GENERIC_MODIFIERS.some(generic => token.includes(generic)));
+  const effectiveCore = coreTokens.length ? coreTokens : rawTokens;
+  const coreHits = snapshot.results.filter(result => {
+    const text = coverageText(`${result.title ?? ''} ${result.snippet ?? ''}`);
+    return effectiveCore.every(token => text.includes(token));
+  });
+  const coreCoverage = snapshot.results.length ? Math.round((coreHits.length / snapshot.results.length) * 100) / 100 : 0;
+  const competitionLevel: SerpAnalysis['competitionLevel'] = coreCoverage >= 0.8 ? 'high'
+    : coreCoverage >= 0.5 ? 'medium'
+    : 'low';
   return {
     query: snapshot.query,
     provider: snapshot.provider,
@@ -525,6 +571,11 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
     buyerProximity,
     termCoverage,
     answerGap,
+    toolPageCount,
+    toolGap,
+    coreCoverage,
+    coreTokenCount: effectiveCore.length,
+    competitionLevel,
     limitations: [
       'Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.',
       'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.',
