@@ -1,4 +1,4 @@
-/**
+﻿/**
  * The discovery method lives in docs/treasure-method.md; the measurements live
  * in packages/research. This smoke keeps them from drifting apart.
  *
@@ -19,7 +19,7 @@ assert.ok(versionMatch, 'docs/treasure-method.md must declare METHOD VERSION: ts
 const version = versionMatch![1];
 assert.ok(new RegExp(`\\| ${version} \\|`).test(doc), `changelog has no row for ${version}; bumping the version without writing why is how the method regresses`);
 
-const INVARIANTS = ['I1', 'I2', 'I6', 'I7', 'I8', 'I9', 'I10', 'I11', 'I12', 'I13', 'I14', 'I15'];
+const INVARIANTS = ['I6', 'I7', 'I9', 'I10', 'I11', 'I13', 'I14', 'I16', 'I17', 'I18'];
 for (const invariant of INVARIANTS) {
   assert.ok(doc.includes(`**${invariant}**`), `invariant ${invariant} is missing from the method document`);
 }
@@ -34,17 +34,17 @@ assert.ok(canonicalMatch, 'the doc must name the canonical My Portal Pack and it
 assert.equal(canonicalMatch![1], 'treasure-keyword-intelligence', 'the canonical Pack id changed; update the smoke and the skill together');
 
 const analysis = analyzeSerp({
-  query: '試験 費用 相場',
+  query: '隧ｦ鬨・雋ｻ逕ｨ 逶ｸ蝣ｴ',
   provider: 'brave',
   fetchedAt: new Date().toISOString(),
-  results: [{ position: 1, title: '試験の費用相場', link: 'https://example.jp/', domain: 'example.jp', snippet: '試験の費用' }]
+  results: [{ position: 1, title: '隧ｦ鬨薙・雋ｻ逕ｨ逶ｸ蝣ｴ', link: 'https://example.jp/', domain: 'example.jp', snippet: '隧ｦ鬨薙・雋ｻ逕ｨ' }]
 } as any) as unknown as Record<string, unknown>;
 
 for (const field of ['competitionLevel', 'coreCoverage', 'toolPageCount', 'toolGap', 'answerGap', 'termCoverage', 'purchaseSurfaceShare', 'buyerProximity', 'editorialSlot', 'composition']) {
   assert.ok(field in analysis, `analyzeSerp no longer returns "${field}", which the method tells agents to read`);
 }
 
-const shape = classifyQueryPurchaseIntent('解体 費用 相場');
+const shape = classifyQueryPurchaseIntent('隗｣菴・雋ｻ逕ｨ 逶ｸ蝣ｴ');
 assert.ok(['transaction', 'comparison', 'evaluation', 'informational', 'neutral'].includes(shape.intent), 'purchase intent must stay one of the documented classes');
 assert.ok(shape.purchaseIntentScore >= 0 && shape.purchaseIntentScore <= 100, 'purchaseIntentScore must stay 0-100');
 
