@@ -1,7 +1,7 @@
 # Treasure keyword discovery — canonical method
 
-**METHOD VERSION: tsk-v8** (2026-11-10)
-**CANONICAL: my-portal intelligence_pack `treasure-keyword-intelligence` v2**
+**METHOD VERSION: tsk-v9** (2026-11-10)
+**CANONICAL: my-portal intelligence_pack `treasure-keyword-intelligence` v3**
 
 ## この文書の役割
 
@@ -33,6 +33,10 @@ Pack は不変バージョンで、resolver が正確な版を固定して注入
 | **I5** | 直前に見ていた題材を方法論として提示しない。発見元を1つに固定しない | 労働局の例1件から「一般の探索法」を語った |
 | **I6** | 需要の欠損（null）を 0 でも「需要なし」でもないものとして扱い、Hold にする | Adsが測れない語を合格として下流に流した |
 | **I7** | 発見元・レーン・手法バージョンを記録する。記録の無い候補は Qualified にしない | — |
+| **I8** | `competitionLevel = high` は**形式を問わず棄却**。記事も道具もLPも作らない | 競合highの2件に「道具なら入れる」と提案した。highは形式を変えても居なくならない |
+| **I9** | YMYL（医療・健康・死・相続・金融・法務）は、信頼性を担保できる一次資料と体制が無い限り作らない。道具でも同じ | 永代供養の費用計算機を提案した（地域差・宗派の正確性を担保できない） |
+
+**探索の順序**：需要を先に測ると、Adsで測れる需要＝誰かが既に知っている需要＝競合が居る場所に必ず着地する（実測：月20回の語にも10社）。だから**競合を先に測り、`high` を即棄却してから需要を見る**。低競合の領域は Ads の測定下限（月10〜20）より下にあるので、需要は Lane C（義務・供給・記録・当事者の行動）で示す。
 
 ## 2. 発見元（どこから名前を採るか）
 
@@ -116,3 +120,4 @@ Pack は不変バージョンで、resolver が正確な版を固定して注入
 | tsk-v6 | Lane B/A の分離、Lane B ≥ 50% | 受け皿アンカーで既知商材に閉じた |
 | tsk-v7 | 取引語レーン、commercialRecommended、buyerProximity | 購買意図を測れなかった |
 | tsk-v8 | `competitionLevel`/`coreCoverage`、`toolGap`、to C/to Bの分離、記録義務、この文書の正本化 | 空白判定が誤りで競合10社の語を推奨した。手法の正本が無く手戻りした |
+| tsk-v9 | I8（highは形式問わず棄却）、I9（YMYL除外）、競合先行の探索順、toolGapをスニペットまで拡張、サイクル運用 | サイクル1で「競合highに道具を提案」「YMYLに計算機を提案」と評価された。需要先行の順序が構造的に競合の居る場所へ着地していた |
