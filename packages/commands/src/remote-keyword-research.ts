@@ -404,11 +404,18 @@ export async function researchSessionUpdate(input: unknown) {
 function number(value: unknown) { if (value === null || value === undefined || value === '') return null; const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
 export function screenDemandResults(results: DemandMetric[], criteria: ScreenCriteria = {}) {
   const screened = results.map(result => {
-    const volume = number(result.avgMonthlySearches) ?? 0;
-    const cpc = number(result.averageCpcMicros) ?? 0;
+    const measuredVolume = number(result.avgMonthlySearches);
+    const measuredCpc = number(result.averageCpcMicros);
+    const volume = measuredVolume ?? 0;
+    const cpc = measuredCpc ?? 0;
     const competitionIndex = number(result.competitionIndex);
     const reasons: string[] = [];
     let passed = true;
+    // A keyword Ads cannot size is not zero-demand, and it is not a passing
+    // candidate either: sizing is the premise of every later decision. Treating
+    // a missing metric as 0 used to let unsized names (brand-new products, new
+    // proper nouns) pass and consume SERP budget that belonged to real candidates.
+    if (measuredVolume === null) { passed = false; reasons.push('no-demand-data'); }
     if (criteria.minVolume !== undefined && volume < criteria.minVolume) { passed = false; reasons.push(`volume<${criteria.minVolume}`); }
     if (criteria.minCpcMicros !== undefined && cpc < criteria.minCpcMicros) { passed = false; reasons.push(`cpc<${criteria.minCpcMicros}`); }
     if (criteria.minCompetitionIndex !== undefined && (competitionIndex === null || competitionIndex < criteria.minCompetitionIndex)) { passed = false; reasons.push(`competition<${criteria.minCompetitionIndex}`); }
@@ -417,9 +424,10 @@ export function screenDemandResults(results: DemandMetric[], criteria: ScreenCri
     const cpcUnits = cpc / 1_000_000;
     const cpcScore = Math.min(35, Math.log10(cpcUnits + 1) * 18);
     const difficultyScore = competitionIndex === null ? 5 : Math.max(0, 15 * (1 - competitionIndex / 100));
-    const completeness = result.avgMonthlySearches !== null && result.avgMonthlySearches !== undefined && result.averageCpcMicros !== null && result.averageCpcMicros !== undefined ? 5 : 0;
+    const completeness = measuredVolume !== null && measuredCpc !== null ? 5 : 0;
     const screenScore = Math.round((volumeScore + cpcScore + difficultyScore + completeness) * 10) / 10;
-    return { ...result, passed, rejectionReasons: reasons, screenScore };
+    const dataQuality = measuredVolume === null ? 'missing-volume' : measuredCpc === null ? 'missing-cpc' : 'measured';
+    return { ...result, passed, rejectionReasons: reasons, screenScore, dataQuality };
   });
   screened.sort((a, b) => b.screenScore - a.screenScore || String(a.keyword).localeCompare(String(b.keyword)));
   return { results: screened, passedKeywords: screened.filter(item => item.passed).map(item => item.keyword), serpRecommended: screened.filter(item => item.passed && (number(item.avgMonthlySearches) ?? 0) > 0).map(item => item.keyword) };
