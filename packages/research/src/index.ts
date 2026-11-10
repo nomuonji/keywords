@@ -367,6 +367,15 @@ export interface SerpAnalysis {
   purchaseSurfaceShare: number;
   /** Who page one is serving: buyers (transaction) or researchers (informational). */
   buyerProximity: 'transaction' | 'comparison' | 'informational';
+  /** Share of page-one results whose title+snippet contain every query token (0–1). */
+  termCoverage: number;
+  /**
+   * Did page one actually answer this query?
+   * none = nobody writes about this specific combination (the untouched zone)
+   * partial = related pages exist but the combination is not addressed
+   * answered = dedicated pages exist
+   */
+  answerGap: 'none' | 'partial' | 'answered';
   limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
@@ -488,6 +497,19 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   const buyerProximity: SerpAnalysis['buyerProximity'] = transactionPages.length >= 3 || (transactionPages.length >= 2 && classification.roleCounts.marketplace >= 1) ? 'transaction'
     : transactionPages.length >= 1 || classification.roleCounts.marketplace >= 2 ? 'comparison'
     : 'informational';
+  // "Nobody has touched this" is not the same as "no single owner". It means the
+  // results do not even mention the combination being searched. Term coverage is
+  // a crude but observable proxy: if page one never contains the query tokens
+  // together, the searcher is being handed adjacent pages instead of an answer.
+  const queryTokens = normalText(snapshot.query).split(' ').filter(token => token.length >= 2);
+  const covering = snapshot.results.filter(result => {
+    const text = normalText(`${result.title ?? ''} ${result.snippet ?? ''}`);
+    return queryTokens.length > 0 && queryTokens.every(token => text.includes(token));
+  });
+  const termCoverage = snapshot.results.length ? Math.round((covering.length / snapshot.results.length) * 100) / 100 : 0;
+  const answerGap: SerpAnalysis['answerGap'] = classification.exactTitleShare < 0.2 && termCoverage < 0.5 ? 'none'
+    : termCoverage < 0.8 ? 'partial'
+    : 'answered';
   return {
     query: snapshot.query,
     provider: snapshot.provider,
@@ -501,6 +523,8 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
     transactionPageCount: transactionPages.length,
     purchaseSurfaceShare,
     buyerProximity,
+    termCoverage,
+    answerGap,
     limitations: [
       'Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.',
       'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.',
