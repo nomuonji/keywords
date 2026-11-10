@@ -393,6 +393,14 @@ export interface SerpAnalysis {
   coreTokenCount: number;
   /** Competition reading from page one only: how many already answer the core. */
   competitionLevel: 'low' | 'medium' | 'high';
+  /**
+   * Competition for an EDITORIAL position: only article-like results count.
+   * Official catalogs, EC listings, SNS, video and app stores are excluded, so a
+   * page one of pure product listings reads as low editorial competition.
+   */
+  editorialCompetition: number;
+  editorialShare: number;
+  editorialCompetitionLevel: 'low' | 'medium' | 'high';
   limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
@@ -419,6 +427,21 @@ const QA_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchange\
 // Pages that ask the reader to act now. Their presence on page one is the
 // cheapest observable evidence that the query is answered by sellers, not by
 // explainers — i.e. that someone is already buying.
+// A product listing is not an editorial competitor. Page one full of EC listings
+// and maker catalog pages leaves the editorial position empty, which is exactly
+// the shape a product-name query has (observed: キングバリア, ten EC/official
+// pages, zero articles, yet the old metric called it high competition).
+const PRODUCT_PAGE_TITLE = /(通販|通信販売|販売価格|販売|カート|買い物かご|税込|送料|価格|商品詳細|商品一覧|品種カタログ|在庫|ショップ|オンラインストア|ストア|ご購入)/;
+
+function isEditorialResult(result: { domain: string; title?: string | null }) {
+  if (MARKETPLACE_HOST.test(result.domain)) return false;
+  if (SOCIAL_HOST.test(result.domain)) return false;
+  if (APP_STORE_HOST.test(result.domain)) return false;
+  if (/(^|\.)(youtube\.com|nicovideo\.jp|tiktok\.com)$/i.test(result.domain)) return false;
+  if (PRODUCT_PAGE_TITLE.test(String(result.title ?? ''))) return false;
+  return true;
+}
+
 const TRANSACTION_TERMS = /(予約|申込|申し込み|お申込|見積|購入|注文|カート|資料請求|無料相談|来店|体験|エントリー|相談する|問い合わせる|はこちら)/;
 // A page that computes, diagnoses, or checks something for the reader. Titles
 // only: this undercounts (a tool page can be titled plainly), so toolGap 'none'
@@ -556,6 +579,12 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   const competitionLevel: SerpAnalysis['competitionLevel'] = coreCoverage >= 0.8 ? 'high'
     : coreCoverage >= 0.5 ? 'medium'
     : 'low';
+  const editorialResults = snapshot.results.filter(isEditorialResult);
+  const editorialCompetition = editorialResults.length;
+  const editorialShare = snapshot.results.length ? Math.round((editorialCompetition / snapshot.results.length) * 100) / 100 : 0;
+  const editorialCompetitionLevel: SerpAnalysis['editorialCompetitionLevel'] = editorialShare >= 0.8 ? 'high'
+    : editorialShare >= 0.4 ? 'medium'
+    : 'low';
   return {
     query: snapshot.query,
     provider: snapshot.provider,
@@ -576,6 +605,9 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
     coreCoverage,
     coreTokenCount: effectiveCore.length,
     competitionLevel,
+    editorialCompetition,
+    editorialShare,
+    editorialCompetitionLevel,
     limitations: [
       'Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.',
       'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.',
