@@ -337,6 +337,10 @@ export async function searchSerp(input: {
   }
 }
 
+export type SerpIntent = 'navigational' | 'transactional' | 'community-question' | 'informational';
+export type SerpComposition = 'single_official' | 'marketplace_led' | 'community_led' | 'multi_vendor' | 'mixed';
+export type EditorialSlot = 'closed' | 'contested' | 'open';
+
 export interface SerpAnalysis {
   query: string;
   provider: SerpProvider;
@@ -346,6 +350,18 @@ export interface SerpAnalysis {
   forumCount: number;
   stalePageCount: number;
   opportunityScore: number;
+  /** What the searcher appears to want. Navigational queries have no editorial slot. */
+  intent: SerpIntent;
+  /** Who actually holds page one: one operator, marketplaces, communities or independent publishers. */
+  composition: SerpComposition;
+  /** Whether an independent article can plausibly answer this query at all. */
+  editorialSlot: EditorialSlot;
+  distinctOperators: number;
+  /** Share of page one held by the single most frequent operator (0–1). */
+  operatorConcentration: number;
+  roleCounts: { appStore: number; social: number; marketplace: number; community: number };
+  /** Share of page-one titles that contain the query (0–1). */
+  exactTitleShare: number;
   limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
@@ -354,6 +370,67 @@ const FORUM_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchan
 const WEAK_HOST = /(^|\.)(note\.com|ameblo\.jp|hatena\.ne\.jp|fc2\.com|livedoor\.blog|blogspot\.com|wordpress\.com|reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|5ch\.net|chiebukuro\.yahoo\.co\.jp)$/i;
 function normalText(value: string) { return value.toLocaleLowerCase().normalize('NFKC').replace(/\s+/g, ' ').trim(); }
 function staleSnippet(value: string | null) { return Boolean(value && /(?:19|20)\d{2}[年\/.\-]\s?(?:0?[1-9]|1[0-2])(?:月|[\/.\-])|\b(?:19|20)(?:0|1)\d\b/.test(value)); }
+
+const APP_STORE_HOST = /(^|\.)(play\.google\.com|apps\.apple\.com)$/i;
+const SOCIAL_HOST = /(^|\.)(x\.com|twitter\.com|instagram\.com|facebook\.com|tiktok\.com|youtube\.com|threads\.net)$/i;
+const MARKETPLACE_HOST = /(^|\.)(amazon\.co\.jp|amazon\.com|rakuten\.co\.jp|shopping\.yahoo\.co\.jp|shopping\.yahoo\.co|mercari\.com|booth\.pm)$/i;
+// Question-answering communities only. note.com is a publishing platform: it is a
+// weak domain for the legacy count, but treating a blogger's article as a
+// community answer turns a launch query into a fake "community" query.
+const QA_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|chiebukuro\.yahoo\.co\.jp|5ch\.net|oshiete\.goo\.ne\.jp)$/i;
+const JP_SECOND_LEVEL = new Set(['co', 'ne', 'or', 'ac', 'go', 'ed', 'gr', 'lg', 'ad']);
+
+/** Registrable domain, so www.x.co.jp and shop.x.co.jp count as one operator. */
+export function registrableDomain(host: string) {
+  const parts = String(host ?? '').toLocaleLowerCase().replace(/^www\./, '').split('.').filter(Boolean);
+  if (parts.length <= 2) return parts.join('.');
+  return JP_SECOND_LEVEL.has(parts[parts.length - 2]) ? parts.slice(-3).join('.') : parts.slice(-2).join('.');
+}
+
+/**
+ * Classify who holds page one and what the searcher wants. This is a routing
+ * signal for where to spend SERP/body-reading budget, not a difficulty score:
+ * a query held by one operator's official pages is not an opportunity, and a
+ * navigational query has no editorial slot no matter how large its demand is.
+ */
+export function classifySerp(results: Array<{ domain: string; title?: string | null }>, query: string) {
+  const total = results.length;
+  const hosts = results.map(result => registrableDomain(result.domain));
+  const counts = new Map<string, number>();
+  for (const host of hosts) counts.set(host, (counts.get(host) ?? 0) + 1);
+  const maxOperatorShare = total ? Math.max(...counts.values()) / total : 0;
+  const appStore = results.filter(result => APP_STORE_HOST.test(result.domain)).length;
+  const social = results.filter(result => SOCIAL_HOST.test(result.domain)).length;
+  const marketplace = results.filter(result => MARKETPLACE_HOST.test(result.domain)).length;
+  const community = results.filter(result => QA_HOST.test(result.domain)).length;
+  const exact = results.filter(result => normalText(String(result.title ?? '')).includes(normalText(query))).length;
+  const share = (count: number) => (total ? count / total : 0);
+  // Two forum results inside a media/marketplace mix are competition, not a
+  // question-shaped query: require a real community share before calling it one.
+  const communityLed = community >= 2 && share(community) >= 0.3;
+  const intent: SerpIntent = share(appStore + social) >= 0.4 ? 'navigational'
+    : communityLed ? 'community-question'
+    : marketplace >= 2 ? 'transactional'
+    : 'informational';
+  const composition: SerpComposition = maxOperatorShare >= 0.4 ? 'single_official'
+    : marketplace >= 2 ? 'marketplace_led'
+    : communityLed ? 'community_led'
+    : counts.size >= Math.max(5, Math.ceil(total * 0.7)) ? 'multi_vendor'
+    : 'mixed';
+  const editorialSlot: EditorialSlot = intent === 'navigational' || maxOperatorShare >= 0.4 ? 'closed'
+    : share(exact) >= 0.8 ? 'contested'
+    : 'open';
+  return {
+    intent,
+    composition,
+    editorialSlot,
+    distinctOperators: counts.size,
+    operatorConcentration: Math.round(maxOperatorShare * 100) / 100,
+    roleCounts: { appStore, social, marketplace, community },
+    exactTitleShare: Math.round(share(exact) * 100) / 100
+  };
+}
+
 
 /** A reproducible, signal-only screening score; it is not a ranking prediction. */
 export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
@@ -365,7 +442,26 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   // More weak/forum/stale results can indicate an addressable gap; exact-title
   // saturation reduces it. Result-count prevents an incomplete response scoring highly.
   const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
-  return { query: snapshot.query, provider: snapshot.provider, resultCount: snapshot.results.length, weakDomainCount: weak.length, exactTitleCount: exact.length, forumCount: forums.length, stalePageCount: stale.length, opportunityScore, limitations: ['Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.', 'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.', ...(snapshot.provider === 'brave' || snapshot.upstreamProvider === 'brave' ? ['Brave results are not Google rankings (Brave answered because Google providers were unavailable or Brave was requested).'] : []), ...(snapshot.degraded ? ['DEGRADED SERP: the provider returned zero results or results that do not mention the query (likely another search). Do not use for competitor judgement; retry later.'] : [])], signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) } };
+  const classification = classifySerp(snapshot.results, snapshot.query);
+  return {
+    query: snapshot.query,
+    provider: snapshot.provider,
+    resultCount: snapshot.results.length,
+    weakDomainCount: weak.length,
+    exactTitleCount: exact.length,
+    forumCount: forums.length,
+    stalePageCount: stale.length,
+    opportunityScore,
+    ...classification,
+    limitations: [
+      'Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.',
+      'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.',
+      'intent, composition and editorialSlot are structural routing signals from page-one roles only. They do not measure competitors, traffic or demand, and a closed slot can still hold a service query worth a landing page rather than an article.',
+      ...(snapshot.provider === 'brave' || snapshot.upstreamProvider === 'brave' ? ['Brave results are not Google rankings (Brave answered because Google providers were unavailable or Brave was requested).'] : []),
+      ...(snapshot.degraded ? ['DEGRADED SERP: the provider returned zero results or results that do not mention the query (likely another search). Do not use for competitor judgement; retry later.'] : [])
+    ],
+    signals: { weakDomains: weak.map(result => result.domain), exactTitleResults: exact.map(({ position, domain, title }) => ({ position, domain, title })), forumDomains: forums.map(result => result.domain), staleResults: stale.map(({ position, domain, snippet }) => ({ position, domain, snippet })) }
+  };
 }
 
 export interface GoogleAdsKeywordIdea {
