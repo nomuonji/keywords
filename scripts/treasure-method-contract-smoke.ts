@@ -19,7 +19,8 @@ assert.ok(versionMatch, 'docs/treasure-method.md must declare METHOD VERSION: ts
 const version = versionMatch![1];
 assert.ok(new RegExp(`\\| ${version} \\|`).test(doc), `changelog has no row for ${version}; bumping the version without writing why is how the method regresses`);
 
-for (const invariant of ['I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7', 'I8', 'I9']) {
+const INVARIANTS = ['I1', 'I2', 'I6', 'I7', 'I8', 'I9', 'I10', 'I11', 'I12'];
+for (const invariant of INVARIANTS) {
   assert.ok(doc.includes(`**${invariant}**`), `invariant ${invariant} is missing from the method document`);
 }
 
@@ -47,4 +48,4 @@ const shape = classifyQueryPurchaseIntent('解体 費用 相場');
 assert.ok(['transaction', 'comparison', 'evaluation', 'informational', 'neutral'].includes(shape.intent), 'purchase intent must stay one of the documented classes');
 assert.ok(shape.purchaseIntentScore >= 0 && shape.purchaseIntentScore <= 100, 'purchaseIntentScore must stay 0-100');
 
-console.log(`treasure method contract smoke ok (${version}, 7 invariants, ${Object.keys(analysis).length} analysis fields)`);
+console.log(`treasure method contract smoke ok (${version}, ${INVARIANTS.length} invariants, ${Object.keys(analysis).length} analysis fields)`);
