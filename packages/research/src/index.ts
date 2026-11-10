@@ -362,6 +362,11 @@ export interface SerpAnalysis {
   roleCounts: { appStore: number; social: number; marketplace: number; community: number };
   /** Share of page-one titles that contain the query (0–1). */
   exactTitleShare: number;
+  /** Page-one results that ask for an action now (予約/申込/見積/購入/資料請求). */
+  transactionPageCount: number;
+  purchaseSurfaceShare: number;
+  /** Who page one is serving: buyers (transaction) or researchers (informational). */
+  buyerProximity: 'transaction' | 'comparison' | 'informational';
   limitations: string[];
   signals: { weakDomains: string[]; exactTitleResults: Array<{ position: number | null; domain: string; title: string }>; forumDomains: string[]; staleResults: Array<{ position: number | null; domain: string; snippet: string | null }> };
 }
@@ -378,6 +383,41 @@ const MARKETPLACE_HOST = /(^|\.)(amazon\.co\.jp|amazon\.com|rakuten\.co\.jp|shop
 // weak domain for the legacy count, but treating a blogger's article as a
 // community answer turns a launch query into a fake "community" query.
 const QA_HOST = /(^|\.)(reddit\.com|quora\.com|stackoverflow\.com|stackexchange\.com|chiebukuro\.yahoo\.co\.jp|5ch\.net|oshiete\.goo\.ne\.jp)$/i;
+// Pages that ask the reader to act now. Their presence on page one is the
+// cheapest observable evidence that the query is answered by sellers, not by
+// explainers — i.e. that someone is already buying.
+const TRANSACTION_TERMS = /(予約|申込|申し込み|お申込|見積|購入|注文|カート|資料請求|無料相談|来店|体験|エントリー|相談する|問い合わせる|はこちら)/;
+
+/**
+ * Purchase intent of the query itself, from its modifiers alone.
+ * This is a linguistic prior, not evidence: it is meant to decide which
+ * keywords deserve an expensive SERP check, never to stand in for one.
+ */
+export type QueryPurchaseIntent = 'transaction' | 'comparison' | 'evaluation' | 'informational' | 'neutral';
+
+const TRANSACTION_MODIFIERS = ['費用', '料金', '価格', '相場', '見積', '申込', '申し込み', '予約', '購入', '注文', '問い合わせ', '相談', '導入', '契約', '支払', '返金', '解約', '買取', '査定', '売却', '依頼', '手数料', '入会', '受講', '応募', '申込書', '発注', '試算'];
+const COMPARISON_MODIFIERS = ['比較', '違い', '選び方', 'おすすめ', 'ランキング', '乗り換え', '代替', 'vs'];
+const EVALUATION_MODIFIERS = ['評判', '口コミ', 'レビュー', '実績', '効果', 'デメリット', '失敗'];
+const INFORMATIONAL_MODIFIERS = ['とは', '意味', '仕組み', '理由', '方法', 'やり方', '歴史', '定義'];
+
+export function classifyQueryPurchaseIntent(keyword: string) {
+  const text = String(keyword ?? '').toLocaleLowerCase().normalize('NFKC');
+  const hit = (list: string[]) => list.filter(item => text.includes(item.toLocaleLowerCase()));
+  const transaction = hit(TRANSACTION_MODIFIERS);
+  const comparison = hit(COMPARISON_MODIFIERS);
+  const evaluation = hit(EVALUATION_MODIFIERS);
+  const informational = hit(INFORMATIONAL_MODIFIERS);
+  const intent: QueryPurchaseIntent = transaction.length && !informational.length ? 'transaction'
+    : comparison.length ? 'comparison'
+    : evaluation.length ? 'evaluation'
+    : informational.length ? 'informational'
+    : 'neutral';
+  // 0-100. Transaction modifiers dominate because they name the moment money moves.
+  const raw = transaction.length * 40 + comparison.length * 22 + evaluation.length * 14 - informational.length * 30;
+  const purchaseIntentScore = Math.max(0, Math.min(100, 50 + raw));
+  return { intent, purchaseIntentScore, matched: { transaction, comparison, evaluation, informational } };
+}
+
 const JP_SECOND_LEVEL = new Set(['co', 'ne', 'or', 'ac', 'go', 'ed', 'gr', 'lg', 'ad']);
 
 /** Registrable domain, so www.x.co.jp and shop.x.co.jp count as one operator. */
@@ -443,6 +483,11 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
   // saturation reduces it. Result-count prevents an incomplete response scoring highly.
   const opportunityScore = Math.max(0, Math.min(100, Math.round(50 + weak.length * 7 + forums.length * 4 + stale.length * 3 - exact.length * 8 - Math.max(0, 10 - snapshot.results.length) * 3)));
   const classification = classifySerp(snapshot.results, snapshot.query);
+  const transactionPages = snapshot.results.filter(result => TRANSACTION_TERMS.test(String(result.title ?? '')));
+  const purchaseSurfaceShare = snapshot.results.length ? Math.round((transactionPages.length / snapshot.results.length) * 100) / 100 : 0;
+  const buyerProximity: SerpAnalysis['buyerProximity'] = transactionPages.length >= 3 || (transactionPages.length >= 2 && classification.roleCounts.marketplace >= 1) ? 'transaction'
+    : transactionPages.length >= 1 || classification.roleCounts.marketplace >= 2 ? 'comparison'
+    : 'informational';
   return {
     query: snapshot.query,
     provider: snapshot.provider,
@@ -453,6 +498,9 @@ export function analyzeSerp(snapshot: SerpSnapshot): SerpAnalysis {
     stalePageCount: stale.length,
     opportunityScore,
     ...classification,
+    transactionPageCount: transactionPages.length,
+    purchaseSurfaceShare,
+    buyerProximity,
     limitations: [
       'Legacy screening heuristic only; domain names, title matches and dates do not prove a content gap or ranking difficulty.',
       'Dates in snippets do not establish staleness. Read page bodies and compare against a real user question.',

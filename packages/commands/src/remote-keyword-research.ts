@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { analyzeSerp, searchSerp, type SerpAnalysis, type SerpSnapshot, type SerpProvider, type SerpUpstream } from '../../research/src/index.js';
+import { analyzeSerp, classifyQueryPurchaseIntent, searchSerp, type SerpAnalysis, type SerpSnapshot, type SerpProvider, type SerpUpstream } from '../../research/src/index.js';
 import { field, firestore, firestoreDocumentName, FirestoreError, value } from '../../db/src/firestore.js';
 import type { ResearchSession, ResearchSessionStatus, SerpUsage } from '../../db/src/remote-keyword-schema.js';
 
@@ -427,8 +427,22 @@ export function screenDemandResults(results: DemandMetric[], criteria: ScreenCri
     const completeness = measuredVolume !== null && measuredCpc !== null ? 5 : 0;
     const screenScore = Math.round((volumeScore + cpcScore + difficultyScore + completeness) * 10) / 10;
     const dataQuality = measuredVolume === null ? 'missing-volume' : measuredCpc === null ? 'missing-cpc' : 'measured';
-    return { ...result, passed, rejectionReasons: reasons, screenScore, dataQuality };
+    // Query shape says what the searcher is trying to do; CPC says what the
+    // market pays for it. Neither replaces a SERP check, but together they let
+    // a run spend SERP budget on the queries where money moves first.
+    const shape = classifyQueryPurchaseIntent(result.keyword);
+    const cpcYen = cpc / 1_000_000;
+    const commercialIntentScore = Math.round(Math.min(100, shape.purchaseIntentScore * 0.7 + Math.min(100, Math.log10(cpcYen + 1) * 40) * 0.3) * 10) / 10;
+    return { ...result, passed, rejectionReasons: reasons, screenScore, dataQuality, purchaseIntent: shape.intent, purchaseIntentScore: shape.purchaseIntentScore, commercialIntentScore };
   });
   screened.sort((a, b) => b.screenScore - a.screenScore || String(a.keyword).localeCompare(String(b.keyword)));
-  return { results: screened, passedKeywords: screened.filter(item => item.passed).map(item => item.keyword), serpRecommended: screened.filter(item => item.passed && (number(item.avgMonthlySearches) ?? 0) > 0).map(item => item.keyword) };
+  // Rank the same passing set by buying intent so a run can check commercial
+  // queries first instead of chasing volume. screenScore order is unchanged for
+  // backwards compatibility.
+  const commercialRecommended = screened
+    .filter(item => item.passed && (number(item.avgMonthlySearches) ?? 0) > 0)
+    .slice()
+    .sort((a, b) => (b.commercialIntentScore - a.commercialIntentScore) || ((number(b.avgMonthlySearches) ?? 0) - (number(a.avgMonthlySearches) ?? 0)))
+    .map(item => item.keyword);
+  return { results: screened, passedKeywords: screened.filter(item => item.passed).map(item => item.keyword), serpRecommended: screened.filter(item => item.passed && (number(item.avgMonthlySearches) ?? 0) > 0).map(item => item.keyword), commercialRecommended };
 }
