@@ -63,6 +63,13 @@ async function serp(query: string): Promise<SerpRow[]> {
   // 「古いQ&A」として数えられず、スコアが静かに下がる（2026-11-11 に実測）。
   const withDate = (payload.results ?? []).filter((r) => /年前|月前|日前/.test(r.text ?? '')).length;
   if (withDate < 2) throw new Error(`reserp returned no dates (${withDate}) — degraded sample`);
+  // 知恵袋・Quora・Reddit が並んでいるのに日付が1件も無いなら、古さを判定できない。
+  // そのまま採点すると「新しいQ&A」として big に落ち、スコアが静かに下がる（2026-11-11 実測）。
+  const community = (payload.results ?? []).filter((r) => /chiebukuro|quora|reddit/i.test(r.url ?? ''));
+  const communityDated = community.filter((r) => /年前|月前/.test(r.text ?? ''));
+  if (community.length >= 2 && communityDated.length === 0) {
+    throw new Error(`community present (${community.length}) but no dates — undecidable sample`);
+  }
   return parseRows(payload);
 }
 
