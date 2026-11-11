@@ -1,8 +1,8 @@
-// 探索法の実行層（1サイクル = 候補 → 需要 → 実Google → 採点 → 判定 → 記録）
+﻿// 探索法の実行層（1サイクル = 候補 → 需要 → 実Google → 採点 → 判定 → 記録）
 //
 // 使い方:
 //   node --env-file=.env --import tsx/esm scripts/treasure-cycle.ts "KW1" "KW2" ...
-//   node --env-file=.env --import tsx/esm scripts/treasure-cycle.ts --domain account3 "占い 依存" "占い やめたい"
+//   node --env-file=.env --import tsx/esm scripts/treasure-cycle.ts --label account3 "占い 依存" "占い やめたい"
 //
 // 出力: 各語の 需要 / CPC / 弱い枠 / 判定（C2〜C4）と、docs/treasure-cycles/<日付>.json への記録
 //   C1（本人が書ける）は台帳の domain で与える。C6（一次資料）は別途取得して記録する。
@@ -32,7 +32,7 @@ function parseRows(payload: SerpPayload): SerpRow[] {
   const rows: SerpRow[] = [];
   for (const [i, item] of (payload.results ?? []).slice(0, 10).entries()) {
     const url = item.url ?? '';
-    let domain = '';
+    let label = '';
     try {
       domain = new URL(url).hostname;
     } catch {
@@ -72,13 +72,13 @@ type Judgement = {
 
 async function main() {
   const argv = process.argv.slice(2);
-  let domain = '';
+  let label = '';
   let dest = '';
   let destCpc: number | null = null;
   let force = false;
   const queries: string[] = [];
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--domain') domain = argv[++i];
+    if (argv[i] === '--label') label = argv[++i];
     else if (argv[i] === '--dest') dest = argv[++i];
     else if (argv[i] === '--dest-cpc') destCpc = Number(argv[++i]);
     else if (argv[i] === '--force') force = true;
@@ -114,7 +114,7 @@ async function main() {
   queries.length = 0;
   queries.push(...pending);
   if (!queries.length) {
-    console.error('usage: treasure-cycle.ts [--domain <account>] "KW1" ["KW2" ...]');
+    console.error('usage: treasure-cycle.ts [--label <account>] "KW1" ["KW2" ...]');
     process.exit(1);
   }
 
@@ -165,8 +165,8 @@ async function main() {
   const dir = join(root, 'docs/treasure-cycles');
   mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().slice(0, 10);
-  const file = join(dir, `${stamp}${domain ? '-' + domain : ''}.json`);
-  writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(), domain: domain || null, methodVersion: 'tsk-v25', judgements: out }, null, 2) + '\n');
+  const file = join(dir, `${stamp}${label ? '-' + label : ''}.json`);
+  writeFileSync(file, JSON.stringify({ measuredAt: new Date().toISOString(), label: label || null, methodVersion: 'tsk-v25', judgements: out }, null, 2) + '\n');
   console.log(JSON.stringify(out, null, 2));
   console.error(`saved: ${file.replace(root + '\\', '').replace(root + '/', '')}`);
 }
