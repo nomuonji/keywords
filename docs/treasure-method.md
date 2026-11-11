@@ -1,9 +1,21 @@
 ﻿# Treasure keyword discovery — canonical method
 
 **METHOD VERSION: tsk-v25** (2026-11-11)
-**CANONICAL: my-portal intelligence_pack `treasure-keyword-intelligence` v7**
+**CANONICAL: この文書**（手順・合格条件・不変条件・採点規則の正本。CI が検査する）
+**EXPLORATION BASE: my-portal exploration_base `treasure-keyword-note`**
 
-この文書は CI で検査する契約（不変条件ID・フィールド名・`methodVersion` 義務）。叙述の正本は Pack。
+置き場所は次のとおり。同じ内容を二か所に書かない。
+
+| 内容 | 正本 |
+|---|---|
+| 手順、合格条件 C*、不変条件 I*、採点規則、changelog | この文書と `docs/method/criteria.json`・`versions.json` |
+| 成果条件、現行版の登録、仮説台帳（旧P*・H*）、制約、run記録 | My Portal の探索拠点 `treasure-keyword-note`（`exploration_base_get`） |
+| 検索需要・競合・商流の証拠の読み方 | My Portal の Intelligence Pack `treasure-keyword-intelligence`（v8以降は手順を持たない） |
+| 候補と測定値 | Keywords Operator と `docs/treasure-cycles/` |
+
+各 run は、候補の evidence とサイクル記録に `methodVersion` を残す（この義務は CI が検査する）。
+
+版を上げるときは、run を閉じてから、この文書を更新し、拠点に `exploration_method_version_set` で登録する（根拠の run と `npm run test:treasure` の結果を添える）。
 
 ---
 
