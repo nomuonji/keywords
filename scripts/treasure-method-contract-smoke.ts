@@ -19,7 +19,7 @@ assert.ok(versionMatch, 'docs/treasure-method.md must declare METHOD VERSION: ts
 const version = versionMatch![1];
 assert.ok(new RegExp(`\\| ${version} \\|`).test(doc), `changelog has no row for ${version}; bumping the version without writing why is how the method regresses`);
 
-const INVARIANTS = ['I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7', 'I8', 'I9', 'I10'];
+const INVARIANTS = ['I1', 'I2', 'I3', 'I4', 'I5', 'I6', 'I7', 'I8', 'I9', 'I10', 'I11'];
 for (const invariant of INVARIANTS) {
   assert.ok(doc.includes(`**${invariant}**`), `invariant ${invariant} is missing from the method document`);
 }
