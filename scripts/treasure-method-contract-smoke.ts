@@ -26,12 +26,15 @@ for (const invariant of INVARIANTS) {
 
 assert.ok(doc.includes('methodVersion'), 'the doc must keep the run-recording obligation (methodVersion in evidence)');
 
-// The narrative canonical lives in My Portal; this file is the CI mirror. The
-// pointer keeps the two from diverging silently: bumping the Pack without
-// updating the mirror (or the reverse) leaves a version nobody checked.
-const canonicalMatch = doc.match(/CANONICAL: my-portal intelligence_pack `([a-z0-9-]+)` v(\d+)/);
-assert.ok(canonicalMatch, 'the doc must name the canonical My Portal Pack and its version (CANONICAL: my-portal intelligence_pack `<id>` vN)');
-assert.equal(canonicalMatch![1], 'treasure-keyword-intelligence', 'the canonical Pack id changed; update the smoke and the skill together');
+// This document is the canonical body of the method. The fixed points of the
+// exploration (outcome, active version, hypotheses, constraints, runs) live in
+// the My Portal Exploration Base named here. Until 2026-11-11 the doc, a Pack
+// and a chat skill each named another as canonical, so nobody held the method.
+const baseMatch = doc.match(/EXPLORATION BASE: my-portal exploration_base `([a-z0-9-]+)`/);
+assert.ok(baseMatch, 'the doc must name the My Portal Exploration Base that tracks this method (EXPLORATION BASE: my-portal exploration_base `<id>`)');
+assert.equal(baseMatch![1], 'treasure-keyword-note', 'the Exploration Base id changed; update the smoke and the base together');
+assert.ok(/CANONICAL: この文書/.test(doc), 'the doc must state that it is the canonical body of the method');
+assert.ok(!/CANONICAL: my-portal intelligence_pack/.test(doc), 'the Pack no longer holds the procedure; do not name it as canonical');
 
 const analysis = analyzeSerp({
   query: '隧ｦ鬨・雋ｻ逕ｨ 逶ｸ蝣ｴ',

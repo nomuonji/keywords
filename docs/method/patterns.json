@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "note": "勝ちパターンの台帳。status は verified / candidate / rejected の3つだけ。verified は evidence が1件以上（URLか日付つき）必要。rejected は reason 必須。smoke が検査する。",
+  "note": "2026-11-11 に My Portal の探索拠点 treasure-keyword-note へ移行した時点の写し。以後は更新しない。現行の仮説台帳は exploration_base_get で読む（旧IDは各項目の legacyIds）。smoke は形式だけを検査する。",
   "patterns": [
     {
       "id": "P18",

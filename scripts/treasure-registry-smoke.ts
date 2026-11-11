@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const read = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8'));
+// Ledgers saved by Windows editors may start with a BOM, which JSON.parse rejects.
+const read = (p: string) => JSON.parse(readFileSync(join(root, p), 'utf8').replace(/^\uFEFF/, ''));
 const doc = readFileSync(join(root, 'docs/treasure-method.md'), 'utf8');
 
 const versions = read('docs/method/versions.json').versions as any[];
