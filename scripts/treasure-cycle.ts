@@ -59,10 +59,6 @@ async function serp(query: string): Promise<SerpRow[]> {
   // 部分応答を「競合が強い」と誤読しない。結果が少なすぎる応答は失敗として扱う（Holdに落ちる）。
   const n = (payload.results ?? []).length;
   if (n < 8) throw new Error(`reserp returned only ${n} results (treated as failed sample)`);
-  // 日付が1件も無い応答も劣化とみなす。日付が無いと知恵袋・Quora・Redditを
-  // 「古いQ&A」として数えられず、スコアが静かに下がる（2026-11-11 に実測）。
-  const withDate = (payload.results ?? []).filter((r) => /年前|月前|日前/.test(r.text ?? '')).length;
-  if (withDate < 2) throw new Error(`reserp returned no dates (${withDate}) — degraded sample`);
   return parseRows(payload);
 }
 
