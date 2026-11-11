@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "note": "合格条件の台帳。docs/treasure-method.md の C1-C6 と1対1。smoke が id の一致と、各条件に判定方法と反例があることを検査する。",
+  "criteria": [
+    {
+      "id": "C1",
+      "name": "本人が書ける・書きたい",
+      "threshold": "依頼主の確認",
+      "method": "候補を絞った後に依頼主へ確認する。既存アカウントや領域に限定しない（I4）",
+      "counterexample": "溶接 歪み 取り は需要170/月・CPC ¥128 でも、依頼主が書かないので不可",
+      "addedIn": "tsk-v23"
+    },
+    {
+      "id": "C2",
+      "name": "需要",
+      "threshold": ">=10 検索/月",
+      "method": "Google Ads generateKeywordHistoricalMetrics。null は Hold（0 ではない、I3）",
+      "counterexample": "転職 後悔 女性 は null で Hold。0 と混同しない",
+      "addedIn": "tsk-v23"
+    },
+    {
+      "id": "C3",
+      "name": "弱い枠",
+      "threshold": ">=6 / 10",
+      "method": "実Google（Reserp）の1ページ目を scripts/treasure-score.ts で採点する。Count rules は I11",
+      "counterexample": "空き家 売却 は 0/10（不動産業者と国交省で埋まる）",
+      "addedIn": "tsk-v23"
+    },
+    {
+      "id": "C4",
+      "name": "収益導線",
+      "threshold": "CPC >= 100円 or 1成約 >= 1,000円 or 広告主の存在",
+      "method": "Google Ads の CPC と入札。外部の支払い証拠を優先する",
+      "counterexample": "ペットロス は 12,100/月でも CPC ¥37 で収益導線が弱い",
+      "addedIn": "tsk-v23"
+    },
+    {
+      "id": "C5",
+      "name": "同名別義に食われていない",
+      "threshold": "別対象の需要が混ざっていない",
+      "method": "一次資料で名称を同定する",
+      "counterexample": "ティンブロ の 3,600/月は大宮のレストランだった",
+      "addedIn": "tsk-v23"
+    },
+    {
+      "id": "C6",
+      "name": "一次資料の取得経路がある",
+      "threshold": "本人の体験 / 引用可能な当事者投稿（URL＋投稿日）/ 取材先 のいずれか",
+      "method": "経路を実際に取得して記録する。無い語は数字が良くても見つかったと数えない",
+      "counterexample": "転職 後悔 は知恵袋3本と Yahoo!ジョブカタログで経路②を充足（2026-11-11収集）",
+      "addedIn": "tsk-v25"
+    }
+  ]
+}
