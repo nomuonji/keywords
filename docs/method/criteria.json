@@ -1,4 +1,4 @@
-{
+﻿{
   "schemaVersion": 1,
   "note": "合格条件の台帳。docs/treasure-method.md の C1-C6 と1対1。smoke が id の一致と、各条件に判定方法と反例があることを検査する。",
   "criteria": [
@@ -30,7 +30,7 @@
       "id": "C4",
       "name": "収益導線",
       "threshold": "CPC >= 100円 or 1成約 >= 1,000円 or 広告主の存在",
-      "method": "Google Ads の CPC と入札。外部の支払い証拠を優先する",
+      "method": "送客先（取引語）の CPC と入札で測る。入口の感情語は広告主が付かないため、入口語のCPCでは判定しない（I12）。直APIはCPCを返さないので MCP keyword_screen_batch の値を使う",
       "counterexample": "ペットロス は 12,100/月でも CPC ¥37 で収益導線が弱い",
       "addedIn": "tsk-v23"
     },
