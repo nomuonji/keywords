@@ -8,7 +8,7 @@
 //   C1（本人が書ける）は台帳の domain で与える。C6（一次資料）は別途取得して記録する。
 //
 // 依存: @keywords/research の Google Ads、Reserp（実Google）、scripts/treasure-score.ts（I11 採点）
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { googleAdsKeywordHistoricalMetrics } from '@keywords/research';
@@ -75,13 +75,44 @@ async function main() {
   let domain = '';
   let dest = '';
   let destCpc: number | null = null;
+  let force = false;
   const queries: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--domain') domain = argv[++i];
     else if (argv[i] === '--dest') dest = argv[++i];
     else if (argv[i] === '--dest-cpc') destCpc = Number(argv[++i]);
+    else if (argv[i] === '--force') force = true;
     else queries.push(argv[i]);
   }
+
+  // 二度測らない。docs/treasure-cycles/*.json に記録済みの語はスキップする（--force で解除）。
+  // 250語を測った実績があり、再計測はSERP課金の純粋な無駄になる。
+  const measured = new Map<string, string>();
+  try {
+    const pastDir = join(root, 'docs/treasure-cycles');
+    for (const f of readdirSync(pastDir)) {
+      if (!f.endsWith('.json')) continue;
+      const past = JSON.parse(readFileSync(join(pastDir, f), 'utf8'));
+      for (const j of past.judgements ?? []) measured.set(j.keyword.replace(/\s+/g, '').toLowerCase(), j.verdict);
+    }
+  } catch {}
+  const skipped: string[] = [];
+  const pending = queries.filter((q) => {
+    const prior = measured.get(q.replace(/\s+/g, '').toLowerCase());
+    // hold は「測れなかった」なので再測する。reject と pass だけ恒久スキップ。
+    if (!force && prior && prior !== 'hold') {
+      skipped.push(`${q}(${prior})`);
+      return false;
+    }
+    return true;
+  });
+  if (skipped.length) console.error(`skipped already-measured: ${skipped.join(', ')}`);
+  if (!pending.length) {
+    console.error('nothing to measure (use --force to re-measure)');
+    process.exit(0);
+  }
+  queries.length = 0;
+  queries.push(...pending);
   if (!queries.length) {
     console.error('usage: treasure-cycle.ts [--domain <account>] "KW1" ["KW2" ...]');
     process.exit(1);
