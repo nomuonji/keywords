@@ -1,0 +1,41 @@
+{
+  "measuredAt": "2026-11-11T04:42:08.142Z",
+  "domain": "account4",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "婚活 後悔",
+      "volume": 70,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 3,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 3/10 < 6"
+      ]
+    },
+    {
+      "keyword": "ノート 稼げない",
+      "volume": 30,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 5,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 5/10 < 6"
+      ]
+    }
+  ]
+}

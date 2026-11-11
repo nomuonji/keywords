@@ -1,0 +1,75 @@
+{
+  "measuredAt": "2026-11-11T04:53:26.814Z",
+  "domain": "multi",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "マッチングアプリ 会えない",
+      "volume": 320,
+      "cpcYen": null,
+      "competitionIndex": 8,
+      "weakScore": 4,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 4/10 < 6"
+      ]
+    },
+    {
+      "keyword": "パーソナルジム 痩せない",
+      "volume": 110,
+      "cpcYen": null,
+      "competitionIndex": 14,
+      "weakScore": 0,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 0/10 < 6"
+      ]
+    },
+    {
+      "keyword": "オンライン英会話 続かない",
+      "volume": 70,
+      "cpcYen": null,
+      "competitionIndex": 14,
+      "weakScore": 1,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 1/10 < 6"
+      ]
+    },
+    {
+      "keyword": "英会話 上達しない",
+      "volume": 70,
+      "cpcYen": null,
+      "competitionIndex": 21,
+      "weakScore": 3,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 3/10 < 6"
+      ]
+    }
+  ]
+}

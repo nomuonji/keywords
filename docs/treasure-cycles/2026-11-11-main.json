@@ -1,0 +1,37 @@
+{
+  "measuredAt": "2026-11-11T04:49:34.287Z",
+  "domain": "main",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "note 伸びない",
+      "volume": 90,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 7,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": true,
+        "C4": true
+      },
+      "verdict": "pass",
+      "reasons": []
+    },
+    {
+      "keyword": "note 見られない",
+      "volume": 50,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 9,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": true,
+        "C4": true
+      },
+      "verdict": "pass",
+      "reasons": []
+    }
+  ]
+}

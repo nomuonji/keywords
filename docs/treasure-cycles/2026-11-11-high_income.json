@@ -1,0 +1,75 @@
+{
+  "measuredAt": "2026-11-11T04:22:02.185Z",
+  "domain": "high_income",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "30代 転職 後悔",
+      "volume": 20,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 2,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 2/10 < 6"
+      ]
+    },
+    {
+      "keyword": "40代 転職 後悔",
+      "volume": 20,
+      "cpcYen": null,
+      "competitionIndex": 36,
+      "weakScore": 3,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 3/10 < 6"
+      ]
+    },
+    {
+      "keyword": "50代 転職 後悔",
+      "volume": 20,
+      "cpcYen": null,
+      "competitionIndex": 51,
+      "weakScore": 3,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 3/10 < 6"
+      ]
+    },
+    {
+      "keyword": "20代 転職 後悔",
+      "volume": 10,
+      "cpcYen": null,
+      "competitionIndex": null,
+      "weakScore": 2,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 2/10 < 6"
+      ]
+    }
+  ]
+}

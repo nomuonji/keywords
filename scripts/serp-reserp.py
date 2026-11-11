@@ -40,7 +40,7 @@ if __name__ == "__main__":
         for i, item in enumerate((data.get("results") or [])[:10], 1):
             u = item.get("url", "")
             d = urllib.parse.urlparse(u).netloc
-            rows.append({"pos": i, "domain": d, "title": clean_title(item.get("text"), d)})
+            rows.append({"pos": i, "domain": d, "title": clean_title(item.get("text"), d), "url": u, "date": next((x.strip() for x in (item.get("text") or "").split("\n") if "年" in x and ("前" in x or "月" in x)), "")})
         out.append({"query": q, "count": len(data.get("results") or []), "rows": rows})
     open("scripts/serp_last.json", "w", encoding="utf-8").write(json.dumps(out, ensure_ascii=False, indent=1))
     print("saved")
