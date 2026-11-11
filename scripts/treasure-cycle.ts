@@ -32,7 +32,7 @@ function parseRows(payload: SerpPayload): SerpRow[] {
   const rows: SerpRow[] = [];
   for (const [i, item] of (payload.results ?? []).slice(0, 10).entries()) {
     const url = item.url ?? '';
-    let domain = '';
+    let label = '';
     try {
       domain = new URL(url).hostname;
     } catch {
