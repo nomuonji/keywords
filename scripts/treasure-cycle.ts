@@ -1,4 +1,4 @@
-﻿// 探索法の実行層（1サイクル = 候補 → 需要 → 実Google → 採点 → 判定 → 記録）
+// 探索法の実行層（1サイクル = 候補 → 需要 → 実Google → 採点 → 判定 → 記録）
 //
 // 使い方:
 //   node --env-file=.env --import tsx/esm scripts/treasure-cycle.ts "KW1" "KW2" ...
@@ -32,7 +32,7 @@ function parseRows(payload: SerpPayload): SerpRow[] {
   const rows: SerpRow[] = [];
   for (const [i, item] of (payload.results ?? []).slice(0, 10).entries()) {
     const url = item.url ?? '';
-    let label = '';
+    let domain = '';
     try {
       domain = new URL(url).hostname;
     } catch {
@@ -55,7 +55,11 @@ async function serp(query: string): Promise<SerpRow[]> {
     body: JSON.stringify({ url: gurl })
   });
   if (!res.ok) throw new Error(`reserp ${res.status}`);
-  return parseRows((await res.json()) as SerpPayload);
+  const payload = (await res.json()) as SerpPayload;
+  // 部分応答を「競合が強い」と誤読しない。結果が少なすぎる応答は失敗として扱う（Holdに落ちる）。
+  const n = (payload.results ?? []).length;
+  if (n < 8) throw new Error(`reserp returned only ${n} results (treated as failed sample)`);
+  return parseRows(payload);
 }
 
 type Judgement = {
