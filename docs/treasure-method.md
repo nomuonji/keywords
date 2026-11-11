@@ -1,4 +1,4 @@
-# Treasure keyword discovery — canonical method
+﻿# Treasure keyword discovery — canonical method
 
 **METHOD VERSION: tsk-v25** (2026-11-11)
 **CANONICAL: my-portal intelligence_pack `treasure-keyword-intelligence` v7**
@@ -76,3 +76,35 @@
 | tsk-v23 | **C1「本人が書ける・書きたい」を追加（既存領域に限定しない）。I1「実Google以外で確定しない」を最上位に。Reserp 導入** | 39サイクル B2B 技術を掘っていたが、依頼主が書かない領域だった。実Googleで測ったら自分の領域に弱い枠6点があった |
 | tsk-v24 | I11（枠の数え方の細則）、I12（感情語は空き取引語は埋まる）、I13（競合は「誰が書けるか」で決まる）を追加 | 転職・占い・実家・ペットロスの実測で、ノイズを枠に数えていた誤りと、単価ではなく執筆主体が競合を決めることが分かった |
 | tsk-v25 | **C6「一次資料の取得経路がある」を追加**。合格条件を6つに | 数字が通った語（転職 後悔）でも、本人の体験も引用可能な当事者投稿も無ければ記事にならない。C1の「書ける」を実行可能にする条件が抜けていた |
+
+## 7. 台帳（機械可読・CI検査）
+
+3つの台帳を `docs/method/` に置き、`scripts/treasure-registry-smoke.ts` が doc との整合を検査する。食い違えば落ちる。
+
+| 台帳 | ファイル | 役割 |
+|---|---|---|
+| 方法論バージョン | `docs/method/versions.json` | 各版の変更・理由・追加した条件/不変条件。doc の changelog と1対1 |
+| 合格条件 | `docs/method/criteria.json` | C1〜C6 の閾値・判定方法・反例・導入版 |
+| 勝ちパターン | `docs/method/patterns.json` | verified / candidate / rejected の3状態。verified は evidence 必須 |
+
+### 勝ちパターン一覧
+
+| ID | 名前 | 状態 |
+|---|---|---|
+| P18 | 登録簿走査（雅号型） | verified |
+| P19 | 読めない名前型 | verified |
+| P20 | 新品種の未物語型 | verified |
+| P21 | 売り手の言い分しかない型 | verified |
+| P22 | 感情語は空き、取引語は埋まる | verified |
+| P23 | 競合は誰が書けるかで決まる | verified |
+| P24 | 書き手を条件に入れないと全探索が無価値 | verified |
+| P25 | 競合判定は実Googleでのみ成立 | verified |
+| H1 | CPCと弱い枠の逆相関 | rejected |
+| H2 | 中立領域は需要が測定下限以下 | rejected |
+| H3 | 体系サイトの目次に無い＝機会 | rejected |
+
+**H1〜H3 を残す理由**: 棄却を記録しないと同じ推論を繰り返す。この3つは実際に私が信じて失敗した仮説で、それぞれ反例つきで棄却されている。
+
+### 規則の固定
+
+`scripts/treasure-score.ts` が I11 の採点規則を実装し、`scripts/treasure-score-smoke.ts` が公開済みの採点結果（転職 後悔=7、ペットロス=3、空き家 売却=0）を固定する。**規則を変えたらテストが落ちるので、方法論を黙って書き換えられない。**
