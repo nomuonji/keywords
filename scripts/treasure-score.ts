@@ -1,4 +1,4 @@
-// 探索法の採点エンジン（tsk-v25 / I11 の実装）
+﻿// 探索法の採点エンジン（tsk-v25 / I11 の実装）
 //
 // BREAKING: scripts/serp-score.ts は Brave 直叩きで、I1（実Google以外で競合を確定しない）に違反する。
 // この採点エンジンは SerpRow[] を受け取り、ネットワークに触らない。SERP の取得は呼び出し側が行う
@@ -36,8 +36,8 @@ export type ScoreResult = {
   noiseExcluded: number;
 };
 
-const COMMUNITY = /chiebukuro|quora|girlschannel|mikle|bennavi|hasunoha|komachi|発言小町/i;
-const BLOG = /note\.com|ameblo|hatena|hatenablog|blog\.|\.blogspot|livedoor\.jp|seesaa|fc2/i;
+const COMMUNITY = /chiebukuro|quora|reddit|5ch|girlschannel|mikle|bennavi|hasunoha|komachi|発言小町/i;
+const BLOG = /note\.com|ameblo|hatena|hatenablog|blog\.|\.blogspot|livedoor\.jp|seesaa|fc2|novel\.|daysneo/i;
 const VIDEO = /youtube|youtu\.be|nicovideo/i;
 /** 個人の体験談を示す語。これが無い動画は「専門チャンネルの解説」とみなす。
  *  「後悔」「失敗」だけでは判定しない（プロの解説動画のタイトルにも入るため）。一人称か体験を要求する。 */

@@ -32,7 +32,7 @@ function parseRows(payload: SerpPayload): SerpRow[] {
   const rows: SerpRow[] = [];
   for (const [i, item] of (payload.results ?? []).slice(0, 10).entries()) {
     const url = item.url ?? '';
-    let label = '';
+    let domain = '';
     try {
       domain = new URL(url).hostname;
     } catch {
@@ -131,16 +131,25 @@ async function main() {
     const cpcYen = typeof d?.averageCpcMicros === 'number' ? Math.round(d.averageCpcMicros / 1_000_000) : null;
     const competitionIndex = typeof d?.competitionIndex === 'number' ? d.competitionIndex : null;
 
+    // SERPは毎回同じではない（reddit が9位に出る回と出ない回がある）。
+    // 2回測って低い方を採用し、差が出たら不安定として Hold にする。1回の計測で合否を決めない。
     let weakScore: number | null = null;
     let noiseExcluded = 0;
-    try {
-      const rows = await serp(q);
-      const scored = scoreWeakSlots(rows, q);
-      weakScore = scored.weakScore;
-      noiseExcluded = scored.noiseExcluded;
-    } catch (error) {
-      console.error(`serp failed: ${q}: ${(error as Error).message}`);
+    const weakSamples: number[] = [];
+    let samplesFailed = 0;
+    for (let s = 0; s < 2; s++) {
+      try {
+        const rows = await serp(q);
+        const scored = scoreWeakSlots(rows, q);
+        weakSamples.push(scored.weakScore);
+        noiseExcluded += scored.noiseExcluded;
+      } catch (error) {
+        samplesFailed++;
+        console.error(`serp failed: ${q} (sample ${s + 1}): ${(error as Error).message}`);
+      }
     }
+    const unstable = new Set(weakSamples).size > 1;
+    if (samplesFailed === 0 && weakSamples.length === 2) weakScore = Math.min(...weakSamples);
 
     const C2 = volume !== null && volume >= 10;
     const C3 = weakScore !== null && weakScore >= 6;
@@ -156,9 +165,11 @@ async function main() {
     if (!C4) reasons.push(`C4: 送客先 ${dest || '(未指定)'} のCPC ${effectiveCpc === null ? 'null' : '¥' + effectiveCpc} < ¥100`);
 
     // SERP取得失敗は棄却と混ぜない。測れなかったものは Hold。
+    // 2回の計測が食い違った場合も Hold（境界線上の語は合否が反転するため）。
     const verdict: Judgement['verdict'] =
-      weakScore === null ? 'hold' : C2 && C3 && C4 ? 'pass' : !C2 && weakScore >= 6 ? 'hold' : 'reject';
-    out.push({ keyword: q, volume, cpcYen, competitionIndex, weakScore, noiseExcluded, pass: { C2, C3, C4 }, verdict, reasons });
+      weakScore === null || unstable ? 'hold' : C2 && C3 && C4 ? 'pass' : !C2 && weakScore >= 6 ? 'hold' : 'reject';
+    if (unstable) reasons.push(`C3: 2回の計測が不一致 ${JSON.stringify(weakSamples)}（不安定・Hold）`);
+    out.push({ keyword: q, volume, cpcYen, competitionIndex, weakScore, noiseExcluded, weakSamples, unstable, pass: { C2, C3, C4 }, verdict, reasons });
     console.error(`${verdict.toUpperCase()} ${q} | vol=${volume} cpc=${cpcYen} weak=${weakScore} noise=${noiseExcluded}`);
   }
 
