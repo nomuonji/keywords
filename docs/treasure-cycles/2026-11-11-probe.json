@@ -1,0 +1,27 @@
+{
+  "measuredAt": "2026-11-11T05:21:11.824Z",
+  "label": "probe",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "占い 当たらない",
+      "volume": 1300,
+      "cpcYen": null,
+      "competitionIndex": 4,
+      "weakScore": null,
+      "noiseExcluded": 0,
+      "weakSamples": [],
+      "unstable": false,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": false
+      },
+      "verdict": "hold",
+      "reasons": [
+        "C3: SERP取得失敗（棄却ではなく Hold）",
+        "C4: 送客先 (未指定) のCPC null < ¥100"
+      ]
+    }
+  ]
+}

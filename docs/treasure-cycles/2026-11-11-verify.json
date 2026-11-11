@@ -1,0 +1,54 @@
+{
+  "measuredAt": "2026-11-11T05:40:29.495Z",
+  "label": "verify",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "転職 後悔",
+      "volume": 1000,
+      "cpcYen": null,
+      "competitionIndex": 20,
+      "weakScore": 1,
+      "noiseExcluded": 0,
+      "weakSamples": [
+        1,
+        2
+      ],
+      "unstable": true,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": false
+      },
+      "verdict": "hold",
+      "reasons": [
+        "C3: 弱い枠 1/10 < 6",
+        "C4: 送客先 (未指定) のCPC null < ¥100",
+        "C3: 2回の計測が不一致 [1,2]（不安定・Hold）"
+      ]
+    },
+    {
+      "keyword": "占い 当たらない",
+      "volume": 1300,
+      "cpcYen": null,
+      "competitionIndex": 4,
+      "weakScore": 3,
+      "noiseExcluded": 0,
+      "weakSamples": [
+        3,
+        3
+      ],
+      "unstable": false,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": false
+      },
+      "verdict": "reject",
+      "reasons": [
+        "C3: 弱い枠 3/10 < 6",
+        "C4: 送客先 (未指定) のCPC null < ¥100"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "measuredAt": "2026-11-11T05:09:13.126Z",
+  "label": "占い",
+  "methodVersion": "tsk-v25",
+  "judgements": [
+    {
+      "keyword": "占い 外れた",
+      "volume": 50,
+      "cpcYen": null,
+      "competitionIndex": 0,
+      "weakScore": 4,
+      "noiseExcluded": 0,
+      "pass": {
+        "C2": true,
+        "C3": false,
+        "C4": true
+      },
+      "verdict": "hold",
+      "reasons": [
+        "C3: 弱い枠 4/10 < 6",
+        "C3: 2回の計測が不一致 [6,4]（不安定・Hold）"
+      ]
+    }
+  ]
+}
