@@ -1,10 +1,10 @@
-﻿// 探索法の採点エンジン（tsk-v25 / I11 の実装）
+// 探索法の採点エンジン（探索法の「弱い枠の数え方」の実装。本文は My Portal 探索拠点 treasure-keyword-note）
 //
-// BREAKING: scripts/serp-score.ts は Brave 直叩きで、I1（実Google以外で競合を確定しない）に違反する。
+// BREAKING: scripts/serp-score.ts は Brave 直叩きで、拠点の制約 K-005（実Google以外で競合を確定しない）に違反する。
 // この採点エンジンは SerpRow[] を受け取り、ネットワークに触らない。SERP の取得は呼び出し側が行う
 // （scripts/serp-reserp.ts が実Google、scripts/serp-score.ts は legacy）。
 //
-// I11 の3細則:
+// 数え方の3細則:
 //   1. google.* のログインページ / maps エントリ / タイトル空 は「結果ではない」ので除外し、除外数を返す
 //   2. 知恵袋・Quora は投稿が2年以上前なら弱い枠。新しいものは数えない
 //   3. YouTube は個人の体験談のみ弱い枠。専門チャンネルの解説は数えない

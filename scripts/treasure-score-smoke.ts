@@ -1,7 +1,7 @@
 // 採点エンジンの回帰テスト（ネットワーク不要）
 //
 // ここに固定するのは「公開済みの採点結果」。規則を変えたらこのテストが落ちるので、
-// 方法論を黙って書き換えることができなくなる。実測の出典は docs/treasure-method.md の各事例。
+// 方法論を黙って書き換えることができなくなる。数え方の本文は My Portal の探索拠点 treasure-keyword-note（method.body）にある。
 //
 // 使い方: npx tsx scripts/treasure-score-smoke.ts
 import assert from 'node:assert/strict';
@@ -102,4 +102,4 @@ const fresh: SerpRow[] = [
 ];
 eq(scoreWeakSlots(fresh, '転職 後悔').weakScore, 0, '新しいQuoraは数えない');
 
-console.log(`treasure score smoke ok (${checks} checks, tsk-v25 / I11)`);
+console.log(`treasure score smoke ok (${checks} checks)`);
