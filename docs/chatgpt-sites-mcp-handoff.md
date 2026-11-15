@@ -1,8 +1,8 @@
-# ChatGPT Sites 移行・MCP 接続ハンドオフ（2026-11-15）
+# Vercel + ChatGPT Sites 併用・同一MCP/データ接続（2026-11-15）
 
 ## 目的と現在地
 
-**依頼**: `nomuonji/keywords` の Web UI を ChatGPT Sites で公開し、同じキーワード正本を読む/更新する MCP を ChatGPT のプラグインで使えるようにする。旧 Vercel が動かない状況でも、複製 DB やモック画面で「復旧」を装わない。
+**確定した依頼（ユーザー訂正）**: **移植・置換ではない**。`nomuonji/keywords` を **既存のVercel版と新しいChatGPT Sites版の両方から使えるようにする**。同じキーワードデータ、MCPツール契約、認可ルールを利用し、片方の変更がもう片方に反映される併用構成をつくる。Vercel側のデプロイ・URL・MCP設定は撤去/無効化/転送しない。現時点でVercelが障害中でも、新しいSites側はVercelを中継せずに独立して動作できる必要がある。
 
 **確認済み**:
 - 正しい GitHub リポジトリ名は **`nomuonji/keywords`**（`nomuonji/keyword` は GitHub 404）。
@@ -10,24 +10,46 @@
 - Vercel 用 `vercel.json` は `apps/web/dist` を配信、`/mcp` を `/api/mcp` に転送する。
 - リモート MCP は `api/mcp.ts`（Hono + WebStandard Streamable HTTP MCP）。`api/mcp-contract.ts` がツール名の一覧。別の `/sites-mcp` は SEO Sites Operator で、**ChatGPT Sites 製品とは別物**。
 - リモートの権限は `KEYWORDS_REMOTE_MCP_TOKEN` を用いた署名/OAuth PKCE または Bearer。Google Ads / SERP 等の外部情報、Firestore、環境秘密情報に依存。クライアントソースに秘密鍵を直接含めない。
-- 本来の `packages/db` がローカル SQLite とリモート Firestore の二層を扱い、`packages/commands` が更新規則を所有する。Sites 移行を理由に Firestore の正本を新設・複製しない。
+- 本来の `packages/db` がローカル SQLite とリモート Firestore の二層を扱い、`packages/commands` が更新規則を所有する。Sites を追加するために Firestore の正本を新設・複製しない。
 
-**このドキュメントの範囲**: Work モードでの Sites 作成、実行互換性の確認、公開、MCP プラグイン作成・接続を引き継ぐ。**このドキュメントを追加しただけでは Site は作成・公開されず、MCP プラグインも接続されない。**
+**このドキュメントの範囲**: Work モードでの **2拠点併用**の構成・Sites追加・互換性確認・公開・MCPプラグイン作成・接続を引き継ぐ。**このドキュメントを追加しただけでは Site は作成・公開されず、MCP プラグインも接続されない。**
 
-## ChatGPT Work / @Sites に渡す実行指示
+## 必須構成（並行運用、置換禁止）
 
-> GitHub `nomuonji/keywords` を読み込んで、ChatGPT Sites で使用できる **Keywords 管理 Web サイト**を作成し、MCP をサイトに追加してプラグイン化してください。まず AGENTS.md、README.md、apps/web/src/api.ts、api/mcp.ts、api/mcp-contract.ts、packages/db/src/firestore.ts、packages/commands 内の実際の実装を読み、サーバー/フレームワーク互換性・認証・データ接続可否を確認してください。旧Vercelを本番依存にせず、現在の既存 Firestore データと権限境界を再利用してください。構造変更を伴う場合は独立ブランチで修正し、検証後に ChatGPT Sites の非公開デプロイと本番のMCPプラグイン作成まで完了してください。対応外の Node / Firestore / ネットワーク機能がある場合は、動作しない機能を「対応済み」とせず、移植可能な部分と別途必要なバックエンドを明記してください。プラグインをインストールする必要があるときはユーザーにそのカードを表示してください。
+```text
+     既存のVercelホスト                 新規ChatGPT Sitesホスト
+  Web UI + 既存API/MCP                Web UI + Sites MCP
+             |                                 |
+             |  同じcommands契約/認可           |  同じcommands契約/認可
+             +--------------+------------------+
+                            |
+                既存Firestore（唯一の正本）
+                   + 外部調査ソース/API
+```
 
-## 移行の実装契約
+- **Vercelはそのまま**: 既存の GitHub連携/CI、`vercel.json`、プロダクションURL、`/mcp`、`/sites-mcp`、OAuthクライアント/設定を保持。Sites側を作ってもVercelの設定を削除・書換・ドメイン切替しない。既存Vercelの障害は別途扱う。
+- **Sitesは追加の入口**: ChatGPT Sitesで新たに Web UI とMCPを公開するが、独立したキーワードDBや独自の架空APIは作らない。ホストが異なっても同じ既存Firestoreのコレクション、文書ID、書き込み条件、監査を使う。可能なら共有`packages/commands`ロジックを再利用。公開できないサーバー機能は分けて報告する。
+- **経路独立**: Vercel停止中もSitesからFirestoreへの認証済み接続・MCPツールが動く。SitesでVercelの`/api/*`や`/mcp`を単にプロキシする実装では達成とみなさない。
+- **同一MCP契約**: `api/mcp-contract.ts`を互換性の正本として、Sites側MCPで可能なツールの**名前/引数/結果/認証**を一致させる。差分があれば表にして明示する。既存の`/sites-mcp`（SEO Sites Operator）は別機能であり、ChatGPT Sitesという製品とは混同しない。
+- **安全性**: Sites/Vercelそれぞれのサーバー側でFirebase資格情報とOAuth秘密情報を管理し、ブラウザへ配布しない。MCPは各ホストが独立した認可・PKCEトークン発行/検証を持ち、callbackとresource URLをホストごとに正しく登録する。署名用の秘密値やクライアント設定を暗黙に共有しない。公開UIから管理情報を匿名閲覧できないようにする。
+- **データ一貫性**: 二重書き込み/定期コピー/Firestoreの別プロジェクト化は禁止。二つの画面からの同時編集は既存のrevision/競合検出を尊重し、必要なら共有コマンド層に統一する。認証済みでAから変更→Bに反映、Bから変更→Aに反映されることを実データで確認する。
+- **現状のUIの制約**: `apps/web/src/api.ts` は本番の遠隔APIを読み取り中心に扱う構造。画面に書き込み操作が無いものを、追加ホストでも勝手に「書き込み可」と説明しない。書き込みは既存の権限付きMCP/commandsで検証し、UI拡張をするなら両方のホストに同じ実装を配布する。
 
-1. **先に調べる**: Sites ランタイムに Node.js 22、`node:crypto`、Hono、Streamable HTTP MCP、Google/Firebase SDK、Web UI の静的アセット、永続ストレージがサポートされるかを実際のビルドと実行で確認する。互換性が不明なまま monorepo を丸ごと移し替えない。
-2. **画面の機能確認**: `apps/web` の各ページが利用する `/api/*` のレスポンスを特定し、サイト側で正しく接続できるものに限って有効化する。リモートは読み取り専用 Firestore、ローカル専用の書き込みは明示的に分離されている。静的画面が描画されたことと、実データ操作が可能なことを混同しない。
-3. **MCP の優先順位**: 同じ Firestore の実データを返す read-only ツール（例: status、treasury list/search、研究セッション list/get、サイト構成 list/get）を先に動かす。そのあと既存ルール・認可を通る保存系を追加する。既存のツール名・引数・結果形式は可能な限り `api/mcp-contract.ts` に合わせる。ツールを削る/名称変更する場合は差分を報告し、既存の Sites Operator を名前が似ているだけで統合しない。
-4. **権限と機密性**: サイトの訪問者に Firestore/Google Ads の秘密鍵や `KEYWORDS_REMOTE_MCP_TOKEN` を配布しない。MCPの各呼び出しが認証済みのアカウント権限を使うことを確かめる。書き込み/削除系ツールは無認証で公開しない。サイトを一般公開するかどうかは、**個人の運用データを非公開にしたまま実現できること**を検証してから決める。
-5. **旧デプロイは保全**: Vercel の URL、`/sites-mcp`、DNS、既存 OAuth の redirect URI を未検証のまま変更しない。Sites 側の新しいホスト名でOAuth metadata / token / callback / resource URLを検証する。旧本番へ自動切替するのは避ける。
-6. **外部サービスの制限**: Sites が既存 Firestore の安全な直接接続をサポートしないなら、Google Drive等への勝手なデータ移動やクライアント秘密鍵埋め込みは禁止。どの機能に専用バックエンドが必要か切り分け、その時点の制約と選択肢を報告する。旧Vercelが停止していることを前提に、Vercel経由だけの画面は完成扱いにしない。
-7. **動作確認**: 本番URLでUIロード（ネットワークエラーなし）、権限なしでのMCP呼出し拒否、認可後のMCP `initialize`/`tools/list`、少なくとも1件のFirestore読み取りと、明示的な試験データでの認可済み書き込み、再読み込み後の永続化を確認する。既存に関連した `npm run test:remote-keyword` と必要に応じ `npm run test:mcp` は既存実装を変更する場合に実行する。
-8. **完成条件**: ChatGPT Sites の公開URL、Site本体の表示証跡、プラグインカード/接続結果、実MCPの少なくとも1ツールの正常実行、必要な環境設定・既存ツールとの差分を残す。これが揃うまでは「サイト公開」「MCP復旧」と報告しない。
+## ChatGPT Work / @Sites への実行指示（この部分を渡す）
+
+> GitHub `nomuonji/keywords` とこのファイルを読んで、**既存のVercel版を残したまま** ChatGPT Sites版を**追加**してください。これは移行・置き換えではありません。VercelとSitesのUI/MCP双方が既存の同じFirestoreデータと共有コマンドを使い、両方から読み書きできるようにします。Vercelが現在停止中でもSitesは依存せず動く構成にしてください。AGENTS.md、README.md、apps/web/src/api.ts、api/mcp.ts、api/mcp-contract.ts、packages/db/src/firestore.ts、packages/commands内の実装を読み、Sitesで使えるNode/SDK/永続化/MCP互換性をまず実際に検査してください。両ホストにある認証・OAuth・データ更新ルールを保ち、認証なし公開は避けてください。Vercel/旧MCP/DNS/既存DBを無断変更せず、Sites公開・プラグイン作成・実MCP接続と**双方向の同一データ反映**を検証してください。ChatGPT Sitesに未対応の機能があれば具体的な技術的制約を報告し、完成と偽らないでください。ユーザーが必要なプラグインインストールやOAuth認可は画面で依頼してください。
+
+## 並行運用の実装・受け入れ条件
+
+1. **2ホストの状態把握**: 既存VercelのUI/REST/MCPのURLと現在のエラー、既存Firestoreプロジェクト・コレクション・認可設定を秘密情報を漏らさず確認。新しいChatGPT SitesランタイムがNode.js 22、`node:crypto`、Hono、Streamable HTTP MCP、Firebase SDKをサポートするか実測する。互換性が不明なままmonorepo全体を移行しない。
+2. **Sitesを追加**: GitHubの既存`apps/web`の画面仕様を参照し、Sitesに独立して動く2つ目のUI/サーバー接続を追加。共有ソース維持が可能なら同一GitHub commitからVercelとSitesにそれぞれデプロイ。現行Vercelのソースの強制変更はしない。SitesはVercelをバックエンドとして呼ぶだけの構成にしない。
+3. **同じ正本を使う**: Sitesの権限付きサーバー処理が既存Firestoreへ直結するか、既存の安全な独立バックエンドを利用する。別DB、ローカル専用SQLデータ、ローカルストレージ、モックは「本番の同期データ」と扱わない。既存`packages/commands`の更新・監査ルールを尊重する。
+4. **MCP契約互換性**: 両ホストで`initialize`, `tools/list`と少なくとも有用なread/writeツールを比較し、同じデータを返すことを確認。差異がある場合は表を残す。元の`/mcp`や`/sites-mcp`は残す。プラグインがSitesに追加されても既存MCP接続を切らない。
+5. **ホストごとのOAuth**: URI、resource metadata、authorization/token/redirectの呼出し先を各ホストに合わせる。CORSだけで認証を代用しない。匿名`tools/call`を禁止し、個人データやキーを公開しない。新しいプラグインカードから認証成功を確認。
+6. **双方向確認**: （A）Vercelで認証済み作成/変更した一時検証レコードをSitesで読む。（B）Sitesで認証済み作成/変更した別の検証レコードをVercelで読む。（C）別ブラウザ/セッションで一覧を再読込し、同じ文書ID・値を確認。（D）試験レコードは既存の削除ルールで片付ける。Vercel停止中は（A）（B）を未検証と明記し、「両方稼働」とは報告しない。
+7. **既存状態の保持**: 旧OAuth接続、GitHub Actions、Vercel環境変数、DNS、Firestoreデータを破壊せず、Sites側追加だけを行う。内部データの一般公開は禁止。依存する既存の外部Google Ads/SERP計測が止まっていればその機能だけ未対応とし、他のMCP読み書き機能の独立稼働を優先。
+8. **必要十分な検査**: サーバー実装が変わる場合に限り、関連した`npm run test:remote-keyword`、`npm run test:mcp`などを選択して実行。Sites側のUI表示・同一正本読み書き・匿名拒否・認証成功・両ホストからの同期・既存機能の非回帰を確認する。
+9. **完成条件**: VercelのURLは従来どおり（復旧状態なら実際にアクセス可）、Sitesの公開URL、どちらからも既存Firestoreへアクセスできる実例、Sitesプラグインの接続、Vercel側MCP非破壊、機能差分/残る障害をまとめる。**この引き継ぎ文書を更新しただけではサイト公開やプラグイン接続は済まない。**
 
 ## ChatGPT Sites の公式資料
 
