@@ -1,3 +1,5 @@
+> **Retired management (2026-11-18, owner-approved).** Consumer Models are now authored and read from [My Portal](https://my-portal-agent.netlify.app/consumer-models) using `consumer_model_list`, `consumer_model_get`, and `consumer_model_save` on the My Portal MCP. Keywords retains search/SERP measurements and explicit `consumerModelIds` lineage only; it no longer exposes legacy model, seed-pool or observation management tools. The historical implementation, frozen JSON files and old Firestore/SQLite records are preserved as rollback/archive, not as an active registry. Local SQLite rows were waived, not verified or copied. The historical documentation below describes the old architecture and must not be used as an execution instruction.
+
 # Consumer Models (市場調査の前提モデル)
 
 市場調査を始めるときに「どのコンシューマーモデルを想定して観測するか」を固定するためのディレクトリ。

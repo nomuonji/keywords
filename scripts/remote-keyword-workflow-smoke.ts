@@ -112,8 +112,8 @@ try {
   assert.equal(serpProxyCalls, 1);
   assert.equal(first.usage.actualApiRequests, 1);
   assert.equal(firestoreReads - beforeFirstReads, 2, 'fresh SERP must reuse reserved counter without a third read');
-  assert.deepEqual(proxyProviderLists[0], ['reserp', 'brightdata', 'brave'], 'fresh month routes Reserp → Bright Data → Brave');
-  assert.equal(first.upstreamProvider, 'reserp');
+  assert.deepEqual(proxyProviderLists[0], ['brightdata', 'reserp', 'brave'], 'fresh month routes Bright Data → Reserp → Brave');
+  assert.equal(first.upstreamProvider, 'brightdata');
   assert.equal(first.engine, 'google');
 
   const beforeCacheReads = firestoreReads;
@@ -133,7 +133,7 @@ try {
   assert.equal(serpProxyCalls, 2, 'soft-limit rejection must happen before provider call');
   const usage = await serpUsageStatus();
   assert.equal(usage.providers.source, 'recorded');
-  assert.equal(usage.providers.used.reserp, 2, 'each answered request increments its upstream');
+  assert.equal(usage.providers.used.brightdata, 2, 'each answered request increments its upstream');
   assert.equal(usage.state, 'soft_limited');
   assert.equal(usage.blockedRequests, 1);
   assert.equal(usage.remaining, 2);
